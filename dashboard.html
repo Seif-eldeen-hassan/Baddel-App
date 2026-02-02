@@ -1499,14 +1499,17 @@ header {
 
 /* 1. تعديل حاوية الصورة الأساسية */
 .game-card-image {
-    /* لون خلفية أساسي غامق */
+    /* الكود القديم زي ما هو */
     background-color: #0a0a0a;
     position: relative;
     overflow: hidden;
-    /* عشان نوسط أيقونة البليس هولدر */
     display: flex;
     justify-content: center;
     align-items: center;
+
+    /* 👇👇 ضيف السطرين دول ضروري 👇👇 */
+    width: 100%;
+    height: 100%;
 }
 
 /* 2. تصميم الخلفية (شبكة الدوائر الإلكترونية) */
@@ -1575,6 +1578,192 @@ header {
 @keyframes blink {
     0%, 100% { opacity: 0; }
     50% { opacity: 1; }
+}
+
+
+/* ========================================= */
+/* 🛠️ FIX: SIDEBAR COLLAPSED (Home Button) */
+/* ========================================= */
+
+/* 1. تظبيط "العلبة" الخارجية للزرار */
+.sidebar.collapsed .nav-item#nav-home {
+    width: 50px !important;       /* عرض مربع ثابت */
+    height: 50px !important;      /* ارتفاع مربع ثابت */
+    padding: 0 !important;        /* إلغاء الحشو الجانبي عشان التوسيط يظبط */
+    margin: 0 auto 20px auto !important; /* توسيط الزرار نفسه جوه السايدبار */
+    justify-content: center !important; /* توسيط المحتوى داخلياً */
+}
+
+/* 2. إلغاء المسافات الداخلية (Gap) */
+.sidebar.collapsed .home-content-wrapper {
+    gap: 0 !important;            /* إلغاء المسافة اللي كانت 18px */
+    justify-content: center !important;
+    width: 100%;
+}
+
+/* 3. إخفاء النص نهائياً */
+.sidebar.collapsed .nav-item#nav-home .nav-text {
+    display: none !important;
+}
+
+/* 4. تظبيط حجم اللوجو في الوضع الصغير */
+.sidebar.collapsed .nav-item#nav-home .nav-logo-custom {
+    width: 26px !important;       /* حجم مناسب للمربع */
+    height: 26px !important;
+    margin: 0 !important;
+    opacity: 1 !important;        /* يظهر بوضوح */
+    filter: none !important;      /* يظهر بألوانه الأصلية */
+}
+
+/* ========================================= */
+/* 🔔 UPDATE NOTIFICATION (Gamer Style)      */
+/* ========================================= */
+.update-modal {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    background: rgba(18, 18, 18, 0.95);
+    border: 1px solid var(--accent); /* حدود خضراء */
+    padding: 20px 25px;
+    border-radius: 16px;
+    z-index: 100000;
+    box-shadow: 0 0 30px rgba(0, 255, 136, 0.15);
+    backdrop-filter: blur(10px);
+    display: none; /* مخفي افتراضياً */
+    animation: slideInRight 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+    min-width: 320px;
+}
+
+.update-content {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.update-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.update-header img {
+    width: 30px;
+    height: 30px;
+    filter: drop-shadow(0 0 5px var(--accent));
+}
+
+.update-header h3 {
+    margin: 0;
+    color: white;
+    font-size: 1.1rem;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.update-text {
+    color: #ccc;
+    font-size: 0.9rem;
+    margin: 5px 0 15px 0;
+    line-height: 1.4;
+}
+
+.update-buttons {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+}
+
+.btn-update {
+    background: var(--accent);
+    color: black;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 8px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: 0.2s;
+    font-size: 0.9rem;
+}
+
+.btn-update:hover {
+    transform: scale(1.05);
+    box-shadow: 0 0 15px var(--accent);
+    background: white;
+}
+
+.btn-later {
+    background: transparent;
+    color: #888;
+    border: 1px solid #444;
+    padding: 10px 15px;
+    border-radius: 8px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: 0.2s;
+    font-size: 0.9rem;
+}
+
+.btn-later:hover {
+    color: white;
+    border-color: white;
+}
+
+@keyframes slideInRight {
+    from { transform: translateX(100%); opacity: 0; }
+    to { transform: translateX(0); opacity: 1; }
+}
+
+
+/* ========================================= */
+/* 🔍 SEARCH BAR STYLES (Modern & Clean) */
+/* ========================================= */
+.search-container { 
+    flex-grow: 1; 
+    max-width: 600px; 
+    position: relative; /* ضروري عشان الأيقونة تتحط جواه */
+    display: flex;
+    align-items: center;
+}
+
+/* تنسيق الأيقونة الـ SVG */
+.search-icon {
+    position: absolute;
+    left: 15px; /* مكانها من الشمال */
+    color: rgba(255, 255, 255, 0.5); /* لون رمادي خفيف */
+    pointer-events: none; /* عشان الضغطة تعدي للإنبوت */
+    transition: all 0.3s ease;
+    z-index: 2;
+}
+
+/* تنسيق حقل الكتابة */
+.search-container input {
+    width: 100%;
+    background: rgba(0, 0, 0, 0.3);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    /* 👇 البادينج الشمال ده مهم عشان الكلام ميركبش فوق الأيقونة */
+    padding: 12px 20px 12px 45px; 
+    border-radius: 12px;
+    color: white; 
+    font-size: 0.95rem;
+    font-family: var(--font-main);
+    transition: all 0.3s ease;
+    backdrop-filter: blur(10px);
+    outline: none;
+}
+
+/* ✨ لما تدوس جوة الصندوق */
+.search-container input:focus {
+    background: rgba(0, 0, 0, 0.6);
+    border-color: var(--accent);
+    box-shadow: 0 0 20px rgba(0, 255, 136, 0.1);
+}
+
+/* 🔥 حركة صايعة: لما تعمل فوكس، الأيقونة كمان تنور بلون الأخضر */
+.search-container input:focus + .search-icon, /* لو الانبوت قبل الايقونة */
+.search-container:focus-within .search-icon {
+    color: var(--accent);
+    transform: scale(1.1); /* تكبر سيكة */
 }
 
     </style>
@@ -1656,6 +1845,11 @@ header {
                     <input type="hidden" id="platformFilter" value="all">
                     
                     <div class="search-container">
+                        <svg class="search-icon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <circle cx="11" cy="11" r="8"></circle>
+                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                        </svg>
+                        
                         <input type="text" id="searchInput" placeholder="Search library..." onkeyup="filterGames()">
                     </div>
                 </div>
@@ -1863,6 +2057,19 @@ header {
             </div>
         </div>
     </div>
+
+    <div id="update-popup" class="update-modal" style="display: none;">
+        <div class="update-content">
+            <img src="assets/app_icon.png" width="50">
+            <h3>New Version Ready!</h3>
+            <p>Baddel Launcher <span id="new-version-number"></span> is ready to install.</p>
+            <div class="update-buttons">
+                <button onclick="confirmUpdate()" class="btn-update">Update Now</button>
+                <button onclick="closeUpdatePopup()" class="btn-later">Later</button>
+            </div>
+        </div>
+    </div>
+
 <script>
     // ==========================================
     // 🧠 BADDEL ENGINE: GLOBAL VARIABLES
@@ -2248,6 +2455,7 @@ function createGameCard(game) {
         const list = document.getElementById('dirList');
         list.innerHTML = ""; 
 
+        // لو مفيش عناصر او الفولدر فاضي
         if (!items || items.length === 0) { 
             list.innerHTML = "<div style='padding:20px; color:#777; text-align:center;'>Empty Folder</div>"; 
             return; 
@@ -2257,7 +2465,6 @@ function createGameCard(game) {
             const div = document.createElement('div');
             div.className = 'dir-item';
             
-            // متغيرات لتخزين المحتوى
             let iconHtml = '';
             let labelText = '';
             let clickHandler = null;
@@ -2265,12 +2472,15 @@ function createGameCard(game) {
             // الحالة الأولى: درايف أو فولدر
             if (isDrives || item.type === 'dir') {
                 const iconChar = isDrives ? '💽' : '📁';
-                // بنحط الأيقونة في ديف واخد كلاس item-icon
                 iconHtml = `<div class="item-icon">${iconChar}</div>`;
+                
                 labelText = isDrives ? `${item.label} (${item.path})` : item.name;
+                
+                // في حالة الفولدر بنبعت الاسم navigate بتتصرف في دمج المسار
+                // أما في حالة الدرايف بنبعت المسار كامل
                 clickHandler = () => navigate(isDrives ? item.path : item.name, isDrives);
             } 
-            // الحالة الثانية: ملف (لعبة)
+            // الحالة الثانية: ملف (لعبة exe أو lnk)
             else {
                 if (item.icon) {
                     iconHtml = `<div class="item-icon"><img src="${item.icon}"></div>`;
@@ -2278,10 +2488,14 @@ function createGameCard(game) {
                     iconHtml = `<div class="item-icon">🎮</div>`;
                 }
                 labelText = item.name;
-                clickHandler = (e) => selectExe(item.name, e);
+
+                // 🔥🔥 التعديل الجوهري هنا:
+                // بعتنا item.path (المسار الكامل اللي جاي من الباك إند) كأول متغير
+                // ده اللي هيحل مشكلة الـ Public Desktop vs User Desktop
+                clickHandler = (e) => selectExe(item.path, item.name, e);
             }
 
-            // تجميع الـ HTML بشكل نظيف
+            // بناء الـ HTML للعنصر
             div.innerHTML = `
                 ${iconHtml}
                 <span class="item-text" ${!isDrives && item.type !== 'dir' ? 'style="color:var(--accent); font-weight:700;"' : ''}>
@@ -2303,9 +2517,14 @@ function createGameCard(game) {
         navigate(n, p.length === 1);
     }
 
-    function selectExe(n, e) {
-        selectedExePath = currentPath.endsWith('\\') ? currentPath + n : currentPath + '\\' + n;
+    // 🔥 التعديل: الدالة دلوقتي بتستقبل fullPath كأول متغير
+    function selectExe(fullPath, n, e) {
+        // بدل ما نألف المسار، هنستخدم المسار الحقيقي اللي جاي من الـ Back-end
+        selectedExePath = fullPath; 
+        
         document.getElementById('currentPath').innerText = "Selected: " + n;
+        
+        // تلوين العنصر المختار
         document.querySelectorAll('.dir-item').forEach(i => i.style.background = "transparent");
         e.currentTarget.style.background = "rgba(0, 255, 136, 0.2)";
     }
@@ -3043,6 +3262,21 @@ closeCollModal = function() {
         document.querySelector('.coll-img-preview').style.display = 'flex'; // إظهار الصورة تاني
         document.getElementById('newCollName').value = '';
     }, 300);
+}
+
+
+// استقبال الإشارة من الـ Main Process
+window.electronAPI.onUpdateAvailable((version) => {
+    document.getElementById('new-version-number').innerText = version;
+    document.getElementById('update-popup').style.display = 'block';
+});
+
+function confirmUpdate() {
+    window.electronAPI.sendRestartUpdate();
+}
+
+function closeUpdatePopup() {
+    document.getElementById('update-popup').style.display = 'none';
 }
 
 

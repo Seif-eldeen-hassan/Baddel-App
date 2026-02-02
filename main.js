@@ -1,5 +1,39 @@
-// حطه في أول سطر في main.js
-const { dialog } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog } = require('electron');
+const { autoUpdater } = require("electron-updater");
+const path = require('path');
+const fs = require('fs').promises;
+const { exec } = require('child_process');
+const util = require('util');
+const execAsync = util.promisify(exec);
+const https = require('https');
+
+
+// ==========================================
+// 🚀 DIRECT GITHUB UPDATE (NO SERVER NEEDED)
+// ==========================================
+
+// بدل ما نستخدم سيرفر وسيط، هنكلم GitHub مباشرة
+// ده بيشتغل بس مع الـ Public Repositories (وده وضعنا حالياً)
+autoUpdater.setFeedURL({
+    provider: 'github',
+    owner: 'Seif-eldeen-hassan',   // اسم حسابك
+    repo: 'Baddel-Releases'        // اسم الريبو الجديد الببليك
+});
+
+// باقي الكود زي ما هو...
+
+autoUpdater.on('update-downloaded', (info) => {
+    // بنبعت رقم النسخة الجديدة للـ Frontend
+    if (mainWindow) {
+        mainWindow.webContents.send('update-available', info.version);
+    }
+});
+
+
+
+ipcMain.on('restart-and-update', () => {
+    autoUpdater.quitAndInstall();
+});
 
 process.on('uncaughtException', (error) => {
     console.error(error);
@@ -7,13 +41,7 @@ process.on('uncaughtException', (error) => {
     process.exit(1);
 });
 
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu } = require('electron');
-const path = require('path');
-const fs = require('fs').promises;
-const { exec } = require('child_process');
-const util = require('util');
-const execAsync = util.promisify(exec);
-const https = require('https');
+
 
 // استيراد المحرك الجديد (تأكد أن ملف gameScanner.js موجود بجانب main.js)
 const { scanAllGames, addManualGame, getSavedGames, removeGame } = require('./gameScanner');
@@ -36,17 +64,27 @@ const CACHE_DURATION = 60000; // تحديث كل دقيقة
 
 
 // 2. ⛔ كود منع التكرار (Single Instance)
+// 2. ⛔ كود منع التكرار (Single Instance)
 const hasLock = app.requestSingleInstanceLock();
 
 if (!hasLock) {
-    app.quit(); // اقفل فوراً لو فيه نسخة تانية
+    app.quit(); // اقفل النسخة الجديدة فوراً
 } else {
-    app.on('second-instance', () => {
-        // لو حد داس على الـ EXE تاني، اظهر النافذة الأصلية
+    app.on('second-instance', (event, commandLine, workingDirectory) => {
+        // لو حد حاول يفتح البرنامج وهو مفتوح أصلاً
         if (mainWindow) {
+            // 1. لو كان معمولة Minimize رجعه
             if (mainWindow.isMinimized()) mainWindow.restore();
+            
+            // 2. لو كان مخفي (في الـ Tray) اظهره
             if (!mainWindow.isVisible()) mainWindow.show();
+            
+            // 3. ركز عليه (Focus)
             mainWindow.focus();
+
+            // 🔥 4. الحركة السحرية: اجباره ييجي فوق كل النوافذ لحظياً عشان يخطف التركيز
+            mainWindow.setAlwaysOnTop(true);
+            mainWindow.setAlwaysOnTop(false);
         }
     });
 }
@@ -134,6 +172,9 @@ function createWindow() {
     });
     mainWindow.maximize();
     mainWindow.loadFile('dashboard.html');
+    mainWindow.once('ready-to-show', () => {
+        autoUpdater.checkForUpdatesAndNotify();
+    });
 }
 
 ipcMain.on('minimize-app', () => {

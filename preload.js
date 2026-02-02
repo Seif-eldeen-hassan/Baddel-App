@@ -42,4 +42,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     reorderLibrary: (ids) => ipcRenderer.invoke('reorder-library', ids),
     reorderCollection: (colId, newOrder) => ipcRenderer.invoke('reorder-collection', colId, newOrder),
     updateCollection: (colId, name, img) => ipcRenderer.invoke('update-collection', colId, name, img),
+
+    onUpdateAvailable: (callback) => ipcRenderer.on('update-available', (event, version) => callback(version)),
+    sendRestartUpdate: () => ipcRenderer.send('restart-and-update'),
 });
