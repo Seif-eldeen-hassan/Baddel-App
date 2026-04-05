@@ -56,6 +56,8 @@ class SteamBridge extends EventEmitter {
         this._buffer            = '';
         this._shutdownRequested = false;
         this._cacheIsReady      = false;       // true once Python fires cache_ready
+        /** Steam64 of whoever the Python bridge last authenticated as — used for gamesUpdate licensing only */
+        this._lastSessionSteamId = null;
     }
 
     // ── Lifecycle ──────────────────────────────────────────────
@@ -128,6 +130,11 @@ class SteamBridge extends EventEmitter {
 
     get isRunning() { return !!this._proc; }
 
+    /** Active CM session Steam ID — do not use for “all linked accounts own this”. */
+    getLastSessionSteamId() {
+        return this._lastSessionSteamId || this._currentSteamId || null;
+    }
+
     // ── API Methods ────────────────────────────────────────────
 
     /**
@@ -152,6 +159,11 @@ class SteamBridge extends EventEmitter {
 
         const result = await this._call('authenticate', { storedCredentials });
 
+        if (result?.status === 'authenticated' && result.steamId != null && result.steamId !== '') {
+            this._lastSessionSteamId = String(result.steamId);
+            this._currentSteamId = String(result.steamId);
+        }
+
         // If authenticated, block until the games cache is ready (or timeout).
         // This guarantees getOwnedGames() always sees a populated cache.
         if (result?.status === 'authenticated') {
@@ -171,10 +183,11 @@ class SteamBridge extends EventEmitter {
     async passLoginCredentials(endUri, extraParams = {}) {
         const res = await this._call('pass_login_credentials', { end_uri: endUri, ...extraParams });
         
-        if (res?.status === 'authenticated') {
+        if (res?.status === 'authenticated' && res.steamId != null && res.steamId !== '') {
             this._currentSteamId = String(res.steamId);
+            this._lastSessionSteamId = String(res.steamId);
         }
-        
+
         return res;
     }
 

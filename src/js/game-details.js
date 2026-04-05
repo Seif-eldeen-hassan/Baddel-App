@@ -624,6 +624,14 @@ window.gdInstallLoadAccounts = async function(platKey) {
         } catch (e) {}
     }
 
+    if (platKey === 'steam' && syncAccounts.length > 0 && accounts.length > 0) {
+        const _linkedSteam = new Set(syncAccounts.map((sa) => String(sa.id)));
+        accounts = accounts.filter((acc) => {
+            const rid = String(acc._resolvedSyncId || acc.platformAccountId || acc.steamId || acc.id || '');
+            return _linkedSteam.has(rid);
+        });
+    }
+
     // 👇 ضيف كود الـ Debugging هنا 👇
     if (platKey === 'steam') {
         const _nd = s => (s||'').toLowerCase().replace(/[®©™]/g,'').replace(/[:\-'']/g,' ').replace(/\s+/g,' ').trim();
@@ -1537,15 +1545,10 @@ function _gdPopulateRequirements(info) {
     fill('gdReqRecDX',      rec.directx);
 }
 
-// ──────────────────────────────────────────
-//  ACCOUNTS TAB
-// ──────────────────────────────────────────
-// ──────────────────────────────────────────
-//  ACCOUNTS TAB (Smart Sync Filter)
-// ──────────────────────────────────────────
-// ──────────────────────────────────────────
-//  ACCOUNTS TAB (Smart Sync Filter)
-// ──────────────────────────────────────────
+function _gdNormTitle(s) {
+    return (s || '').toLowerCase().replace(/[®©™]/g, '').replace(/[:\-'']/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 // ──────────────────────────────────────────
 //  ACCOUNTS TAB (Smart Sync Filter & Ownership)
 // ──────────────────────────────────────────
@@ -1591,14 +1594,29 @@ async function _gdPopulateAccounts(game) {
                 case 'rockstar': switcherProfiles = await window.electronAPI.getRockstarProfiles?.() || []; break;
             }
 
+            if (platKey === 'steam' && syncedAccounts.length > 0) {
+                const _ls = new Set(syncedAccounts.map((s) => String(s.id)));
+                switcherProfiles = switcherProfiles.filter((sp) => {
+                    const p = typeof sp === 'string' ? { id: sp, steamId: sp } : sp;
+                    const pid = String(p.steamId || p.id || p.username || p.AccountName || '');
+                    return _ls.has(pid);
+                });
+            }
+
             // 3. دمج القائمتين مع تجنب التكرار
             let accountsToDisplay = [];
 
             // أولوية للحسابات اللي اتعملها Sync
-            syncedAccounts.forEach(sa => {
-                // تصفية الألعاب اللي بيملكها الحساب ده تحديداً من الكاش
-                const ownedGames = syncedLibrary.filter(g => g.ownedByAccountIds && g.ownedByAccountIds.includes(sa.id));
-                
+            syncedAccounts.forEach((sa) => {
+                const ownedGames = platKey === 'steam'
+                    ? syncedLibrary.filter((g) => {
+                        if (Array.isArray(g.steamLicensedAccountIds) && g.steamLicensedAccountIds.length > 0) {
+                            return g.steamLicensedAccountIds.map(String).includes(String(sa.id));
+                        }
+                        return g.ownedByAccountIds && g.ownedByAccountIds.map(String).includes(String(sa.id));
+                    })
+                    : syncedLibrary.filter((g) => g.ownedByAccountIds && g.ownedByAccountIds.includes(sa.id));
+
                 accountsToDisplay.push({
                     id: sa.id,
                     displayName: sa.displayName,
@@ -1623,15 +1641,20 @@ async function _gdPopulateAccounts(game) {
             });
 
             // 4. فحص الملكية وعرض البيانات
+            const _cmdAppGd = (game.command || game.id || '').match(/(\d{5,})/)?.[1];
+            const _gameTitleNorm = _gdNormTitle(game.name || '');
+
             accountsToDisplay.forEach(profile => {
                 let isOwned = false;
 
                 if (profile.isSynced) {
-                    // فحص الملكية الدقيق من الـ Cache للحسابات المربوطة
-                    const gameIdStr = String(game.id).toLowerCase();
-                    const gameNameStr = String(game.name || '').toLowerCase();
-
-                    isOwned = profile.ownedGames.some(g => {
+                    isOwned = profile.ownedGames.some((g) => {
+                        if (platKey === 'steam' && _cmdAppGd && g.appName && String(g.appName) === _cmdAppGd) return true;
+                        if (platKey === 'steam') {
+                            return _gdNormTitle(g.title || '') === _gameTitleNorm;
+                        }
+                        const gameIdStr = String(game.id).toLowerCase();
+                        const gameNameStr = String(game.name || '').toLowerCase();
                         const gId = String(g.id).toLowerCase();
                         const gName = String(g.title || g.appName || '').toLowerCase();
                         return gId === gameIdStr || gName === gameNameStr || gName.includes(gameNameStr);
@@ -1651,10 +1674,10 @@ async function _gdPopulateAccounts(game) {
                 let statusClass = '';
                 
                 if (isOwned) {
-                    statusHtml = '✓ Owned';
+                    statusHtml = platKey === 'steam' ? '✓ Licensed' : '✓ Owned';
                     statusClass = 'owned';
                 } else if (profile.isSynced) {
-                    statusHtml = 'Not Owned';
+                    statusHtml = platKey === 'steam' ? 'No license' : 'Not Owned';
                     statusClass = 'not-owned';
                 } else {
                     statusHtml = '— Sync to verify';

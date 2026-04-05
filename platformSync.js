@@ -89,8 +89,12 @@ async function _ensureBridgeRunning() {
         try {
             const existing = JSON.parse(await fs.readFile(STEAM_MERGED_CACHE, 'utf8').catch(() => '[]'));
             const map = new Map(existing.map(g => [g.id, g]));
+            const sid = steamBridge.getLastSessionSteamId?.();
             const accs = steamConnector.getAccounts();
-            const ids = accs.map((a) => String(a.id));
+            const accMatch = sid ? accs.find((a) => String(a.id) === String(sid)) : null;
+            const licensedIds = sid ? [String(sid)] : [];
+            const displayNames = accMatch ? [accMatch.displayName] : [];
+
             for (const g of newGames) {
                 if (!map.has(g.id)) {
                     const coverUrl = await downloadAndCacheCover(
@@ -100,15 +104,24 @@ async function _ensureBridgeRunning() {
                         id: g.id, title: g.title, platform: 'steam', source: 'steam',
                         coverUrl, appName: String(g.appid), playtime: 0,
                         lastSynced: new Date().toISOString(),
-                        ownedBy: accs.map((a) => a.displayName),
-                        ownedByAccountIds: ids,
-                        steamLicensedAccountIds: ids,
+                        ownedBy: displayNames,
+                        ownedByAccountIds: licensedIds.length ? [...licensedIds] : [],
+                        steamLicensedAccountIds: licensedIds.length ? [...licensedIds] : [],
+                        ...(licensedIds.length === 0 ? { installOnly: true } : {}),
                     });
                 } else {
                     const ex = map.get(g.id);
                     if (!ex.steamLicensedAccountIds) ex.steamLicensedAccountIds = [];
-                    for (const id of ids) {
-                        if (!ex.steamLicensedAccountIds.includes(id)) ex.steamLicensedAccountIds.push(id);
+                    if (sid && !ex.steamLicensedAccountIds.map(String).includes(String(sid))) {
+                        ex.steamLicensedAccountIds.push(String(sid));
+                    }
+                    if (sid && accMatch) {
+                        if (!ex.ownedByAccountIds) ex.ownedByAccountIds = [];
+                        if (!ex.ownedByAccountIds.map(String).includes(String(sid))) {
+                            ex.ownedByAccountIds.push(String(sid));
+                        }
+                        if (!ex.ownedBy) ex.ownedBy = [];
+                        if (!ex.ownedBy.includes(accMatch.displayName)) ex.ownedBy.push(accMatch.displayName);
                     }
                 }
             }

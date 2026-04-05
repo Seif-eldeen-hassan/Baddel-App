@@ -360,7 +360,7 @@ async function _plLoadAccounts(platKey) {
             return;
         }
         const rawProfiles    = await fetchFn();
-        const switcherProfiles = _plNormalizeProfiles(platKey, rawProfiles);
+        let switcherProfiles = _plNormalizeProfiles(platKey, rawProfiles);
 
         let syncAccounts = [];
         let syncedLibrary = [];
@@ -374,6 +374,14 @@ async function _plLoadAccounts(platKey) {
                 syncAccounts  = accRes?.accounts  || [];
                 syncedLibrary = cacheRes?.games   || [];
             } catch (e) {}
+        }
+
+        if (platKey === 'steam' && syncAccounts.length > 0) {
+            const linked = new Set(syncAccounts.map((sa) => String(sa.id)));
+            switcherProfiles = switcherProfiles.filter((p) => {
+                const rid = String(p._resolvedSyncId || p.platformAccountId || p.id || '');
+                return linked.has(rid);
+            });
         }
 
         // --- ضيف السطور دي هنا للـ Debugging ---
