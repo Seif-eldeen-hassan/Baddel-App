@@ -1,0 +1,1203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Baddel Launcher</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/accounts.css">
+    <link rel="stylesheet" href="css/addAccountModal.css">
+    <link rel="stylesheet" href="css/addGameModal.css">
+    <link rel="stylesheet" href="css/game-details.css">
+    <link rel="stylesheet" href="css/play-launcher.css">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css"/>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
+</head>
+<body>
+
+    <div class="title-bar">
+        <button class="help-btn" onclick="openHelpModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg>
+            Help & Feedback
+        </button>
+        <button class="help-btn" onclick="openSettingsModal()">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+            Settings
+        </button>
+        <div class="drag-region" style="flex-grow: 1; height: 100%; -webkit-app-region: drag;"></div>
+        <div class="window-controls">
+            <button class="control-btn btn-min" onclick="window.electronAPI.minimizeApp()">
+                <svg width="12" height="12" viewBox="0 0 12 12"><rect fill="currentColor" width="10" height="1" x="1" y="5.5"></rect></svg>
+            </button>
+            <button class="control-btn btn-max" onclick="window.electronAPI.maximizeApp()">
+                <svg width="12" height="12" viewBox="0 0 12 12"><rect width="9" height="9" x="1.5" y="1.5" fill="none" stroke="currentColor"></rect></svg>
+            </button>
+            <button class="control-btn btn-close" onclick="window.electronAPI.closeApp()">
+                <svg width="12" height="12" viewBox="0 0 12 12"><polygon fill="currentColor" points="11 1.576 6.583 6 11 10.424 10.424 11 6 6.583 1.576 11 1 10.424 5.417 6 1 1.576 1.576 1 6 5.417 10.424 1"></polygon></svg>
+            </button>
+        </div>
+    </div>
+
+    <div class="main-layout">
+        <aside class="sidebar" id="mainSidebar">
+            <button class="sidebar-toggle" id="toggleBtn" onclick="toggleSidebar()">
+                <span id="toggleIcon">&#9664;</span>
+            </button>
+
+            <div class="sidebar-logo-area" onclick="navigateToHome()" style="cursor: pointer; transition: 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" title="Go to Home">
+                <div class="logo-box">
+                    <img src="../assets/app_icon.png" class="main-sidebar-logo" alt="B">
+                </div>
+                <span class="nav-text logo-brand">BADDEL</span>
+            </div>
+
+            <div class="sidebar-scroll-content">
+                <div class="sidebar-section-btn" id="sectionBtn-library" onclick="switchSidebarSection('library')">
+                    <div class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                    </div>
+                    <span class="nav-text">Library</span>
+                    <span class="section-chevron">&#9660;</span>
+                </div>
+
+                <div class="sidebar-sub-items" id="subItems-library">
+                    <div class="nav-item" id="nav-all-games" onclick="navigateToAllGames()">
+                        <div class="nav-icon">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                        </div>
+                        <span class="nav-text">All Games</span>
+                        <span class="platform-count" id="allGamesCount">—</span>
+                    </div>
+                    <div class="nav-item active" id="nav-installed" onclick="navigateToInstalled()">
+                        <div class="nav-icon">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                        </div>
+                        <span class="nav-text">Installed Games</span>
+                    </div>
+                    <div class="nav-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
+                        <div class="nav-icon fav-heart">
+                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                        </div>
+                        <span class="nav-text">Favorites</span>
+                    </div>
+
+                    <div class="sidebar-sub-header">COLLECTIONS</div>
+                    <div id="collectionsList"></div>
+                </div>
+
+                <div class="sidebar-section-btn" id="sectionBtn-accounts" onclick="switchSidebarSection('accounts')">
+                    <div class="nav-icon">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                    </div>
+                    <span class="nav-text">Accounts</span>
+                    <span class="section-chevron">&#9660;</span>
+                </div>
+
+                <div class="sidebar-sub-items" id="subItems-accounts" style="display:none;">
+                    <div class="nav-item platform-item" id="nav-steam" onclick="selectAccountPlatform('steam')">
+                        <div class="nav-icon platform-icon steam-icon"><img src="../assets/Steam.png" alt="Steam" style="width: 20px; height: 20px; object-fit: contain;"></div>
+                        <span class="nav-text">Steam</span><span class="platform-count" id="steamCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-epic" onclick="selectAccountPlatform('epic')">
+                        <div class="nav-icon platform-icon epic-icon"><img src="../assets/epic.svg" class="invert-on-dark" alt="Epic" style="width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));"></div>
+                        <span class="nav-text">Epic Games</span><span class="platform-count" id="epicCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
+                        <div class="nav-icon platform-icon ea-icon"><img src="../assets/ea.png" alt="EA" style="width: 23px; height: 23px; object-fit: contain;"></div>
+                        <span class="nav-text">EA App</span><span class="platform-count" id="eaCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-riot" onclick="selectAccountPlatform('riot')">
+                        <div class="nav-icon platform-icon riot-icon"><img src="../assets/riot.png" alt="Riot" style="width: 25px; height: 25px; object-fit: contain;"></div>
+                        <span class="nav-text">Riot Games</span><span class="platform-count" id="riotCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-rockstar" onclick="selectAccountPlatform('rockstar')">
+                        <div class="nav-icon platform-icon rockstar-icon">
+                            <img src="../assets/Rockstar_Games_Logo.svg.png" alt="Rockstar" style="width: 20px; height: 20px; object-fit: contain;">
+                        </div>
+                        <span class="nav-text">Rockstar</span><span class="platform-count" id="rockstarCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
+                        <div class="nav-icon platform-icon ubisoft-icon"><img src="../assets/ubisoft.png" alt="Ubisoft" style="width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));"></div>
+                        <span class="nav-text">Ubisoft</span><span class="platform-count" id="ubisoftCount">—</span>
+                    </div>
+                    <div class="nav-item platform-item" id="nav-discord" onclick="selectAccountPlatform('discord')">
+                        <div class="nav-icon platform-icon discord-icon">
+                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
+                        </div>
+                        <span class="nav-text">Discord</span><span class="platform-count" id="discordCount">—</span>
+                    </div>
+                    
+                </div>
+            </div>
+
+            <button id="btn-new-coll" class="add-coll-btn" id="sidebarBottomBtn" onclick="handleSidebarBottomBtn()">
+                <div class="nav-icon" id="bottomBtnIcon">+</div>
+                <span class="nav-text" id="bottomBtnText">New Collection</span>
+            </button>
+        </aside>
+
+        <main class="content-area" id="mainContentArea">
+            
+            <section class="cinematic-hero" id="heroSection">
+                <div class="hero-bg-parallax" id="heroBg"></div>
+                <div class="hero-vignette"></div>
+                <div class="hero-content">
+                    <img id="heroLogo" class="hero-game-logo" src="" alt="Game Logo" style="display: none;">
+                    <h1 id="heroTitle" class="hero-game-title">Welcome to Baddel</h1>
+                    <div class="hero-stats" id="heroStats" style="display: none;">
+                        <span class="stat-badge playtime-stat"><span id="heroPlaytime">0h</span></span>
+                        <span class="stat-badge">Last Played: <span id="heroLastPlayed">Never</span></span>
+                    </div>
+                    <div class="hero-actions">
+                        <button class="btn-play-hero" id="heroPlayBtn" onclick="triggerPlayFromHero()" style="display: none;">&#9654; PLAY NOW</button>
+                        <button class="btn-secondary-hero" id="heroSettingsBtn" onclick="openCurrentGameSettings()" style="display: none;">&#9881;</button>
+                    </div>
+                </div>
+            </section>
+
+            <div id="libraryView">
+                
+                <section class="account-shortcuts-section" id="accountsShortcutsSection" style="display: none;">
+                    <h2 class="section-title">Quick Accounts</h2>
+                    <div class="accounts-shortcuts-inner" id="accountsShortcutsInner"></div>
+                </section>
+
+                <section class="recently-played-section" id="recentlyPlayedSection" style="display: none;">
+                    <h2 class="section-title">Jump Back In</h2>
+                    <div class="recent-grid" id="recentGrid"></div>
+                </section>
+
+                <section class="explore-section">
+                    <header class="explore-header">
+                        <h2 class="section-title">Explore Library</h2>
+                        <div class="explore-controls">
+                            <button class="explore-nav-btn" id="exploreNavLeft" onclick="exploreCarouselPrev()">&#9664;</button>
+                            <button class="explore-nav-btn" id="exploreNavRight" onclick="exploreCarouselNext()">&#9654;</button>
+                            <button class="view-all-btn" onclick="navigateToInstalled()">View All</button>
+                        </div>
+                    </header>
+                    <div class="games-grid explore-grid" id="exploreGrid"></div>
+                </section>
+
+                <section class="surprise-me-section" id="surpriseMeSection">
+                    <div class="surprise-header">
+                        <h2 class="section-title">Can't Decide?</h2>
+                        <p style="color: #666; font-size: 0.85rem; margin-top: -15px; margin-bottom: 20px;">Let fate choose your next adventure.</p>
+                    </div>
+                    <div class="roulette-container">
+                        <div class="roulette-card" id="rouletteCard">
+                            <img id="rouletteImg" src="" alt="Random Game" style="display: none;">
+                            <div id="rouletteGraphic" class="roulette-css-graphic">
+                                <div class="magic-blur"></div>
+                                <div class="crystal-orb"><div class="inner-glow"></div></div>
+                            </div>
+                            <div class="roulette-overlay"><div id="rouletteName">Ready to spin?</div></div>
+                        </div>
+                        <div class="roulette-controls">
+                            <div style="display: flex; gap: 10px; width: 100%; justify-content: center;">
+                                <button class="btn-spin" id="spinBtn" onclick="startRoulette()">
+                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg>
+                                    Surprise Me
+                                </button>
+                                <button class="btn-secondary-hero" onclick="openRoulettePool()" style="width: 54px; height: 54px; border-radius: 12px; margin: 0; flex-shrink: 0;" title="Custom Spin Pool">&#9881;</button>
+                            </div>
+                            <button class="btn-play-result" id="playResultBtn" style="display:none;" onclick="playRouletteResult()">&#9654; PLAY NOW</button>
+                        </div>
+                    </div>
+                </section>
+
+                <section class="system-stats-section" id="systemStatsSection">
+                    <div class="sys-header">
+                        <h2 class="section-title">Telemetry HUD</h2>
+                        <div class="sys-live-dot" id="sysLiveDot"><span class="live-pulse"></span><span class="live-label">LIVE SENSOR DATA</span></div>
+                    </div>
+                    <div class="hud-grid">
+                        <div class="hud-card"><div class="hud-top"><span class="hud-title">CPU</span><span class="hud-value" id="cpuPercent">0%</span></div><div class="hud-model" id="cpuModel">Loading...</div><div class="hud-bar-bg"><div class="hud-bar-fill cpu-fill" id="cpuBar"></div></div><div class="hud-bottom"><span>Temp: <strong id="cpuTemp">N/A</strong></span><span id="cpuCores">Cores: -</span></div></div>
+                        <div class="hud-card"><div class="hud-top"><span class="hud-title">GPU</span><span class="hud-value" id="gpuPercent">0%</span></div><div class="hud-model" id="gpuModel">Loading...</div><div class="hud-bar-bg"><div class="hud-bar-fill gpu-fill" id="gpuBar"></div></div><div class="hud-bottom"><span>Temp: <strong id="gpuTemp">N/A</strong></span><span id="gpuVram">VRAM: -</span></div></div>
+                        <div class="hud-card"><div class="hud-top"><span class="hud-title">RAM</span><span class="hud-value" id="ramPercent">0%</span></div><div class="hud-model" id="ramTotal">Loading...</div><div class="hud-bar-bg"><div class="hud-bar-fill ram-fill" id="ramBar"></div></div><div class="hud-bottom"><span>Used: <strong id="ramUsed">-</strong></span><span id="ramSpeed">Speed: -</span></div><div class="hud-bottom" style="margin-top: 4px;"><span id="ramKits" style="color: #555; font-size: 0.7rem;">Kits: -</span></div></div>
+                        <div class="hud-card"><div class="hud-top"><span class="hud-title">NETWORK</span><span class="hud-value ping-val" id="netPing">0 ms</span></div><div class="hud-model" id="netInterface">Ping</div><div class="net-speeds"><div class="net-stat"><span class="net-icon down">&#9660;</span><span id="netDown">0 KB/s</span></div><div class="net-stat"><span class="net-icon up">&#9650;</span><span id="netUp">0 KB/s</span></div></div></div>
+                    </div>
+                    <div class="hud-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                        <div class="sensor-toggle-container">
+                            <button id="sensorToggleBtn" class="sensor-toggle-btn active" onclick="toggleSensors()"><span class="sensor-indicator"></span><span id="sensorToggleText">SENSORS: ON</span></button>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 8px;">
+                            <span id="osName">OS</span> • <span id="gamesCount">0 Games Installed</span> • 
+                            <div class="playtime-filter-container">
+                                <div class="custom-dropdown playtime-dropdown" id="playtimeDropdownContainer">
+                                    <div class="dropdown-trigger playtime-trigger" onclick="togglePlaytimeDropdown(event)"><span id="selectedPlaytimeText">Lifetime Playtime</span> <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-left: 8px;"><polyline points="6 9 12 15 18 9"></polyline></svg></div>
+                                    <div class="dropdown-menu playtime-menu" id="playtimeMenu">
+                                        <div class="dropdown-item" onclick="selectPlaytime('all', 'Lifetime Playtime')">Lifetime Playtime</div>
+                                        <div class="dropdown-item" onclick="selectPlaytime('today', 'Today')">Today</div>
+                                        <div class="dropdown-item" onclick="selectPlaytime('week', 'Last 7 Days')">Last 7 Days</div>
+                                        <div class="dropdown-item" onclick="selectPlaytime('month', 'Last 30 Days')">Last 30 Days</div>
+                                        <div class="dropdown-item" onclick="selectPlaytime('year', 'This Year')">This Year</div>
+                                    </div>
+                                </div>
+                                <span id="totalLifePlaytime" style="color: #30d158; font-weight: 800;">0h 0m</span>
+                            </div>
+                        </div>
+                    </div>
+                </section>
+            </div>
+
+            <div id="installedGamesView" style="display: none;">
+                <section class="library-section" style="padding-top: 20px;">
+                    <header class="library-header" id="installedHeader">
+                        <h2 class="section-title" id="libraryTitle">Installed Games</h2>
+                        <div class="header-right">
+                            <button id="btn-scan" class="icon-btn" onclick="reloadLibrary()" title="Scan Library">&#8635;</button>
+
+                            <button id="btn-recycle" class="icon-btn" onclick="openRecycleBin()" title="Recycle Bin">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
+                            </button>
+                            <button id="btn-add-game" class="add-game-btn" onclick="openAddGameModal()">+ Add Game</button>
+                            
+                            <div class="custom-dropdown" id="platformDropdown">
+                                <div class="dropdown-trigger" onclick="toggleDropdown(event)">
+                                    <span id="selectedPlatformText">All Platforms</span> &#9660;
+                                </div>
+                                <div class="dropdown-menu" id="dropdownMenu">
+                                    <div class="dropdown-item" onclick="selectPlatform('all', 'All Platforms')">All Platforms</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('steam', 'Steam')">Steam</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('epic games', 'Epic Games')">Epic Games</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('riot games', 'Riot Games')">Riot Games</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('ubisoft connect', 'Ubisoft')">Ubisoft </div>
+                                    <div class="dropdown-item" onclick="selectPlatform('ea app', 'EA App')">EA App</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('xbox', 'Xbox / Store')">Xbox / Store</div>
+                                    <div class="dropdown-item" onclick="selectPlatform('manual', 'Manual')">Manual</div>
+                                </div>
+                            </div>
+                            <div class="custom-dropdown" id="sortDropdown">
+                                <div class="dropdown-trigger" onclick="toggleSortDropdown(event)">
+                                    <span id="selectedSortText">Custom Order</span> &#9660;
+                                </div>
+                                <div class="dropdown-menu" id="sortMenu">
+                                    <div class="dropdown-item" onclick="selectSort('manual', 'Custom Order')">Custom Order</div>
+                                    <div class="dropdown-item" onclick="selectSort('name', 'Alphabetical (A-Z)')">Alphabetical (A-Z)</div>
+                                    <div class="dropdown-item" onclick="selectSort('playtime', 'Highest Playtime')">Highest Playtime</div>
+                                    <div class="dropdown-item" onclick="selectSort('last_played', 'Recently Played')">Recently Played</div>
+                                </div>
+                            </div>
+                            
+                            <div class="search-container">
+                                <input type="text" id="searchInput" placeholder="Search library..." onkeyup="filterGames()">
+                            </div>
+                        </div>
+                    </header>
+                    
+                    <div class="games-grid" id="gamesGrid"></div>
+                </section>
+            </div>
+
+            <div id="accountsView" style="display:none;"></div>
+
+            <div id="allGamesView" style="display:none;">
+                <section class="library-section" style="padding-top: 20px;">
+                    <header class="library-header">
+                        <h2 class="section-title">All Games</h2>
+                        <div class="header-right">
+                            <button class="add-game-btn" onclick="openPlatformsModal()" style="background: var(--accent); color: black; display: flex; align-items: center; gap: 6px;">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
+                                Manage Accounts
+                            </button>
+                            <button id="btn-sync-epic" class="icon-btn" onclick="syncEpicLibrary()" title="Sync Epic Library">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg>
+                            </button>
+                        </div>
+                    </header>
+
+                    <!-- ── Filter + Search + Sort Bar ── -->
+                    <div class="ag-toolbar">
+                        <!-- Search -->
+                        <div class="ag-search-wrap">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            <input type="text" id="allGamesSearch" class="ag-search-input" placeholder="Search games…" onkeyup="filterAllGames()">
+                        </div>
+
+                        <!-- Platform filter pills -->
+                        <div class="ag-filter-pills" id="agFilterPills">
+                            <button class="ag-pill active" data-platform="all" onclick="setAgPlatformFilter('all', this)">All</button>
+                            <button class="ag-pill" data-platform="steam" onclick="setAgPlatformFilter('steam', this)">
+                                <img src="../assets/Steam.png" alt="Steam" class="ag-pill-icon">Steam
+                            </button>
+                            <button class="ag-pill" data-platform="epic" onclick="setAgPlatformFilter('epic', this)">
+                                <img src="../assets/epic.svg" alt="Epic" class="ag-pill-icon ag-pill-icon-invert">Epic
+                            </button>
+                        </div>
+
+                        <!-- Sort -->
+                        <div class="ag-sort-wrap">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
+                            <select class="ag-sort-select" id="agSortSelect" onchange="setAgSort(this.value)">
+                                <option value="title_asc">A → Z</option>
+                                <option value="title_desc">Z → A</option>
+                                <option value="playtime_desc">Most Played</option>
+                                <option value="multi_first">Multi-Platform First</option>
+                            </select>
+                        </div>
+
+                        <!-- Result count -->
+                        <span class="ag-result-count" id="agResultCount"></span>
+                    </div>
+
+                    <div id="epicNotLinked" style="display:none;">
+                        <div class="platform-link-banner epic-link-banner">
+                            <div class="plb-icon">
+                                <img src="../assets/epic.svg" alt="Epic" style="width:32px;height:32px;filter:brightness(0) invert(1);">
+                            </div>
+                            <div class="plb-text">
+                                <strong>Connect Epic Games Library</strong>
+                                <span>Link your Epic account to see all your owned games here with an Epic badge.</span>
+                            </div>
+                            <button class="plb-btn" onclick="openPlatformsModal()">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                                Connect Epic
+                            </button>
+                        </div>
+                    </div>
+
+                    <div id="epicSyncing" style="display:none;">
+                        <div class="platform-link-banner" style="border-color: rgba(255,255,255,0.1);">
+                            <div class="acc-spinner" style="width:20px;height:20px;flex-shrink:0;"></div>
+                            <span style="color:#aaa;">Syncing Epic library… this may take a moment.</span>
+                        </div>
+                    </div>
+
+                    <div class="games-grid" id="allGamesGrid"></div>
+                </section>
+            </div>
+
+            <div id="gameDetailsView" style="display:none;">
+
+                <div class="gd-back-bar">
+                    <button class="gd-back-btn" onclick="closeGameDetails()">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                            <polyline points="15 18 9 12 15 6"></polyline>
+                        </svg>
+                        <span>Back</span>
+                    </button>
+                    <div class="gd-breadcrumb">
+                        <span class="gd-breadcrumb-library">Library</span>
+                        <span class="gd-breadcrumb-sep">/</span>
+                        <span class="gd-breadcrumb-name" id="gdBreadcrumbName">—</span>
+                    </div>
+                </div>
+
+                <div class="gd-hero" id="gdHero">
+                    <div class="gd-hero-bg" id="gdHeroBg"></div>
+                    <div class="gd-hero-vignette"></div>
+                    <div class="gd-hero-scanlines"></div>
+
+                    <div class="gd-hero-content">
+                        <div class="gd-title-block">
+                            <img class="gd-logo" id="gdLogo" src="" alt="" style="display:none">
+                            <h1 class="gd-title" id="gdTitle">Game Title</h1>
+
+                            <div class="gd-platforms-row" id="gdPlatformsRow"></div>
+                        </div>
+
+                        <div class="gd-action-block">
+                            <button class="gd-play-btn" id="gdPlayBtn" onclick="gdHandleMainAction()">
+                                <span class="gd-play-icon">
+                                    <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
+                                        <polygon points="5 3 19 12 5 21 5 3"/>
+                                    </svg>
+                                </span>
+                                <span id="gdPlayBtnLabel">PLAY</span>
+                            </button>
+
+                            <div class="gd-download-block" id="gdDownloadBlock" style="display:none">
+                                <div class="gd-dl-header">
+                                    <span class="gd-dl-status" id="gdDlStatus">Downloading…</span>
+                                    <span class="gd-dl-speed" id="gdDlSpeed">— MB/s</span>
+                                </div>
+                                <div class="gd-dl-bar-wrap">
+                                    <div class="gd-dl-bar" id="gdDlBar"></div>
+                                </div>
+                                <div class="gd-dl-footer">
+                                    <span id="gdDlPercent">0%</span>
+                                    <span id="gdDlEta">Calculating…</span>
+                                </div>
+                            </div>
+
+                            <div class="gd-quick-stats" id="gdQuickStats">
+                                <div class="gd-qs-item">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+                                    </svg>
+                                    <span id="gdPlaytime">0h 0m</span>
+                                </div>
+                                <div class="gd-qs-item">
+                                    <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
+                                        <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/>
+                                    </svg>
+                                    <span id="gdLastPlayed">Never played</span>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="gd-body">
+
+                    <div class="gd-main">
+
+                        <div class="gd-tabs">
+                            <button class="gd-tab active" data-tab="overview" onclick="gdSwitchTab('overview', this)">Overview</button>
+                            <button class="gd-tab" data-tab="media" onclick="gdSwitchTab('media', this)">Media</button>
+                            <button class="gd-tab" data-tab="requirements" onclick="gdSwitchTab('requirements', this)">Requirements</button>
+                            <button class="gd-tab" data-tab="accounts" onclick="gdSwitchTab('accounts', this)">Accounts</button>
+                        </div>
+
+                        <div class="gd-tab-content active" id="gdTab-overview">
+                            <div class="gd-section">
+                                <div class="gd-desc" id="gdDesc">Loading description…</div>
+                            </div>
+
+                            <div class="gd-section" id="gdTrailerSection" style="display:none">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/>
+                                    </svg>
+                                    Trailer
+                                </h3>
+                                <div class="gd-trailer-wrap">
+                                    <!-- Trailer player يتبني ديناميكياً بواسطة _gdRenderTrailerPlayer في game-details.js -->
+                                    <button class="gd-trailer-ext-btn" id="gdTrailerExtBtn">
+                                        <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>
+                                        Open in Browser
+                                    </button>
+                                </div>
+                                <!-- Trailer thumbnails - بتظهر تلقائياً لو في أكتر من trailer -->
+                                <div id="gdTrailerThumbs" style="display:none; gap:8px; margin-top:10px; flex-wrap:wrap;"></div>
+                            </div>
+
+                            <div class="gd-section">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+                                    </svg>
+                                    Game Info
+                                </h3>
+                                <div class="gd-info-grid" id="gdInfoGrid">
+                                    </div>
+                            </div>
+
+                            <div class="gd-section" id="gdGenresSection" style="display:none">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><line x1="7" y1="7" x2="7.01" y2="7"/>
+                                    </svg>
+                                    Genres
+                                </h3>
+                                <div class="gd-tags" id="gdGenres"></div>
+                            </div>
+                        </div>
+
+                        <div class="gd-tab-content" id="gdTab-media" style="display:none">
+                            <div class="gd-section">
+                                <h3 class="gd-section-title">Screenshots</h3>
+                                <div class="gd-screenshots" id="gdScreenshots">
+                                    <div class="gd-no-media">No screenshots available</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="gd-tab-content" id="gdTab-requirements" style="display:none">
+                            <div class="gd-req-grid">
+                                <div class="gd-req-card">
+                                    <div class="gd-req-badge minimum">Minimum</div>
+                                    <div class="gd-req-list" id="gdReqMin">
+                                        <div class="gd-req-row"><span class="gd-req-label">OS</span><span class="gd-req-val" id="gdReqMinOS">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">CPU</span><span class="gd-req-val" id="gdReqMinCPU">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">RAM</span><span class="gd-req-val" id="gdReqMinRAM">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">GPU</span><span class="gd-req-val" id="gdReqMinGPU">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">Storage</span><span class="gd-req-val" id="gdReqMinStorage">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">DirectX</span><span class="gd-req-val" id="gdReqMinDX">—</span></div>
+                                    </div>
+                                </div>
+                                <div class="gd-req-card recommended">
+                                    <div class="gd-req-badge recommended-badge">Recommended</div>
+                                    <div class="gd-req-list" id="gdReqRec">
+                                        <div class="gd-req-row"><span class="gd-req-label">OS</span><span class="gd-req-val" id="gdReqRecOS">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">CPU</span><span class="gd-req-val" id="gdReqRecCPU">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">RAM</span><span class="gd-req-val" id="gdReqRecRAM">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">GPU</span><span class="gd-req-val" id="gdReqRecGPU">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">Storage</span><span class="gd-req-val" id="gdReqRecStorage">—</span></div>
+                                        <div class="gd-req-row"><span class="gd-req-label">DirectX</span><span class="gd-req-val" id="gdReqRecDX">—</span></div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="gd-tab-content" id="gdTab-accounts" style="display:none">
+                            <div class="gd-section">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/>
+                                    </svg>
+                                    This game is on your accounts
+                                </h3>
+                                <div class="gd-accounts-list" id="gdAccountsList">
+                                    <div class="gd-no-accounts">Loading accounts…</div>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div><div class="gd-sidebar">
+
+                        <div class="gd-cover-wrap">
+                            <div class="gd-cover-placeholder" id="gdCoverPlaceholder">
+                                <span id="gdCoverInitials">??</span>
+                            </div>
+                            <img class="gd-cover" id="gdCover" src="" alt="" style="display:none" onload="this.style.display='block'; document.getElementById('gdCoverPlaceholder').style.display='none'">
+                        </div>
+
+                        <div class="gd-rating-block" id="gdRatingBlock" style="display:none">
+                            <div class="gd-rating-score" id="gdRatingScore">—</div>
+                            <div class="gd-rating-stars" id="gdRatingStars"></div>
+                            <div class="gd-rating-label">Metacritic</div>
+                        </div>
+
+                        <div class="gd-detail-list" id="gdDetailList">
+                            </div>          
+
+            </div></main>
+    </div>
+    <div class="gd-lightbox" id="gdLightbox">
+        <button class="gd-lightbox-close" onclick="gdCloseLightbox()">×</button>
+        <button class="gd-lightbox-nav prev" onclick="gdNavLightbox(-1)">&#10094;</button>
+        
+        <img class="gd-lightbox-img" id="gdLightboxImg" src="" alt="">
+        
+        <button class="gd-lightbox-nav next" onclick="gdNavLightbox(1)">&#10095;</button>
+    </div>
+    <div id="mainLoader" class="loader-container active">
+        <img src="../assets/app_icon.png" class="simple-logo" alt="Loading...">
+        <div class="loader-tagline" id="loaderTagline">BUILT BY A GAMER, FOR GAMERS.</div>
+    </div>
+    
+    <div id="launchOverlay" class="launch-overlay">
+        <div class="launch-bg-wrapper">
+            <div id="launchBg" class="launch-bg-img"></div>
+            <div class="vignette-overlay"></div> 
+        </div>
+        <div class="launch-content">
+            <img id="launchLogo" class="launch-game-logo" src="" style="display: none;">
+            <h1 id="launchTitle" style="display: none;">GAME TITLE</h1>
+            <div class="aaa-loader-container">
+                <div class="aaa-loader-text-row">
+                    <span class="pulse-dot"></span>
+                    <span id="launchText" class="aaa-status-text">INITIALIZING...</span>
+                </div>
+                <div class="aaa-progress-track">
+                    <div class="aaa-progress-fill"></div>
+                    <div class="aaa-progress-glow"></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="collectionModal" class="modal-overlay">
+        <div class="modal-box">
+            <h2 class="modal-title">New Collection</h2>
+            <input type="text" id="collName" class="modal-input" placeholder="Collection Name (e.g. Horror)">
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeCollectionModal()">Cancel</button>
+                <button class="btn-primary" onclick="saveCollection()">Create</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="addGameModal" class="modal-overlay">
+        <div class="modal-box ag-modal">
+
+            <div class="ag-header">
+                <div class="ag-title">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                    Add Game
+                </div>
+                <button class="ag-close-btn" onclick="closeAddGameModal()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
+
+            <div class="ag-tabs">
+                <button class="ag-tab active" id="ag-tab-browse" onclick="switchAGTab('browse')">Browse</button>
+                <button class="ag-tab" id="ag-tab-path" onclick="switchAGTab('path')">Path</button>
+                <button class="ag-tab" id="ag-tab-drop" onclick="switchAGTab('drop')">Drop</button>
+            </div>
+
+            <div class="ag-panel" id="ag-panel-browse">
+                <div class="ag-picker-header">
+                    <button class="ag-nav-btn" onclick="agGoBack()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+                    </button>
+                    <button class="ag-nav-btn" onclick="agOpenPicker()" title="Drives">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                    </button>
+                    <div class="ag-path-text" id="ag-current-path">Select Drive</div>
+                </div>
+                
+                <div class="ag-search-row" style="padding: 8px 16px; border-bottom: 1px solid rgba(255,255,255,0.05); background: #0d0d0d; flex-shrink: 0;">
+                    <input type="text" id="ag-browse-search" class="modal-input" placeholder="Search in this folder..." onkeyup="agFilterBrowse()" style="width: 100%; padding: 8px 12px; font-size: 0.8rem; border-radius: 6px;">
+                </div>
+
+                <div class="ag-dir-list" id="ag-dir-list"></div>
+            </div>
+
+            <div class="ag-panel" id="ag-panel-path" style="display:none;">
+                <div class="ag-path-panel">
+                    <p class="ag-hint">Paste the full path to the game file (<strong>.exe, .lnk, .url, .bat</strong>)</p>
+                    <div class="ag-path-input-row">
+                        <input
+                            type="text"
+                            id="ag-path-input"
+                            class="modal-input ag-path-field"
+                            placeholder="e.g.  C:\Games\MyGame\game.exe"
+                            oninput="agValidatePath()"
+                        >
+                        <button class="ag-use-btn" id="ag-use-path-btn" onclick="agUsePath()" disabled>
+                            Use This
+                        </button>
+                    </div>
+                    <div class="ag-path-status" id="ag-path-status"></div>
+                </div>
+            </div>
+
+            <div class="ag-panel" id="ag-panel-drop" style="display:none;">
+                <div class="ag-drop-zone" id="ag-drop-zone">
+                    <div class="ag-drop-icon">
+                        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
+                    </div>
+                    <p class="ag-drop-title">Drop your <span>game file</span> here</p>
+                    <p class="ag-drop-sub">Supported formats: .exe, .lnk, .url, .bat</p>
+                    <div class="ag-drop-feedback" id="ag-drop-feedback"></div>
+                </div>
+            </div>
+
+            <div class="ag-name-row" id="ag-name-row" style="display:none;">
+                <div class="ag-name-preview">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    <span id="ag-chosen-path-label" class="ag-chosen-label">game file</span>
+                </div>
+                <input type="text" id="ag-game-name-input" class="modal-input" placeholder="Game name…">
+            </div>
+
+            <div class="ag-footer">
+                <button class="btn-cancel" onclick="closeAddGameModal()">Cancel</button>
+                <button class="btn-primary" id="ag-save-btn" onclick="agFinalizeAddGame()" disabled>
+                    Add to Library
+                </button>
+            </div>
+
+        </div>
+    </div>
+    
+
+    <div id="confirmModal" class="modal-overlay">
+        <div class="modal-box confirm-box">
+            <h2 class="modal-title danger-text" id="confirmTitle">Remove?</h2>
+            <p class="confirm-msg" id="confirmMessage">Are you sure you want to do this?</p>
+            <div class="modal-actions centere-actions">
+                <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
+                <button class="btn-danger" id="confirmBtn" onclick="executeConfirm()">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="gameSettingsModal" class="modal-overlay">
+    <div class="modal-box gs-modal">
+
+        <h2 class="modal-title gs-modal-title">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+            Game Settings
+        </h2>
+
+        <div class="settings-group">
+            <label>Game Name</label>
+            <input type="text" id="editGameNameInput" class="modal-input" placeholder="Enter new name…">
+        </div>
+
+        <div class="gs-images-section">
+
+            <div class="gs-image-block">
+                <div class="gs-image-label">
+                    <span>Cover</span>
+                    <button id="btn-reset-cover" class="gs-reset-btn" onclick="resetGameImage('cover')">Reset</button>
+                </div>
+                <div class="gs-preview-wrapper gs-cover-wrapper" id="gs-cover-wrapper">
+                    <img id="previewCover" class="gs-preview-img" alt="Cover">
+                    <div class="gs-overlay-actions">
+                        <button class="gs-change-btn" onclick="changeGameImage('cover')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Change Cover
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gs-image-block gs-hero-block">
+                <div class="gs-image-label">
+                    <span>Hero Banner</span>
+                    <button id="btn-reset-hero" class="gs-reset-btn" onclick="resetGameImage('hero')">Reset</button>
+                </div>
+                <div class="gs-preview-wrapper gs-hero-wrapper" id="gs-hero-wrapper">
+                    <img id="previewHero" class="gs-preview-img gs-hero-img" alt="Hero">
+                    <div class="gs-hero-pan-hint">← drag to pan →</div>
+                    <div class="gs-overlay-actions">
+                        <button class="gs-change-btn" onclick="changeGameImage('hero')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Change Banner
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="gs-image-block gs-logo-block">
+                <div class="gs-image-label">
+                    <span>Logo</span>
+                    <button id="btn-reset-logo" class="gs-reset-btn" onclick="resetGameImage('logo')">Reset</button>
+                </div>
+                <div class="gs-preview-wrapper gs-logo-wrapper" id="gs-logo-wrapper">
+                    <div class="gs-logo-bg-checker"></div>
+                    <img id="previewLogo" class="gs-preview-img gs-logo-img" alt="Logo">
+                    <div class="gs-logo-empty" id="gs-logo-empty">
+                        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.15)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+                        <span>No Logo</span>
+                    </div>
+                    <div class="gs-overlay-actions">
+                        <button class="gs-change-btn" onclick="changeGameImage('logo')">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+                            Set Logo
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div class="modal-actions" style="margin-top: 24px; justify-content: flex-end;">
+            <button class="btn-cancel" onclick="closeGameSettings()">Cancel</button>
+            <button class="btn-primary" onclick="saveGameSettings()">Save Changes</button>
+        </div>
+
+    </div>
+</div>
+
+    
+
+    <div id="recycleModal" class="modal-overlay">
+        <div class="modal-box bin-modal">
+            <h2 class="modal-title">&#9851; Recycle Bin</h2>
+            <div id="recycleList" class="bin-list"></div>
+            <div class="modal-actions">
+                <button class="btn-cancel" onclick="closeRecycleBin()">Close</button>
+                <button class="btn-primary" onclick="restoreSelectedGames()">Restore Selected</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="contextMenu" class="context-menu"></div>
+    <div id="toast-wrapper"></div>
+
+    <div id="collectionSettingsModal" class="modal-overlay">
+        <div class="modal-box settings-modal">
+            <h2 class="modal-title">Collection Settings</h2>
+            <div class="settings-group">
+                <label>Collection Name</label>
+                <input type="text" id="editCollNameInput" class="modal-input" placeholder="Enter new name...">
+            </div>
+            <div class="settings-images" style="margin-top: 15px;">
+                <div class="image-edit-block" style="flex: 1;">
+                    <label style="color: #666; font-size: 0.8rem; margin-bottom: 6px; display: block; font-weight: 600;">Custom Background</label>
+                    <div class="image-click-zone" onclick="changeCollectionImage()">
+                        <img id="previewCollImage" class="setting-img-preview" alt="Collection Cover" style="display: none;">
+                        <div id="previewCollText" style="width: 100%; height: 100%; display: flex; align-items: center; justify-content: center; color: #666; font-size: 0.9rem; font-weight: 600;">Dynamic Slideshow</div>
+                    </div>
+                    <button class="btn-reset-image" style="margin-top: 8px;" onclick="resetCollectionImage()">Reset to Slideshow</button>
+                </div>
+            </div>
+            <div class="modal-actions" style="margin-top: 25px; justify-content: space-between;">
+                <button class="btn-danger" onclick="triggerDeleteCollection()">Delete Collection</button>
+                <div>
+                    <button class="btn-cancel" onclick="closeCollectionSettings()">Cancel</button>
+                    <button class="btn-primary" onclick="saveCollectionSettings()">Save Changes</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+
+    <div id="helpModal" class="modal-overlay">
+        <div class="modal-box help-modal-box">
+            <div class="help-tabs">
+                <div class="help-tab active" onclick="switchHelpTab('guide')">App Guide</div>
+                <div class="help-tab" onclick="switchHelpTab('feedback')">Send Feedback</div>
+            </div>
+            <div id="tabGuide" class="help-content active">
+                <h3 style="margin-bottom:15px; color:white; font-size:1.1rem;">How to use Baddel Launcher:</h3>
+                <ul class="guide-list">
+                    <li><strong>Add a Game:</strong> Click the "+ Add Game" button or use the auto-scanner.</li>
+                    <li><strong>Surprise Me:</strong> Click the roulette button to let the app pick a random game for you.</li>
+                </ul>
+            </div>
+            <div id="tabFeedback" class="help-content">
+                <h3 style="margin-bottom:15px; color:white; font-size:1.1rem;">Got an idea or found a bug?</h3>
+                <input type="text" id="feedbackName" class="modal-input" placeholder="Your Name (Optional)">
+                <textarea id="feedbackMessage" class="modal-input" placeholder="Tell me what you think, or report a bug..." style="height: 110px; resize: none;"></textarea>
+                <button class="btn-primary" style="width:100%; margin-top:5px; padding:12px;" onclick="sendFeedback()">Send to Developer</button>
+            </div>
+            <div class="modal-actions" style="margin-top: 20px; justify-content: center; border-top: 1px solid #222; padding-top: 15px;">
+                <button class="btn-cancel" onclick="closeHelpModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="updateModal" class="modal-overlay">
+        <div class="modal-box confirm-box">
+            <h2 class="modal-title" style="color: #0a84ff;">Update Available</h2>
+            <p class="confirm-msg" id="updateMessage" style="margin-top: 10px;">A new version of Baddel is ready to install. Restart to apply?</p>
+            <div class="modal-actions" style="justify-content: center; margin-top: 25px;">
+                <button class="btn-cancel" onclick="closeUpdateModal()">Later</button>
+                <button class="btn-primary" onclick="installUpdate()">Restart & Update</button>
+            </div>
+        </div>
+    </div>
+    <div id="roulettePoolModal" class="modal-overlay">
+        <div class="modal-box settings-modal">
+            <h2 class="modal-title">Custom Spin Pool</h2>
+            <p style="color: #888; font-size: 0.85rem; margin-bottom: 15px;">Select specific games to include in your next spin.</p>
+            
+            <div class="search-container" style="margin-bottom: 15px; width: 100%;">
+                <input type="text" id="poolSearchInput" placeholder="Search games..." onkeyup="filterPoolList()" style="width: 100%;">
+            </div>
+            
+            <div id="poolGamesList" class="bin-list" style="max-height: 280px; overflow-y: auto;"></div>
+            
+            <div class="modal-actions" style="margin-top: 20px; justify-content: space-between;">
+                <button class="btn-cancel" onclick="clearRoulettePool()">Clear All</button>
+                <div>
+                    <button class="btn-cancel" onclick="closeRoulettePool()">Cancel</button>
+                    <button class="btn-primary" onclick="saveRoulettePool()">Save Pool</button>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div id="tutorialModal" class="modal-overlay">
+        <div class="modal-box video-modal-box">
+            <div class="video-modal-header">
+                <h2 class="modal-title" id="tutorialTitle" style="margin-bottom: 0;">
+                    <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="margin-right: 8px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                    How to Add Account
+                </h2>
+                <button class="btn-close-video" onclick="closeTutorialModal()">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+                </button>
+            </div>
+            <div class="video-player-wrapper">
+                <iframe id="tutorialIframe" src="" frameborder="0" allow="autoplay; encrypted-media; picture-in-picture" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe>
+            </div>
+        </div>
+    </div>
+    <div id="settingsModal" class="modal-overlay">
+    <div class="modal-content" style="max-width: 500px;">
+        <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+            <h2 style="margin: 0;">Settings</h2>
+            <button class="btn-close-video" onclick="closeSettingsModal()" style="position: static; margin: 0; padding: 5px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        <div class="modal-body">
+            
+            <div class="setting-item">
+                <div class="setting-info">
+                    <h3>Analytics & Privacy</h3>
+                    <p style="margin: 5px 0 0; font-size: 13px; color: #aaa;">
+                        Share anonymous usage data to help improve Baddel Launcher. No personal info is collected.
+                    </p>
+                </div>
+                <label class="toggle-switch">
+                    <input type="checkbox" id="analyticsToggle" onchange="toggleAnalytics(this)">
+                    <span class="slider"></span>
+                </label>
+            </div>
+
+            </div>
+    </div>
+</div>
+    <style>
+/* استدعاء خط تجوال العربي الاحترافي */
+@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
+
+@keyframes consentSlideIn {
+    from { opacity: 0; transform: translateY(20px) scale(0.96); }
+    to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+.consent-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+    gap: 32px;
+    margin-bottom: 30px;
+}
+
+.consent-list-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+
+.consent-list-item:last-child { margin-bottom: 0; }
+</style>
+
+<div id="analyticsConsentOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:99999; align-items:center; justify-content:center; backdrop-filter:blur(8px);">
+    
+    <div id="analyticsConsentModal" style="
+        background: #111;
+        border: 1px solid rgba(255,255,255,0.08);
+        border-radius: 20px;
+        padding: 35px 40px;
+        max-width: 750px;
+        width: 90%;
+        position: relative;
+        animation: consentSlideIn 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+        box-shadow: 0 25px 60px rgba(0,0,0,0.8);
+    ">
+        
+        <div style="display: flex; justify-content: center; margin-bottom: 30px;">
+            <div style="width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; box-shadow: 0 10px 20px rgba(0,0,0,0.3);">
+                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                </svg>
+            </div>
+        </div>
+
+        <div class="consent-grid">
+            
+            <div dir="ltr" style="font-family: 'Montserrat', sans-serif;">
+                <h3 style="font-family:'Outfit', sans-serif; font-size: 1.3rem; font-weight: 800; color: #fff; margin:0 0 10px;">Help improve Baddel</h3>
+                <p style="font-size: 0.85rem; color: rgba(255,255,255,0.5); line-height: 1.6; margin: 0 0 24px;">
+                    Baddel can share <strong style="color:rgba(255,255,255,0.8);">anonymous usage data</strong> to help us understand which features matter most.
+                </p>
+
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:14px; padding:18px;">
+                    <p style="font-size:0.7rem; font-weight:700; color:rgba(255,255,255,0.3); text-transform:uppercase; margin:0 0 16px; letter-spacing:1px;">What gets shared</p>
+                    
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.82rem; color:rgba(255,255,255,0.7);">Platforms you use (Steam, Riot...)</span>
+                    </div>
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.82rem; color:rgba(255,255,255,0.7);">Session length (e.g. 30–60 min)</span>
+                    </div>
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.82rem; color:rgba(255,255,255,0.7);">Feature usage (UI clicks)</span>
+                    </div>
+                    <div class="consent-list-item" style="margin-top: 16px; padding-top: 16px; border-top: 1px solid rgba(255,255,255,0.05);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <span style="font-size:0.82rem; color:#E24B4A;">No names, titles, or account IDs</span>
+                    </div>
+                </div>
+            </div>
+
+            <div dir="rtl" style="font-family: 'Tajawal', sans-serif;">
+                <h3 style="font-size: 1.4rem; font-weight: 800; color: #fff; margin:0 0 8px;">ساعدنا في تحسين بَدِّل</h3>
+                <p style="font-size: 0.95rem; color: rgba(255,255,255,0.5); line-height: 1.6; margin: 0 0 22px;">
+                    البرنامج بيتيح مشاركة <strong style="color:rgba(255,255,255,0.8);">بيانات استخدام مجهولة الهوية</strong> عشان نفهم أكتر مميزات بتستخدمها ونطورها.
+                </p>
+
+                <div style="background:rgba(255,255,255,0.02); border:1px solid rgba(255,255,255,0.05); border-radius:14px; padding:18px;">
+                    <p style="font-size:0.85rem; font-weight:700; color:rgba(255,255,255,0.4); margin:0 0 16px;">إيه اللي بيتم جمعه؟</p>
+                    
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.95rem; font-weight:500; color:rgba(255,255,255,0.7);">المنصات اللي بتلعب عليها</span>
+                    </div>
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.95rem; font-weight:500; color:rgba(255,255,255,0.7);">مدة اللعب التقريبية لكل جلسة</span>
+                    </div>
+                    <div class="consent-list-item">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#1D9E75" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><polyline points="20 6 9 17 4 12"/></svg>
+                        <span style="font-size:0.95rem; font-weight:500; color:rgba(255,255,255,0.7);">تفاعلك مع أزرار وخصائص اللانشر</span>
+                    </div>
+                    <div class="consent-list-item" style="margin-top: 16px; padding-top: 14px; border-top: 1px solid rgba(255,255,255,0.05);">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#E24B4A" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="flex-shrink:0;"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        <span style="font-size:0.95rem; font-weight:500; color:rgba(226,75,74,0.9);">مش بنسجل أي أسماء أو إيميلات</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+        <div style="border-top: 1px solid rgba(255,255,255,0.06); padding-top: 24px; display: flex; flex-direction: column; align-items: center; gap: 20px;">
+            
+            <p style="font-size:0.75rem; color:rgba(255,255,255,0.3); margin:0; text-align: center; max-width: 500px; line-height: 1.6;">
+                Data is linked to a random device ID. You can opt out anytime from Settings.<br>
+                <span style="font-family: 'Tajawal', sans-serif; font-size: 0.85rem; display: block; margin-top: 4px;">الداتا مربوطة برقم عشوائي مش بحسابك، وتقدر تقفلها في أي وقت.</span>
+            </p>
+
+            <div style="display:flex; gap:12px; width: 100%; max-width: 500px;">
+                <button onclick="handleConsentDecline()" style="
+                    flex:1; padding:12px; border-radius:10px;
+                    background:transparent; border:1px solid rgba(255,255,255,0.1);
+                    color:rgba(255,255,255,0.5); cursor:pointer; transition:0.2s;
+                    display: flex; flex-direction: column; align-items: center; gap: 4px;
+                " onmouseover="this.style.borderColor='rgba(255,255,255,0.2)';this.style.color='rgba(255,255,255,0.8)'"
+                   onmouseout="this.style.borderColor='rgba(255,255,255,0.1)';this.style.color='rgba(255,255,255,0.5)'">
+                    <span style="font-size:0.85rem; font-weight:600; font-family:'Montserrat',sans-serif;">No thanks</span>
+                    <span style="font-size:0.85rem; font-weight:500; font-family:'Tajawal',sans-serif;">لا، شكراً</span>
+                </button>
+                
+                <button onclick="handleConsentAccept()" style="
+                    flex:1.5; padding:12px; border-radius:10px;
+                    background:#fff; border:1px solid #fff;
+                    color:#000; cursor:pointer; transition:0.2s;
+                    display: flex; flex-direction: column; align-items: center; gap: 4px;
+                " onmouseover="this.style.background='rgba(255,255,255,0.85)'"
+                   onmouseout="this.style.background='#fff'">
+                    <span style="font-size:0.85rem; font-weight:700; font-family:'Montserrat',sans-serif;">Share anonymous data</span>
+                    <span style="font-size:0.95rem; font-weight:700; font-family:'Tajawal',sans-serif;">موافق على المشاركة</span>
+                </button>
+            </div>
+
+        </div>
+
+    </div>
+</div>
+
+<script>
+// ============================================================
+// ANALYTICS CONSENT LOGIC (BULLETPROOF VERSION)
+// ============================================================
+
+const CONSENT_KEY = 'baddel_analytics_consent_shown';
+
+async function initAnalyticsConsent() {
+    // التأكد إن اليوزر مجاوبش قبل كده
+    if (localStorage.getItem(CONSENT_KEY) === 'true') {
+        return; 
+    }
+
+    await new Promise(r => setTimeout(r, 100)); 
+    
+    const overlay = document.getElementById('analyticsConsentOverlay');
+    if (overlay) {
+        overlay.style.zIndex = '9999999'; 
+        overlay.style.display = 'flex';
+    }
+}
+
+// دالة لحفظ القرار وإخفاء الشاشة فوراً
+function closeAndSaveConsent() {
+    localStorage.setItem(CONSENT_KEY, 'true');
+    
+    const overlay = document.getElementById('analyticsConsentOverlay');
+    if (overlay) {
+        overlay.style.opacity = '0';
+        overlay.style.transition = 'opacity 0.2s';
+        setTimeout(() => overlay.style.display = 'none', 200);
+    }
+}
+
+// في حالة الموافقة
+async function handleConsentAccept() {
+    closeAndSaveConsent();
+    try {
+        if (window.electronAPI && window.electronAPI.grantAnalyticsConsent) {
+            await window.electronAPI.grantAnalyticsConsent();
+            console.log('[Analytics] Consent granted.');
+        }
+    } catch(e) {
+        console.warn('[Analytics] Error:', e);
+    }
+}
+
+// في حالة الرفض
+async function handleConsentDecline() {
+    closeAndSaveConsent();
+    try {
+        if (window.electronAPI && window.electronAPI.revokeAnalyticsConsent) {
+            await window.electronAPI.revokeAnalyticsConsent();
+        }
+        console.log('[Analytics] Consent declined.');
+    } catch(e) {
+        console.warn('[Analytics] Error:', e);
+    }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    initAnalyticsConsent();
+});
+</script>
+
+    <script src="https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js"></script>
+    <script src="../tour.js"></script>
+    <script src="js/app.js"></script>
+    <script src="js/accounts.js"></script>  
+    <script src="js/addAccountModal.js"></script>
+    <script src="js/addGameModal.js"></script>
+    <script src="js/game-details.js"></script>
+    <script src="js/play-launcher.js"></script>
+    <div id="platformsModal" class="modal-overlay">
+    <div class="modal-box platforms-modal" style="padding: 0; width: 680px; max-width: 90vw; overflow: hidden; display: flex; flex-direction: column;">
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; padding: 20px 25px; border-bottom: 1px solid rgba(255,255,255,0.05); flex-shrink: 0;">
+            <h2 class="modal-title" style="margin: 0; font-size: 1.2rem;">Connected Platforms</h2>
+            <button class="btn-close-video" onclick="closePlatformsModal()" style="margin: 0; padding: 5px;">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+            </button>
+        </div>
+        
+        <div style="display: flex; height: 380px;">
+            
+            <div id="platformsSidebar" style="width: 220px; border-right: 1px solid rgba(255,255,255,0.05); padding: 15px; background: rgba(0,0,0,0.2); overflow-y: auto;">
+                
+                <div class="platform-nav-item active" id="plat-nav-epic" onclick="openPlatformDetails('epic')">
+                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 6px;">
+                        <img src="../assets/epic.svg" alt="Epic" style="width: 14px; height: 14px;">
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">Epic Games</span>
+                        <span id="epicAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
+                    </div>
+                </div>
+                
+                <div class="platform-nav-item" id="plat-nav-steam" onclick="openPlatformDetails('steam')">
+                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: #1b2838; border-radius: 6px;">
+                        <img src="../assets/Steam.png" alt="Steam" style="width: 16px; height: 16px; object-fit: contain;">
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">Steam</span>
+                        <span id="steamAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
+                    </div>
+                </div>
+                
+            </div>
+
+            <div id="platformDetailsView" style="flex: 1; padding: 20px 25px; overflow-y: auto; display: flex; flex-direction: column; background: #0f0f0f;">
+                
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+                    <h3 id="currentPlatformTitle" style="margin: 0; font-family: var(--font-heading); font-size: 1.2rem;">Epic Games</h3>
+                </div>
+                
+                <div id="linkedAccountsList" class="accounts-list-container" style="flex: 1; margin-bottom: 15px;">
+                </div>
+
+                <div class="platform-actions" style="display: flex; gap: 10px; margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);">
+                    <button class="btn-cancel" style="flex: 1;" onclick="linkNewPlatformAccount()">+ Import Account</button>
+                    <button id="syncPlatformBtn" class="btn-primary" style="flex: 1;" onclick="syncCurrentPlatform()">Sync Library</button>
+                </div>
+
+            </div>
+        </div>
+        
+    </div>
+</div>
+</body>
+</html>

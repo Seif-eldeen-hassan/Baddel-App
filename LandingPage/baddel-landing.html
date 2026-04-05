@@ -1,0 +1,1515 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Baddel — The Ultimate Game Launcher</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    /* Sleek, Dark Apple/PlayStation Vibe */
+    --bg: #000000;
+    --surface: #0a0a0c;
+    --surface-2: #141415;
+    --border: rgba(255, 255, 255, 0.08);
+    --border-hover: rgba(255, 255, 255, 0.15);
+    --text-main: #f5f5f7;
+    --text-muted: #86868b;
+    --text-dim: #515154;
+    --accent: #30d158; /* Sleek Apple Blue */
+    --accent-glow: rgba(41, 151, 255, 0.1);
+    --accent-2: #5e5ce6;
+    --green: #30d158;
+    --yellow: #f5c518;
+  }
+
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+
+  body {
+    background: var(--bg);
+    color: var(--text-main);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    line-height: 1.6;
+    overflow-x: hidden;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  /* ─── Scrollbar ─── */
+  ::-webkit-scrollbar { width: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--surface-2); border-radius: 6px; }
+  ::-webkit-scrollbar-thumb:hover { background: #333; }
+
+  h1, h2, h3, h4 { font-weight: 600; letter-spacing: -0.02em; }
+
+  /* ─── NAV ─── */
+  nav {
+    position: fixed; top: 0; left: 0; right: 0;
+    z-index: 200;
+    padding: 0 5%;
+    height: 64px;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: all 0.4s ease;
+    border-bottom: 1px solid transparent;
+  }
+
+  nav.scrolled {
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(24px);
+    -webkit-backdrop-filter: blur(24px);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .nav-logo {
+    display: flex; align-items: center; gap: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1.2rem;
+    letter-spacing: -0.02em;
+    color: var(--text-main);
+  }
+
+  .nav-logo-icon {
+    font-size: 1.2rem;
+    opacity: 0.9;
+  }
+
+  .nav-links {
+    display: flex; gap: 2.5rem; align-items: center; list-style: none;
+  }
+
+  .nav-links a {
+    color: var(--text-muted);
+    text-decoration: none;
+    font-size: 0.85rem;
+    font-weight: 500;
+    transition: color 0.3s ease;
+  }
+
+  .nav-links a:hover { color: var(--text-main); }
+
+  .btn-nav {
+    background: var(--text-main);
+    color: #000;
+    padding: 8px 18px;
+    border-radius: 20px;
+    font-size: 0.85rem;
+    font-weight: 600;
+    text-decoration: none;
+    transition: all 0.3s ease;
+  }
+
+  .btn-nav:hover {
+    transform: scale(1.02);
+    background: #fff;
+  }
+
+  /* ─── HERO ─── */
+  .hero {
+    min-height: 100vh;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 180px 5% 80px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .hero-bg {
+    position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(circle at 50% 0%, rgba(41, 151, 255, 0.08) 0%, transparent 50%),
+      radial-gradient(circle at 80% 80%, rgba(94, 92, 230, 0.05) 0%, transparent 40%);
+  }
+
+  .hero > * { position: relative; z-index: 1; }
+
+  .hero-badge {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    margin-bottom: 24px;
+    animation: fadeUp 0.8s ease both;
+  }
+
+  .hero-badge-dot {
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
+
+  .hero-title {
+    font-size: clamp(3rem, 7vw, 5.5rem);
+    font-weight: 700;
+    line-height: 1.05;
+    letter-spacing: -0.04em;
+    margin-bottom: 24px;
+    max-width: 900px;
+    animation: fadeUp 0.8s 0.1s ease both;
+  }
+
+  .hero-title .dim { color: var(--text-muted); }
+
+  .hero-sub {
+    font-size: 1.15rem;
+    color: var(--text-muted);
+    max-width: 540px;
+    margin: 0 auto 40px;
+    line-height: 1.6;
+    animation: fadeUp 0.8s 0.2s ease both;
+  }
+
+  .hero-actions {
+    display: flex; align-items: center; justify-content: center;
+    gap: 16px;
+    animation: fadeUp 0.8s 0.3s ease both;
+    flex-wrap: wrap;
+  }
+
+  .btn-primary {
+    background: var(--text-main);
+    color: #000;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 14px 28px;
+    border-radius: 100px;
+    border: none;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 10px;
+    transition: all 0.3s ease;
+  }
+
+  .btn-primary:hover {
+    transform: scale(1.02);
+    background: #fff;
+  }
+
+  .btn-secondary {
+    background: rgba(255, 255, 255, 0.03);
+    color: var(--text-main);
+    font-weight: 500;
+    font-size: 0.95rem;
+    padding: 14px 28px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: all 0.3s ease;
+  }
+
+  .btn-secondary:hover {
+    background: rgba(255, 255, 255, 0.08);
+  }
+
+  /* ─── MOCKUP ─── */
+  .mockup-container {
+    position: relative;
+    margin-top: 80px;
+    width: 100%;
+    max-width: 1100px;
+    display: flex;
+    justify-content: center;
+    align-items: flex-end;
+    animation: fadeUp 1s 0.4s ease both;
+  }
+
+  .mockup-img {
+    border-radius: 12px;
+    border: 1px solid var(--border);
+    box-shadow: 0 30px 60px rgba(0,0,0,0.6);
+    transition: all 0.5s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .mockup-center { position: relative; width: 65%; z-index: 3; }
+  .mockup-center:hover { transform: translateY(-4px); }
+
+  .mockup-left, .mockup-right {
+    position: absolute; width: 40%; bottom: -15px; z-index: 1; filter: brightness(0.6);
+  }
+
+  .mockup-left { left: 2%; transform: rotate(-3deg); }
+  .mockup-right { right: 2%; transform: rotate(3deg); }
+
+  .mockup-left:hover, .mockup-right:hover {
+    z-index: 4; filter: brightness(1);
+    transform: translateY(-5px) rotate(0deg); cursor: pointer;
+  }
+
+  @keyframes fadeUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* ─── STATS ─── */
+  .stats-container {
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    padding: 60px 5%;
+    display: flex; justify-content: center;
+    gap: clamp(40px, 8vw, 120px);
+    flex-wrap: wrap;
+    background: var(--surface);
+  }
+
+  .stat-item { text-align: center; }
+
+  .stat-num {
+    font-size: 2.5rem;
+    font-weight: 700;
+    color: var(--text-main);
+    line-height: 1;
+    margin-bottom: 8px;
+    display: block;
+    letter-spacing: -0.02em;
+  }
+
+  .stat-label { font-size: 0.85rem; color: var(--text-muted); font-weight: 500; }
+
+  /* ─── SECTIONS ─── */
+  .section {
+    padding: 120px 5%;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .section-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .section-title {
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 700;
+    letter-spacing: -0.03em;
+    margin-bottom: 16px;
+    line-height: 1.1;
+  }
+
+  .section-sub {
+    color: var(--text-muted);
+    font-size: 1.1rem;
+    max-width: 540px;
+    line-height: 1.6;
+  }
+
+  .section-header { margin-bottom: 60px; }
+  .section-header.center { text-align: center; }
+  .section-header.center .section-sub { margin: 0 auto; }
+
+  /* ─── FEATURES ─── */
+  .features-showcase {
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  .feature-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0;
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    overflow: hidden;
+    background: var(--surface);
+    transition: all 0.3s ease;
+  }
+
+  .feature-row:hover { border-color: var(--border-hover); background: var(--surface-2); }
+
+  .feature-row.reverse { direction: rtl; }
+  .feature-row.reverse > * { direction: ltr; }
+
+  .feature-info {
+    padding: 60px 50px;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+  }
+
+  .feature-tag {
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-main);
+    background: rgba(255, 255, 255, 0.05);
+    padding: 4px 10px;
+    border-radius: 6px;
+    display: inline-flex;
+    align-self: flex-start;
+    margin-bottom: 20px;
+  }
+
+  .feature-info h3 {
+    font-size: 1.8rem;
+    font-weight: 600;
+    margin-bottom: 16px;
+    line-height: 1.2;
+  }
+
+  .feature-info p {
+    font-size: 1rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+    margin-bottom: 28px;
+  }
+
+  .feature-pills {
+    display: flex; flex-wrap: wrap; gap: 8px;
+  }
+
+  .feature-pill {
+    font-size: 0.8rem;
+    font-weight: 500;
+    padding: 6px 14px;
+    border-radius: 100px;
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    background: var(--bg);
+  }
+
+  .feature-visual {
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    position: relative;
+    border-left: 1px solid var(--border);
+  }
+
+  .feature-row.reverse .feature-visual { border-left: none; border-right: 1px solid var(--border); }
+
+  /* visual placeholders */
+  .fv-library {
+    display: grid;
+    grid-template-columns: repeat(3, 80px);
+    gap: 16px;
+    padding: 40px;
+  }
+
+  .fv-game-card {
+    width: 80px; height: 110px;
+    border-radius: 8px;
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.3s ease;
+    box-shadow: 0 10px 20px rgba(0,0,0,0.3);
+  }
+
+  .fv-game-card:hover { transform: scale(1.03) translateY(-4px); }
+
+  .fv-game-card::after {
+    content: attr(data-label);
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 8px 6px;
+    font-size: 0.6rem; font-weight: 500;
+    text-align: center;
+    background: linear-gradient(transparent, rgba(0,0,0,0.9));
+    color: #fff;
+  }
+
+  .gc-1 { background: linear-gradient(135deg, #1a1a1a, #333); }
+  .gc-2 { background: linear-gradient(135deg, #2d1b69, #11998e); }
+  .gc-3 { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  .gc-4 { background: linear-gradient(135deg, #1b4332, #40916c); }
+  .gc-5 { background: linear-gradient(135deg, #450a0a, #7f1d1d); }
+  .gc-6 { background: linear-gradient(135deg, #023e8a, #0077b6); }
+
+  /* TIME TRACKING visual */
+  .fv-time {
+    padding: 40px;
+    width: 100%;
+  }
+
+  .fv-time-title {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-main);
+    margin-bottom: 24px;
+  }
+
+  .fv-time-bar {
+    display: flex; align-items: center; gap: 16px;
+    margin-bottom: 16px;
+  }
+
+  .fv-time-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    width: 80px;
+    flex-shrink: 0;
+  }
+
+  .fv-time-track {
+    flex: 1;
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+
+  .fv-time-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 1s ease;
+  }
+
+  .fv-time-val {
+    font-size: 0.8rem;
+    font-family: 'JetBrains Mono', monospace;
+    color: var(--text-muted);
+    width: 50px;
+    text-align: right;
+  }
+
+  /* TAGS visual */
+  .fv-tags {
+    padding: 40px;
+    display: flex; flex-direction: column; gap: 16px;
+    width: 100%;
+  }
+
+  .fv-tag-row {
+    display: flex; align-items: center; gap: 12px;
+  }
+
+  .fv-tag-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .fv-tag-name {
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: var(--text-main);
+    width: 90px;
+  }
+
+  .fv-tag-chips {
+    display: flex; gap: 8px; flex-wrap: wrap;
+  }
+
+  .fv-chip {
+    font-size: 0.7rem;
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-weight: 500;
+    background: rgba(255, 255, 255, 0.05);
+    color: var(--text-muted);
+    border: 1px solid var(--border);
+  }
+
+  /* ─── REALTIME STATS section ─── */
+  .realtime-section {
+    padding: 120px 5%;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .realtime-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .realtime-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap: 16px;
+    margin-top: 40px;
+  }
+
+  .rt-card {
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    transition: all 0.3s ease;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .rt-card:hover { background: rgba(255, 255, 255, 0.04); }
+
+  .rt-icon {
+    font-size: 0.8rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.02em;
+  }
+
+  .rt-label {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    line-height: 1.4;
+  }
+
+  .rt-value {
+    font-size: 1.8rem;
+    font-weight: 600;
+    color: var(--text-main);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .rt-unit { font-size: 0.9rem; color: var(--text-muted); font-weight: 500; margin-left: 2px;}
+
+  .rt-bar {
+    height: 4px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-top: 8px;
+  }
+
+  .rt-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+
+  /* System colors for the bars */
+  .cpu .rt-fill { background: var(--accent); }
+  .gpu .rt-fill { background: #ff453a; }
+  .ram .rt-fill { background: var(--green); }
+  .temp .rt-fill { background: var(--yellow); }
+  .ping .rt-fill { background: #bf5af2; }
+
+  /* ─── PRIVACY SECTION ─── */
+  .privacy-section {
+    padding: 120px 5%;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .privacy-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+    margin-top: 50px;
+  }
+
+  .privacy-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px;
+    transition: all 0.3s ease;
+  }
+
+  .privacy-card:hover { border-color: var(--border-hover); }
+
+  .privacy-card.big {
+    grid-column: span 2;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+  }
+
+  .privacy-badge {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--text-main);
+    padding: 4px 12px;
+    background: rgba(255, 255, 255, 0.05);
+    border-radius: 100px;
+    margin-bottom: 20px;
+  }
+
+  .privacy-card h3 {
+    font-size: 1.4rem;
+    margin-bottom: 12px;
+  }
+
+  .privacy-card p {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .privacy-icon {
+    width: 48px; height: 48px;
+    border-radius: 12px;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 24px;
+    font-size: 1.2rem;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+  }
+
+  .privacy-terminal {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.8rem;
+    line-height: 2;
+  }
+
+  .pt-line { display: flex; gap: 10px; }
+  .pt-prompt { color: var(--text-muted); }
+  .pt-cmd { color: var(--text-main); }
+  .pt-result { color: var(--text-dim); padding-left: 20px; }
+  .pt-ok { color: var(--text-muted); }
+  .pt-blocked { color: var(--text-muted); }
+
+  /* ─── DISCORD SECTION ─── */
+  .discord-section {
+    padding: 120px 5%;
+    background: var(--surface);
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+  }
+
+  .discord-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 60px;
+    align-items: center;
+  }
+
+  .discord-visual {
+    background: #1e1f22;
+    border-radius: 16px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.06);
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+  }
+
+  .dv-titlebar {
+    background: #1a1b1e;
+    padding: 12px 16px;
+    display: flex; align-items: center; gap: 8px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .dv-dot { width: 12px; height: 12px; border-radius: 50%; }
+  .dv-dot.r { background: #ff5f57; }
+  .dv-dot.y { background: #febc2e; }
+  .dv-dot.g { background: #28c840; }
+
+  .dv-body { display: grid; grid-template-columns: 200px 1fr; }
+
+  .dv-sidebar {
+    background: #1a1b1e;
+    padding: 16px 8px;
+    border-right: 1px solid rgba(255,255,255,0.05);
+  }
+
+  .dv-server-name {
+    font-size: 0.8rem; font-weight: 600; color: #fff;
+    padding: 8px 10px; margin-bottom: 8px;
+  }
+
+  .dv-channel {
+    font-size: 0.85rem; color: #949ba4; padding: 6px 10px;
+    border-radius: 4px; display: flex; align-items: center; gap: 6px;
+  }
+
+  .dv-channel.active { background: rgba(255,255,255,0.06); color: #fff; }
+  .dv-channel-hash { opacity: 0.5; font-size: 1rem; }
+  .dv-category { font-size: 0.7rem; font-weight: 600; color: #949ba4; text-transform: uppercase; padding: 12px 10px 4px; }
+
+  .dv-chat {
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 16px;
+    min-height: 240px;
+  }
+
+  .dv-msg { display: flex; gap: 12px; }
+  .dv-avatar {
+    width: 36px; height: 36px; border-radius: 50%;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.85rem; font-weight: 600; color: #fff;
+  }
+
+  .dv-msg-content { flex: 1; }
+  .dv-msg-header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 2px; }
+  .dv-username { font-size: 0.9rem; font-weight: 500; }
+  .dv-timestamp { font-size: 0.7rem; color: #949ba4; }
+  .dv-msg-text { font-size: 0.9rem; color: #dbdee1; line-height: 1.4; }
+
+  .discord-perks { 
+    display: flex; 
+    flex-direction: column; 
+    gap: 16px; 
+    margin-top: 32px;
+    margin-bottom: 40px; 
+  }  
+  .discord-perk { display: flex; align-items: center; gap: 12px; font-size: 0.95rem; color: var(--text-muted); }
+
+  .perk-icon {
+    width: 32px; height: 32px;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.9rem;
+  }
+
+  .btn-discord {
+    background: #5865f2;
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.95rem;
+    padding: 12px 24px;
+    border-radius: 100px;
+    text-decoration: none;
+    display: inline-flex; align-items: center; gap: 8px;
+    transition: all 0.3s ease;
+  }
+
+  .btn-discord:hover { background: #4752c4; transform: scale(1.02); }
+
+  /* ─── HOW TO INSTALL ─── */
+  .install-section {
+    padding: 120px 5%;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  .install-steps {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 20px;
+    margin-top: 50px;
+  }
+
+  .install-step {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 24px;
+    padding: 40px 30px;
+    transition: all 0.3s ease;
+  }
+
+  .install-step:hover { border-color: var(--border-hover); }
+
+  .step-num {
+    font-size: 0.85rem;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 16px;
+    display: block;
+  }
+
+  .install-step h3 {
+    font-size: 1.2rem;
+    margin-bottom: 12px;
+  }
+
+  .install-step p {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    line-height: 1.6;
+  }
+
+  .install-warning {
+    margin-top: 40px;
+    background: rgba(255, 69, 58, 0.05); 
+    border: 1px solid rgba(255, 69, 58, 0.2); 
+    border-radius: 16px;
+    padding: 40px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 40px;
+    align-items: center;
+  }
+  .warning-content {
+    display: flex;
+    flex-direction: column;
+    gap: 8px; 
+  }
+
+  .warning-content h3 {
+    font-size: 1.3rem;
+    font-weight: 700;
+    margin-bottom: 4px;
+    color: var(--warning-red); 
+    display: flex;      
+    align-items: center; 
+    gap: 12px;             
+  }
+
+  .warning-content p {
+    font-size: 0.95rem;
+    color: var(--text-muted);
+    line-height: 1.7;
+    margin: 0;
+  }
+
+  .warning-img-wrap {
+    background: #000;
+    border-radius: 12px;
+    overflow: hidden;
+    border: 1px solid var(--border);
+  }
+
+  /* Smart Blue Screen fake UI */
+  .fake-bsod {
+    background: #0078d4;
+    padding: 40px;
+    font-family: 'JetBrains Mono', monospace;
+    color: #fff;
+    font-size: 0.8rem;
+    line-height: 1.8;
+  }
+
+  .bsod-emoji { font-size: 3rem; margin-bottom: 20px; display: block; }
+  .bsod-title { font-size: 1.3rem; font-weight: 700; margin-bottom: 20px; letter-spacing: -0.01em; font-family: 'Inter', sans-serif; }
+  .bsod-sub { font-size: 0.85rem; opacity: 0.9; margin-bottom: 28px; line-height: 1.6; }
+  .bsod-detail { font-size: 0.75rem; opacity: 0.7; }
+
+  /* ─── CTA ─── */
+  .cta-section {
+    padding: 160px 5%;
+    text-align: center;
+    border-top: 1px solid var(--border);
+  }
+
+  .cta-title {
+    font-size: clamp(2.5rem, 5vw, 4rem);
+    font-weight: 700;
+    margin-bottom: 20px;
+  }
+
+  .cta-sub {
+    font-size: 1.1rem;
+    color: var(--text-muted);
+    max-width: 500px;
+    margin: 0 auto 40px;
+  }
+
+  .os-badges {
+    display: flex; align-items: center; justify-content: center;
+    gap: 12px; margin-top: 32px; flex-wrap: wrap;
+  }
+
+  .os-badge {
+    font-size: 0.8rem; color: var(--text-muted);
+    padding: 6px 12px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    background: var(--surface);
+  }
+
+  /* ─── FOOTER ─── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 60px 5%;
+    background: var(--bg);
+  }
+
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: 40px;
+  }
+
+  .footer-logo {
+    display: flex; align-items: center; gap: 8px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 1.1rem;
+    color: var(--text-main);
+    margin-bottom: 16px;
+  }
+
+  .footer-desc { font-size: 0.9rem; color: var(--text-muted); max-width: 300px; margin-bottom: 16px; }
+  .footer-copy { font-size: 0.85rem; color: var(--text-dim); }
+
+  .footer-links-col h4 { font-size: 0.85rem; color: var(--text-main); margin-bottom: 20px; }
+  .footer-links-col ul { list-style: none; display: flex; flex-direction: column; gap: 12px; }
+  .footer-links-col a { font-size: 0.9rem; color: var(--text-muted); text-decoration: none; transition: color 0.2s; }
+  .footer-links-col a:hover { color: var(--text-main); }
+
+  .social-links { display: flex; gap: 12px; }
+  .social-link {
+    width: 36px; height: 36px;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    display: flex; align-items: center; justify-content: center;
+    color: var(--text-muted);
+    transition: all 0.2s;
+  }
+  .social-link:hover { background: rgba(255, 255, 255, 0.1); color: var(--text-main); }
+
+  /* ─── RESPONSIVE ─── */
+  @media (max-width: 1024px) {
+    .feature-row { grid-template-columns: 1fr; }
+    .feature-row.reverse { direction: ltr; }
+    .feature-visual { min-height: 260px; border-left: none; border-top: 1px solid var(--border); }
+    .feature-row.reverse .feature-visual { border-right: none; border-top: 1px solid var(--border); }
+    .install-steps { grid-template-columns: 1fr; }
+    .install-warning { grid-template-columns: 1fr; }
+    .discord-inner { grid-template-columns: 1fr; }
+    .privacy-grid { grid-template-columns: 1fr; }
+    .privacy-card.big { grid-column: span 1; grid-template-columns: 1fr; }
+    .footer-inner { grid-template-columns: 1fr 1fr; }
+  }
+
+  @media (max-width: 768px) {
+    nav .nav-links, nav .btn-nav { display: none; }
+    .hero { padding-top: 140px; }
+    .mockup-left, .mockup-right { display: none; }
+    .mockup-center { width: 95%; }
+    .footer-inner { grid-template-columns: 1fr; }
+    .realtime-grid { grid-template-columns: 1fr 1fr; }
+    .dv-body { grid-template-columns: 1fr; }
+    .dv-sidebar { display: none; }
+  }
+  .feature-visual {
+    background: rgba(255, 255, 255, 0.02);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 320px;
+    position: relative;
+    border-left: 1px solid var(--border);
+    overflow: hidden; 
+  }
+
+  .feature-row.reverse .feature-visual { 
+    border-left: none; 
+    border-right: 1px solid var(--border); 
+  }
+
+
+  .feature-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover; 
+    object-position: center;
+    transition: transform 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .feature-row:hover .feature-img {
+    transform: scale(1.03); 
+  }
+  .logo-img {
+    height: 60px; 
+    width: auto;
+    object-fit: contain;
+  }
+  
+</style>
+</head>
+<body>
+
+<nav id="navbar">
+  <a href="#" class="nav-logo">
+    <img src="./assets/images/logo1.png" alt="Baddel Logo" class="logo-img">
+  </a>
+  <ul class="nav-links">
+    <li><a href="#features">Features</a></li>
+    <li><a href="#realtime">Live Stats</a></li>
+    <li><a href="#privacy">Privacy</a></li>
+    <li><a href="#install">Install</a></li>
+  </ul>
+  <a href="https://github.com/Seif-eldeen-hassan/Baddel-Releases/releases/download/v3.0.0/Baddel.Launcher.Setup.3.0.0.exe" 
+   class="btn-nav" 
+   download>
+   Download Free
+</a>
+</nav>
+
+<section class="hero">
+  <div class="hero-bg"></div>
+  <div class="hero-badge">
+    <span class="hero-badge-dot"></span>
+    Baddel Desktop — Beta
+  </div>
+
+  <h1 class="hero-title">
+    One Launcher.<br>
+    <span class="dim">All Your Games.</span>
+  </h1>
+
+  <p class="hero-sub">
+    Unify Steam, Epic, Riot, Ubisoft, and Xbox into a single, beautifully designed interface. Stop launcher-hopping. Start playing.
+  </p>
+
+  <div class="hero-actions">
+    <a href="https://github.com/Seif-eldeen-hassan/Baddel-Releases/releases/download/v3.0.0/Baddel.Launcher.Setup.3.0.0.exe" download="Baddel_Setup.exe" class="btn-primary">
+      <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+      </svg>
+      Download for Windows
+    </a>
+    <a href="#features" class="btn-secondary">
+      Explore Features
+    </a>
+  </div>
+
+  <div class="mockup-container">
+    <img src="./assets/images/mockup_6.png" alt="Baddel Left" class="mockup-img mockup-left">
+    <img src="./assets/images/mockup_4.png" alt="Baddel Main" class="mockup-img mockup-center">
+    <img src="./assets/images/mockup_7.png" alt="Baddel Right" class="mockup-img mockup-right">
+  </div>
+</section>
+
+<div class="stats-container">
+  <div class="stat-item">
+    <span class="stat-num" data-target="6">0</span>
+    <span class="stat-label">Platforms Supported</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" data-target="100" data-suffix="%">0</span>
+    <span class="stat-label">Free Forever</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" data-target="1">0</span>
+    <span class="stat-label">Unified Library</span>
+  </div>
+  <div class="stat-item">
+    <span class="stat-num" data-target="0" data-suffix=" Ads">0</span>
+    <span class="stat-label">Zero Ads. Ever.</span>
+  </div>
+</div>
+
+<section class="section" id="features">
+  <div class="section-header">
+    <span class="section-label">Features</span>
+    <h2 class="section-title">Built for Serious Gamers</h2>
+    <p class="section-sub">Everything you need to take control of your entire library — crafted with precision and obsession.</p>
+  </div>
+
+  <div class="features-showcase">
+    <div class="feature-row">
+      <div class="feature-info">
+        <div class="feature-tag">Core</div>
+        <h3>Unified Library</h3>
+        <p>Baddel auto-scans and imports your games from all major clients the moment you install it. Steam, Epic, Riot, Ubisoft, Xbox — one clean grid to rule them all. No manual setup, no nonsense.</p>
+        <div class="feature-pills">
+          <span class="feature-pill">Steam</span>
+          <span class="feature-pill">Epic Games</span>
+          <span class="feature-pill">Riot</span>
+        </div>
+      </div>
+      <div class="feature-visual">
+        <img src="./assets/images/mockup8.png" alt="Unified Library Interface" class="feature-img">
+      </div>
+    </div>
+
+    <div class="feature-row reverse">
+      <div class="feature-info">
+        <div class="feature-tag">Universal</div>
+        <h3>Add Custom Games</h3>
+        <p>Playing a classic emulator, an indie standalone, or a game outside the main stores? No problem. Baddel lets you manually add any <span style="font-family: 'JetBrains Mono', monospace; background: rgba(255, 255, 255, 0.08); padding: 2px 6px; border-radius: 4px; font-size: 0.85em; color: var(--text-main);">.exe</span> file on your PC so your collection is truly complete.</p>
+        <div class="feature-pills">
+          <span class="feature-pill">Custom .exe</span>
+          <span class="feature-pill">Emulators</span>
+          <span class="feature-pill">Standalone</span>
+        </div>
+      </div>
+      <div class="feature-visual">
+        <img src="./assets/images/mockup_10.png" alt="Add Custom Game Interface" class="feature-img">
+      </div>
+    </div>
+
+    <div class="feature-row">
+      <div class="feature-info">
+        <div class="feature-tag">Organization</div>
+        <h3>Smart Collections</h3>
+        <p>Create your own categories — Chill Games, Co-op Night, 100% Games, Currently Playing. Drag, drop, organize. Your library, your rules.</p>
+        <div class="feature-pills">
+          <span class="feature-pill">Custom Tags</span>
+          <span class="feature-pill">Smart Filters</span>
+        </div>
+      </div>
+      <div class="feature-visual">
+        <img src="./assets/images/mockup_9.png" alt="Smart Collections Interface" class="feature-img">
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="realtime-section" id="realtime">
+  <div class="realtime-inner">
+    <div class="section-header">
+      <span class="section-label">Live Monitoring</span>
+      <h2 class="section-title">Your Hardware, Always Visible</h2>
+      <p class="section-sub">A real-time overlay that shows CPU, GPU, RAM, temperatures, and ping — directly inside Baddel.</p>
+    </div>
+
+    <div class="realtime-grid">
+      <div class="rt-card cpu">
+        <div class="rt-icon">CPU</div>
+        <div class="rt-value"><span id="cpu-val">43</span><span class="rt-unit">%</span></div>
+        <div class="rt-bar"><div class="rt-fill" id="cpu-bar" style="width:43%"></div></div>
+      </div>
+
+      <div class="rt-card gpu">
+        <div class="rt-icon">GPU</div>
+        <div class="rt-value"><span id="gpu-val">87</span><span class="rt-unit">%</span></div>
+        <div class="rt-bar"><div class="rt-fill" id="gpu-bar" style="width:87%"></div></div>
+      </div>
+
+      <div class="rt-card ram">
+        <div class="rt-icon">RAM</div>
+        <div class="rt-value"><span id="ram-val">11.2</span><span class="rt-unit">GB</span></div>
+        <div class="rt-bar"><div class="rt-fill" id="ram-bar" style="width:70%"></div></div>
+      </div>
+
+      <div class="rt-card temp">
+        <div class="rt-icon">TEMP</div>
+        <div class="rt-value"><span id="temp-val">68</span><span class="rt-unit">°C</span></div>
+        <div class="rt-bar"><div class="rt-fill" id="temp-bar" style="width:68%"></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="privacy-section" id="privacy">
+  <div class="section-header">
+    <span class="section-label">Privacy & Security</span>
+    <h2 class="section-title">Your Data Stays On Your Machine</h2>
+    <p class="section-sub">No accounts. No telemetry. No hidden network calls. Baddel is built on a simple principle: your data is yours.</p>
+  </div>
+
+  <div class="privacy-grid">
+    <div class="privacy-card big">
+      <div>
+        <div class="privacy-badge">Verified Offline</div>
+        <h3>Zero Data Collection</h3>
+        <p>Baddel never sends anything outside your computer. No analytics pings, no crash reports phoning home. Every byte of data stays locked locally.</p>
+      </div>
+      <div class="privacy-terminal">
+        <div class="pt-line">
+          <span class="pt-prompt" style="color: var(--green); font-weight: 600;">$</span>
+          <span class="pt-cmd">baddel --audit network</span>
+        </div>
+        <div class="pt-result">Scanning outbound connections...</div>
+        <div class="pt-line">
+          <span class="pt-ok" style="color: var(--green); font-weight: 600;">✓</span>
+          <span class="pt-cmd">Telemetry</span>
+          <span style="color: var(--green); margin-left: auto; font-weight: 600; letter-spacing: 0.05em;">BLOCKED</span>
+        </div>
+        <div class="pt-line">
+          <span class="pt-ok" style="color: var(--green); font-weight: 600;">✓</span>
+          <span class="pt-cmd">Analytics</span>
+          <span style="color: var(--green); margin-left: auto; font-weight: 600; letter-spacing: 0.05em;">BLOCKED</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="privacy-card">
+      <div class="privacy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+          <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+        </svg>
+      </div>
+      <h3>Anonymous by Default</h3>
+      <p>No sign-up, no email. Download and run. There's nothing to track because there's no account.</p>
+    </div>
+
+    <div class="privacy-card">
+      <div class="privacy-icon">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+        </svg>
+      </div>
+      <h3>Clean &amp; Lightweight</h3>
+      <p>No background processes updating constantly. Baddel runs when you run it — and only then.</p>
+    </div>
+  </div>
+</section>
+
+<section class="discord-section" id="discord">
+  <div class="discord-inner">
+    <div class="discord-visual">
+      <div class="dv-titlebar">
+        <div class="dv-dot r"></div>
+        <div class="dv-dot y"></div>
+        <div class="dv-dot g"></div>
+        <span class="dv-title">Baddel Community — Discord</span>
+      </div>
+      <div class="dv-body">
+        <div class="dv-sidebar">
+          <div class="dv-server-name">Baddel Community <span style="font-size:0.9rem;">▾</span></div>
+          <div class="dv-category">General</div>
+          <div class="dv-channel active"><span class="dv-channel-hash">#</span>welcome</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>announcements</div>
+          <div class="dv-category">Gaming</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>looking-for-group</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>fps-games</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>open-world</div>
+          <div class="dv-category">Support</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>bug-reports</div>
+          <div class="dv-channel"><span class="dv-channel-hash">#</span>feature-requests</div>
+        </div>
+        <div>
+          <div class="dv-chat">
+            <div class="dv-msg">
+              <div class="dv-avatar" style="background:#7c6cfc;">K</div>
+              <div class="dv-msg-content">
+                <div class="dv-msg-header">
+                  <span class="dv-username" style="color:#7c6cfc;">Khaled_99</span>
+                  <span class="dv-timestamp">Today at 11:42</span>
+                </div>
+                <div class="dv-msg-text">Anyone down for some Valorant ranked? need 2 more</div>
+              </div>
+            </div>
+            <div class="dv-msg">
+              <div class="dv-avatar" style="background:#fc6c9e;">S</div>
+              <div class="dv-msg-content">
+                <div class="dv-msg-header">
+                  <span class="dv-username" style="color:#fc6c9e;">Sara_GG</span>
+                  <span class="dv-timestamp">Today at 11:43</span>
+                </div>
+                <div class="dv-msg-text">I'm in!! launching from Baddel rn 🎮</div>
+              </div>
+            </div>
+            <div class="dv-msg">
+              <div class="dv-avatar" style="background:#4cffb3; color:#000;">M</div>
+              <div class="dv-msg-content">
+                <div class="dv-msg-header">
+                  <span class="dv-username" style="color:#4cffb3;">Mo_fps</span>
+                  <span class="dv-timestamp">Today at 11:44</span>
+                </div>
+                <div class="dv-msg-text">same, invite me 👀</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="discord-content">
+      <span class="section-label">Community</span>
+      <h2 class="section-title">Find Your Squad</h2>
+      <p class="section-sub">Join our growing community of gamers. Find people to play with, share clips, report bugs, or just hang out.</p>
+      
+      <div class="discord-perks">
+        <div class="discord-perk">
+          <div class="perk-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="4" y1="9" x2="20" y2="9"></line>
+              <line x1="4" y1="15" x2="20" y2="15"></line>
+              <line x1="10" y1="3" x2="8" y2="21"></line>
+              <line x1="16" y1="3" x2="14" y2="21"></line>
+            </svg>
+          </div>
+          <span>Dedicated channels for every genre</span>
+        </div>
+        <div class="discord-perk">
+          <div class="perk-icon">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <rect width="8" height="14" x="8" y="6" rx="4"></rect>
+              <path d="m19 7-3 2"></path>
+              <path d="m5 7 3 2"></path>
+              <path d="m19 19-3-2"></path>
+              <path d="m5 19 3-2"></path>
+              <path d="M20 13h-4"></path>
+              <path d="M4 13h4"></path>
+              <path d="m10 4 1 2"></path>
+              <path d="m14 4-1 2"></path>
+            </svg>
+          </div>
+          <span>Direct line to the dev team for bugs</span>
+        </div>
+      </div>
+      <a href="https://discord.gg/h4F9xbGJHg" class="btn-discord">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+          <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/>
+        </svg>
+        Join Discord Server
+      </a>
+    </div>
+  </div>
+</section>
+
+<section class="install-section" id="install">
+  <div class="section-header">
+    <span class="section-label">Installation</span>
+    <h2 class="section-title">Up and Running in 3 Steps</h2>
+    <p class="section-sub">No account, no subscription, no complicated setup. Just download and play.</p>
+  </div>
+
+  <div class="install-steps">
+    <div class="install-step">
+      <span class="step-num">01</span>
+      <h3>Download Installer</h3>
+      <p>Simply click the download button on this page to get the Baddel setup file directly. It's lightweight — under 80MB.</p>
+    </div>
+    <div class="install-step">
+      <span class="step-num">02</span>
+      <h3>Run the Setup</h3>
+      <p>Open the installer and follow the quick 3-step wizard. No bloatware bundled.</p>
+    </div>
+    <div class="install-step">
+      <span class="step-num">03</span>
+      <h3>Launch &amp; Play</h3>
+      <p>Baddel will auto-scan your installed launchers and import your games.</p>
+    </div>
+  </div>
+
+  <div class="install-warning">
+    <div class="warning-content">
+      <h3>
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3Z"></path>
+          <line x1="12" y1="9" x2="12" y2="13"></line>
+          <line x1="12" y1="17" x2="12.01" y2="17"></line>
+        </svg>
+        Heads up: "Windows SmartScreen" Warning
+      </h3>
+      <p>Because Baddel is a new, independent app, Windows Defender SmartScreen may flag the installer with a "Windows protected your PC" message. <strong style="color:var(--text-main);">This is completely normal for new apps.</strong></p>
+      <br>
+      <p>To proceed: click <strong style="color:var(--text-main);">"More info"</strong>, then click <strong style="color:var(--text-main);">"Run anyway"</strong>. The app is 100% safe.</p>
+      <br>
+      <p style="font-size:0.85rem;color:var(--text-muted);">This warning will go away as more users install Baddel and Microsoft's system builds trust for the signature.</p>
+    </div>
+    <div class="warning-img-wrap">
+      <div class="fake-bsod">
+        <span class="bsod-emoji">:(</span>
+        <div class="bsod-title">Windows protected your PC</div>
+        <div class="bsod-sub">Microsoft Defender SmartScreen prevented an unrecognized app from starting. Running this app might put your PC at risk.</div>
+        <div style="display:flex;flex-direction:column;gap:10px;">
+          <div style="background:rgba(255,255,255,0.15);padding:10px 14px;border-radius:6px;font-size:0.75rem;cursor:pointer;">
+            App: Baddel_Setup.exe<br>Publisher: Unknown Publisher
+          </div>
+          <div style="display:flex;gap:10px;margin-top:6px;">
+            <span style="font-size:0.78rem;text-decoration:underline;cursor:pointer;opacity:0.9;">More info</span>
+            <span style="margin-left:auto;background:rgba(0,0,0,0.3);padding:6px 14px;border-radius:4px;font-size:0.78rem;cursor:pointer;">Don't run</span>
+          </div>
+        </div>
+        <div class="bsod-detail" style="margin-top:20px;">← Click "More info" to find the "Run anyway" button</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="cta-section" id="download">
+  <h2 class="cta-title">Ready to Level Up?</h2>
+  <p class="cta-sub">Free forever. No account needed. Your entire game collection, unified.</p>
+
+  <a href="#" class="btn-primary" style="padding: 16px 40px; font-size: 1.05rem;">
+    Download Now — It's Free
+  </a>
+
+  <div class="os-badges">
+    <span class="os-badge">Windows 10 / 11</span>
+    <span class="os-badge">No Account Needed</span>
+    <span class="os-badge">Zero Ads</span>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-inner">
+    <div class="footer-brand">
+      <a href="#" class="footer-logo">
+        <img src="./assets/images/logo1.png" alt="Baddel Logo" class="logo-img">
+      </a>
+      <p class="footer-desc">The ultimate game launcher that unifies all your platforms into one beautiful interface.</p>
+      <p class="footer-copy">© 2026 Baddel. All rights reserved.</p>
+    </div>
+
+    <div class="footer-links-col">
+      <h4>Product</h4>
+      <ul>
+        <li><a href="#features">Features</a></li>
+        <li><a href="#realtime">Live Stats</a></li>
+        <li><a href="#privacy">Privacy</a></li>
+      </ul>
+    </div>
+
+    <div class="footer-links-col">
+      <h4>Community</h4>
+      <div class="social-links" style="margin-top:12px;">
+        <a href="https://discord.gg/h4F9xbGJHg" class="social-link" title="Discord">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/>
+          </svg>
+        </a>
+        <a href="https://github.com/Seif-eldeen-hassan" target="_blank" class="social-link" title="GitHub">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M12 2C6.477 2 2 6.477 2 12c0 4.418 2.865 8.166 6.839 9.489.5.092.682-.217.682-.482 0-.237-.008-.866-.013-1.7-2.782.604-3.369-1.34-3.369-1.34-.454-1.156-1.11-1.464-1.11-1.464-.908-.62.069-.608.069-.608 1.003.07 1.531 1.03 1.531 1.03.892 1.529 2.341 1.087 2.91.831.092-.646.35-1.086.636-1.336-2.22-.253-4.555-1.11-4.555-4.943 0-1.091.39-1.984 1.029-2.683-.103-.253-.446-1.27.098-2.647 0 0 .84-.269 2.75 1.025A9.578 9.578 0 0112 6.836c.85.004 1.705.114 2.504.336 1.909-1.294 2.747-1.025 2.747-1.025.546 1.377.203 2.394.1 2.647.64.699 1.028 1.592 1.028 2.683 0 3.842-2.339 4.687-4.566 4.935.359.309.678.919.678 1.852 0 1.336-.012 2.415-.012 2.743 0 .267.18.578.688.48C19.138 20.161 22 16.416 22 12c0-5.523-4.477-10-10-10z"/>
+          </svg>
+        </a>
+        <a href="https://www.linkedin.com/company/baddel-marketplace/" target="_blank" class="social-link" title="Baddel LinkedIn">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+            <path d="M19 3a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14m-.5 15.5v-5.3a3.26 3.26 0 0 0-3.26-3.26c-.85 0-1.84.52-2.32 1.3v-1.11h-2.79v8.37h2.79v-4.93c0-.77.62-1.4 1.39-1.4a1.4 1.4 0 0 1 1.4 1.4v4.93h2.79M6.88 8.56a1.68 1.68 0 0 0 1.68-1.68c0-.93-.75-1.69-1.68-1.69a1.69 1.69 0 0 0-1.69 1.69c0 .93.76 1.68 1.69 1.68m1.39 9.94v-8.37H5.5v8.37h2.77z"/>
+          </svg>
+        </a>
+      </div>
+    </div>
+  </div>
+</footer>
+
+<script>
+  // Navbar scroll
+  window.addEventListener('scroll', () => {
+    document.getElementById('navbar').classList.toggle('scrolled', window.scrollY > 20);
+  });
+
+  // Counter animation
+  const counters = document.querySelectorAll('.stat-num');
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (!entry.isIntersecting) return;
+      const el = entry.target;
+      const target = +el.getAttribute('data-target');
+      const suffix = el.getAttribute('data-suffix') || '';
+      let current = 0;
+      const step = Math.max(1, target / 40);
+      const tick = () => {
+        current = Math.min(current + step, target);
+        el.innerText = (target % 1 === 0 ? Math.ceil(current) : current.toFixed(1)) + suffix;
+        if (current < target) requestAnimationFrame(tick);
+        else el.innerText = target + suffix;
+      };
+      tick();
+      observer.unobserve(el);
+    });
+  }, { threshold: 0.5 });
+  counters.forEach(c => observer.observe(c));
+
+  // Realtime stats simulation
+  function updateStats() {
+    const updates = {
+      cpu: { min: 20, max: 95, id: 'cpu-val', bar: 'cpu-bar' },
+      gpu: { min: 60, max: 99, id: 'gpu-val', bar: 'gpu-bar' },
+      ram: { min: 8, max: 15.9, id: 'ram-val', bar: 'ram-bar', barScale: 16 },
+      temp: { min: 55, max: 88, id: 'temp-val', bar: 'temp-bar' },
+    };
+
+    Object.entries(updates).forEach(([key, cfg]) => {
+      const val = cfg.min + Math.random() * (cfg.max - cfg.min);
+      const barPct = cfg.barScale ? (val / cfg.barScale) * 100 : val;
+      const el = document.getElementById(cfg.id);
+      const bar = document.getElementById(cfg.bar);
+      if (el) el.textContent = key === 'ram' ? val.toFixed(1) : Math.round(val);
+      if (bar) bar.style.width = Math.min(100, barPct) + '%';
+    });
+  }
+
+  setInterval(updateStats, 1500);
+</script>
+
+</body>
+</html>

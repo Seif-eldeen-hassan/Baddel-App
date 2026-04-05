@@ -1,0 +1,1512 @@
+/* ============================================================ */
+/* BADDEL LAUNCHER — ACCOUNTS CSS (REDESIGN v3)               */
+/* Premium quality. No AI slop.                               */
+/* ============================================================ */
+
+/* ============================================================ */
+/* 1. SIDEBAR SECTION BUTTONS                                   */
+/* ============================================================ */
+
+.sidebar-section-btn {
+    height: 44px;
+    border-radius: 8px;
+    padding: 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    cursor: pointer;
+    margin-bottom: 2px;
+    margin-top: 6px;
+    position: relative;
+    transition: all 0.15s ease;
+    color: var(--text-sec);
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    font-size: 0.72rem;
+    letter-spacing: 1px;
+}
+
+.sidebar-section-btn:hover {
+    background: rgba(255, 255, 255, 0.04);
+    color: #666;
+}
+
+.sidebar-section-btn.active {
+    background: transparent;
+    color: #888;
+}
+
+.sidebar-section-btn .nav-icon {
+    width: 18px;
+    height: 18px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: inherit;
+    opacity: 0.7;
+}
+
+.section-chevron {
+    margin-left: auto;
+    font-size: 0.55rem;
+    opacity: 0.3;
+    transition: transform 0.2s ease;
+}
+
+.sidebar.collapsed .section-chevron { display: none; }
+
+/* ============================================================ */
+/* 2. SIDEBAR SUB ITEMS                                         */
+/* ============================================================ */
+
+.sidebar-sub-items {
+    padding-left: 6px;
+    border-left: 1px solid rgba(255, 255, 255, 0.04);
+    margin-left: 8px;
+    margin-bottom: 4px;
+}
+
+.sidebar-sub-header {
+    margin-top: 16px;
+    margin-bottom: 6px;
+    padding-left: 14px;
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: rgba(255, 255, 255, 0.12);
+    text-transform: uppercase;
+}
+
+.sidebar.collapsed .sidebar-sub-items {
+    padding-left: 0;
+    border-left: none;
+    margin-left: 0;
+}
+
+/* ============================================================ */
+/* 3. PLATFORM ITEMS IN SIDEBAR                                 */
+/* ============================================================ */
+
+.platform-item {
+    position: relative;
+}
+
+.platform-count {
+    font-size: 0.65rem;
+    color: #2a2a2a;
+    font-weight: 700;
+    margin-left: auto;
+    padding: 2px 7px;
+    background: transparent;
+    border-radius: 20px;
+    font-family: var(--font-heading, sans-serif);
+    transition: all 0.15s;
+    letter-spacing: 0.5px;
+}
+
+.platform-item.active .platform-count {
+    color: rgba(0, 0, 0, 0.4);
+}
+
+.sidebar.collapsed .platform-count { display: none; }
+
+.platform-icon { transition: color 0.15s; }
+.steam-icon   { color: #66c0f4; }
+.epic-icon    { color: #ffffff; }
+.ea-icon      { color: #ff6b35; }
+.riot-icon    { color: #ff4655; }
+.ubisoft-icon { color: #00a8ff; }
+.discord-icon { color: #ffffff; }
+.platform-item.active .platform-icon { color: #000000 !important; }
+
+/* ============================================================ */
+/* 4. ACCOUNTS VIEW WRAPPER                                     */
+/* ============================================================ */
+
+#accountsView {
+    height: 100%;
+    overflow-y: auto;
+    scrollbar-width: thin;
+    scrollbar-color: #1e1e1e transparent;
+}
+
+#accountsView::-webkit-scrollbar { width: 3px; }
+#accountsView::-webkit-scrollbar-track { background: transparent; }
+#accountsView::-webkit-scrollbar-thumb { background: #1e1e1e; border-radius: 2px; }
+
+.accounts-page {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+}
+
+/* ============================================================ */
+/* 5. ACCOUNTS HERO — PREMIUM REDESIGN                          */
+/* ============================================================ */
+
+.accounts-hero-v2 {
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+    /* CSS custom props injected from JS */
+    --plat-color: #0f0f0f;
+    --plat-accent: #ffffff;
+}
+
+/* ── Diagonal background split ── */
+.accounts-hero-v2::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: linear-gradient(
+        108deg,
+        color-mix(in srgb, var(--plat-accent) 6%, #0a0a0a) 0%,
+        color-mix(in srgb, var(--plat-accent) 6%, #0a0a0a) 40%,
+        #080808 40%
+    );
+    z-index: 0;
+}
+
+/* ── Grid overlay fading left to right ── */
+.hero-grid-overlay {
+    position: absolute; inset: 0;
+    background-image:
+        linear-gradient(rgba(255, 255, 255, 0.025) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255, 255, 255, 0.025) 1px, transparent 1px);
+    background-size: 28px 28px;
+    pointer-events: none;
+    z-index: 0;
+    mask-image: linear-gradient(108deg, black 0%, black 35%, transparent 55%);
+    -webkit-mask-image: linear-gradient(108deg, black 0%, black 35%, transparent 55%);
+}
+
+/* ── Accent glow (soft, not blinding) ── */
+.hero-glow-blob {
+    position: absolute;
+    background: var(--plat-accent);
+    border-radius: 50%;
+    pointer-events: none;
+    z-index: 0;
+}
+
+.blob-1 {
+    top: -60px; left: -60px;
+    width: 320px; height: 320px;
+    filter: blur(120px);
+    opacity: 0.08;
+}
+
+.blob-2 {
+    bottom: -80px; right: 5%;
+    width: 400px; height: 400px;
+    filter: blur(150px);
+    opacity: 0.04;
+}
+
+/* ── Giant watermark text ── */
+.hero-watermark {
+    position: absolute;
+    left: -10px; top: -24px;
+    font-family: var(--font-heading, sans-serif);
+    font-weight: 900;
+    font-size: 180px;
+    line-height: 1;
+    color: var(--plat-accent);
+    opacity: 0.025;
+    letter-spacing: -6px;
+    pointer-events: none;
+    user-select: none;
+    z-index: 0;
+    white-space: nowrap;
+}
+
+/* ── Thin accent line at top ── */
+.accounts-hero-v2::after {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(
+        90deg,
+        transparent 0%,
+        color-mix(in srgb, var(--plat-accent) 50%, transparent) 30%,
+        color-mix(in srgb, var(--plat-accent) 50%, transparent) 55%,
+        transparent 100%
+    );
+    z-index: 3;
+}
+
+/* ── Inner layout ── */
+.accounts-hero-content-v2 {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    gap: 28px;
+    padding: 44px 48px 0 48px;
+}
+
+/* ── Logo box ── */
+.acc-hero-logo-box {
+    width: 92px;
+    height: 92px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid color-mix(in srgb, var(--plat-accent) 18%, transparent);
+    border-bottom: 3px solid var(--plat-accent);
+    border-radius: 18px;
+    position: relative;
+    overflow: hidden;
+    flex-shrink: 0;
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+}
+
+/* Glass shimmer inside logo box */
+.acc-hero-logo-box::before {
+    content: '';
+    position: absolute; top: 0; left: 0; right: 0;
+    height: 45%;
+    background: linear-gradient(to bottom, rgba(255,255,255,0.05), transparent);
+    z-index: 1;
+    pointer-events: none;
+}
+
+.acc-hero-main-logo {
+    width: 54px;
+    height: 54px;
+    object-fit: contain;
+    position: relative;
+    z-index: 2;
+    filter: drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+}
+
+.invert-hero-logo {
+    filter: brightness(0) invert(1) drop-shadow(0 4px 12px rgba(0,0,0,0.4));
+}
+
+/* ── Text stack ── */
+.acc-hero-text {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding-bottom: 14px;
+}
+
+.acc-hero-platform-eyebrow {
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 3px;
+    color: var(--plat-accent);
+    text-transform: uppercase;
+    opacity: 0.7;
+}
+
+.acc-hero-title {
+    font-family: var(--font-heading, sans-serif);
+    font-size: 2.8rem;
+    font-weight: 800;
+    letter-spacing: -2px;
+    line-height: 1;
+    color: #fff;
+    margin: 0;
+}
+
+.acc-hero-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.acc-hero-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: color-mix(in srgb, var(--plat-accent) 8%, transparent);
+    border: 1px solid color-mix(in srgb, var(--plat-accent) 18%, transparent);
+    color: color-mix(in srgb, var(--plat-accent) 65%, #888);
+    padding: 5px 12px;
+    border-radius: 5px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    width: fit-content;
+}
+
+/* Pulsing dot inside badge */
+.pulse-dot-mini {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    animation: pulseDot 2s infinite ease-in-out;
+}
+
+@keyframes pulseDot {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.25; }
+}
+
+.acc-hero-stat {
+    font-size: 0.72rem;
+    color: #444;
+    font-weight: 600;
+}
+.acc-hero-stat strong {
+    color: #888;
+    font-weight: 700;
+}
+
+/* ── Actions (right side) ── */
+.accounts-hero-actions-v2 {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    padding: 0 48px 24px 48px;
+    justify-content: flex-end;
+    margin-top: auto;
+}
+
+/* Full inner row so content + actions sit side by side */
+.accounts-hero-inner-row {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+/* ── Tab bar under hero ── */
+.acc-hero-tabs {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    padding: 0 48px;
+    margin-top: 20px;
+    border-bottom: 1px solid #161616;
+}
+
+.acc-hero-tab {
+    padding: 11px 0;
+    margin-right: 28px;
+    font-size: 0.65rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: #2a2a2a;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: all 0.15s;
+    text-transform: uppercase;
+}
+
+.acc-hero-tab:hover { color: #555; }
+.acc-hero-tab.active {
+    color: var(--plat-accent);
+    border-bottom-color: var(--plat-accent);
+}
+
+/* ============================================================ */
+/* 6. ACCOUNTS BUTTONS                                          */
+/* ============================================================ */
+
+.acc-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 9px 18px;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: var(--font-main, sans-serif);
+    transition: all 0.15s ease;
+    white-space: nowrap;
+    letter-spacing: 0.3px;
+}
+
+.acc-btn-primary {
+    background: var(--btn-accent, #ffffff);
+    color: #000;
+}
+
+.acc-btn-primary:hover {
+    filter: brightness(1.08);
+    transform: translateY(-1px);
+}
+
+.acc-btn-primary:active {
+    transform: translateY(0);
+}
+
+.acc-btn-secondary {
+    background: transparent;
+    color: #555;
+    border: 1px solid #222;
+}
+
+.acc-btn-secondary:hover {
+    background: #111;
+    border-color: #2e2e2e;
+    color: #888;
+}
+
+/* ============================================================ */
+/* 7. ACCOUNTS LIST SECTION                                     */
+/* ============================================================ */
+
+.accounts-list-section {
+    padding: 28px 48px;
+    flex: 1;
+    background: #080808;
+}
+
+.accounts-list-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+}
+
+.accounts-list-label {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #555;
+    text-transform: uppercase;
+}
+
+.accounts-list-count {
+    font-size: 0.68rem;
+    color: #444;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    font-family: var(--font-heading, sans-serif);
+}
+
+/* ============================================================ */
+/* 8. ACCOUNT CARDS                                             */
+/* ============================================================ */
+
+.accounts-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.account-card {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 15px 20px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 10px;
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    cursor: default;
+    position: relative;
+    overflow: hidden;
+}
+
+/* Accent bar on the left edge (appears on hover) */
+.account-card::before {
+    content: '';
+    position: absolute; left: 0; top: 0; bottom: 0;
+    width: 2px;
+    background: var(--plat-accent, #fff);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    border-radius: 0 2px 2px 0;
+}
+
+.account-card:hover {
+    background: rgba(255,255,255,0.05);
+    border-color: rgba(255,255,255,0.1);
+    transform: translateX(3px);
+}
+
+.account-card:hover::before {
+    opacity: 1;
+}
+
+/* Account number */
+.acc-card-num {
+    font-family: var(--font-heading, sans-serif);
+    font-size: 0.68rem;
+    font-weight: 800;
+    color: #333;
+    width: 22px;
+    flex-shrink: 0;
+    letter-spacing: 0.5px;
+}
+
+/* Avatar */
+.acc-card-avatar {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: var(--font-heading, sans-serif);
+    font-weight: 800;
+    font-size: 0.85rem;
+    color: color-mix(in srgb, var(--acc-color, var(--plat-accent, #fff)) 80%, #fff);
+    flex-shrink: 0;
+    transition: all 0.2s ease;
+    overflow: hidden;
+}
+
+.account-card:hover .acc-card-avatar {
+    border-color: color-mix(in srgb, var(--plat-accent, #fff) 30%, transparent);
+    background: color-mix(in srgb, var(--plat-accent, #fff) 8%, transparent);
+    box-shadow: 0 0 14px color-mix(in srgb, var(--plat-accent, #fff) 20%, transparent);
+}
+
+/* Discord avatar is round — keep it perfectly round */
+.acc-card-avatar img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    border-radius: 50%;
+}
+
+/* Card info */
+.acc-card-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.acc-card-name {
+    font-size: 0.88rem;
+    font-weight: 600;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    margin-bottom: 3px;
+    letter-spacing: 0.2px;
+}
+
+.acc-card-platform {
+    font-size: 0.7rem;
+    color: #444;
+    font-weight: 500;
+}
+
+/* Card actions */
+.acc-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-shrink: 0;
+}
+
+/* Switch button — juicy, platform-themed */
+.acc-switch-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    border-radius: 8px;
+    color: var(--text-main, #ccc);
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.2, 0.8, 0.2, 1);
+    font-family: var(--font-main, sans-serif);
+    letter-spacing: 0.3px;
+    position: relative;
+    overflow: hidden;
+}
+
+.acc-switch-btn::before {
+    content: '';
+    position: absolute; inset: 0;
+    background: var(--btn-accent, #ffffff);
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.acc-switch-btn:hover {
+    border-color: var(--btn-accent, #ffffff);
+    color: color-mix(in srgb, var(--btn-accent, #ffffff) 100%, #000);
+    transform: translateY(-2px) scale(1.03);
+    box-shadow: 0 6px 20px color-mix(in srgb, var(--btn-accent, #fff) 25%, transparent),
+                0 0 0 1px color-mix(in srgb, var(--btn-accent, #fff) 20%, transparent);
+    background: color-mix(in srgb, var(--btn-accent, #ffffff) 12%, transparent);
+}
+
+.acc-switch-btn:active {
+    transform: translateY(0) scale(0.98);
+}
+
+.acc-switch-btn svg {
+    transition: transform 0.2s ease;
+}
+
+.acc-switch-btn:hover svg {
+    transform: rotate(180deg);
+}
+
+.acc-switch-btn:disabled {
+    opacity: 0.3;
+    cursor: not-allowed;
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+/* Rename button */
+.acc-rename-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.acc-rename-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: #888;
+    transform: scale(1.05);
+}
+
+/* Delete button */
+.acc-delete-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.acc-delete-btn:hover {
+    background: rgba(255, 59, 48, 0.08);
+    border-color: rgba(255, 59, 48, 0.25);
+    color: #ff3b30;
+    transform: scale(1.05);
+}
+
+/* ============================================================ */
+/* 9. EMPTY STATE & LOADING                                     */
+/* ============================================================ */
+
+.accounts-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 60px 20px;
+    gap: 12px;
+    text-align: center;
+}
+
+.accounts-empty p {
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: #2e2e2e;
+}
+
+.accounts-empty span {
+    font-size: 0.75rem;
+    color: #222;
+}
+
+.accounts-loading {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    padding: 40px;
+    color: #2a2a2a;
+    font-size: 0.8rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+}
+
+/* ============================================================ */
+/* 10. SPINNERS                                                  */
+/* ============================================================ */
+
+.acc-spinner {
+    width: 18px;
+    height: 18px;
+    border: 2px solid rgba(255, 255, 255, 0.06);
+    border-top-color: rgba(255, 255, 255, 0.4);
+    border-radius: 50%;
+    animation: accSpin 0.7s linear infinite;
+}
+
+.acc-mini-spinner {
+    width: 11px;
+    height: 11px;
+    border: 2px solid rgba(0, 0, 0, 0.15);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: accSpin 0.7s linear infinite;
+    display: inline-block;
+}
+
+@keyframes accSpin {
+    to { transform: rotate(360deg); }
+}
+
+/* ============================================================ */
+/* 11. COLLAPSED SIDEBAR FIXES                                  */
+/* ============================================================ */
+
+.sidebar.collapsed .sidebar-sub-items .nav-text,
+.sidebar.collapsed .sidebar-section-btn .nav-text,
+.sidebar.collapsed .sidebar-sub-header {
+    opacity: 0;
+    pointer-events: none;
+    display: none;
+}
+
+.sidebar.collapsed .sidebar-section-btn {
+    padding: 0;
+    justify-content: center;
+    width: 48px;
+    height: 48px;
+}
+
+.sidebar.collapsed .sidebar-sub-items {
+    padding-left: 0;
+    border-left: none;
+    margin-left: 0;
+}
+
+/* ============================================================ */
+/* 12. PLATFORM ACTIVE STATES IN SIDEBAR                        */
+/* ============================================================ */
+
+#nav-steam.active   { background: #66c0f4 !important; color: #000 !important; }
+#nav-steam.active .platform-icon { color: #1b2838 !important; }
+
+#nav-epic.active    { background: #f0f0f0 !important; color: #000 !important; }
+#nav-epic.active .platform-icon { color: #000 !important; }
+
+#nav-ea.active      { background: #ff4545 !important; color: #fff !important; }
+#nav-ea.active .platform-icon { color: #fff !important; }
+
+#nav-riot.active    { background: #d32f2e !important; color: #fff !important; }
+#nav-riot.active .platform-icon { color: #fff !important; }
+
+#nav-ubisoft.active { background: #00a8ff !important; color: #fff !important; }
+#nav-ubisoft.active .platform-icon { color: #fff !important; }
+
+#nav-discord.active { background: #5865F2 !important; color: #fff !important; }
+#nav-discord.active .platform-icon { color: #fff !important; }
+
+#nav-steam.active   .platform-count,
+#nav-epic.active    .platform-count { background: rgba(0,0,0,0.12); color: rgba(0,0,0,0.4); }
+
+#nav-ea.active      .platform-count,
+#nav-riot.active    .platform-count,
+#nav-ubisoft.active .platform-count,
+#nav-discord.active .platform-count { background: rgba(0,0,0,0.15); color: rgba(255,255,255,0.45); }
+
+/* ============================================================ */
+/* 13. DISCORD CARD SPECIAL (avatar image)                      */
+/* ============================================================ */
+
+.discord-avatar-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+/* ============================================================ */
+/* 14. ANIMATIONS                                               */
+/* ============================================================ */
+
+@keyframes blobFloat {
+    from { transform: translateY(0px) scale(1); }
+    to   { transform: translateY(-20px) scale(1.05); }
+}
+
+
+/* أضف هذا داخل قسم: 8. ACCOUNT CARDS في ملف accounts.css */
+
+/* Pin/Send to Home button */
+.acc-pin-btn {
+    width: 34px;
+    height: 34px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 8px;
+    color: #333;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.acc-pin-btn:hover {
+    background: rgba(255, 255, 255, 0.05);
+    border-color: rgba(255, 255, 255, 0.1);
+    color: var(--plat-accent, #fff); /* ياخد لون المنصة */
+    transform: scale(1.05);
+}
+
+/* ========================================= */
+/* 📌 PINNED STATE FOR ACCOUNT CARDS         */
+/* ========================================= */
+.acc-pin-btn.is-pinned {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+    color: var(--plat-accent, #fff);
+}
+
+.acc-pin-btn.is-pinned svg {
+    fill: currentColor; /* ده السر اللي بيخلي البيت مفرغ يتحول لبيت مليان */
+}
+
+
+/* ========================================= */
+/* ROCKSTAR GAMES STYLES                     */
+/* ========================================= */
+.acc-btn-rockstar:hover {
+    background: rgba(252, 175, 23, 0.1); 
+    color: #fcaf17;
+    border-color: rgba(252, 175, 23, 0.4);
+    box-shadow: 0 5px 15px rgba(252, 175, 23, 0.2);
+}
+
+.acc-btn-rockstar:hover svg {
+    color: #fcaf17;
+}
+
+/* لو عندك بادج للمنصة في كارت الأكاونت */
+.acc-plat-badge.rockstar {
+    background: #fcaf17;
+    color: #000; /* عشان الكلام يبقى مقروء على الأصفر */
+}
+
+/* ========================================= */
+/* PLATFORM SYNC — All Games & Link Banner   */
+/* ========================================= */
+
+/* ── Toolbar (search + filters + sort) ─────────────────────── */
+.ag-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+/* Search */
+.ag-search-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px;
+    padding: 0 12px;
+    height: 34px;
+    flex: 1;
+    min-width: 160px;
+    max-width: 260px;
+    transition: border-color 0.15s;
+}
+.ag-search-wrap:focus-within {
+    border-color: rgba(255,255,255,0.18);
+}
+.ag-search-wrap svg { color: #444; flex-shrink: 0; }
+.ag-search-input {
+    background: none; border: none; outline: none;
+    color: #ddd; font-size: 0.8rem;
+    font-family: var(--font-main, sans-serif);
+    width: 100%;
+}
+.ag-search-input::placeholder { color: #3a3a3a; }
+
+/* Platform filter pills */
+.ag-filter-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.ag-pill {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.07);
+    background: rgba(255,255,255,0.03);
+    color: #666;
+    font-size: 0.75rem;
+    font-weight: 600;
+    font-family: var(--font-main, sans-serif);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: background 0.15s, border-color 0.15s, color 0.15s;
+    white-space: nowrap;
+}
+.ag-pill:hover {
+    background: rgba(255,255,255,0.07);
+    color: #aaa;
+    border-color: rgba(255,255,255,0.13);
+}
+.ag-pill.active {
+    background: rgba(255,255,255,0.1);
+    border-color: rgba(255,255,255,0.2);
+    color: #fff;
+}
+.ag-pill-icon {
+    width: 13px; height: 13px;
+    object-fit: contain;
+    opacity: 0.7;
+}
+.ag-pill-icon-invert {
+    filter: brightness(0) invert(1);
+}
+
+/* Sort select */
+.ag-sort-wrap {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 8px;
+    padding: 0 12px;
+    height: 34px;
+    transition: border-color 0.15s;
+}
+.ag-sort-wrap svg { color: #444; flex-shrink: 0; }
+.ag-sort-select {
+    background: none; border: none; outline: none;
+    color: #888; font-size: 0.75rem; font-weight: 600;
+    font-family: var(--font-main, sans-serif);
+    cursor: pointer;
+    appearance: none; -webkit-appearance: none;
+    padding-right: 4px;
+}
+.ag-sort-select option { background: #111; color: #ccc; }
+.ag-sort-wrap:focus-within { border-color: rgba(255,255,255,0.15); }
+
+/* Result count */
+.ag-result-count {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #3a3a3a;
+    letter-spacing: 0.5px;
+    margin-left: auto;
+    white-space: nowrap;
+}
+
+/* ── Game card wrapper for All Games ────────────────────────── */
+.agc-card .game-card-img-wrap {
+    position: relative;
+    overflow: hidden;
+}
+
+/* Multi-platform subtle accent */
+.agc-multi .game-card-img-wrap::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: inherit;
+    pointer-events: none;
+    z-index: 4;
+}
+
+/* Gradient from top so badges always readable */
+.agc-top-gradient {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 55px;
+    background: linear-gradient(to bottom, rgba(0,0,0,0.52) 0%, transparent 100%);
+    pointer-events: none;
+    z-index: 2;
+}
+
+/* ── Badge strip — top-right corner ─────────────────────────── */
+.agc-badges-strip {
+    position: absolute;
+    top: 7px; 
+    right: 7px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 3;
+    align-items: flex-end;
+    
+    /* التعديل هنا */
+    opacity: 0;
+    transform: translateY(-5px); /* حركة خفيفة من فوق لتحت */
+    transition: opacity 0.25s ease, transform 0.25s ease;
+    pointer-events: none; /* عشان ميعطلش الكليك على الكارت وهي مخفية */
+}
+
+.agc-card:hover .agc-badges-strip {
+    opacity: 1;
+    transform: translateY(0);
+    pointer-events: auto;
+}
+
+/* ── Individual badge ─────────────────────────────────────────── */
+.agc-badge {
+    --bc: #ffffff;
+    width: 24px; height: 24px;
+    border-radius: 7px;
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid color-mix(in srgb, var(--bc) 26%, transparent);
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4);
+    transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
+    flex-shrink: 0;
+}
+
+.agc-card:hover .agc-badge {
+    border-color: color-mix(in srgb, var(--bc) 52%, transparent);
+    box-shadow: 0 0 8px color-mix(in srgb, var(--bc) 20%, transparent),
+                0 2px 6px rgba(0,0,0,0.4);
+    transform: scale(1.06);
+}
+
+.agc-badge-img {
+    width: 13px; height: 13px;
+    object-fit: contain; display: block;
+    opacity: 0.8;
+    transition: opacity 0.2s;
+}
+.agc-card:hover .agc-badge-img { opacity: 1; }
+
+.agc-badge-invert {
+    filter: brightness(0) invert(1) !important;
+    opacity: 0.75;
+}
+.agc-card:hover .agc-badge-invert { opacity: 1; }
+
+.agc-badge-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%; opacity: 0.85;
+}
+
+.agc-badge-overflow {
+    font-size: 0.55rem; font-weight: 800;
+    color: rgba(255,255,255,0.5);
+    letter-spacing: 0.3px;
+    font-family: var(--font-heading, sans-serif);
+    border-color: rgba(255,255,255,0.1);
+}
+.agc-card:hover .agc-badge-overflow {
+    color: rgba(255,255,255,0.9);
+    border-color: rgba(255,255,255,0.28);
+}
+
+.agc-placeholder {
+    background: linear-gradient(135deg, #111 0%, #0a0a0a 100%) !important;
+    display: flex !important;
+    align-items: center; justify-content: center;
+}
+
+/* بانر الـ "Connect Platform" */
+.platform-link-banner {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 12px;
+    padding: 16px 20px;
+    margin-bottom: 20px;
+}
+
+.epic-link-banner {
+    border-color: rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.04);
+}
+
+.plb-icon {
+    flex-shrink: 0;
+    width: 44px;
+    height: 44px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.plb-text {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+}
+
+.plb-text strong {
+    color: #ddd;
+    font-size: 0.88rem;
+}
+
+.plb-text span {
+    color: #555;
+    font-size: 0.78rem;
+    line-height: 1.4;
+}
+
+.plb-btn {
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    background: rgba(255,255,255,0.07);
+    border: 1px solid rgba(255,255,255,0.15);
+    color: #ccc;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.plb-btn:hover {
+    background: rgba(255,255,255,0.12);
+    color: #fff;
+    border-color: rgba(255,255,255,0.25);
+}
+
+/* Mini list في الـ Link Library panel */
+.epic-library-mini-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.epic-lib-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.04);
+    transition: background 0.15s;
+}
+
+.epic-lib-row:hover {
+    background: rgba(255,255,255,0.05);
+}
+
+.epic-lib-thumb {
+    width: 36px;
+    height: 48px;
+    border-radius: 4px;
+    object-fit: cover;
+    flex-shrink: 0;
+}
+
+.epic-lib-thumb-placeholder {
+    background: rgba(255,255,255,0.06);
+}
+
+.epic-lib-title {
+    flex: 1;
+    color: #ccc;
+    font-size: 0.84rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Platforms Modal Styling */
+.platforms-modal {
+    width: 480px;
+    background: #0f0f0f;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.platforms-grid {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.platform-card {
+    display: flex;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.05);
+    padding: 15px;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    border: 1px solid transparent;
+}
+
+.platform-card:hover {
+    background: rgba(255, 255, 255, 0.08);
+    border-color: rgba(255, 255, 255, 0.15);
+}
+
+.platform-icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    font-size: 20px;
+    margin-right: 15px;
+}
+.epic-icon { background: #313131; color: #fff; }
+
+.platform-info h3 { margin: 0; font-size: 16px; color: #fff; }
+.platform-info span { font-size: 12px; color: #888; }
+.arrow-icon { margin-left: auto; color: #666; font-size: 20px; }
+
+.details-header {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    margin-bottom: 20px;
+    padding-bottom: 15px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.back-btn {
+    background: none; border: none; color: #888; cursor: pointer; font-size: 14px;
+}
+.back-btn:hover { color: #fff; }
+
+.accounts-list-container {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    max-height: 300px;
+    overflow-y: auto;
+    margin-bottom: 20px;
+}
+
+.linked-account-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: rgba(255, 255, 255, 0.03);
+    padding: 12px 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.acc-name h4 { margin: 0; font-size: 15px; color: #fff; }
+.acc-name span { font-size: 12px; color: #aaa; }
+
+.btn-unlink {
+    background: rgba(255, 59, 48, 0.1);
+    color: #ff3b30;
+    border: 1px solid rgba(255, 59, 48, 0.2);
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    transition: 0.2s;
+}
+.btn-unlink:hover { background: #ff3b30; color: #fff; }
+
+.platform-actions { display: flex; gap: 10px; }
+.platform-actions button { flex: 1; padding: 12px; border-radius: 8px; font-weight: 600; cursor: pointer; border: none; }
+.add-acc-btn { background: #fff; color: #000; }
+.add-acc-btn:hover { background: #ddd; }
+.sync-btn { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.sync-btn:hover { background: rgba(255, 255, 255, 0.15); }
+
+/* Platforms Modal - Split View Styles */
+.platform-nav-item {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: 0.2s;
+    color: #aaa;
+    border: 1px solid transparent;
+    margin-bottom: 8px;
+}
+
+.platform-nav-item:hover {
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+}
+
+.platform-nav-item.active {
+    background: rgba(255,255,255,0.08);
+    color: #fff;
+    border-color: rgba(255,255,255,0.1);
+}
+
+/* ========================================= */
+/* ALL GAMES GRID (Updated Size - Slightly Larger) */
+/* ========================================= */
+#allGamesGrid {
+    /* كبرنا الحد الأدنى للكارت لـ 160px بدل 130px */
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)) !important;
+    gap: 20px; /* زودنا المسافة بين الكروت شوية لشكل أشيك */
+}
+
+#allGamesGrid .game-card {
+    /* أزلنا content-visibility:auto لأنه كان بيسبب scroll jumps */
+    contain: layout style;
+}
+
+/* ضبط طول غلاف اللعبة ليناسب العرض الجديد */
+#allGamesGrid .game-card-img-wrap {
+    height: 230px !important; 
+}
+
+#allGamesGrid .game-card-title {
+    font-size: 0.95rem; /* كبرنا الخط حاجة بسيطة عشان يليق مع الحجم الجديد */
+    font-weight: 600;
+}
+#allGamesGrid .game-card-info {
+    display: none !important;
+}
+
+/* Native Lazy Load Animation */
+#allGamesGrid .native-lazy-load {
+    opacity: 0;
+    transition: opacity 0.3s ease-out; /* نعومة الظهور */
+    object-fit: cover;
+    width: 100%;
+    height: 100%;
+    will-change: opacity;
+}
+
+#allGamesGrid .native-lazy-load.loaded {
+    opacity: 1;
+}
+
+@keyframes imagePopIn {
+    0% { opacity: 0; filter: brightness(0.5); }
+    100% { opacity: 1; filter: brightness(1); }
+}
+
+
+/* ============================================================ */
+/*  SKELETON LOADER ANIMATION                                   */
+/* ============================================================ */
+.gd-skeleton {
+    background: linear-gradient(90deg, rgba(255, 255, 255, 0.05) 25%, rgba(255, 255, 255, 0.1) 50%, rgba(255, 255, 255, 0.05) 75%);
+    background-size: 200% 100%;
+    animation: gdSkeletonShimmer 1.5s infinite linear;
+    border-radius: 4px;
+}
+
+@keyframes gdSkeletonShimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+}
+
+/* ========================================= */
+/* 🏷️ GENRE TAGS STYLING                     */
+/* ========================================= */
+.gd-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 12px;
+}
+
+.gd-genre-tag {
+    background: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+    color: #ddd;
+    padding: 6px 14px;
+    border-radius: 20px; /* شكل الـ Pill (حبة الدواء) */
+    font-size: 0.78rem;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: all 0.2s ease;
+    cursor: default;
+}
+
+.gd-genre-tag:hover {
+    background: rgba(255, 255, 255, 0.1);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-2px);
+}
+
+
+/* ========================================= */
+/* 📸 SCREENSHOTS GRID FIX                   */
+/* ========================================= */
+.gd-screenshots {
+    display: grid;
+    /* بيظبط عدد الصور في الصف أوتوماتيك حسب حجم الشاشة */
+    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); 
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.gd-screenshot-thumb {
+    cursor: pointer;
+    border-radius: 8px;
+    overflow: hidden;
+    /* السحر هنا: بيحجز مكان الصورة 16:9 قبل ما تحمل عشان متعملش زحلقة */
+    aspect-ratio: 16 / 9; 
+    background: rgba(255, 255, 255, 0.03); /* لون رمادي خفيف مكان الصورة وهي بتحمل */
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.gd-screenshot-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    opacity: 0;
+    animation: gdFadeIn 0.3s ease-out forwards; /* ظهور سريع وناعم */
+}
+
+/* حركة شيك لما تقف على الصورة بالماوس */
+.gd-screenshot-thumb:hover {
+    transform: scale(1.03);
+    box-shadow: 0 8px 25px rgba(0, 0, 0, 0.6);
+    border-color: rgba(255, 255, 255, 0.15);
+    z-index: 2;
+}
+
+@keyframes gdFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}

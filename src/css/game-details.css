@@ -1,0 +1,605 @@
+/* ============================================================
+   BADDEL LAUNCHER - GAME DETAILS PAGE (APPLE TV / PREMIUM EDITION)
+   Aesthetic: Ultra-Modern, Minimalist, Cinematic Dark
+   ============================================================ */
+
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;500;600;700&family=Outfit:wght@400;600;800;900&display=swap');
+
+/* ── CSS Variables ── */
+:root {
+    --gd-bg: #000000;
+    --gd-surface: rgba(255, 255, 255, 0.03);
+    --gd-surface-hover: rgba(255, 255, 255, 0.08);
+    --gd-border: rgba(255, 255, 255, 0.06);
+    --gd-text: #f5f5f7;
+    --gd-text-muted: #86868b;
+    --gd-accent: #ffffff;
+    --gd-green: #30d158;
+    --gd-hero-height: 55vh;
+    --gd-min-hero-height: 450px;
+    --gd-sidebar-width: 280px;
+    --gd-radius: 16px;
+    --gd-radius-sm: 10px;
+    --gd-bezier: cubic-bezier(0.2, 0.8, 0.2, 1);
+    --font-main: '-apple-system', 'BlinkMacSystemFont', 'Montserrat', sans-serif;
+    --font-heading: '-apple-system', 'BlinkMacSystemFont', 'Outfit', sans-serif;
+}
+
+/* ============================================================
+   ROOT VIEW
+   ============================================================ */
+#gameDetailsView {
+    position: absolute;
+    inset: 0;
+    background: var(--gd-bg);
+    overflow-y: auto;
+    overflow-x: hidden;
+    font-family: var(--font-main);
+    color: var(--gd-text);
+    scrollbar-width: thin;
+    scrollbar-color: rgba(255,255,255,0.2) transparent;
+}
+
+#gameDetailsView::-webkit-scrollbar { width: 6px; }
+#gameDetailsView::-webkit-scrollbar-track { background: transparent; }
+#gameDetailsView::-webkit-scrollbar-thumb { background: #333; border-radius: 10px; }
+#gameDetailsView::-webkit-scrollbar-thumb:hover { background: #555; }
+
+/* ============================================================
+   BACK BAR (FROSTED GLASS)
+   ============================================================ */
+.gd-back-bar {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 16px 40px;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    background: rgba(0, 0, 0, 0.5);
+    backdrop-filter: blur(25px) saturate(180%);
+    -webkit-backdrop-filter: blur(25px) saturate(180%);
+    border-bottom: 1px solid var(--gd-border);
+}
+
+.gd-back-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    color: var(--gd-text);
+    padding: 8px 16px;
+    border-radius: 20px;
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s var(--gd-bezier);
+}
+.gd-back-btn:hover {
+    background: rgba(255,255,255,0.1);
+    transform: scale(1.05);
+}
+
+.gd-breadcrumb {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 0.85rem;
+    font-weight: 500;
+}
+.gd-breadcrumb-library { color: var(--gd-text-muted); }
+.gd-breadcrumb-sep { color: #444; }
+.gd-breadcrumb-name { color: var(--gd-text); }
+
+/* ============================================================
+   HERO SECTION (CINEMATIC)
+   ============================================================ */
+.gd-hero {
+    position: relative;
+    height: var(--gd-hero-height);
+    min-height: var(--gd-min-hero-height);
+    overflow: hidden;
+    flex-shrink: 0;
+}
+
+.gd-hero-bg {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center 20%;
+    transform: scale(1.02);
+    transition: background-image 0.8s ease;
+    filter: brightness(0.6) saturate(1.2);
+    animation: slowHeroZoom 20s infinite alternate linear;
+}
+
+@keyframes slowHeroZoom {
+    from { transform: scale(1); }
+    to { transform: scale(1.05); }
+}
+
+.gd-hero-vignette {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(to top, #000000 0%, rgba(0,0,0,0.4) 40%, transparent 100%),
+                linear-gradient(to right, rgba(0,0,0,0.7) 0%, transparent 50%);
+    pointer-events: none;
+}
+
+/* ❌ Remove generic gamer lines */
+.gd-hero-scanlines { display: none; }
+
+.gd-hero-content {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column; /* هنرص العناصر فوق بعض */
+    justify-content: flex-end; /* نزقهم لتحت */
+    align-items: flex-start; /* نجيبهم كلهم عالشمال */
+    padding: 50px 40px;
+    /* السطر ده بيمنع أي كلام يروح ناحية اليمين ويستخبى تحت الكارت */
+    padding-right: calc(var(--gd-sidebar-width) + 80px); 
+}
+
+.gd-title-block {
+    flex: none;
+    width: 100%;
+    margin-bottom: 24px; /* مسافة بين العنوان والزراير */
+}
+
+.gd-logo {
+    max-height: 100px;
+    max-width: 350px;
+    object-fit: contain;
+    margin-bottom: 20px;
+    filter: drop-shadow(0 10px 20px rgba(0,0,0,0.5));
+}
+
+.gd-title {
+    font-family: var(--font-heading);
+    font-size: 3.5rem;
+    font-weight: 900;
+    color: #fff;
+    line-height: 1.1;
+    margin: 0 0 15px 0;
+    letter-spacing: -0.5px;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+
+.gd-platforms-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 10px;
+}
+
+.gd-plat-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 14px;
+    background: rgba(255,255,255,0.08);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fff;
+}
+.gd-plat-badge img { width: 14px; height: 14px; filter: brightness(0) invert(1); }
+
+/* ── Hero Actions ── */
+.gd-action-block {
+    display: flex;
+    flex-direction: row; /* هنخلي زرار اللعب والـ Stats جنب بعض */
+    align-items: center;
+    gap: 24px;
+    padding-bottom: 0;
+    width: 100%;
+    flex-wrap: wrap; /* عشان لو الشاشة صغرت ينزلوا سطر جديد شيك */
+}
+.gd-play-btn {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 14px 40px;
+    background: var(--gd-accent);
+    color: #000;
+    border: none;
+    border-radius: 14px;
+    font-family: var(--font-heading);
+    font-size: 1.1rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: all 0.3s var(--gd-bezier);
+    box-shadow: 0 10px 30px rgba(255,255,255,0.2);
+    flex-shrink: 0;
+}
+.gd-play-btn:hover {
+    transform: translateY(-4px) scale(1.02);
+    box-shadow: 0 15px 40px rgba(255,255,255,0.3);
+    background: #fff;
+}
+
+.gd-play-btn:active { transform: scale(0.98); }
+
+.gd-play-btn.install-mode {
+    background: rgba(255,255,255,0.1);
+    color: #fff;
+    border: 1px solid rgba(255,255,255,0.2);
+    box-shadow: none;
+}
+.gd-play-btn.install-mode:hover { background: rgba(255,255,255,0.2); transform: translateY(-2px); }
+
+/* Download Block iOS Style */
+.gd-download-block {
+    background: rgba(20, 20, 20, 0.7);
+    backdrop-filter: blur(20px);
+    border: 1px solid var(--gd-border);
+    border-radius: 14px;
+    padding: 16px;
+    width: 280px;
+}
+.gd-dl-header { display: flex; justify-content: space-between; margin-bottom: 10px; }
+.gd-dl-status { font-size: 0.8rem; font-weight: 600; }
+.gd-dl-speed { font-size: 0.75rem; color: var(--gd-text-muted); }
+.gd-dl-bar-wrap { height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; overflow: hidden; margin-bottom: 8px; }
+.gd-dl-bar { height: 100%; background: var(--gd-accent); width: 0%; transition: width 0.3s ease; }
+.gd-dl-footer { display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--gd-text-muted); }
+
+.gd-quick-stats { 
+    display: flex; 
+    gap: 20px; 
+    align-items: center;
+}
+.gd-qs-item { display: flex; align-items: center; gap: 8px; font-size: 0.8rem; color: var(--gd-text-muted); font-weight: 600; }
+
+/* ============================================================
+   BODY LAYOUT
+   ============================================================ */
+.gd-body {
+    display: flex;
+    min-height: 50vh;
+    padding: 0 40px 60px 40px;
+    gap: 40px;
+    max-width: 1600px;
+    margin: 0 auto;
+}
+.gd-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 10px; }
+.gd-sidebar { width: var(--gd-sidebar-width); flex-shrink: 0; display: flex; flex-direction: column; gap: 24px; margin-top: -120px; z-index: 10; }
+
+/* ============================================================
+   APPLE STYLE TABS (Segmented Control)
+   ============================================================ */
+.gd-tabs {
+    display: inline-flex;
+    background: rgba(255,255,255,0.03);
+    padding: 5px;
+    border-radius: 12px;
+    border: 1px solid var(--gd-border);
+    margin-bottom: 30px;
+    gap: 5px;
+    align-self: flex-start;
+}
+
+.gd-tab {
+    padding: 10px 20px;
+    background: transparent;
+    border: none;
+    color: var(--gd-text-muted);
+    font-family: var(--font-main);
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.3s var(--gd-bezier);
+}
+.gd-tab:hover { color: var(--gd-text); background: rgba(255,255,255,0.05); }
+.gd-tab.active {
+    background: rgba(255,255,255,0.15);
+    color: #fff;
+    box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+}
+
+.gd-tab-content { animation: gdFadeIn 0.4s var(--gd-bezier); }
+@keyframes gdFadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+/* ============================================================
+   MAIN CONTENT SECTIONS
+   ============================================================ */
+.gd-section { margin-bottom: 40px; }
+
+.gd-section-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: var(--font-heading);
+    font-size: 1.2rem;
+    font-weight: 700;
+    color: #fff;
+    margin: 0 0 16px 0;
+    padding-bottom: 0;
+    border-bottom: none;
+}
+.gd-section-title svg { color: var(--gd-text-muted); width: 20px; height: 20px; }
+
+.gd-desc {
+    font-size: 0.95rem;
+    line-height: 1.8;
+    color: #aaa;
+    font-weight: 500;
+}
+
+/* ── Trailer ── */
+.gd-trailer-wrap {
+    border-radius: var(--gd-radius);
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 16/9;
+    border: 1px solid var(--gd-border);
+    box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+    position: relative;
+}
+.gd-trailer { width: 100%; height: 100%; border: none; display: block; }
+.gd-trailer-ext-btn {
+    position: absolute; top: 15px; right: 15px;
+    padding: 8px 14px; background: rgba(0,0,0,0.5); backdrop-filter: blur(10px);
+    border: 1px solid rgba(255,255,255,0.1); color: #fff; font-size: 0.8rem;
+    border-radius: 8px; cursor: pointer; transition: 0.3s; display: flex; gap: 6px; align-items: center;
+}
+.gd-trailer-ext-btn:hover { background: rgba(255,255,255,0.1); transform: scale(1.05); }
+
+/* ── Clean Info Grid ── */
+.gd-info-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+    gap: 16px;
+}
+.gd-info-item {
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    border-radius: var(--gd-radius-sm);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: 0.3s ease;
+}
+.gd-info-item:hover { background: var(--gd-surface-hover); border-color: rgba(255,255,255,0.15); }
+.gd-info-label { font-size: 0.7rem; text-transform: uppercase; letter-spacing: 1px; color: var(--gd-text-muted); font-weight: 700; }
+.gd-info-value { font-size: 0.95rem; color: #fff; font-weight: 600; }
+
+/* ── Tags ── */
+.gd-tags { display: flex; flex-wrap: wrap; gap: 10px; }
+.gd-tag {
+    padding: 8px 16px;
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    border-radius: 30px;
+    font-size: 0.8rem;
+    color: #ccc;
+    font-weight: 600;
+    transition: all 0.2s ease;
+}
+.gd-tag:hover { background: rgba(255,255,255,0.1); color: #fff; transform: translateY(-2px); }
+
+/* ── Screenshots ── */
+.gd-screenshots {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+}
+.gd-screenshot {
+    aspect-ratio: 16/9;
+    border-radius: var(--gd-radius-sm);
+    overflow: hidden;
+    cursor: pointer;
+    border: 1px solid var(--gd-border);
+    transition: all 0.4s var(--gd-bezier);
+    position: relative;
+}
+.gd-screenshot:hover {
+    transform: scale(1.03) translateY(-5px);
+    box-shadow: 0 15px 30px rgba(0,0,0,0.6);
+    border-color: rgba(255,255,255,0.2);
+    z-index: 2;
+}
+.gd-screenshot img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
+.gd-screenshot:hover img { transform: scale(1.05); }
+
+/* ============================================================
+   SIDEBAR (RIGHT)
+   ============================================================ */
+.gd-cover-wrap {
+    position: relative;
+    border-radius: 18px;
+    overflow: hidden;
+    aspect-ratio: 3/4;
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.08);
+    box-shadow: 0 20px 50px rgba(0,0,0,0.7);
+    transition: transform 0.5s var(--gd-bezier), box-shadow 0.5s ease;
+}
+.gd-cover-wrap:hover {
+    transform: scale(1.03) translateY(-10px);
+    box-shadow: 0 30px 60px rgba(0,0,0,0.9);
+    border-color: rgba(255,255,255,0.2);
+}
+.gd-cover { width: 100%; height: 100%; object-fit: cover; }
+
+.gd-rating-block {
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    border-radius: var(--gd-radius-sm);
+    padding: 20px;
+    text-align: center;
+    backdrop-filter: blur(10px);
+}
+.gd-rating-score {
+    font-family: var(--font-heading);
+    font-size: 2.5rem;
+    font-weight: 800;
+    color: #fff;
+    margin-bottom: 5px;
+}
+.gd-rating-label { font-size: 0.75rem; color: var(--gd-text-muted); font-weight: 600; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Sidebar Clean Details */
+.gd-detail-list {
+    display: flex;
+    flex-direction: column;
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    border-radius: var(--gd-radius-sm);
+    padding: 5px;
+}
+.gd-detail-row {
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--gd-border);
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+.gd-detail-row:last-child { border-bottom: none; }
+.gd-detail-label { font-size: 0.7rem; color: var(--gd-text-muted); font-weight: 600; text-transform: uppercase; }
+.gd-detail-value { font-size: 0.85rem; color: #fff; font-weight: 500; }
+
+/* ============================================================
+   REQUIREMENTS TAB (CLEAN CARDS)
+   ============================================================ */
+.gd-req-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+@media (max-width: 800px) { .gd-req-grid { grid-template-columns: 1fr; } }
+
+.gd-req-card {
+    background: rgba(255,255,255,0.02);
+    border: 1px solid var(--gd-border);
+    border-radius: var(--gd-radius);
+    padding: 24px;
+    backdrop-filter: blur(10px);
+}
+.gd-req-badge {
+    display: inline-block;
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    margin-bottom: 20px;
+    background: rgba(255,255,255,0.05);
+    color: #fff;
+}
+.gd-req-list { display: flex; flex-direction: column; gap: 12px; }
+.gd-req-row { display: flex; flex-direction: column; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid rgba(255,255,255,0.03); }
+.gd-req-row:last-child { border-bottom: none; padding-bottom: 0; }
+.gd-req-label { font-size: 0.7rem; color: var(--gd-text-muted); font-weight: 700; text-transform: uppercase; }
+.gd-req-val { font-size: 0.85rem; color: #ccc; font-weight: 500; line-height: 1.5; }
+
+/* ============================================================
+   ACCOUNTS TAB
+   ============================================================ */
+.gd-accounts-list { display: flex; flex-direction: column; gap: 12px; }
+.gd-account-item {
+    display: flex; align-items: center; gap: 16px;
+    padding: 16px 20px; background: var(--gd-surface);
+    border: 1px solid var(--gd-border); border-radius: 14px;
+    transition: all 0.3s ease;
+}
+.gd-account-item:hover { background: var(--gd-surface-hover); border-color: rgba(255,255,255,0.15); transform: translateY(-2px); }
+.gd-account-plat-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 8px; }
+.gd-account-plat-icon img { width: 20px; height: 20px; object-fit: contain; }
+.gd-account-info { flex: 1; }
+.gd-account-name { font-size: 0.95rem; font-weight: 600; color: #fff; }
+.gd-account-plat { font-size: 0.75rem; color: var(--gd-text-muted); }
+.gd-account-status { padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
+.gd-account-status.owned { background: rgba(48, 209, 88, 0.15); color: var(--gd-green); }
+
+/* ============================================================
+   LIGHTBOX (GALLERY POPUP)
+   ============================================================ */
+.gd-lightbox {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: rgba(0,0,0,0.95) !important;
+    backdrop-filter: blur(25px) !important;
+    z-index: 999999 !important; /* عشان يغطي على أي حاجة في اللانشر */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 32px;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s ease;
+}
+.gd-lightbox.active {
+    opacity: 1;
+    pointer-events: all;
+}
+/* ============================================================
+   LIGHTBOX IMAGE (SCALING FIXED)
+   ============================================================ */
+.gd-lightbox-img {
+    /* بنستخدم الـ Viewport Units عشان نفرض مساحة 90% من عرض وطول الشاشة كحد أقصى */
+    max-width: 90vw; 
+    max-height: 90vh;
+    
+    /* دي أهم خاصية: بتخلي الصورة "تحتوي" نفسها جوة الـ max-width/height من غير ما تتمط */
+    object-fit: contain; 
+    
+    /* عشان نحافظ على شياكة الحواف المدورة والضلال */
+    border-radius: 12px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.9);
+    
+    /* منع أي تداخل مع الأسهم في حالات نادرة */
+    display: block; 
+}.gd-lightbox-close {
+    position: absolute; top: 30px; right: 40px; font-size: 2rem; color: #fff;
+    background: rgba(255,255,255,0.1); border: none; width: 44px; height: 44px;
+    border-radius: 50%; cursor: pointer; display: flex; align-items: center; justify-content: center; transition: 0.2s;
+}
+.gd-lightbox-close:hover { background: rgba(255,255,255,0.2); transform: scale(1.1); }
+
+/* ============================================================
+   PAGE LOAD ANIMATION
+   ============================================================ */
+#gameDetailsView .gd-body { animation: gdSlideUp 0.6s var(--gd-bezier) both; }
+@keyframes gdSlideUp {
+    from { opacity: 0; transform: translateY(30px); }
+    to { opacity: 1; transform: translateY(0); }
+}
+
+
+/* ============================================================
+   LIGHTBOX NAVIGATION ARROWS
+   ============================================================ */
+.gd-lightbox-nav {
+    position: absolute;
+    top: 50%;
+    transform: translateY(-50%);
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #fff;
+    width: 56px;
+    height: 56px;
+    border-radius: 50%;
+    font-size: 1.5rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.3s var(--gd-bezier);
+    z-index: 2;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+}
+.gd-lightbox-nav:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: translateY(-50%) scale(1.1);
+}
+.gd-lightbox-nav.prev { left: 40px; }
+.gd-lightbox-nav.next { right: 40px; }
