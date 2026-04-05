@@ -94,12 +94,15 @@ async function _ensureBridgeRunning() {
                     const coverUrl = await downloadAndCacheCover(
                         `https://steamcdn-a.akamaihd.net/steam/apps/${g.appid}/library_600x900.jpg`, g.id
                     );
+                    const accs = steamConnector.getAccounts();
+                    const ids = accs.map((a) => String(a.id));
                     map.set(g.id, {
                         id: g.id, title: g.title, platform: 'steam', source: 'steam',
                         coverUrl, appName: String(g.appid), playtime: 0,
                         lastSynced: new Date().toISOString(),
-                        ownedBy: steamConnector.getAccounts().map(a => a.displayName),
-                        ownedByAccountIds: steamConnector.getAccounts().map(a => a.id),
+                        ownedBy: accs.map((a) => a.displayName),
+                        ownedByAccountIds: ids,
+                        steamLicensedAccountIds: ids,
                     });
                 }
             }
@@ -313,24 +316,29 @@ const steamConnector = {
                         game.id
                     );
 
+                    const aid = String(account.id);
                     if (mergedLibrary.has(game.id)) {
                         const existing = mergedLibrary.get(game.id);
                         if (!existing.ownedBy.includes(account.displayName))
                             existing.ownedBy.push(account.displayName);
-                        if (!existing.ownedByAccountIds.includes(account.id))
-                            existing.ownedByAccountIds.push(account.id);
+                        if (!existing.ownedByAccountIds.map(String).includes(aid))
+                            existing.ownedByAccountIds.push(aid);
+                        if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
+                        if (!existing.steamLicensedAccountIds.map(String).includes(aid))
+                            existing.steamLicensedAccountIds.push(aid);
                     } else {
                         mergedLibrary.set(game.id, {
-                            id:                game.id,
-                            title:             game.title,
-                            platform:          'steam',
-                            source:            'steam',
+                            id:                      game.id,
+                            title:                   game.title,
+                            platform:                'steam',
+                            source:                  'steam',
                             coverUrl,
-                            appName:           String(game.appid),
-                            playtime:          0,
-                            lastSynced:        new Date().toISOString(),
-                            ownedBy:           [account.displayName],
-                            ownedByAccountIds: [account.id],
+                            appName:                 String(game.appid),
+                            playtime:                0,
+                            lastSynced:              new Date().toISOString(),
+                            ownedBy:                 [account.displayName],
+                            ownedByAccountIds:       [aid],
+                            steamLicensedAccountIds: [aid],
                         });
                     }
                 }
@@ -344,18 +352,14 @@ const steamConnector = {
         // ══════════════════════════════════════════════════════
         try {
             const localGames = await getLocalSteamGames();
-            const allDisplayNames = accounts.map(a => a.displayName);
-            const allAccountIds   = accounts.map(a => a.id);
             let addedFromLocal = 0;
 
             for (const game of localGames) {
                 const gameId = `steam_${game.appid}`;
                 if (mergedLibrary.has(gameId)) {
+                    // Keep steamLicensedAccountIds / ownedBy* as from API only — do not mark every linked account as "owning" a family-shared install.
                     const existing = mergedLibrary.get(gameId);
-                    for (const name of allDisplayNames)
-                        if (!existing.ownedBy.includes(name)) existing.ownedBy.push(name);
-                    for (const id of allAccountIds)
-                        if (!existing.ownedByAccountIds.includes(id)) existing.ownedByAccountIds.push(id);
+                    if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
                 } else {
                     addedFromLocal++;
                     const coverUrl = await downloadAndCacheCover(
@@ -363,16 +367,18 @@ const steamConnector = {
                         gameId
                     );
                     mergedLibrary.set(gameId, {
-                        id:                gameId,
-                        title:             game.name,
-                        platform:          'steam',
-                        source:            'steam',
+                        id:                      gameId,
+                        title:                   game.name,
+                        platform:                'steam',
+                        source:                  'steam',
                         coverUrl,
-                        appName:           String(game.appid),
-                        playtime:          0,
-                        lastSynced:        new Date().toISOString(),
-                        ownedBy:           [...allDisplayNames],
-                        ownedByAccountIds: [...allAccountIds],
+                        appName:                 String(game.appid),
+                        playtime:                0,
+                        lastSynced:              new Date().toISOString(),
+                        ownedBy:                 [],
+                        ownedByAccountIds:       [],
+                        steamLicensedAccountIds: [],
+                        installOnly:             true,
                     });
                 }
             }
@@ -709,7 +715,12 @@ async function enrichProfilesWithSyncData(platform, switcherProfiles) {
         return normalized.map(profile => {
             const realId = profile.platformAccountId ? String(profile.platformAccountId) : String(profile.id || profile.accountId || profile.username || profile.name);
             const isSynced = syncedAccounts.some(sa => String(sa.id) === realId);
-            const ownedGames = library.filter(g => g.ownedByAccountIds && g.ownedByAccountIds.some(id => String(id) === realId)).map(g => g.title);
+            const ownedGames = library.filter((g) => {
+                if (platform === 'steam' && Array.isArray(g.steamLicensedAccountIds)) {
+                    return g.steamLicensedAccountIds.some((id) => String(id) === realId);
+                }
+                return g.ownedByAccountIds && g.ownedByAccountIds.some((id) => String(id) === realId);
+            }).map((g) => g.title);
 
             return { ...profile, isSynced, ownedGames, _resolvedSyncId: realId };
         });

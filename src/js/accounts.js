@@ -1607,9 +1607,12 @@ async function renderPlatformAccounts(platform) {
         for (const acc of accounts) {
             // بنعد الألعاب اللي الحساب ده بيملكها
             const aid = String(acc.id);
-            const gamesCount = games.filter(g =>
-                g.ownedByAccountIds && g.ownedByAccountIds.some(id => String(id) === aid)
-            ).length;
+            const gamesCount = games.filter((g) => {
+                if (g.platform === 'steam' && Array.isArray(g.steamLicensedAccountIds)) {
+                    return g.steamLicensedAccountIds.some((id) => String(id) === aid);
+                }
+                return g.ownedByAccountIds && g.ownedByAccountIds.some((id) => String(id) === aid);
+            }).length;
             
             html += `
                 <div class="linked-account-item">
