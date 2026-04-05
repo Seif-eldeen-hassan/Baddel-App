@@ -522,7 +522,7 @@ async function _plLoadAccounts(platKey) {
         }
 
         const noSwitchRow = `
-            <div class="pl-account-row no-switch" id="plAcct-__none__" onclick="plSelectAccount(null)" data-id="__none__">
+            <div class="pl-account-row no-switch" id="plAcct-__none__" onclick="plSelectAccount(null)" data-id="__none__" data-steam-license="yes">
                 <div class="pl-account-avatar no-switch-icon">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5,3 19,12 5,21"/></svg>
                 </div>
@@ -564,15 +564,17 @@ async function _plLoadAccounts(platKey) {
             }
 
             let badge = '';
-            if      (p.ownershipStatus === 'owned')     badge = `<div class="pl-owned-badge pl-badge-owned">✓ Owns Game</div>`;
-            else if (p.ownershipStatus === 'not-owned') badge = `<div class="pl-owned-badge pl-badge-not-owned">✗ Doesn't Own</div>`;
+            const steamLic = platKey !== 'steam' ? 'yes' : (p.ownershipStatus === 'owned' ? 'yes' : p.ownershipStatus === 'install-only' ? 'no' : 'unk');
+            if      (p.ownershipStatus === 'owned')       badge = `<div class="pl-owned-badge pl-badge-owned">✓ Licensed</div>`;
+            else if (p.ownershipStatus === 'install-only') badge = `<div class="pl-owned-badge pl-badge-install-only" title="Files may be on this PC, but this account has no Steam license. Steam may refuse to launch.">Installed · No license</div>`;
+            else if (p.ownershipStatus === 'not-owned')   badge = `<div class="pl-owned-badge pl-badge-not-owned">✗ Doesn't Own</div>`;
             else if (p.ownershipStatus === 'unknown' && p._hasLibraryData)   badge = `<div class="pl-owned-badge pl-badge-unknown" title="Sync this account in the Accounts tab to verify ownership">— Sync to verify</div>`;
-            else if (p.isSynced)                        badge = `<div class="pl-owned-badge pl-badge-synced">Synced</div>`;
+            else if (p.isSynced)                          badge = `<div class="pl-owned-badge pl-badge-synced">Synced</div>`;
 
             return `
                 <div class="pl-account-row" id="plAcct-${p.id}"
                      onclick="plSelectAccount('${p.id}')"
-                     data-id="${p.id}" data-name="${p.displayName}" data-username="${p.username || p.id}">
+                     data-id="${p.id}" data-name="${p.displayName}" data-username="${p.username || p.id}" data-steam-license="${steamLic}">
                     <div class="pl-account-avatar" style="background:${accent}22;border-color:${accent}44">
                         ${p.avatar ? `<img src="${p.avatar}" alt="${p.displayName}">` : `<span>${initials}</span>`}
                     </div>
@@ -587,8 +589,8 @@ async function _plLoadAccounts(platKey) {
 
         list.innerHTML = noSwitchRow + accountRows;
 
-        const firstOwned = finalProfiles.find(p => p.ownershipStatus === 'owned' && !p.notInSwitcher);
-        const firstSelectable = finalProfiles.find(p => !p.notInSwitcher);
+        const firstOwned = finalProfiles.find((p) => p.ownershipStatus === 'owned' && !p.notInSwitcher);
+        const firstSelectable = finalProfiles.find((p) => !p.notInSwitcher);
         plSelectAccount(firstOwned?.id || firstSelectable?.id || null);
 
         // 🟢 3. إظهار البيانات بسلاسة
@@ -613,12 +615,16 @@ window._plSelectedAccountName = null;
 window.plSelectAccount = function(accountId) {
     window._plSelectedAccountId = accountId;
     window._plSelectedAccountUsername = null;
+    window._plSelectedSteamLicenseOk = true;
     document.querySelectorAll('.pl-account-row').forEach(r => r.classList.remove('selected'));
     const row = document.querySelector(`.pl-account-row[data-id="${accountId || '__none__'}"]`);
     if (row) {
         row.classList.add('selected');
         window._plSelectedAccountName     = row.dataset.name     || null;
         window._plSelectedAccountUsername = row.dataset.username || null;
+        const lic = row.dataset.steamLicense;
+        if (lic === 'no') window._plSelectedSteamLicenseOk = false;
+        else if (lic === 'yes' || lic === 'unk') window._plSelectedSteamLicenseOk = true;
     }
 };
 
@@ -630,8 +636,15 @@ window.plDoLaunch = async function(skipSwitch = false) {
     const accountName     = window._plSelectedAccountName;
     const accountUsername = window._plSelectedAccountUsername;
     const platKey         = _plSelectedPlatform;
+    const noSwitch        = !accountId || accountId === '__none__';
+    if (!skipSwitch && platKey === 'steam' && !noSwitch && window._plSelectedSteamLicenseOk === false) {
+        if (typeof showToast === 'function') {
+            showToast('This Steam account has no license for this game. Switch to an account that owns it, or use Launch Directly.', 'warning');
+        }
+        return;
+    }
     closePlayLauncher();
-    await _plLaunchWithPlatform(platKey, accountId === '__none__' ? null : accountId, skipSwitch, accountName, accountUsername);
+    await _plLaunchWithPlatform(platKey, noSwitch ? null : accountId, skipSwitch || noSwitch, accountName, accountUsername);
 };
 
 async function _plLaunchWithPlatform(platKey, accountId, skipSwitch, accountName, accountUsername) {

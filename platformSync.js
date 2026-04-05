@@ -89,13 +89,13 @@ async function _ensureBridgeRunning() {
         try {
             const existing = JSON.parse(await fs.readFile(STEAM_MERGED_CACHE, 'utf8').catch(() => '[]'));
             const map = new Map(existing.map(g => [g.id, g]));
+            const accs = steamConnector.getAccounts();
+            const ids = accs.map((a) => String(a.id));
             for (const g of newGames) {
                 if (!map.has(g.id)) {
                     const coverUrl = await downloadAndCacheCover(
                         `https://steamcdn-a.akamaihd.net/steam/apps/${g.appid}/library_600x900.jpg`, g.id
                     );
-                    const accs = steamConnector.getAccounts();
-                    const ids = accs.map((a) => String(a.id));
                     map.set(g.id, {
                         id: g.id, title: g.title, platform: 'steam', source: 'steam',
                         coverUrl, appName: String(g.appid), playtime: 0,
@@ -104,6 +104,12 @@ async function _ensureBridgeRunning() {
                         ownedByAccountIds: ids,
                         steamLicensedAccountIds: ids,
                     });
+                } else {
+                    const ex = map.get(g.id);
+                    if (!ex.steamLicensedAccountIds) ex.steamLicensedAccountIds = [];
+                    for (const id of ids) {
+                        if (!ex.steamLicensedAccountIds.includes(id)) ex.steamLicensedAccountIds.push(id);
+                    }
                 }
             }
             await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify([...map.values()], null, 2), 'utf8');
