@@ -226,7 +226,10 @@ const steamConnector = {
     getAccounts() {
         try {
             if (!fsSync.existsSync(STEAM_ACCOUNTS_FILE)) return [];
-            return JSON.parse(fsSync.readFileSync(STEAM_ACCOUNTS_FILE, 'utf8'));
+            const raw = JSON.parse(fsSync.readFileSync(STEAM_ACCOUNTS_FILE, 'utf8'));
+            return Array.isArray(raw)
+                ? raw.map((a) => ({ ...a, id: String(a.id) }))
+                : [];
         } catch { return []; }
     },
 
@@ -243,23 +246,26 @@ const steamConnector = {
 
         const { steamId, personaName } = authResult;
         const displayName = personaName || 'Steam User';
+        const steamIdStr = String(steamId);
 
         // خزّن الـ credentials بالـ steamId الصح فوراً
         // (البريدج بيعمل ده أوتوماتيك عبر store_credentials event،
         //  بس نتأكد مانيالياً هنا عشان multi-account)
+        // Steam64 ids exceed Number.MAX_SAFE_INTEGER — always store as string.
 
         let accounts = this.getAccounts();
-        const existingIndex = accounts.findIndex(a => a.id === steamId);
+        const existingIndex = accounts.findIndex(a => String(a.id) === steamIdStr);
         if (existingIndex > -1) {
             accounts[existingIndex].displayName = displayName;
+            accounts[existingIndex].id = steamIdStr;
         } else {
-            accounts.push({ id: steamId, displayName });
+            accounts.push({ id: steamIdStr, displayName });
         }
 
         await fs.writeFile(STEAM_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
-        await _writeSwitcherSyncLink('steam', displayName, steamId, { steamDisplayName: displayName });
+        await _writeSwitcherSyncLink('steam', displayName, steamIdStr, { steamDisplayName: displayName });
 
-        console.log(`[SteamBridge] ✅ Linked Steam account: ${displayName} (${steamId})`);
+        console.log(`[SteamBridge] ✅ Linked Steam account: ${displayName} (${steamIdStr})`);
         return displayName;
     },
 

@@ -64,6 +64,7 @@ class SteamBridge extends EventEmitter {
         if (this._proc) return; // already running
 
         await fs.promises.mkdir(path.dirname(_getCacheFile()), { recursive: true });
+        this._migrateSteamCredentialKeys();
 
         console.log('[SteamBridge] Starting Python bridge:', PYTHON_BIN, BRIDGE_SCRIPT);
 
@@ -326,17 +327,28 @@ class SteamBridge extends EventEmitter {
                 this.emit('presenceUpdate', data);
                 break;
 
-            case 'store_credentials':
-                // التعديل هنا: بايثون بتبعت steam_id مش steamId
-                const sId = data?.steam_id || data?.steamId;
-                if (sId) {
-                    this._saveCredentialsForAccount(sId, data);
+            case 'store_credentials': {
+                // Python sends encrypted values under "steam_id" — never use that as the map key.
+                // steamAccountId is the real decimal Steam64 id (string-safe for JSON).
+                const plain =
+                    (data?.steamAccountId != null && String(data.steamAccountId).trim() !== '')
+                        ? String(data.steamAccountId).trim()
+                        : (data?.steam_id_plain != null && String(data.steam_id_plain).trim() !== '')
+                            ? String(data.steam_id_plain).trim()
+                            : null;
+                const maybePlainSteamId = (v) => {
+                    const s = v != null ? String(v).trim() : '';
+                    return /^\d{10,20}$/.test(s) ? s : null;
+                };
+                const key = plain || maybePlainSteamId(data?.steam_id) || maybePlainSteamId(data?.steamId);
+                if (key) {
+                    this._saveCredentialsForAccount(key, data);
                 } else {
-                    // fallback: old behaviour — save under legacy key so nothing breaks
                     this._saveCredentialsLegacy(data);
                 }
                 this.emit('credentialsChanged', data);
                 break;
+            }
 
             default:
                 this.emit(event, data);
@@ -365,6 +377,32 @@ class SteamBridge extends EventEmitter {
             fs.writeFileSync(_getCacheFile(), JSON.stringify(cache, null, 2), 'utf8');
         } catch (e) {
             console.error('[SteamBridge] Failed to write cache:', e.message);
+        }
+    }
+
+    /** Old builds saved creds under encrypted steam_id blob as key — re-key to steamAccountId. */
+    _migrateSteamCredentialKeys() {
+        try {
+            const cache = this._loadCache();
+            const by = cache._steamCredentialsByAccount;
+            if (!by || typeof by !== 'object') return;
+            let changed = false;
+            for (const key of Object.keys(by)) {
+                if (/^\d{10,20}$/.test(key)) continue;
+                const val = by[key];
+                const raw = val && (val.steamAccountId ?? val.steam_id_plain);
+                const nk = raw != null && String(raw).trim() !== '' ? String(raw).trim() : '';
+                if (nk && /^\d{10,20}$/.test(nk)) {
+                    if (!by[nk]) by[nk] = { ...val, steamAccountId: nk };
+                    else Object.assign(by[nk], val, { steamAccountId: nk });
+                    delete by[key];
+                    changed = true;
+                    console.log('[SteamBridge] Migrated credentials to Steam64 key:', nk);
+                }
+            }
+            if (changed) this._writeCache(cache);
+        } catch (e) {
+            console.warn('[SteamBridge] Credential key migration skipped:', e.message);
         }
     }
 
