@@ -1394,7 +1394,8 @@ async function _gdPopulateAchievements(game) {
         return;
     }
 
-    const ACHIEVEMENTS_IPC_MS = 130000;
+    // Must exceed main process + Steam bridge (up to ~180s for slow CM / PICS / stats import).
+    const ACHIEVEMENTS_IPC_MS = 200000;
     try {
         const res = await Promise.race([
             invokeAch({

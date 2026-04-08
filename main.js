@@ -20,6 +20,13 @@ const psList = require('ps-list');
 const https = require('https');
 const steamBridge = require('./steamBridge');
 
+// One achievement fetch at a time — avoids overlapping authenticate/get_achievements on the single Python bridge.
+let _achievementIpcChain = Promise.resolve();
+function _enqueueAchievementFetch(fn) {
+    const next = _achievementIpcChain.then(fn, fn);
+    _achievementIpcChain = next.catch(() => {});
+    return next;
+}
 
 // ============================================================
 // AUTO UPDATER
@@ -972,9 +979,8 @@ async function _fetchAchievementsForApp(appId) {
             } catch {}
         }
     }
-    const rows = [];
-
-    for (const account of accounts) {
+    // Fetch all accounts in parallel to avoid sequential timeouts
+    const rows = await Promise.all(accounts.map(async (account) => {
         const accountId = String(account.id);
         const displayName = account.displayName || accountId;
         try {
@@ -982,59 +988,65 @@ async function _fetchAchievementsForApp(appId) {
             let authenticated = false;
 
             if (creds) {
-                const authRes = await withTimeout(
-                    steamBridge.authenticate(creds, { waitForCache: false }),
-                    12000,
-                    `Steam auth (${displayName})`
-                );
-                authenticated = authRes?.status === 'authenticated';
+                // 🚀 تحسين: إذا كان الحساب هو النشط حالياً، لا نحتاج لإعادة المصادقة
+                if (activeSessionId && activeSessionId === accountId) {
+                    authenticated = true;
+                } else {
+                    // محاولة المصادقة مع مهلة أطول بكثير لتجنب الـ timeout
+                    let authRes;
+                    try {
+                        authRes = await withTimeout(
+                            steamBridge.authenticate(creds, { waitForCache: false }),
+                            45000,
+                            `Steam auth (${displayName})`
+                        );
+                    } catch (e) {
+                        // في حالة الـ timeout، نعتبره غير موثق حالياً لتجنب تعليق الواجهة
+                        console.warn(`Auth failed for ${displayName}:`, e.message);
+                    }
+                    authenticated = authRes?.status === 'authenticated';
+                }
             } else if (activeSessionId && activeSessionId === accountId) {
                 authenticated = true;
             }
 
-            if (!authenticated && activeSessionId && activeSessionId === accountId) {
-                authenticated = true;
-            }
-
             if (!authenticated) {
-                rows.push({
+                return {
                     accountId,
                     displayName,
                     unlockedCount: 0,
                     unlocked: [],
                     error: 'Not authenticated',
-                });
-                continue;
+                };
             }
 
             const achRes = await withTimeout(
                 steamBridge.getAchievements([normalizedAppId]),
-                20000,
+                180000,
                 `Steam achievements (${displayName}, app ${normalizedAppId})`
             );
             const unlocked = Array.isArray(achRes?.achievements?.[normalizedAppId])
                 ? achRes.achievements[normalizedAppId]
                 : [];
-            rows.push({
+            return {
                 accountId,
                 displayName,
                 unlockedCount: unlocked.length,
                 unlocked,
                 unlockedPreview: unlocked
                     .slice()
-                    .sort((a, b) => (Number(b?.unlockTime || 0) - Number(a?.unlockTime || 0)))
-                    .slice(0, 12),
-            });
+                    .sort((a, b) => (Number(b?.unlockTime || 0) - Number(a?.unlockTime || 0))),
+            };
         } catch (err) {
-            rows.push({
+            return {
                 accountId,
                 displayName,
                 unlockedCount: 0,
                 unlocked: [],
                 error: err?.message || 'Failed to load achievements',
-            });
+            };
         }
-    }
+    }));
 
     rows.sort((a, b) => b.unlockedCount - a.unlockedCount);
     return { status: 'success', appId: normalizedAppId, accounts: rows };
@@ -1310,7 +1322,7 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
 ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
     try {
         const appId = payload.appId || _extractSteamAppId(payload.gameName || '', payload);
-        return await _fetchAchievementsForApp(appId);
+        return await _enqueueAchievementFetch(() => _fetchAchievementsForApp(appId));
     } catch (err) {
         return { status: 'error', message: err?.message || 'Failed to load achievements' };
     }

@@ -273,7 +273,8 @@ class SteamBridge extends EventEmitter {
      * { status: 'success', achievements: { gameId: [{ name, unlockTime }] } }
      */
     async getAchievements(gameIds = []) {
-        return this._call('get_achievements', { gameIds });
+        // Python path: refresh_game_stats (retries) + wait_ready(60) + wait_metadata_ready(30) can exceed 90s.
+        return this._call('get_achievements', { gameIds }, 180_000);
     }
 
     /**
