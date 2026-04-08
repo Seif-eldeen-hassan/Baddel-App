@@ -1136,8 +1136,7 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
 
         return {
             cover: data.capsule_image || data.header_image || screenshots[0] || null,
-            // Hero: prefer store header banner (appdetails `header_image`) — matches Steam store card width; then page backgrounds.
-            heroImage: data.header_image || data.background_raw || data.background || data.capsule_imagev5 || screenshots[0] || null,
+            heroImage: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
             logo: null,
             info: {
                 description: _normalizeSteamDescription(data),
