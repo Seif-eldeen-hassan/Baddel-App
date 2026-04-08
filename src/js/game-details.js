@@ -138,6 +138,7 @@ window.openGameDetails = async function(gameId) {
             path: game.path,
             allIds: game.allIds,
         });
+        console.log(`[Metadata][GameDetails] ${game.name} -> source: ${meta?.source || 'unknown'}`, meta?.debug || {});
         _gdCurrentMeta = meta;
         _gdPopulateMeta(game, meta);
     } catch (e) {

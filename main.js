@@ -1004,11 +1004,19 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     let primary = null;
     let fallback1 = null;
     let fallback2 = null;
+    let primarySource = null;
+    let fallback1Source = null;
+    let fallback2Source = null;
 
     if (isSteamGame) {
         [primary, fallback1] = await Promise.all([steamPromise, igdbPromise]);
+        primarySource = 'steam';
+        fallback1Source = 'igdb';
     } else {
         [primary, fallback1, fallback2] = await Promise.all([igdbPromise, steamPromise, rawgPromise]);
+        primarySource = 'igdb';
+        fallback1Source = 'steam';
+        fallback2Source = 'rawg';
     }
     const sgdbData = await sgdbPromise;
 
@@ -1043,6 +1051,10 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
 
     const rawgData = normalizeRawg(fallback2);
     const chosenData = primary || fallback1 || rawgData || {};
+    const metadataSource = primary
+        ? primarySource
+        : (fallback1 ? fallback1Source : (rawgData ? fallback2Source : 'none'));
+    const usedSgdbImageFallback = !!(sgdbData && (!chosenData?.cover || !chosenData?.heroImage || !chosenData?.logo));
 
     // images priority: chosen source first, then SGDB fallback
     const cover     = chosenData?.cover || sgdbData?.cover || null;
@@ -1061,6 +1073,13 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
         heroImage,
         hero: heroImage, // عشان الفرونت إند بتاعك
         logo,
+        source: metadataSource,
+        debug: {
+            metadataSource,
+            usedSgdbImageFallback,
+            platformHints: platforms,
+            isSteamGame,
+        },
         info: {
             ...(chosenData?.info || {}),
             trailer:      finalTrailer,

@@ -1073,6 +1073,7 @@ async function processQueue() {
             path: game.path,
             allIds: game.allIds,
         });
+        console.log(`[Metadata][Library] ${game.name} -> source: ${meta?.source || 'unknown'}`, meta?.debug || {});
         if (meta) {
             if (meta.hero) game.heroImage = meta.hero;
             if (meta.logo) game.logo = meta.logo;
