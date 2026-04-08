@@ -949,7 +949,21 @@ async function _fetchAchievementsForApp(appId) {
     }
 
     await steamBridge.start();
-    const activeSessionId = String(steamBridge.getLastSessionSteamId?.() || '');
+    let activeSessionId = String(steamBridge.getLastSessionSteamId?.() || '');
+    const allCreds = steamBridge.getAllSavedCredentials?.() || {};
+
+    // Bootstrap auth once if bridge has no active session yet.
+    if (!activeSessionId) {
+        const firstCred = Object.values(allCreds)[0] || null;
+        if (firstCred) {
+            try {
+                const boot = await steamBridge.authenticate(firstCred, { waitForCache: false });
+                if (boot?.status === 'authenticated' && boot?.steamId) {
+                    activeSessionId = String(boot.steamId);
+                }
+            } catch {}
+        }
+    }
     const rows = [];
 
     for (const account of accounts) {
@@ -963,6 +977,10 @@ async function _fetchAchievementsForApp(appId) {
                 const authRes = await steamBridge.authenticate(creds, { waitForCache: false });
                 authenticated = authRes?.status === 'authenticated';
             } else if (activeSessionId && activeSessionId === accountId) {
+                authenticated = true;
+            }
+
+            if (!authenticated && activeSessionId && activeSessionId === accountId) {
                 authenticated = true;
             }
 
@@ -986,6 +1004,10 @@ async function _fetchAchievementsForApp(appId) {
                 displayName,
                 unlockedCount: unlocked.length,
                 unlocked,
+                unlockedPreview: unlocked
+                    .slice()
+                    .sort((a, b) => (Number(b?.unlockTime || 0) - Number(a?.unlockTime || 0)))
+                    .slice(0, 12),
             });
         } catch (err) {
             rows.push({

@@ -552,6 +552,39 @@
     font-size: 0.75rem;
     color: var(--gd-text-muted);
 }
+.gd-ach-items {
+    margin-top: 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+.gd-ach-item {
+    display: grid;
+    grid-template-columns: 16px 1fr auto;
+    gap: 8px;
+    align-items: center;
+    padding: 6px 8px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+}
+.gd-ach-dot {
+    color: #30d158;
+    font-size: 0.75rem;
+    font-weight: 700;
+}
+.gd-ach-item-name {
+    color: #d8d8d8;
+    font-size: 0.78rem;
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.gd-ach-item-time {
+    color: var(--gd-text-muted);
+    font-size: 0.72rem;
+    white-space: nowrap;
+}
 
 /* ============================================================
    LIGHTBOX (GALLERY POPUP)

@@ -1114,10 +1114,10 @@ function _gdPopulateMeta(game, metaData) {
         if (hasSteamReviewSource) {
             const desc = info.steamReview.reviewScoreDesc || 'Steam Reviews';
             const reviews = Number(info.steamReview.totalReviews || 0);
-            scoreEl.textContent = desc;
+            scoreEl.textContent = `${desc} (${reviews.toLocaleString()} reviews)`;
             scoreEl.style.fontSize = '1.3rem';
             if (ratingLabelEl) {
-                ratingLabelEl.textContent = `${reviews.toLocaleString()} reviews`;
+                ratingLabelEl.textContent = 'Steam Reviews';
             }
             if (starsEl) starsEl.innerHTML = '';
         } else {
@@ -1346,6 +1346,24 @@ async function _gdPopulateAchievements(game) {
                 ? `${unlockedCount}/${totalAchievements} unlocked`
                 : `${unlockedCount} unlocked`;
             const subLine = acc.error || summary;
+            const preview = Array.isArray(acc.unlockedPreview) ? acc.unlockedPreview : [];
+            const previewHtml = preview.length
+                ? `
+                    <div class="gd-ach-items">
+                        ${preview.map((it) => {
+                            const ts = Number(it?.unlockTime || 0);
+                            const when = ts > 0 ? new Date(ts * 1000).toLocaleDateString() : 'Unlocked';
+                            return `
+                                <div class="gd-ach-item">
+                                    <span class="gd-ach-dot">✓</span>
+                                    <span class="gd-ach-item-name">${esc(it?.name || 'Achievement')}</span>
+                                    <span class="gd-ach-item-time">${esc(when)}</span>
+                                </div>
+                            `;
+                        }).join('')}
+                    </div>
+                `
+                : '';
             return `
                 <div class="gd-ach-card">
                     <div class="gd-ach-head">
@@ -1354,6 +1372,7 @@ async function _gdPopulateAchievements(game) {
                     </div>
                     <div class="gd-ach-bar"><div class="gd-ach-fill" style="width:${percent}%"></div></div>
                     <div class="gd-ach-sub">${esc(subLine)}</div>
+                    ${previewHtml}
                 </div>
             `;
         }).join('');
