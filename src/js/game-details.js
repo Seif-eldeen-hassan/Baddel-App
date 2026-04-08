@@ -1101,6 +1101,12 @@ function _gdPopulateMeta(game, metaData) {
     if (score) {
         document.getElementById('gdRatingBlock').style.display = 'block';
         document.getElementById('gdRatingScore').textContent = score;
+        const ratingLabelEl = document.getElementById('gdRatingLabel');
+        if (ratingLabelEl) {
+            const hasSteamReviewSource = !!(info.steamReview && typeof info.steamReview.scorePercent === 'number');
+            // Primary rating is IGDB in our pipeline; Steam review is fallback when IGDB is unavailable.
+            ratingLabelEl.textContent = hasSteamReviewSource ? 'Steam Reviews' : 'IGDB';
+        }
         const stars = Math.round((score / 100) * 5);
         const starsEl = document.getElementById('gdRatingStars');
         starsEl.innerHTML = Array.from({length: 5}, (_, i) =>

@@ -557,7 +557,7 @@
                         <div class="gd-rating-block" id="gdRatingBlock" style="display:none">
                             <div class="gd-rating-score" id="gdRatingScore">—</div>
                             <div class="gd-rating-stars" id="gdRatingStars"></div>
-                            <div class="gd-rating-label">Metacritic</div>
+                            <div class="gd-rating-label" id="gdRatingLabel">Metacritic</div>
                         </div>
 
                         <div class="gd-detail-list" id="gdDetailList">
@@ -1180,17 +1180,28 @@ document.addEventListener('DOMContentLoaded', () => {
                 
             </div>
 
-            <div id="platformDetailsView" style="flex: 1; padding: 20px 25px; overflow-y: auto; display: flex; flex-direction: column; background: #0f0f0f;">
+            <div id="platformDetailsView" style="flex: 1; padding: 20px 25px; overflow-y: auto; display: flex; flex-direction: column; background: #0f0f0f; position: relative;">
                 
                 <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
                     <h3 id="currentPlatformTitle" style="margin: 0; font-family: var(--font-heading); font-size: 1.2rem;">Epic Games</h3>
                 </div>
+
+                <div id="platformSyncStatusPanel" class="platform-sync-status-panel" style="display:none;"></div>
                 
                 <div id="linkedAccountsList" class="accounts-list-container" style="flex: 1; margin-bottom: 15px;">
                 </div>
 
+                <div id="platformSyncSimpleOverlay" class="platform-sync-simple-overlay">
+                    <div class="platform-sync-simple-box">
+                        <div id="platformSyncSimpleSpinner" class="acc-spinner platform-sync-simple-spinner"></div>
+                        <div id="platformSyncSimpleTitle" class="platform-sync-simple-title">Syncing your library</div>
+                        <div id="platformSyncSimpleSubtitle" class="platform-sync-simple-subtitle">Please wait while we refresh your account.</div>
+                        <div id="platformSyncSimpleSummary" class="platform-sync-simple-summary"></div>
+                    </div>
+                </div>
+
                 <div class="platform-actions" style="display: flex; gap: 10px; margin-top: auto; padding-top: 15px; border-top: 1px solid rgba(255,255,255,0.05);">
-                    <button class="btn-cancel" style="flex: 1;" onclick="linkNewPlatformAccount()">+ Import Account</button>
+                    <button id="linkPlatformBtn" class="btn-cancel" style="flex: 1;" onclick="linkNewPlatformAccount()">Link Account</button>
                     <button id="syncPlatformBtn" class="btn-primary" style="flex: 1;" onclick="syncCurrentPlatform()">Sync Library</button>
                 </div>
 
