@@ -949,17 +949,43 @@ async function _findSteamAppIdByName(gameName) {
     }
 }
 
+async function _fetchSteamReviewSummary(appId) {
+    try {
+        const res = await fetch(`https://store.steampowered.com/appreviews/${appId}?json=1&language=all&purchase_type=all`);
+        const data = await res.json();
+        const summary = data?.query_summary || {};
+        const totalPositive = Number(summary.total_positive || 0);
+        const totalNegative = Number(summary.total_negative || 0);
+        const total = totalPositive + totalNegative;
+        const scorePercent = total > 0 ? Math.round((totalPositive / total) * 100) : null;
+
+        return {
+            reviewScore: typeof summary.review_score === 'number' ? summary.review_score : null,
+            reviewScoreDesc: summary.review_score_desc || null,
+            totalPositive,
+            totalNegative,
+            totalReviews: total,
+            scorePercent,
+        };
+    } catch {
+        return null;
+    }
+}
+
 // Steam Storefront (details + images + trailer + requirements)
 async function fetchSteamStorefrontData(gameName, hints = {}) {
     try {
         const appId = _extractSteamAppId(gameName, hints) || await _findSteamAppIdByName(gameName);
         if (!appId) return null;
 
-        const detailsRes = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}`, {
-            headers: {
-                'Cookie': 'birthtime=283993201; lastagecheckage=1-January-1980; mature_content=1; wants_mature_content=1'
-            }
-        });
+        const [detailsRes, reviewSummary] = await Promise.all([
+            fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}`, {
+                headers: {
+                    'Cookie': 'birthtime=283993201; lastagecheckage=1-January-1980; mature_content=1; wants_mature_content=1'
+                }
+            }),
+            _fetchSteamReviewSummary(appId),
+        ]);
         const detailsData = await detailsRes.json();
         if (!detailsData[appId]?.success) return null;
 
@@ -1017,6 +1043,7 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
                 artworks: [],
                 screenshots,
                 requirements,
+                steamReview: reviewSummary,
             },
         };
     } catch (err) {
@@ -1136,12 +1163,13 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     const finalTrailer = chosenData?.info?.trailer || null;
     const finalAllTrailers = chosenData?.info?.allTrailers || [];
     const finalScreenshots = chosenData?.info?.screenshots || [];
+    const steamReviewFallbackRating = chosenData?.info?.steamReview?.scorePercent ?? null;
     const finalRating = (
         (typeof chosenData?.info?.rating === 'number' && !Number.isNaN(chosenData.info.rating))
             ? chosenData.info.rating
             : ((typeof fallback1?.info?.rating === 'number' && !Number.isNaN(fallback1.info.rating))
                 ? fallback1.info.rating
-                : null)
+                : steamReviewFallbackRating)
     );
 
     console.log(`🎉 [BACKEND] DONE FOR: ${gameName}`);
