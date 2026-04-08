@@ -881,6 +881,63 @@ function _extractSteamAppId(gameName, hints = {}) {
     return null;
 }
 
+function _decodeHtmlEntities(input = '') {
+    return String(input)
+        .replace(/&nbsp;/gi, ' ')
+        .replace(/&amp;/gi, '&')
+        .replace(/&quot;/gi, '"')
+        .replace(/&#39;/gi, "'")
+        .replace(/&lt;/gi, '<')
+        .replace(/&gt;/gi, '>');
+}
+
+function _stripHtmlToText(input = '') {
+    const text = String(input)
+        .replace(/<br\s*\/?>/gi, '\n')
+        .replace(/<\/(p|div|li|ul|ol|h1|h2|h3|h4|h5|h6)>/gi, '\n')
+        .replace(/<li[^>]*>/gi, '• ')
+        .replace(/<[^>]+>/g, ' ')
+        .replace(/\r/g, '')
+        .replace(/\n{3,}/g, '\n\n')
+        .replace(/[ \t]{2,}/g, ' ')
+        .trim();
+    return _decodeHtmlEntities(text);
+}
+
+function _normalizeSteamDescription(data = {}) {
+    const shortDesc = _stripHtmlToText(data.short_description || '');
+    if (shortDesc.length >= 80) return shortDesc;
+
+    const longDesc = _stripHtmlToText(data.about_the_game || data.detailed_description || '');
+    if (!longDesc) return shortDesc || null;
+
+    // Keep it readable and story-first (avoid very long storefront dump)
+    if (longDesc.length <= 1400) return longDesc;
+    return `${longDesc.slice(0, 1400).trim()}...`;
+}
+
+function _parseStorefrontRequirements(html = '') {
+    if (!html) return {};
+    const text = _stripHtmlToText(html);
+    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
+    const joined = lines.join('\n');
+
+    const pick = (labelRegex) => {
+        const re = new RegExp(`${labelRegex}\\s*:?[\\s\\n]*([^\\n]+)`, 'i');
+        const m = joined.match(re);
+        return m ? m[1].trim() : null;
+    };
+
+    return {
+        os: pick('(?:OS|Operating\\s*System)'),
+        cpu: pick('(?:Processor|CPU)'),
+        ram: pick('(?:Memory|RAM)'),
+        gpu: pick('(?:Graphics|Video\\s*Card|GPU)'),
+        storage: pick('(?:Storage|Hard\\s*Drive|Disk\\s*Space)'),
+        directx: pick('(?:DirectX|DX)'),
+    };
+}
+
 async function _findSteamAppIdByName(gameName) {
     try {
         const searchRes = await fetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
@@ -909,25 +966,40 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
         const data = detailsData[appId].data;
         if (!data) return null;
 
-        const trailer = data.movies?.[0]?.mp4?.max || data.movies?.[0]?.webm?.max || null;
+        // نفضل mp4/webm الأول (native support) — HLS/DASH fallback لو مفيش
+        const _pickSteamMovieUrl = (movie = {}) => (
+            movie?.mp4?.max ||
+            movie?.mp4?.['480'] ||
+            movie?.webm?.max ||
+            movie?.webm?.['480'] ||
+            movie?.hls_h264 ||
+            movie?.dash_h264 ||
+            movie?.dash_av1 ||
+            null
+        );
+
+        const trailer = _pickSteamMovieUrl(data.movies?.[0] || null);
         const allTrailers = (data.movies || []).map((movie, i) => ({
             name: movie?.name || `Trailer ${i + 1}`,
-            url: movie?.mp4?.max || movie?.webm?.max || null,
+            url: _pickSteamMovieUrl(movie),
             thumbUrl: movie?.thumbnail || null,
         })).filter((t) => !!t.url);
 
         const screenshots = (data.screenshots || []).map((s) => s.path_full || s.path_thumbnail).filter(Boolean);
-        const requirements = data.pc_requirements ? {
-            minimum: data.pc_requirements.minimum || null,
-            recommended: data.pc_requirements.recommended || null,
-        } : null;
+        let requirements = null;
+        if (data.pc_requirements) {
+            const minimum = _parseStorefrontRequirements(data.pc_requirements.minimum || '');
+            const recommended = _parseStorefrontRequirements(data.pc_requirements.recommended || '');
+            const hasAny = Object.values(minimum).some(Boolean) || Object.values(recommended).some(Boolean);
+            requirements = hasAny ? { minimum, recommended } : null;
+        }
 
         return {
-            cover: data.header_image || null,
+            cover: data.capsule_image || data.header_image || screenshots[0] || null,
             heroImage: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
             logo: null,
             info: {
-                description: data.detailed_description || data.short_description || null,
+                description: _normalizeSteamDescription(data),
                 genres: (data.genres || []).map((g) => g.description).filter(Boolean),
                 developer: Array.isArray(data.developers) ? data.developers.join(', ') : null,
                 publisher: Array.isArray(data.publishers) ? data.publishers.join(', ') : null,
@@ -1064,6 +1136,13 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     const finalTrailer = chosenData?.info?.trailer || null;
     const finalAllTrailers = chosenData?.info?.allTrailers || [];
     const finalScreenshots = chosenData?.info?.screenshots || [];
+    const finalRating = (
+        (typeof chosenData?.info?.rating === 'number' && !Number.isNaN(chosenData.info.rating))
+            ? chosenData.info.rating
+            : ((typeof fallback1?.info?.rating === 'number' && !Number.isNaN(fallback1.info.rating))
+                ? fallback1.info.rating
+                : null)
+    );
 
     console.log(`🎉 [BACKEND] DONE FOR: ${gameName}`);
     console.log(`======================================\n`);
@@ -1085,7 +1164,13 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
             trailer:      finalTrailer,
             allTrailers:  finalAllTrailers,
             screenshots:  finalScreenshots,
-            isDirectVideo: finalTrailer?.endsWith('.mp4') || finalTrailer?.endsWith('.webm') || false,
+            rating: finalRating,
+            isDirectVideo: (
+                finalTrailer?.includes('.m3u8') ||
+                finalTrailer?.includes('.mpd')  ||
+                finalTrailer?.endsWith('.mp4')  ||
+                finalTrailer?.endsWith('.webm')
+            ) || false,
             requirements: chosenData?.info?.requirements || null,
         }
     };

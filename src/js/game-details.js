@@ -1050,8 +1050,14 @@ function _gdPopulateMeta(game, metaData) {
     // 1. Description: IGDB بيبعت نص عادي، فهنحول الـ line breaks لـ <br> عشان التنسيق
     const descEl = document.getElementById('gdDesc');
     if (info.description) {
-        // ✅ السحر هنا: \n+ معناها "لو لقيت سطر أو 100 سطر فاضيين ورا بعض، حولهم لمسافة فقرة واحدة بس"
-        descEl.innerHTML = info.description.trim().replace(/\n+/g, '<br><br>');
+        const safeDesc = String(info.description)
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        // Render as plain readable text paragraphs (no injected HTML blocks/images)
+        descEl.innerHTML = safeDesc.trim().replace(/\n+/g, '<br><br>');
     }else {
         descEl.innerHTML = `<span style="color:var(--gd-text-muted); font-style:italic;">No description available for "${game.name}".</span>`;
     }
@@ -1282,15 +1288,71 @@ function _gdRenderTrailerPlayer(container, trailers, idx) {
     const url = t.url;
 
     // التحقق: هل ده فيديو مباشر ولا يوتيوب؟
-    const isDirect = url.endsWith('.mp4') || url.endsWith('.webm') || url.includes('akamaihd.net');
+    const isDirect =
+        url.endsWith('.mp4') ||
+        url.endsWith('.webm') ||
+        url.includes('.m3u8') ||
+        url.includes('.mpd') ||
+        url.includes('akamaihd.net');
 
     if (isDirect) {
-        // فيديو Steam الخام
+        const isHLS  = url.includes('.m3u8');
+        const isDASH = url.includes('.mpd');
+        const videoId = `gd-steam-video-${Date.now()}`;
+
         container.innerHTML = `
-            <video controls autoplay muted style="width:100%; aspect-ratio:16/9; border-radius:10px; background:#000; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
-                <source src="${url}" type="video/mp4">
+            <video id="${videoId}" controls autoplay muted
+                style="width:100%; aspect-ratio:16/9; border-radius:10px; background:#000; box-shadow: 0 4px 15px rgba(0,0,0,0.5);">
             </video>
         `;
+
+        const videoEl = container.querySelector(`#${videoId}`);
+
+        if (isHLS) {
+            // ── HLS stream (Steam hls_h264) → HLS.js ──────────────────
+            const _attachHls = (Hls) => {
+                if (Hls.isSupported()) {
+                    const hls = new Hls({ enableWorker: false });
+                    hls.loadSource(url);
+                    hls.attachMedia(videoEl);
+                    hls.on(Hls.Events.MANIFEST_PARSED, () => videoEl.play().catch(() => {}));
+                } else if (videoEl.canPlayType('application/vnd.apple.mpegurl')) {
+                    // Safari / Electron native HLS
+                    videoEl.src = url;
+                    videoEl.play().catch(() => {});
+                }
+            };
+
+            if (window.Hls) {
+                _attachHls(window.Hls);
+            } else {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/hls.js@latest/dist/hls.min.js';
+                s.onload = () => _attachHls(window.Hls);
+                document.head.appendChild(s);
+            }
+
+        } else if (isDASH) {
+            // ── DASH stream (Steam dash_h264 / dash_av1) → dash.js ────
+            const _attachDash = (dashjs) => {
+                const player = dashjs.MediaPlayer().create();
+                player.initialize(videoEl, url, true);
+            };
+
+            if (window.dashjs) {
+                _attachDash(window.dashjs);
+            } else {
+                const s = document.createElement('script');
+                s.src = 'https://cdn.jsdelivr.net/npm/dashjs@latest/dist/dash.all.min.js';
+                s.onload = () => _attachDash(window.dashjs);
+                document.head.appendChild(s);
+            }
+
+        } else {
+            // ── mp4 / webm → native ───────────────────────────────────
+            videoEl.src = url;
+            videoEl.play().catch(() => {});
+        }
     } else {
         // مشغل YouTube (GOG Trick)
         const embedMatch = url.match(/(?:v=|embed\/|youtu\.be\/)([^&?\/\s]{11})/);
