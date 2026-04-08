@@ -13,6 +13,8 @@ let _gdCurrentGameId   = null;
 let _gdCurrentMeta     = null;
 let _gdCurrentGame     = null;
 let _gdAchievementsLoaded = false;
+/** يزيد مع كل فتح تفاصيل لمنع رسم إنجازات لعبة سابقة بعد اكتمال طلب بطيء */
+let _gdAchievementsGen = 0;
 let _gdDownloadInterval = null;   // للـ demo download progress
 let _gdPreviousView    = 'home';  // عشان نعرف نرجع لأنهي شاشة
 let _gdLightboxImages = [];
@@ -111,7 +113,8 @@ window.openGameDetails = async function(gameId) {
         console.warn('GD: Could not verify installation status', e);
     }
     _gdCurrentGame = game;
-    
+    _gdCurrentMeta = null;
+
     console.log("🎉 Opening view for:", game.name); // 9️⃣ تأكيد نهائي قبل ما يفتح الشاشة
     
     // إخفاء كل الـ views الحالية
@@ -128,6 +131,11 @@ window.openGameDetails = async function(gameId) {
 
     // ملأ البيانات الأساسية فوراً (بدون انتظار الـ API)
     _gdPopulateBasic(game);
+
+    // إنجازات Steam لا تعتمد على الـ metadata — نبدأ التحميل فوراً حتى لا يبقى الـ skeleton معلّقاً لو IGDB/الواجهة اتأخرت أو فشلت
+    if (_gdCurrentGameId === String(game.id)) {
+        void _gdPopulateAchievements(game);
+    }
 
     // جيب الـ metadata من الـ API
     try {
@@ -179,6 +187,9 @@ window.closeGameDetails = function() {
 //  RESET
 // ──────────────────────────────────────────
 function _gdResetUI() {
+    _gdAchievementsLoaded = false;
+    _gdAchievementsGen++;
+
     // Reset tabs
     document.querySelectorAll('.gd-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.gd-tab-content').forEach(t => { t.style.display = 'none'; t.classList.remove('active'); });
@@ -199,7 +210,27 @@ function _gdResetUI() {
     document.getElementById('gdAccountsList').innerHTML = '<div class="gd-no-accounts">Loading accounts…</div>';
     const gdAchievementsList = document.getElementById('gdAchievementsList');
     if (gdAchievementsList) {
-        gdAchievementsList.innerHTML = '<div class="gd-no-accounts">Open this tab to load achievements…</div>';
+        // نضع Skeletons للإنجازات بدل رسالة "Open this tab"
+        const achSkeletons = Array(3).fill().map(() => `
+            <div class="gd-ach-item">
+                <div class="gd-skeleton" style="width:44px; height:44px; border-radius:4px;"></div>
+                <div class="gd-ach-info">
+                    <div class="gd-skeleton" style="width:120px; height:14px; margin-bottom:6px;"></div>
+                    <div class="gd-skeleton" style="width:200px; height:12px;"></div>
+                </div>
+                <div class="gd-skeleton" style="width:80px; height:12px;"></div>
+            </div>
+        `).join('');
+        gdAchievementsList.innerHTML = `
+            <div class="gd-ach-card">
+                <div class="gd-ach-head">
+                    <div class="gd-skeleton" style="width:100px; height:14px;"></div>
+                    <div class="gd-skeleton" style="width:40px; height:14px;"></div>
+                </div>
+                <div class="gd-ach-bar"><div class="gd-skeleton" style="width:100%; height:100%;"></div></div>
+                <div class="gd-ach-items">${achSkeletons}</div>
+            </div>
+        `;
     }
 
     // Reset cover
@@ -1113,9 +1144,28 @@ function _gdPopulateMeta(game, metaData) {
         const hasSteamReviewSource = !!(info.steamReview && typeof info.steamReview.scorePercent === 'number');
         if (hasSteamReviewSource) {
             const desc = info.steamReview.reviewScoreDesc || 'Steam Reviews';
-            const reviews = Number(info.steamReview.totalReviews || 0);
-            scoreEl.textContent = `${desc} (${reviews.toLocaleString()} reviews)`;
-            scoreEl.style.fontSize = '1.3rem';
+            const total = Number(info.steamReview.totalReviews || 0);
+            const pos = Number(info.steamReview.totalPositive || 0);
+            const neg = Number(info.steamReview.totalNegative || 0);
+            
+            // هيكل جديد يتوافق مع التصميم المطلوب (توسيط وترتيب)
+            scoreEl.innerHTML = `
+                <div class="gd-review-summary">
+                    <div class="gd-review-title">${desc}</div>
+                    <div class="gd-review-count">(${total.toLocaleString()} reviews)</div>
+                    <div class="gd-review-stats">
+                        <span class="gd-review-pos">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><path d="M4 21h1V8H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2zM20 8h-7l1.122-3.368A2 2 0 0 0 12.225 2H12L7 7.438V21h11l3.912-8.596L22 12v-2a2 2 0 0 0-2-2z"/></svg>
+                            ${pos.toLocaleString()}
+                        </span>
+                        <span class="gd-review-neg">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style="transform: scaleY(-1);"><path d="M4 21h1V8H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2zM20 8h-7l1.122-3.368A2 2 0 0 0 12.225 2H12L7 7.438V21h11l3.912-8.596L22 12v-2a2 2 0 0 0-2-2z"/></svg>
+                            ${neg.toLocaleString()}
+                        </span>
+                    </div>
+                </div>
+            `;
+            scoreEl.style.fontSize = '1.1rem'; // تصغير الخط الأساسي لأننا سنحكم في الأحجام داخلياً
             if (ratingLabelEl) {
                 ratingLabelEl.textContent = 'Steam Reviews';
             }
@@ -1283,6 +1333,23 @@ function _gdPopulateMeta(game, metaData) {
 
     // Sidebar detail list
     _gdBuildDetailList(game, info);
+
+    // لو الإنجازات اتحمّلت قبل الـ metadata، نحدّث النِّسَب بعد ما يتوفر achievementsTotal
+    _gdRefreshAchievementsUIFromCache(game);
+}
+
+/** إعادة رسم بطاقات الإنجازات من الـ sessionStorage بعد تحديث _gdCurrentMeta (مثلاً إجمالي الإنجازات من المتجر). */
+function _gdRefreshAchievementsUIFromCache(game) {
+    if (!game?.id || String(_gdCurrentGameId) !== String(game.id)) return;
+    const container = document.getElementById('gdAchievementsList');
+    if (!container) return;
+    const cacheKey = `ach_v_perfect_${game.id}`;
+    const cached = sessionStorage.getItem(cacheKey);
+    if (!cached) return;
+    try {
+        const parsed = JSON.parse(cached);
+        _gdRenderAchievements(container, parsed);
+    } catch (_) {}
 }
 
 function _gdExtractSteamAppId(game) {
@@ -1301,6 +1368,7 @@ function _gdExtractSteamAppId(game) {
 async function _gdPopulateAchievements(game) {
     const container = document.getElementById('gdAchievementsList');
     if (!container) return;
+    const loadGen = _gdAchievementsGen;
 
     const steamAppId = _gdExtractSteamAppId(game);
     if (!steamAppId) {
@@ -1308,77 +1376,136 @@ async function _gdPopulateAchievements(game) {
         return;
     }
 
-    container.innerHTML = '<div class="gd-no-accounts">Loading achievements…</div>';
+    // 1. التحقق من التخزين المؤقت (Cache) لسرعة العرض
+    const cacheKey = `ach_v_perfect_${game.id}`;
+    const cachedData = sessionStorage.getItem(cacheKey);
+    if (cachedData) {
+        try {
+            const parsed = JSON.parse(cachedData);
+            _gdRenderAchievements(container, parsed);
+        } catch(e) {}
+    }
+
+    const invokeAch = window.electronAPI.getGameAchievements;
+    if (typeof invokeAch !== 'function') {
+        if (!sessionStorage.getItem(cacheKey)) {
+            container.innerHTML = '<div class="gd-no-accounts">Achievements are not available in this build.</div>';
+        }
+        return;
+    }
+
+    const ACHIEVEMENTS_IPC_MS = 130000;
     try {
-        const res = await window.electronAPI.getGameAchievements?.({
-            appId: steamAppId,
-            gameName: game.name,
-            id: game.id,
-            allIds: game.allIds,
-            command: game.command,
-        });
+        const res = await Promise.race([
+            invokeAch({
+                appId: steamAppId,
+                gameName: game.name,
+                id: game.id,
+                allIds: game.allIds,
+                command: game.command,
+            }),
+            new Promise((_, reject) => {
+                setTimeout(() => reject(new Error('Achievements request timed out')), ACHIEVEMENTS_IPC_MS);
+            }),
+        ]);
 
         if (!res || res.status !== 'success') {
-            container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+            if (loadGen !== _gdAchievementsGen) return;
+            if (!sessionStorage.getItem(cacheKey)) {
+                container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+            }
             return;
         }
 
-        const rows = Array.isArray(res.accounts) ? res.accounts : [];
-        if (!rows.length) {
-            container.innerHTML = '<div class="gd-no-accounts">No Steam accounts linked yet.</div>';
-            return;
-        }
+        // 2. تحديث الـ Cache بالبيانات الجديدة
+        sessionStorage.setItem(cacheKey, JSON.stringify(res));
 
-        const totalAchievements = Number(_gdCurrentMeta?.info?.achievementsTotal || 0) || null;
-        const esc = (v) => String(v ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;')
-            .replace(/'/g, '&#39;');
-        container.innerHTML = rows.map((acc) => {
-            const unlockedCount = Number(acc.unlockedCount || 0);
-            const denominator = totalAchievements && totalAchievements > 0
-                ? totalAchievements
-                : Math.max(unlockedCount, 1);
-            const percent = Math.max(0, Math.min(100, Math.round((unlockedCount / denominator) * 100)));
-            const summary = totalAchievements
-                ? `${unlockedCount}/${totalAchievements} unlocked`
-                : `${unlockedCount} unlocked`;
-            const subLine = acc.error || summary;
-            const preview = Array.isArray(acc.unlockedPreview) ? acc.unlockedPreview : [];
-            const previewHtml = preview.length
-                ? `
-                    <div class="gd-ach-items">
-                        ${preview.map((it) => {
-                            const ts = Number(it?.unlockTime || 0);
-                            const when = ts > 0 ? new Date(ts * 1000).toLocaleDateString() : 'Unlocked';
-                            return `
-                                <div class="gd-ach-item">
-                                    <span class="gd-ach-dot">✓</span>
-                                    <span class="gd-ach-item-name">${esc(it?.name || 'Achievement')}</span>
-                                    <span class="gd-ach-item-time">${esc(when)}</span>
-                                </div>
-                            `;
-                        }).join('')}
-                    </div>
-                `
-                : '';
-            return `
-                <div class="gd-ach-card">
-                    <div class="gd-ach-head">
-                        <div class="gd-ach-name">${esc(acc.displayName || acc.accountId)}</div>
-                        <div class="gd-ach-meta">${percent}%</div>
-                    </div>
-                    <div class="gd-ach-bar"><div class="gd-ach-fill" style="width:${percent}%"></div></div>
-                    <div class="gd-ach-sub">${esc(subLine)}</div>
-                    ${previewHtml}
-                </div>
-            `;
-        }).join('');
+        // 3. عرض البيانات الجديدة
+        if (loadGen !== _gdAchievementsGen) return;
+        _gdRenderAchievements(container, res);
     } catch (e) {
-        container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+        console.warn('GD: achievements load failed', e);
+        if (loadGen !== _gdAchievementsGen) return;
+        if (!sessionStorage.getItem(cacheKey)) {
+            container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+        }
     }
+}
+
+function _gdRenderAchievements(container, res) {
+    const rows = Array.isArray(res.accounts) ? res.accounts : [];
+    if (!rows.length) {
+        container.innerHTML = '<div class="gd-no-accounts">No Steam accounts linked yet.</div>';
+        return;
+    }
+
+    const totalAchievements = Number(_gdCurrentMeta?.info?.achievementsTotal || 0) || null;
+    const esc = (v) => String(v ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+
+    container.innerHTML = rows.map((acc) => {
+        const unlockedCount = Number(acc.unlockedCount || 0);
+        const denominator = totalAchievements && totalAchievements > 0
+            ? totalAchievements
+            : Math.max(unlockedCount, 1);
+        const percent = Math.max(0, Math.min(100, Math.round((unlockedCount / denominator) * 100)));
+        const summary = totalAchievements
+            ? `${unlockedCount}/${totalAchievements} unlocked`
+            : `${unlockedCount} unlocked`;
+        const subLine = acc.error || summary;
+        const preview = Array.isArray(acc.unlockedPreview) ? acc.unlockedPreview : [];
+        const previewHtml = preview.length
+            ? `
+                <div class="gd-ach-items">
+                    ${preview.map((it) => {
+                        const ts = Number(it?.unlockTime || 0);
+                        const when = ts > 0 ? new Date(ts * 1000).toLocaleDateString(undefined, {
+                            year: 'numeric',
+                            month: 'short',
+                            day: 'numeric',
+                            hour: '2-digit',
+                            minute: '2-digit'
+                        }) : 'Unlocked';
+                        const iconUrl = it?.icon || '';
+                        const iconHtml = iconUrl 
+                            ? `<div class="gd-ach-icon-wrapper">
+                                 <img src="${iconUrl}" 
+                                      class="gd-ach-icon" 
+                                      onerror="this.style.display='none'; this.parentElement.style.display='none';" 
+                                 />
+                               </div>`
+                            : '';
+                        
+                        return `
+                            <div class="gd-ach-item">
+                                ${iconHtml}
+                                <div class="gd-ach-info">
+                                    <div class="gd-ach-item-name">${esc(it?.name || 'Achievement')}</div>
+                                    <div class="gd-ach-item-desc">${esc(it?.description || '')}</div>
+                                </div>
+                                <div class="gd-ach-item-time">${esc(when)}</div>
+                            </div>
+                        `;
+                    }).join('')}
+                </div>
+            `
+            : '';
+        return `
+            <div class="gd-ach-card">
+                <div class="gd-ach-head">
+                    <div class="gd-ach-name">${esc(acc.displayName || acc.accountId)}</div>
+                    <div class="gd-ach-meta">${percent}%</div>
+                </div>
+                <div class="gd-ach-bar"><div class="gd-ach-fill" style="width:${percent}%"></div></div>
+                <div class="gd-ach-sub">${esc(subLine)}</div>
+                ${previewHtml}
+            </div>
+        `;
+    }).join('');
 }
 
 // ──────────────────────────────────────────
