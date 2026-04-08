@@ -624,13 +624,6 @@ window.gdInstallLoadAccounts = async function(platKey) {
         } catch (e) {}
     }
 
-    if (platKey === 'steam' && syncAccounts.length > 0 && accounts.length > 0) {
-        const _linkedSteam = new Set(syncAccounts.map((sa) => String(sa.id)));
-        accounts = accounts.filter((acc) => {
-            const rid = String(acc._resolvedSyncId || acc.platformAccountId || acc.steamId || acc.id || '');
-            return _linkedSteam.has(rid);
-        });
-    }
 
     // 👇 ضيف كود الـ Debugging هنا 👇
     if (platKey === 'steam') {
@@ -708,10 +701,13 @@ window.gdInstallLoadAccounts = async function(platKey) {
                     if (!lg || platKey !== 'steam') return false;
                     const lic = lg.steamLicensedAccountIds;
                     if (Array.isArray(lic)) {
-                        if (lic.length === 0) return false;
-                        return lic.map(String).includes(String(sid));
+                        if (lic.length > 0) return lic.map(String).includes(String(sid));
                     }
-                    return (lg.ownedByAccountIds || []).map(String).includes(String(sid));
+                    const owners = lg.ownedByAccountIds;
+                    if (Array.isArray(owners) && owners.length > 0) {
+                        return owners.map(String).includes(String(sid));
+                    }
+                    return (lg.steamDetectedAccountIds || []).map(String).includes(String(sid));
                 };
 
                 if (libGame && platKey === 'steam') {
@@ -720,7 +716,7 @@ window.gdInstallLoadAccounts = async function(platKey) {
                         ownershipStatus = 'owned';
                         isOwned = true;
                     } else if (isActuallySynced) {
-                        ownershipStatus = 'install-only';
+                        ownershipStatus = 'not-owned';
                         isOwned = false;
                     } else {
                         ownershipStatus = 'unknown';
@@ -746,13 +742,20 @@ window.gdInstallLoadAccounts = async function(platKey) {
                     ownershipStatus = 'unknown';
                     isOwned = false;
                 }
+            } else {
+                // ✅ Not synced in Baddel -> "Sync to verify"
+                ownershipStatus = 'unknown';
+                isOwned = false;
             }
         }
         return { ...acc, isOwned, ownershipStatus, _hasLibraryData: syncedLibrary.length > 0 };
-    }).filter((acc) => acc.ownershipStatus !== 'not-owned');
+    }).filter((acc) => {
+        // ✅ Show all accounts regardless of ownership status
+        return true;
+    });
 
     finalAccounts.sort((a, b) => {
-        const rank = (x) => (x.isOwned ? 2 : x.ownershipStatus === 'install-only' ? 1 : 0);
+        const rank = (x) => (x.isOwned ? 2 : x.ownershipStatus === 'unknown' ? 1 : 0);
         return rank(b) - rank(a);
     });
 
@@ -781,16 +784,32 @@ window.gdInstallLoadAccounts = async function(platKey) {
 
             const ownsGame = syncedLibrary.some((libGame) => {
                 if (_cmdAppId2 && libGame.appName && String(libGame.appName) === _cmdAppId2) {
-                    if (platKey === 'steam' && Array.isArray(libGame.steamLicensedAccountIds)) {
-                        return libGame.steamLicensedAccountIds.map(String).includes(String(sa.id));
+                    if (platKey === 'steam') {
+                        const lic = libGame.steamLicensedAccountIds;
+                        if (Array.isArray(lic) && lic.length > 0) {
+                            return lic.map(String).includes(String(sa.id));
+                        }
+                        const owners = libGame.ownedByAccountIds;
+                        if (Array.isArray(owners) && owners.length > 0) {
+                            return owners.map(String).includes(String(sa.id));
+                        }
+                        return (libGame.steamDetectedAccountIds || []).map(String).includes(String(sa.id));
                     }
                     return (libGame.ownedByAccountIds || []).map(String).includes(String(sa.id));
                 }
                 const libNorm = _norm2(libGame.title);
                 const titleMatch = libNorm === _gameNorm2 || libNorm.includes(_gameNorm2) || _gameNorm2.includes(libNorm);
                 if (!titleMatch) return false;
-                if (platKey === 'steam' && Array.isArray(libGame.steamLicensedAccountIds)) {
-                    return libGame.steamLicensedAccountIds.map(String).includes(String(sa.id));
+                if (platKey === 'steam') {
+                    const lic = libGame.steamLicensedAccountIds;
+                    if (Array.isArray(lic) && lic.length > 0) {
+                        return lic.map(String).includes(String(sa.id));
+                    }
+                    const owners = libGame.ownedByAccountIds;
+                    if (Array.isArray(owners) && owners.length > 0) {
+                        return owners.map(String).includes(String(sa.id));
+                    }
+                    return (libGame.steamDetectedAccountIds || []).map(String).includes(String(sa.id));
                 }
                 return (libGame.ownedByAccountIds || []).map(String).includes(String(sa.id));
             });
@@ -866,10 +885,10 @@ window.gdInstallLoadAccounts = async function(platKey) {
             </div>
             ${
                 a.isOwned
-                    ? `<div class="pl-owned-badge pl-badge-owned">✓ Licensed</div>`
-                    : a.ownershipStatus === 'install-only'
-                        ? `<div class="pl-owned-badge pl-badge-install-only" title="Installed on this PC but this account has no Steam license (e.g. Family Sharing). Steam may refuse to launch.">Installed · No license</div>`
-                    : (a.ownershipStatus === 'unknown' && a._hasLibraryData)
+                    ? `<div class="pl-owned-badge pl-badge-owned">✓ Owned</div>`
+                    : a.ownershipStatus === 'not-owned'
+                        ? `<div class="pl-owned-badge pl-badge-not-owned">✗ Not Owned</div>`
+                    : a.ownershipStatus === 'unknown'
                         ? `<div class="pl-owned-badge pl-badge-unknown" title="Sync this account in the Accounts tab to verify ownership">— Sync to verify</div>`
                         : ''
             }
@@ -1555,7 +1574,8 @@ function _gdNormTitle(s) {
 async function _gdPopulateAccounts(game) {
     const container = document.getElementById('gdAccountsList');
     const rows = [];
-    const platformKeys = Object.keys(GD_PLATFORM_LOGOS);
+    const detectedPlatforms = _gdDetectPlatforms(game);
+    const platformKeys = Object.keys(GD_PLATFORM_LOGOS).filter((platKey) => detectedPlatforms.includes(platKey));
 
     for (const platKey of platformKeys) {
         try {
@@ -1612,6 +1632,12 @@ async function _gdPopulateAccounts(game) {
                     ? syncedLibrary.filter((g) => {
                         if (Array.isArray(g.steamLicensedAccountIds) && g.steamLicensedAccountIds.length > 0) {
                             return g.steamLicensedAccountIds.map(String).includes(String(sa.id));
+                        }
+                        if (Array.isArray(g.ownedByAccountIds) && g.ownedByAccountIds.length > 0) {
+                            return g.ownedByAccountIds.map(String).includes(String(sa.id));
+                        }
+                        if (Array.isArray(g.steamDetectedAccountIds) && g.steamDetectedAccountIds.length > 0) {
+                            return g.steamDetectedAccountIds.map(String).includes(String(sa.id));
                         }
                         return g.ownedByAccountIds && g.ownedByAccountIds.map(String).includes(String(sa.id));
                     })
