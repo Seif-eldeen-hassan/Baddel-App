@@ -130,7 +130,14 @@ window.openGameDetails = async function(gameId) {
 
     // جيب الـ metadata من الـ API
     try {
-        const meta = await window.electronAPI.getMetadata(game.name);
+        const meta = await window.electronAPI.getMetadata(game.name, {
+            id: game.id,
+            platform: game.platform,
+            platforms: game.platforms,
+            command: game.command,
+            path: game.path,
+            allIds: game.allIds,
+        });
         _gdCurrentMeta = meta;
         _gdPopulateMeta(game, meta);
     } catch (e) {

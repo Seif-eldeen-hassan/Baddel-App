@@ -29,7 +29,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getFilePath:            (file)                    => webUtils.getPathForFile(file),
 
     // ---- Metadata & Playtime ----
-    getMetadata:            (gameName)                => ipcRenderer.invoke('get-game-metadata', gameName),
+    getMetadata:            (gameName, hints = {})    => ipcRenderer.invoke('get-game-metadata', gameName, hints),
     saveMetadata:           (gameId, meta)            => ipcRenderer.invoke('save-game-metadata', gameId, meta),
     updatePlaytime:         (gameId, minutes)         => ipcRenderer.invoke('update-playtime', gameId, minutes),
     onPlaytimeUpdated:      (cb)                      => ipcRenderer.on('playtime-updated', (_, data) => cb(data)),
@@ -136,7 +136,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     platformSyncStatus:      ()           => ipcRenderer.invoke('platform-sync:status'),
     platformSyncGetAccounts: (platform)   => ipcRenderer.invoke('platform-sync:get-accounts', platform), // السطر الجديد
     platformSyncLink:        (platform)   => ipcRenderer.invoke('platform-sync:link', platform),
-    platformSyncSync:        (platform)   => ipcRenderer.invoke('platform-sync:sync', platform),
+    platformSyncSync:        (platform, accountId) => ipcRenderer.invoke('platform-sync:sync', platform, accountId),
+    platformSyncGetState:    (platform)   => ipcRenderer.invoke('platform-sync:get-state', platform),
+    onPlatformSyncState:     (cb)         => {
+        const handler = (_, state) => cb(state);
+        ipcRenderer.on('platform-sync:state', handler);
+        return () => ipcRenderer.removeListener('platform-sync:state', handler);
+    },
     platformSyncGetCached:   (platform)   => ipcRenderer.invoke('platform-sync:get-cached', platform),
     platformSyncUnlink:      (platform, accountId) => ipcRenderer.invoke('platform-sync:unlink', platform, accountId), // التعديل هنا
     // ---- Shell ----

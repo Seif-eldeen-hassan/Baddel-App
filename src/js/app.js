@@ -1065,7 +1065,14 @@ async function processQueue() {
     const { imgElement, game } = imageQueue.shift();
 
     try {
-        const meta = await window.electronAPI.getMetadata(game.name);
+        const meta = await window.electronAPI.getMetadata(game.name, {
+            id: game.id,
+            platform: game.platform,
+            platforms: game.platforms,
+            command: game.command,
+            path: game.path,
+            allIds: game.allIds,
+        });
         if (meta) {
             if (meta.hero) game.heroImage = meta.hero;
             if (meta.logo) game.logo = meta.logo;

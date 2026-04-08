@@ -843,55 +843,119 @@ app.whenReady().then(async () => {
         }
     });
 
-    // دالة بتعمل بحث في يوتيوب وتجيب التريلر أوتوماتيك
-// دالة بتعمل بحث في يوتيوب وتجيب التريلر أوتوماتيك
-// دالة بتجيب التريلر مباشرة كملف فيديو MP4 من سيرفرات Steam (بدون إعلانات أو قيود)
-// دالة بتجيب التريلر مباشرة كملف فيديو MP4 من سيرفرات Steam (مع تخطي حماية العمر)
-async function fetchSteamTrailerAndReqs(gameName) {
+function _normalizePlatformHints(hints = {}) {
+    const plats = new Set();
+    const rawPlatforms = Array.isArray(hints.platforms)
+        ? hints.platforms
+        : (typeof hints.platform === 'string' ? hints.platform.split(',') : []);
+
+    rawPlatforms.forEach((p) => {
+        const key = String(p || '').toLowerCase().trim();
+        if (key) plats.add(key);
+    });
+
+    if (!rawPlatforms.length) {
+        const src = `${hints.platform || ''} ${hints.command || ''} ${hints.path || ''}`.toLowerCase();
+        if (src.includes('steam')) plats.add('steam');
+        if (src.includes('epic')) plats.add('epic');
+        if (src.includes('ea') || src.includes('origin')) plats.add('ea');
+        if (src.includes('riot')) plats.add('riot');
+        if (src.includes('ubisoft')) plats.add('ubisoft');
+        if (src.includes('rockstar')) plats.add('rockstar');
+    }
+
+    return [...plats];
+}
+
+function _extractSteamAppId(gameName, hints = {}) {
+    const candidates = [
+        hints.steamAppId,
+        hints?.allIds?.steam,
+        hints.id,
+        hints.command,
+    ];
+    for (const raw of candidates) {
+        const m = String(raw || '').match(/(\d{3,})/);
+        if (m) return m[1];
+    }
+    return null;
+}
+
+async function _findSteamAppIdByName(gameName) {
     try {
-        // 1. البحث عن اللعبة في ستيم
         const searchRes = await fetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
         const searchData = await searchRes.json();
+        if (!searchData.items || searchData.items.length === 0) return null;
+        return String(searchData.items[0].id);
+    } catch {
+        return null;
+    }
+}
 
-        if (!searchData.items || searchData.items.length === 0) return {};
-        const appId = searchData.items[0].id;
+// Steam Storefront (details + images + trailer + requirements)
+async function fetchSteamStorefrontData(gameName, hints = {}) {
+    try {
+        const appId = _extractSteamAppId(gameName, hints) || await _findSteamAppIdByName(gameName);
+        if (!appId) return null;
 
-        // 2. جيب تفاصيل اللعبة مع تخطي حماية العمر
         const detailsRes = await fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}`, {
             headers: {
                 'Cookie': 'birthtime=283993201; lastagecheckage=1-January-1980; mature_content=1; wants_mature_content=1'
             }
         });
         const detailsData = await detailsRes.json();
-
-        if (!detailsData[appId]?.success) return {};
+        if (!detailsData[appId]?.success) return null;
 
         const data = detailsData[appId].data;
-        const result = {};
+        if (!data) return null;
 
-        // التريلر
-        if (data.movies && data.movies.length > 0) {
-            result.trailer = data.movies[0].mp4?.max || data.movies[0].webm?.max || null;
-        }
+        const trailer = data.movies?.[0]?.mp4?.max || data.movies?.[0]?.webm?.max || null;
+        const allTrailers = (data.movies || []).map((movie, i) => ({
+            name: movie?.name || `Trailer ${i + 1}`,
+            url: movie?.mp4?.max || movie?.webm?.max || null,
+            thumbUrl: movie?.thumbnail || null,
+        })).filter((t) => !!t.url);
 
-        // المتطلبات
-        if (data.pc_requirements) {
-            result.requirements = {
-                minimum:     data.pc_requirements.minimum     || null,
-                recommended: data.pc_requirements.recommended || null,
-            };
-        }
+        const screenshots = (data.screenshots || []).map((s) => s.path_full || s.path_thumbnail).filter(Boolean);
+        const requirements = data.pc_requirements ? {
+            minimum: data.pc_requirements.minimum || null,
+            recommended: data.pc_requirements.recommended || null,
+        } : null;
 
-        return result;
+        return {
+            cover: data.header_image || null,
+            heroImage: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
+            logo: null,
+            info: {
+                description: data.detailed_description || data.short_description || null,
+                genres: (data.genres || []).map((g) => g.description).filter(Boolean),
+                developer: Array.isArray(data.developers) ? data.developers.join(', ') : null,
+                publisher: Array.isArray(data.publishers) ? data.publishers.join(', ') : null,
+                releaseDate: data.release_date?.date || null,
+                rating: typeof data.metacritic?.score === 'number' ? data.metacritic.score : null,
+                platforms: Object.entries(data.platforms || {})
+                    .filter(([, ok]) => !!ok)
+                    .map(([k]) => k.toUpperCase()),
+                engine: null,
+                gameMode: null,
+                website: data.website || null,
+                trailer,
+                allTrailers,
+                isDirectVideo: !!trailer,
+                artworks: [],
+                screenshots,
+                requirements,
+            },
+        };
     } catch (err) {
-        console.error('[Steam TrailerAndReqs Fetch Error]', err);
-        return {};
+        console.error('[Steam Storefront Fetch Error]', err);
+        return null;
     }
 }
 
     // ---- Metadata ----
 // ---- Metadata ----
-ipcMain.handle('get-game-metadata', async (_, gameName) => {
+ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     console.log(`\n======================================`);
     console.log(`🚀 [BACKEND] FETCHING: ${gameName} (PARALLEL & TIMEOUT)`);
     console.log(`======================================`);
@@ -909,20 +973,85 @@ ipcMain.handle('get-game-metadata', async (_, gameName) => {
 
     // 🚀 هنطلب التلاتة في نفس الوقت، بس بحد أقصى 3-4 ثواني للسيرفر
     // لو Steam أو غيره هنج، الكود مش هيقف وهيكمل باللي جابه
-    const [igdbData, sgdbData, steamDetails] = await Promise.all([
-        fetchWithTimeout(fetchFromIGDB(gameName).catch(e => { console.error('❌ IGDB:', e.message); return null; }), 4000, 'IGDB', null),
-        fetchWithTimeout(searchGame(gameName).catch(e => { console.error('❌ SGDB:', e.message); return null; }), 4000, 'SteamGridDB', null),
-        fetchWithTimeout(fetchSteamTrailerAndReqs(gameName).catch(e => { console.error('❌ Steam:', e.message); return {}; }), 3000, 'Steam API', {})
-    ]);
+    const platforms = _normalizePlatformHints(hints);
+    const isSteamGame = platforms.includes('steam');
+
+    const igdbPromise = fetchWithTimeout(
+        fetchFromIGDB(gameName).catch(e => { console.error('❌ IGDB:', e.message); return null; }),
+        4500,
+        'IGDB',
+        null
+    );
+    const steamPromise = fetchWithTimeout(
+        fetchSteamStorefrontData(gameName, hints).catch(e => { console.error('❌ Steam Storefront:', e.message); return null; }),
+        4500,
+        'Steam Storefront',
+        null
+    );
+    const rawgPromise = fetchWithTimeout(
+        fetchGameInfo(gameName).catch(e => { console.error('❌ RAWG:', e.message); return null; }),
+        4000,
+        'RAWG',
+        null
+    );
+    const sgdbPromise = fetchWithTimeout(
+        searchGame(gameName).catch(e => { console.error('❌ SGDB:', e.message); return null; }),
+        4000,
+        'SteamGridDB',
+        null
+    );
+
+    let primary = null;
+    let fallback1 = null;
+    let fallback2 = null;
+
+    if (isSteamGame) {
+        [primary, fallback1] = await Promise.all([steamPromise, igdbPromise]);
+    } else {
+        [primary, fallback1, fallback2] = await Promise.all([igdbPromise, steamPromise, rawgPromise]);
+    }
+    const sgdbData = await sgdbPromise;
 
     console.log(`✅ [APIs] All data fetched (or timed out).`);
 
-    // ── أولوية الـ images: SteamGridDB أول (عشان صوره Clean)، IGDB احتياطي ──
-    const cover     = sgdbData?.cover || igdbData?.cover     || null;
-    const heroImage = sgdbData?.hero  || igdbData?.heroImage || null;
-    const logo      = sgdbData?.logo  || igdbData?.logo      || null;
+    const normalizeRawg = (rawg) => {
+        if (!rawg) return null;
+        return {
+            cover: null,
+            heroImage: rawg.screenshots?.[0] || null,
+            logo: null,
+            info: {
+                description: rawg.description || null,
+                genres: rawg.genres || [],
+                developer: rawg.developers || null,
+                publisher: rawg.publishers || null,
+                releaseDate: rawg.releaseDate || null,
+                rating: rawg.metacritic || null,
+                platforms: ['PC'],
+                engine: null,
+                gameMode: null,
+                website: null,
+                trailer: rawg.trailer || null,
+                allTrailers: rawg.trailer ? [{ name: 'Trailer', url: rawg.trailer, thumbUrl: null }] : [],
+                isDirectVideo: !!rawg.trailer,
+                artworks: [],
+                screenshots: rawg.screenshots || [],
+                requirements: rawg.requirements || null,
+            },
+        };
+    };
 
-    const finalTrailer = igdbData?.info?.trailer || steamDetails?.trailer || null;
+    const rawgData = normalizeRawg(fallback2);
+    const chosenData = primary || fallback1 || rawgData || {};
+
+    // images priority: chosen source first, then SGDB fallback
+    const cover     = chosenData?.cover || sgdbData?.cover || null;
+    const heroImage = chosenData?.heroImage || chosenData?.hero || sgdbData?.hero || null;
+    const logo      = chosenData?.logo || sgdbData?.logo || null;
+
+    const finalTrailer = chosenData?.info?.trailer || null;
+    const finalAllTrailers = chosenData?.info?.allTrailers || [];
+    const finalScreenshots = chosenData?.info?.screenshots || [];
 
     console.log(`🎉 [BACKEND] DONE FOR: ${gameName}`);
     console.log(`======================================\n`);
@@ -933,10 +1062,12 @@ ipcMain.handle('get-game-metadata', async (_, gameName) => {
         hero: heroImage, // عشان الفرونت إند بتاعك
         logo,
         info: {
-            ...(igdbData?.info || {}),
+            ...(chosenData?.info || {}),
             trailer:      finalTrailer,
+            allTrailers:  finalAllTrailers,
+            screenshots:  finalScreenshots,
             isDirectVideo: finalTrailer?.endsWith('.mp4') || finalTrailer?.endsWith('.webm') || false,
-            requirements: igdbData?.info?.requirements || steamDetails?.requirements || null,
+            requirements: chosenData?.info?.requirements || null,
         }
     };
 });
