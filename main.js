@@ -942,6 +942,10 @@ function _parseStorefrontRequirements(html = '') {
 async function _fetchAchievementsForApp(appId) {
     const normalizedAppId = String(appId || '').match(/(\d{3,})/)?.[1] || null;
     if (!normalizedAppId) return { status: 'error', message: 'Invalid Steam app id' };
+    const withTimeout = (promise, ms, label) => Promise.race([
+        promise,
+        new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms)),
+    ]);
 
     const accounts = steamConnector?.getAccounts?.() || [];
     if (!accounts.length) {
@@ -957,7 +961,11 @@ async function _fetchAchievementsForApp(appId) {
         const firstCred = Object.values(allCreds)[0] || null;
         if (firstCred) {
             try {
-                const boot = await steamBridge.authenticate(firstCred, { waitForCache: false });
+                const boot = await withTimeout(
+                    steamBridge.authenticate(firstCred, { waitForCache: false }),
+                    12000,
+                    'Steam auth bootstrap'
+                );
                 if (boot?.status === 'authenticated' && boot?.steamId) {
                     activeSessionId = String(boot.steamId);
                 }
@@ -974,7 +982,11 @@ async function _fetchAchievementsForApp(appId) {
             let authenticated = false;
 
             if (creds) {
-                const authRes = await steamBridge.authenticate(creds, { waitForCache: false });
+                const authRes = await withTimeout(
+                    steamBridge.authenticate(creds, { waitForCache: false }),
+                    12000,
+                    `Steam auth (${displayName})`
+                );
                 authenticated = authRes?.status === 'authenticated';
             } else if (activeSessionId && activeSessionId === accountId) {
                 authenticated = true;
@@ -995,7 +1007,11 @@ async function _fetchAchievementsForApp(appId) {
                 continue;
             }
 
-            const achRes = await steamBridge.getAchievements([normalizedAppId]);
+            const achRes = await withTimeout(
+                steamBridge.getAchievements([normalizedAppId]),
+                20000,
+                `Steam achievements (${displayName}, app ${normalizedAppId})`
+            );
             const unlocked = Array.isArray(achRes?.achievements?.[normalizedAppId])
                 ? achRes.achievements[normalizedAppId]
                 : [];
