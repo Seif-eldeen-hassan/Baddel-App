@@ -87,10 +87,23 @@ class SteamBridge extends EventEmitter {
 
         this._proc.stderr.setEncoding('utf8');
         this._proc.stderr.on('data', (chunk) => {
-            // Python logs go to stderr — forward them for debugging
-            chunk.split('\n').filter(Boolean).forEach(line =>
-                console.log('[STEAM-PY]', line)
-            );
+            chunk.split('\n').filter(Boolean).forEach((line) => {
+                // Skip high-volume noise: server lists, heartbeats, raw message traces
+                const isNoise = (
+                    line.includes('Got servers from backend') ||
+                    line.includes('ClientHeartBeat') ||
+                    line.includes('Ignored message') ||
+                    line.includes('extended header - ignoring') ||
+                    line.includes('EMsg.Multi') ||
+                    line.includes('EMsg.ClientServersAvailable') ||
+                    line.includes('[In]') ||
+                    line.includes('[Out]')
+                );
+                if (!isNoise) {
+                    console.log('[STEAM-PY]', line);
+                }
+                this.emit('bridgeLog', { level: 'info', message: line });
+            });
         });
 
         this._proc.on('exit', (code, signal) => {
@@ -148,28 +161,29 @@ class SteamBridge extends EventEmitter {
      *   { status: 'need_2fa',      method, loginUrl, endUriRegex }
      *   { status: 'error',         message }
      */
-    async authenticate(storedCredentials = null) {
+    async authenticate(storedCredentials = null, options = {}) {
         this._cacheIsReady = false;
+        const waitForCache = options?.waitForCache === true;
+        const cacheTimeoutMs = Number.isFinite(options?.cacheTimeoutMs) ? options.cacheTimeoutMs : 20_000;
+        const targetId = storedCredentials?.steamAccountId || storedCredentials?.steam_id_plain || '?';
+        console.log(`[SteamBridge:AUTH] ▶ authenticate() called — target=${targetId} waitForCache=${waitForCache}`);
 
-        // Register the listener BEFORE sending the call so we don't miss the
-        // event if the PICS pipeline finishes while authenticate is in-flight.
         const cacheReadyPromise = new Promise((resolve) => {
             this.once('cacheReady', resolve);
         });
 
         const result = await this._call('authenticate', { storedCredentials });
+        console.log(`[SteamBridge:AUTH] ◀ authenticate() result — status=${result?.status} steamId=${result?.steamId ?? 'n/a'}`);
 
         if (result?.status === 'authenticated' && result.steamId != null && result.steamId !== '') {
             this._lastSessionSteamId = String(result.steamId);
             this._currentSteamId = String(result.steamId);
         }
 
-        // If authenticated, block until the games cache is ready (or timeout).
-        // This guarantees getOwnedGames() always sees a populated cache.
-        if (result?.status === 'authenticated') {
+        if (result?.status === 'authenticated' && waitForCache) {
             await Promise.race([
                 cacheReadyPromise,
-                new Promise(r => setTimeout(r, 35_000)), // safety timeout
+                new Promise((resolve) => setTimeout(resolve, cacheTimeoutMs)),
             ]);
         }
 
@@ -192,11 +206,25 @@ class SteamBridge extends EventEmitter {
     }
 
     /**
+     * Clear the current session and bridge cache.
+     */
+    async logout() {
+        this._cacheIsReady = false;
+        this._currentSteamId = null;
+        this._lastSessionSteamId = null;
+        return this._call('logout', {});
+    }
+
+    /**
      * Returns full owned games list.
      * { status: 'success', games: [{ id, title, appid, platform }] }
      */
     async getOwnedGames() {
-        return this._call('get_owned_games', {});
+        console.log(`[SteamBridge:GAMES] ▶ getOwnedGames() — cacheReady=${this._cacheIsReady} session=${this._lastSessionSteamId}`);
+        const result = await this._call('get_owned_games', {});
+        const count = Array.isArray(result?.games) ? result.games.length : 0;
+        console.log(`[SteamBridge:GAMES] ◀ getOwnedGames() — status=${result?.status} count=${count}`);
+        return result;
     }
 
     /**
@@ -216,17 +244,19 @@ class SteamBridge extends EventEmitter {
      */
     waitForCacheReady(timeoutMs = 35_000) {
         if (this._cacheIsReady) {
-            console.log('[SteamBridge] Cache already ready — skipping wait');
+            console.log('[SteamBridge:CACHE] Already ready — skipping wait');
             return Promise.resolve();
         }
+        console.log(`[SteamBridge:CACHE] ⏳ Waiting for cache (timeout=${timeoutMs}ms) session=${this._lastSessionSteamId}`);
         return new Promise((resolve) => {
             const timer = setTimeout(() => {
-                console.warn(`[SteamBridge] waitForCacheReady timed out after ${timeoutMs}ms — proceeding anyway`);
+                console.warn(`[SteamBridge:CACHE] ⚠ TIMED OUT after ${timeoutMs}ms — cacheIsReady=${this._cacheIsReady} — proceeding anyway`);
                 resolve();
             }, timeoutMs);
 
             this.once('cacheReady', () => {
                 clearTimeout(timer);
+                console.log(`[SteamBridge:CACHE] ✅ Cache ready — session=${this._lastSessionSteamId}`);
                 resolve();
             });
         });
@@ -326,7 +356,7 @@ class SteamBridge extends EventEmitter {
         switch (event) {
             case 'cache_ready':
                 // Python finished the PICS pipeline — games are now available.
-                console.log('[SteamBridge] 🎮 Games cache is ready');
+                console.log(`[SteamBridge:CACHE] 🎮 cache_ready event received — session=${this._lastSessionSteamId}`);
                 this._cacheIsReady = true;
                 this.emit('cacheReady');
                 break;
@@ -387,7 +417,12 @@ class SteamBridge extends EventEmitter {
 
     _writeCache(cache) {
         try {
-            fs.writeFileSync(_getCacheFile(), JSON.stringify(cache, null, 2), 'utf8');
+            const content = JSON.stringify(cache, null, 2);
+            if (!content || content === '{}') {
+                 console.warn('[SteamBridge] Attempted to write empty cache — blocked');
+                 return;
+            }
+            fs.writeFileSync(_getCacheFile(), content, 'utf8');
         } catch (e) {
             console.error('[SteamBridge] Failed to write cache:', e.message);
         }
@@ -436,6 +471,47 @@ class SteamBridge extends EventEmitter {
         }
     }
 
+    waitForCredentials(steamId, timeoutMs = 10_000) {
+        const wantedId = steamId != null ? String(steamId).trim() : '';
+        if (!wantedId) return Promise.resolve(null);
+
+        const existing = this.getCredentialsForAccount(wantedId);
+        if (existing) {
+            return Promise.resolve(existing);
+        }
+
+        return new Promise((resolve) => {
+            let settled = false;
+
+            const cleanup = () => {
+                clearTimeout(timer);
+                this.off('credentialsChanged', onChange);
+            };
+
+            const finish = (creds) => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                resolve(creds || null);
+            };
+
+            const onChange = (data) => {
+                const candidate =
+                    data?.steamAccountId ??
+                    data?.steam_id_plain ??
+                    data?.steamId ??
+                    data?.steam_id;
+                if (candidate != null && String(candidate).trim() === wantedId) {
+                    finish(this.getCredentialsForAccount(wantedId) || data);
+                }
+            };
+
+            const timer = setTimeout(() => finish(this.getCredentialsForAccount(wantedId)), timeoutMs);
+
+            this.on('credentialsChanged', onChange);
+        });
+    }
+
     /** Legacy single-account save — kept for backward compatibility */
     _saveCredentialsLegacy(creds) {
         try {
@@ -457,7 +533,23 @@ class SteamBridge extends EventEmitter {
             const byAccount = cache._steamCredentialsByAccount || {};
             if (byAccount[String(steamId)]) return byAccount[String(steamId)];
             // fallback: legacy single-credential blob
-            return cache._steamCredentials || null;
+            const legacy = cache._steamCredentials || null;
+            if (!legacy) return null;
+
+            const requested = steamId != null ? String(steamId).trim() : '';
+            if (!requested) return legacy;
+
+            const legacyId =
+                legacy.steamAccountId ??
+                legacy.steam_id_plain ??
+                legacy.steamId ??
+                legacy.steam_id;
+
+            if (legacyId != null && String(legacyId).trim() === requested) {
+                return legacy;
+            }
+
+            return null;
         } catch {
             return null;
         }

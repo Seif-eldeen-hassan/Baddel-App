@@ -13,11 +13,18 @@ const https = require('https');
 const util = require('util');
 const execAsync = util.promisify(exec);
 const { getLocalSteamGames } = require('./gameScanner');
+const {
+    orderAccountsForSync,
+    countGamesForAccount,
+    finalizeLibraryForAccounts,
+    removeAccountFromLibrary,
+} = require('./platformSyncShared');
 
 // ─── Paths ───────────────────────────────────────────────────
 const LEGENDARY_BIN      = path.join(__dirname, 'bin', 'legendary.exe');
 const SYNC_CACHE_DIR     = path.join(app.getPath('userData'), 'platform-sync');
 const COVERS_DIR         = path.join(SYNC_CACHE_DIR, 'covers');
+const SYNC_LOGS_DIR      = path.join(SYNC_CACHE_DIR, 'logs');
 
 // Epic Paths
 const EPIC_ACCOUNTS_FILE = path.join(SYNC_CACHE_DIR, 'epic_accounts.json');
@@ -33,6 +40,164 @@ const STEAM_MERGED_CACHE  = path.join(SYNC_CACHE_DIR, 'steam_library_merged.json
 async function ensureDirs() {
     await fs.mkdir(SYNC_CACHE_DIR, { recursive: true });
     await fs.mkdir(COVERS_DIR, { recursive: true });
+    await fs.mkdir(SYNC_LOGS_DIR, { recursive: true });
+}
+
+let _platformSyncWindowGetter = null;
+const _platformSyncLogWriteQueue = {};
+const _coverPrimeQueue = new Map();
+const _platformSyncState = {
+    steam: null,
+    epic: null,
+};
+
+function _clonePlain(value) {
+    return JSON.parse(JSON.stringify(value));
+}
+
+function _createPlatformSyncState(platform) {
+    return {
+        platform,
+        isSyncing: false,
+        phase: 'idle',
+        statusText: '',
+        startedAt: null,
+        finishedAt: null,
+        progress: {
+            completedAccounts: 0,
+            totalAccounts: 0,
+            percent: 0,
+            currentAccountId: null,
+            currentAccountName: null,
+        },
+        accounts: {},
+        logs: [],
+        lastError: null,
+        validation: { ok: true, issues: [], countsByAccount: {}, totalGames: 0 },
+        summary: { totalGames: 0, installOnlyGames: 0, sampleTitles: [] },
+    };
+}
+
+function _getPlatformSyncState(platform) {
+    if (!_platformSyncState[platform]) {
+        _platformSyncState[platform] = _createPlatformSyncState(platform);
+    }
+    return _platformSyncState[platform];
+}
+
+function _emitPlatformSyncState(platform) {
+    try {
+        const win = _platformSyncWindowGetter?.();
+        if (win && !win.isDestroyed()) {
+            win.webContents.send('platform-sync:state', _clonePlain(_getPlatformSyncState(platform)));
+        }
+    } catch {}
+}
+
+function _setPlatformSyncState(platform, updater) {
+    const baseState = _clonePlain(_getPlatformSyncState(platform));
+    const nextState = typeof updater === 'function'
+        ? (updater(baseState) || baseState)
+        : { ...baseState, ...updater };
+    _platformSyncState[platform] = nextState;
+    _emitPlatformSyncState(platform);
+    return nextState;
+}
+
+function _pushPlatformSyncLog(platform, level, message, extra = {}) {
+    const prefix = `[PlatformSync:${platform}]`;
+    if (level === 'error') console.error(prefix, message, extra);
+    else if (level === 'warn') console.warn(prefix, message, extra);
+    else console.log(prefix, message, extra);
+
+    const entry = {
+        timestamp: new Date().toISOString(),
+        level,
+        message,
+        accountId: extra.accountId ? String(extra.accountId) : null,
+        accountName: extra.accountName || null,
+    };
+
+    _setPlatformSyncState(platform, (state) => {
+        state.logs = [...(state.logs || []), entry].slice(-80);
+        return state;
+    });
+
+    const logLine = JSON.stringify(entry) + '\n';
+    const currentQueue = _platformSyncLogWriteQueue[platform] || Promise.resolve();
+    _platformSyncLogWriteQueue[platform] = currentQueue
+        .then(() => ensureDirs())
+        .then(() => fs.appendFile(path.join(SYNC_LOGS_DIR, `${platform}.log`), logLine, 'utf8'))
+        .catch(() => {});
+}
+
+function _startPlatformSync(platform, accounts, statusText) {
+    const now = new Date().toISOString();
+    const state = _createPlatformSyncState(platform);
+    state.isSyncing = true;
+    state.phase = 'starting';
+    state.statusText = statusText;
+    state.startedAt = now;
+    state.finishedAt = null;
+    state.progress.totalAccounts = accounts.length;
+    state.accounts = Object.fromEntries(accounts.map((account) => [
+        String(account.id),
+        {
+            id: String(account.id),
+            displayName: account.displayName || String(account.id),
+            status: 'pending',
+            gamesCount: 0,
+            gameTitles: [],
+            message: 'Waiting to sync',
+            startedAt: null,
+            finishedAt: null,
+        },
+    ]));
+    _platformSyncState[platform] = state;
+    _emitPlatformSyncState(platform);
+    _pushPlatformSyncLog(platform, 'info', statusText);
+}
+
+function _updatePlatformSyncAccount(platform, accountId, patch = {}) {
+    _setPlatformSyncState(platform, (state) => {
+        const aid = String(accountId);
+        const existing = state.accounts?.[aid] || { id: aid, displayName: aid, status: 'pending', gamesCount: 0 };
+        state.accounts = {
+            ...state.accounts,
+            [aid]: {
+                ...existing,
+                ...patch,
+            },
+        };
+        return state;
+    });
+}
+
+function _updatePlatformSyncProgress(platform, patch = {}) {
+    _setPlatformSyncState(platform, (state) => {
+        state.progress = { ...state.progress, ...patch };
+        const total = Math.max(0, Number(state.progress.totalAccounts) || 0);
+        const completed = Math.max(0, Number(state.progress.completedAccounts) || 0);
+        state.progress.percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+        return state;
+    });
+}
+
+function _finishPlatformSync(platform, patch = {}) {
+    _setPlatformSyncState(platform, (state) => {
+        state.isSyncing = false;
+        state.phase = patch.phase || 'done';
+        state.statusText = patch.statusText || state.statusText;
+        state.finishedAt = new Date().toISOString();
+        state.lastError = patch.lastError || null;
+        if (patch.validation) state.validation = patch.validation;
+        if (patch.summary) state.summary = patch.summary;
+        if (patch.progress) state.progress = { ...state.progress, ...patch.progress };
+        const total = Math.max(0, Number(state.progress.totalAccounts) || 0);
+        const completed = Math.max(0, Number(state.progress.completedAccounts) || 0);
+        state.progress.percent = total > 0 ? Math.min(100, Math.round((completed / total) * 100)) : 0;
+        return state;
+    });
 }
 
 async function _writeSwitcherSyncLink(platform, switcherProfileName, platformAccountId, extra = {}) {
@@ -74,15 +239,230 @@ async function downloadAndCacheCover(url, gameId) {
     }
 }
 
+function _getCachedCoverUrl(gameId) {
+    const safeGameId = String(gameId || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!safeGameId) return null;
+    const destPath = path.join(COVERS_DIR, `${safeGameId}.jpg`);
+    if (!fsSync.existsSync(destPath)) return null;
+    return `file:///${destPath.replace(/\\/g, '/')}`;
+}
+
+function primeCoverDownload(url, gameId) {
+    if (!url || !String(url).startsWith('https') || _getCachedCoverUrl(gameId)) {
+        return Promise.resolve(_getCachedCoverUrl(gameId) || url || null);
+    }
+    const queueKey = `${gameId}:${url}`;
+    if (_coverPrimeQueue.has(queueKey)) {
+        return _coverPrimeQueue.get(queueKey);
+    }
+    const task = downloadAndCacheCover(url, gameId)
+        .catch(() => url)
+        .finally(() => {
+            _coverPrimeQueue.delete(queueKey);
+        });
+    _coverPrimeQueue.set(queueKey, task);
+    return task;
+}
+
+async function resolveCoverUrlForSync(url, gameId) {
+    const cachedUrl = _getCachedCoverUrl(gameId);
+    if (cachedUrl) return cachedUrl;
+    void primeCoverDownload(url, gameId);
+    return url || null;
+}
+
+async function mapWithConcurrency(items, limit, mapper) {
+    const list = Array.isArray(items) ? items : [];
+    if (list.length === 0) return [];
+    const concurrency = Math.max(1, Math.min(Number(limit) || 1, list.length));
+    const results = new Array(list.length);
+    let cursor = 0;
+
+    async function worker() {
+        while (cursor < list.length) {
+            const index = cursor++;
+            results[index] = await mapper(list[index], index);
+        }
+    }
+
+    await Promise.all(Array.from({ length: concurrency }, () => worker()));
+    return results;
+}
+
+function createFriendlySyncError(platform, err) {
+    const rawMessage = String(err?.message || err || 'Unknown error').trim();
+    const lower = rawMessage.toLowerCase();
+
+    if (lower.includes('timeout')) {
+        return {
+            userMessage: platform === 'steam'
+                ? 'Steam took too long to reply. We kept the previous library data and saved diagnostics.'
+                : 'Epic Games took too long to reply. We kept the previous library data and saved diagnostics.',
+            diagnosticMessage: rawMessage,
+        };
+    }
+
+    if (lower.includes('credentials folder is missing')) {
+        return {
+            userMessage: 'The saved account data is incomplete. Please relink this account and try again.',
+            diagnosticMessage: rawMessage,
+        };
+    }
+
+    if (lower.includes('not authenticated') || lower.includes('authentication')) {
+        return {
+            userMessage: 'Authentication did not finish correctly. Please sign in again.',
+            diagnosticMessage: rawMessage,
+        };
+    }
+
+    return {
+        userMessage: rawMessage || 'Sync failed. We kept the previous library data.',
+        diagnosticMessage: rawMessage || 'Unknown sync error',
+    };
+}
+
+function mergeOwnedGamesIntoLibrary(mergedLibrary, games, account, platform) {
+    const aid = String(account.id);
+    for (const game of games) {
+        if (mergedLibrary.has(game.id)) {
+            const existing = mergedLibrary.get(game.id);
+            if (!existing.ownedBy.includes(account.displayName)) existing.ownedBy.push(account.displayName);
+            if (!existing.ownedByAccountIds.map(String).includes(aid)) existing.ownedByAccountIds.push(aid);
+            if (platform === 'steam') {
+                if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
+                if (!existing.steamLicensedAccountIds.map(String).includes(aid)) existing.steamLicensedAccountIds.push(aid);
+            }
+            continue;
+        }
+        mergedLibrary.set(game.id, game);
+    }
+}
+
+async function buildSteamOwnedGameEntries(account, games = []) {
+    return mapWithConcurrency(games, 10, async (game) => ({
+        id: game.id,
+        title: game.title,
+        platform: 'steam',
+        source: 'steam',
+        coverUrl: await resolveCoverUrlForSync(
+            `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
+            game.id
+        ),
+        appName: String(game.appid),
+        playtime: 0,
+        lastSynced: new Date().toISOString(),
+        ownedBy: [account.displayName],
+        ownedByAccountIds: [String(account.id)],
+        steamLicensedAccountIds: [String(account.id)],
+    }));
+}
+
+async function buildEpicOwnedGameEntries(account, entries = []) {
+    return mapWithConcurrency(entries, 10, async (entry) => {
+        const gameId = `epic_${entry.app_name}`;
+        return {
+            id: gameId,
+            title: entry.app_title || entry.app_name,
+            platform: 'epic',
+            source: 'epic',
+            coverUrl: await resolveCoverUrlForSync(_pickEpicCover(entry.metadata?.keyImages), gameId),
+            appName: entry.app_name,
+            namespace: entry.namespace || entry.metadata?.namespace || '',
+            catalogItemId: entry.catalog_item_id || entry.metadata?.id || '',
+            lastSynced: new Date().toISOString(),
+            ownedBy: [account.displayName],
+            ownedByAccountIds: [String(account.id)],
+        };
+    });
+}
+
+function summarizeGameTitles(games, limit = 4) {
+    return [...new Set(
+        (games || [])
+            .map((game) => String(game?.title || '').trim())
+            .filter(Boolean)
+    )].slice(0, limit);
+}
+
+function steamGameBelongsToAccount(game, accountId) {
+    const aid = String(accountId);
+    if (!game || typeof game !== 'object') return false;
+
+    // Check all arrays - if it's in ANY of them, the account owns it.
+    if (Array.isArray(game.steamLicensedAccountIds) && game.steamLicensedAccountIds.map(String).includes(aid)) {
+        return true;
+    }
+    if (Array.isArray(game.ownedByAccountIds) && game.ownedByAccountIds.map(String).includes(aid)) {
+        return true;
+    }
+    if (Array.isArray(game.steamDetectedAccountIds) && game.steamDetectedAccountIds.map(String).includes(aid)) {
+        return true;
+    }
+
+    return false;
+}
+
+async function fetchSteamOwnedGamesWithRetry(account, previousCount, initialSessionSteamId) {
+    const aid = String(account.id);
+    let result = await steamBridge.getOwnedGames();
+    let rawGamesCount = Array.isArray(result?.games) ? result.games.length : 0;
+    const shouldRetry = result?.status === 'success' && rawGamesCount === 0;
+
+    if (!shouldRetry) {
+        console.log(`[Sync:${account.displayName}] getOwnedGames → ${rawGamesCount} games (no retry needed)`);
+        return { result, rawGamesCount };
+    }
+
+    console.warn(`[Sync:${account.displayName}] ⚠ getOwnedGames returned 0 — retrying after 1.5s grace period`);
+    _pushPlatformSyncLog('steam', 'warn', `Steam returned 0 owned games for ${account.displayName}. Retrying once after the cache settles.`, {
+        accountId: aid,
+        accountName: account.displayName,
+    });
+    _updatePlatformSyncAccount('steam', aid, {
+        status: 'syncing',
+        message: 'Checking your Steam library again',
+    });
+
+    // Cache was already awaited before this call — just a short grace period
+    await new Promise((resolve) => setTimeout(resolve, 1_500));
+
+    const retryResult = await steamBridge.getOwnedGames();
+    const retryCount = Array.isArray(retryResult?.games) ? retryResult.games.length : 0;
+    console.log(`[Sync:${account.displayName}] Retry → ${retryCount} games`);
+
+    if (retryResult?.status === 'success' && retryCount > rawGamesCount) {
+        _pushPlatformSyncLog('steam', 'info', `Retry recovered ${retryCount} owned games for ${account.displayName}`, {
+            accountId: aid,
+            accountName: account.displayName,
+        });
+        result = retryResult;
+        rawGamesCount = retryCount;
+    } else if (retryResult?.status === 'success' && retryCount === 0) {
+        result = retryResult;
+        rawGamesCount = 0;
+    }
+
+    return { result, rawGamesCount };
+}
+
 // ─── Steam Bridge ────────────────────────────────────────────
 
 const steamBridge = require('./steamBridge');
 
 let _bridgeStarted = false;
+let _steamBridgeListenersBound = false;
 async function _ensureBridgeRunning() {
     if (_bridgeStarted && steamBridge.isRunning) return;
     await steamBridge.start();
     _bridgeStarted = true;
+
+    if (_steamBridgeListenersBound) return;
+    _steamBridgeListenersBound = true;
+
+    steamBridge.on('bridgeLog', ({ level, message }) => {
+        _pushPlatformSyncLog('steam', level === 'error' ? 'error' : 'info', message);
+    });
 
     steamBridge.on('gamesUpdate', async (newGames) => {
         console.log(`[SteamBridge] 🎮 Background: ${newGames.length} new games discovered`);
@@ -97,12 +477,17 @@ async function _ensureBridgeRunning() {
 
             for (const g of newGames) {
                 if (!map.has(g.id)) {
-                    const coverUrl = await downloadAndCacheCover(
-                        `https://steamcdn-a.akamaihd.net/steam/apps/${g.appid}/library_600x900.jpg`, g.id
-                    );
                     map.set(g.id, {
-                        id: g.id, title: g.title, platform: 'steam', source: 'steam',
-                        coverUrl, appName: String(g.appid), playtime: 0,
+                        id: g.id,
+                        title: g.title,
+                        platform: 'steam',
+                        source: 'steam',
+                        coverUrl: await resolveCoverUrlForSync(
+                            `https://steamcdn-a.akamaihd.net/steam/apps/${g.appid}/library_600x900.jpg`,
+                            g.id
+                        ),
+                        appName: String(g.appid),
+                        playtime: 0,
                         lastSynced: new Date().toISOString(),
                         ownedBy: displayNames,
                         ownedByAccountIds: licensedIds.length ? [...licensedIds] : [],
@@ -112,14 +497,10 @@ async function _ensureBridgeRunning() {
                 } else {
                     const ex = map.get(g.id);
                     if (!ex.steamLicensedAccountIds) ex.steamLicensedAccountIds = [];
-                    if (sid && !ex.steamLicensedAccountIds.map(String).includes(String(sid))) {
-                        ex.steamLicensedAccountIds.push(String(sid));
-                    }
+                    if (sid && !ex.steamLicensedAccountIds.map(String).includes(String(sid))) ex.steamLicensedAccountIds.push(String(sid));
                     if (sid && accMatch) {
                         if (!ex.ownedByAccountIds) ex.ownedByAccountIds = [];
-                        if (!ex.ownedByAccountIds.map(String).includes(String(sid))) {
-                            ex.ownedByAccountIds.push(String(sid));
-                        }
+                        if (!ex.ownedByAccountIds.map(String).includes(String(sid))) ex.ownedByAccountIds.push(String(sid));
                         if (!ex.ownedBy) ex.ownedBy = [];
                         if (!ex.ownedBy.includes(accMatch.displayName)) ex.ownedBy.push(accMatch.displayName);
                     }
@@ -160,18 +541,13 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
                 console.warn(`[SteamBridge] Re-auth returned wrong account: ${authResult.steamId} !== ${steamId}`);
             }
         } else {
-            // ─ أكاونت جديد: force fresh login ───────────────
-            // مهم: نـ authenticate بـ null عشان البريدج ما يرجعش
-            // الأكاونت اللي مسجّل دخوله قبل كده
-            authResult = await steamBridge.authenticate(null);
-
-            // لو البريدج رجع authenticated (session قديمة)، نطلب login جديد
-            // بـ null credentials صريح — البريدج المفروض يرجع need_login
-            if (authResult.status === 'authenticated') {
-                // ده معناه في session نشطة — نـ logout أولاً
-                try { await steamBridge._call('logout', {}); } catch {}
-                authResult = await steamBridge.authenticate(null);
+            try {
+                await steamBridge.logout();
+            } catch (e) {
+                console.warn('[SteamBridge] Fresh-login logout skipped:', e?.message || e);
             }
+
+            authResult = await steamBridge.authenticate(null);
         }
 
         if (authResult.status === 'error') {
@@ -180,11 +556,17 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
 
         // فتح نافذة الـ Login
         const win = new BrowserWindow({
-            width: 500, height: 600,
+            width: 520,
+            height: 700,
             parent: parentWindow || undefined,
             modal: !!parentWindow,
+            autoHideMenuBar: true,
             frame: false,
-            backgroundColor: '#1a1a2e',
+            transparent: true,
+            backgroundColor: '#00000000', // Fully transparent to let index.html handle it
+            resizable: false,
+            show: false, // Don't show until ready-to-show to avoid white flash
+            icon: path.join(__dirname, 'assets', 'app_icon.png'),
             webPreferences: {
                 nodeIntegration: false,
                 contextIsolation: true,
@@ -195,7 +577,68 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
             title: 'Connect Steam',
         });
 
+        win.setMenuBarVisibility(false);
+        win.removeMenu();
+
+        win.once('ready-to-show', () => {
+            win.show();
+        });
+
         let currentEndUriRegex = authResult.endUriRegex;
+        const applySteamSupportTheme = async () => {
+            try {
+                await win.webContents.insertCSS(`
+                    /* ── Reverting to original Steam design ── */
+                    /* We only hide the scrollbar and add style for our custom close arrow */
+                    
+                    ::-webkit-scrollbar { width: 0px; background: transparent; }
+                    * { -ms-overflow-style: none; scrollbar-width: none; }
+
+                    #baddel-close-button {
+                        position: fixed !important;
+                        top: 20px !important;
+                        right: 20px !important;
+                        width: 40px !important;
+                        height: 40px !important;
+                        background: #171d25 !important;
+                        border: 1px solid #3d4450 !important;
+                        border-radius: 50% !important;
+                        display: flex !important;
+                        align-items: center !important;
+                        justify-content: center !important;
+                        cursor: pointer !important;
+                        color: #c7d5e0 !important;
+                        z-index: 999999 !important;
+                        box-shadow: 0 4px 15px rgba(0,0,0,0.5) !important;
+                        transition: all 0.2s ease !important;
+                    }
+                    #baddel-close-button:hover {
+                        background: #3d4450 !important;
+                        color: #ffffff !important;
+                        transform: scale(1.05) !important;
+                        border-color: #66c0f4 !important;
+                    }
+                `);
+            } catch {}
+        };
+
+        const injectNavigationButtons = async () => {
+            try {
+                await win.webContents.executeJavaScript(`
+                    (function() {
+                        if (document.getElementById('baddel-close-button')) return;
+                        
+                        const btn = document.createElement('div');
+                        btn.id = 'baddel-close-button';
+                        btn.innerHTML = '<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
+                        btn.title = 'Close';
+                        btn.onclick = () => { window.location.href = 'baddel://close'; };
+                        
+                        document.body.appendChild(btn);
+                    })();
+                `);
+            } catch {}
+        };
 
         const checkUrl = async (url) => {
             if (!currentEndUriRegex) return;
@@ -225,15 +668,49 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
             }
         };
 
-        win.webContents.on('will-navigate', (_e, url) => { _e.preventDefault(); checkUrl(url); });
-        win.webContents.on('did-navigate', (_e, url) => checkUrl(url));
+        win.webContents.setWindowOpenHandler(({ url }) => {
+            if (url.includes('help.steampowered.com')) {
+                win.loadURL(url);
+                return { action: 'deny' };
+            }
+            return { action: 'deny' };
+        });
+
+        win.webContents.on('will-navigate', (_e, url) => {
+            if (url === 'baddel://close') {
+                _e.preventDefault();
+                win.close();
+                return;
+            }
+            if (url.includes('help.steampowered.com')) {
+                return;
+            }
+            _e.preventDefault();
+            checkUrl(url);
+        });
+
+        win.webContents.on('did-navigate', (_e, url) => {
+            if (url.includes('help.steampowered.com')) {
+                applySteamSupportTheme();
+                injectNavigationButtons();
+                return;
+            }
+            checkUrl(url);
+        });
+
         win.webContents.on('did-navigate-in-page', (_e, url) => checkUrl(url));
         win.on('closed', () => reject(new Error('Steam login window closed.')));
 
-        win.loadURL(authResult.loginUrl);
-        win.webContents.openDevTools({ mode: 'detach' });
-    });
-}
+        try {
+            await win.loadURL(authResult.loginUrl);
+        } catch (err) {
+            console.error('[SteamBridge] Failed to load login URL:', err);
+            win.close();
+             return reject(new Error('Could not connect to Steam. Please check your internet connection.'));
+         }
+         // win.webContents.openDevTools({ mode: 'detach' });
+     });
+ }
 
 // ─── steamConnector ───────────────────────────────────────────
 
@@ -270,10 +747,11 @@ const steamConnector = {
         const displayName = personaName || 'Steam User';
         const steamIdStr = String(steamId);
 
-        // خزّن الـ credentials بالـ steamId الصح فوراً
-        // (البريدج بيعمل ده أوتوماتيك عبر store_credentials event،
-        //  بس نتأكد مانيالياً هنا عشان multi-account)
-        // Steam64 ids exceed Number.MAX_SAFE_INTEGER — always store as string.
+        try {
+            await steamBridge.waitForCredentials(steamIdStr, 10000);
+        } catch (e) {
+            console.warn(`[SteamBridge] Credentials were not confirmed in cache for ${steamIdStr}:`, e?.message || e);
+        }
 
         let accounts = this.getAccounts();
         const existingIndex = accounts.findIndex(a => String(a.id) === steamIdStr);
@@ -284,113 +762,240 @@ const steamConnector = {
             accounts.push({ id: steamIdStr, displayName });
         }
 
+        if (accounts.length === 0) {
+             console.error('[PlatformSync] Account list is empty after linking — blocking save');
+             throw new Error('Failed to update account list.');
+        }
+
         await fs.writeFile(STEAM_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
         await _writeSwitcherSyncLink('steam', displayName, steamIdStr, { steamDisplayName: displayName });
 
         console.log(`[SteamBridge] ✅ Linked Steam account: ${displayName} (${steamIdStr})`);
-        return displayName;
+        
+        // Return BOTH name and ID to allow targeted sync
+        return { displayName, steamId: steamIdStr };
     },
 
-    async syncLibrary() {
+    async syncLibrary(targetAccountId = null) {
         await ensureDirs();
-        const accounts = this.getAccounts();
-        if (accounts.length === 0) throw new Error('No Steam accounts linked.');
+        const allAccounts = this.getAccounts();
+        if (allAccounts.length === 0) throw new Error('No Steam accounts linked.');
 
-        await _ensureBridgeRunning();
-
-        const mergedLibrary = new Map();
-
-        // ══════════════════════════════════════════════════════
-        // STEP 1: لف على كل أكاونت وجيب ألعابه
-        // ══════════════════════════════════════════════════════
-        for (const account of accounts) {
-            console.log(`[SteamBridge] 🔄 Syncing: ${account.displayName} (${account.id})`);
-
-            try {
-                const creds = steamBridge.getCredentialsForAccount(account.id) || { steam_id: account.id };
-                const authResult = await steamBridge.authenticate(creds);
-
-                if (authResult.status !== 'authenticated') {
-                    console.warn(`[SteamBridge] ⚠️ ${account.displayName} not authenticated — skipping`);
-                    continue;
-                }
-
-                // لو البريدج رجع بأكاونت مختلف — ده معناه الـ credentials مش صح
-                // بـ safe نكمّل بس نسجّل warning
-                if (authResult.steamId && String(authResult.steamId) !== String(account.id)) {
-                    console.warn(`[SteamBridge] ⚠️ Expected ${account.id}, got ${authResult.steamId} — credentials mismatch`);
-                }
-
-                const result = await steamBridge.getOwnedGames();
-                if (result.status !== 'success') {
-                    console.warn(`[SteamBridge] getOwnedGames failed for ${account.displayName}:`, result);
-                    continue;
-                }
-
-                console.log(`[SteamBridge] ✅ ${result.games.length} games for ${account.displayName}`);
-
-                for (const game of result.games) {
-                    const coverUrl = await downloadAndCacheCover(
-                        `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
-                        game.id
-                    );
-
-                    const aid = String(account.id);
-                    if (mergedLibrary.has(game.id)) {
-                        const existing = mergedLibrary.get(game.id);
-                        if (!existing.ownedBy.includes(account.displayName))
-                            existing.ownedBy.push(account.displayName);
-                        if (!existing.ownedByAccountIds.map(String).includes(aid))
-                            existing.ownedByAccountIds.push(aid);
-                        if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
-                        if (!existing.steamLicensedAccountIds.map(String).includes(aid))
-                            existing.steamLicensedAccountIds.push(aid);
-                    } else {
-                        mergedLibrary.set(game.id, {
-                            id:                      game.id,
-                            title:                   game.title,
-                            platform:                'steam',
-                            source:                  'steam',
-                            coverUrl,
-                            appName:                 String(game.appid),
-                            playtime:                0,
-                            lastSynced:              new Date().toISOString(),
-                            ownedBy:                 [account.displayName],
-                            ownedByAccountIds:       [aid],
-                            steamLicensedAccountIds: [aid],
-                        });
-                    }
-                }
-            } catch (err) {
-                console.error(`[SteamBridge] ❌ Failed to sync ${account.displayName}:`, err.message);
+        let accountsToSync = [...allAccounts];
+        if (targetAccountId) {
+            const target = allAccounts.find(a => String(a.id) === String(targetAccountId));
+            if (target) {
+                accountsToSync = [target];
+            } else {
+                console.warn(`[PlatformSync] Target account ${targetAccountId} not found in linked accounts, syncing all.`);
             }
         }
 
-        // ══════════════════════════════════════════════════════
-        // STEP 2: ضم الألعاب المحلية (Family Share + Offline)
-        // ══════════════════════════════════════════════════════
+        await _ensureBridgeRunning();
+
+        const initialSessionSteamId = String(steamBridge.getLastSessionSteamId?.() || '');
+        const orderedAccounts = orderAccountsForSync(accountsToSync, initialSessionSteamId);
+        const previousGames = await this.getCachedLibrary();
+        const mergedLibrary = new Map();
+        const accountResults = {};
+        let completedAccounts = 0;
+
+        _startPlatformSync('steam', orderedAccounts, `Syncing Steam library for ${orderedAccounts.length} account(s)`);
+
+        for (const account of orderedAccounts) {
+            _updatePlatformSyncAccount('steam', account.id, {
+                gamesCount: countGamesForAccount('steam', previousGames, account.id),
+                message: 'Queued for sync',
+            });
+        }
+
         try {
-            const localGames = await getLocalSteamGames();
+            for (const account of orderedAccounts) {
+                const aid = String(account.id);
+                const previousCount = countGamesForAccount('steam', previousGames, aid);
+                _updatePlatformSyncProgress('steam', {
+                    completedAccounts,
+                    totalAccounts: orderedAccounts.length,
+                    currentAccountId: aid,
+                    currentAccountName: account.displayName,
+                });
+                _setPlatformSyncState('steam', (state) => {
+                    state.phase = 'sync_account';
+                    state.statusText = `Syncing ${account.displayName}`;
+                    return state;
+                });
+                _updatePlatformSyncAccount('steam', aid, {
+                    status: 'syncing',
+                    startedAt: new Date().toISOString(),
+                    finishedAt: null,
+                    gamesCount: previousCount,
+                    message: 'Authenticating with Steam',
+                });
+                _pushPlatformSyncLog('steam', 'info', `Authenticating ${account.displayName}`, {
+                    accountId: aid,
+                    accountName: account.displayName,
+                });
+
+                try {
+                    let authResult = null;
+                    let validationFailed = false;
+                    const creds = steamBridge.getCredentialsForAccount(account.id);
+
+                    if (creds) {
+                        authResult = await steamBridge.authenticate(creds, { waitForCache: false });
+                    } else if (initialSessionSteamId && initialSessionSteamId === aid) {
+                        authResult = {
+                            status: 'authenticated',
+                            steamId: initialSessionSteamId,
+                        };
+                        _pushPlatformSyncLog('steam', 'warn', `Using active Steam session for ${account.displayName} until credentials are stored`, {
+                            accountId: aid,
+                            accountName: account.displayName,
+                        });
+                    } else {
+                        accountResults[aid] = { status: 'warning', rawGamesCount: 0, validationFailed: true };
+                        _updatePlatformSyncAccount('steam', aid, {
+                            status: 'warning',
+                            finishedAt: new Date().toISOString(),
+                            gamesCount: previousCount,
+                            message: 'No saved credentials yet. Cached data will be kept.',
+                        });
+                        _pushPlatformSyncLog('steam', 'warn', `Skipping ${account.displayName} because no stored credentials were found`, {
+                            accountId: aid,
+                            accountName: account.displayName,
+                        });
+                        continue;
+                    }
+
+                    if (authResult.status !== 'authenticated') {
+                        accountResults[aid] = { status: 'warning', rawGamesCount: 0, validationFailed: true };
+                        _updatePlatformSyncAccount('steam', aid, {
+                            status: 'warning',
+                            finishedAt: new Date().toISOString(),
+                            gamesCount: previousCount,
+                            message: 'Authentication did not complete. Cached data will be kept.',
+                        });
+                        _pushPlatformSyncLog('steam', 'warn', `${account.displayName} is not authenticated`, {
+                            accountId: aid,
+                            accountName: account.displayName,
+                        });
+                        continue;
+                    }
+
+                    if (authResult.steamId && String(authResult.steamId) !== aid) {
+                        validationFailed = true;
+                        _pushPlatformSyncLog('steam', 'warn', `Steam session mismatch for ${account.displayName}: expected ${aid}, got ${authResult.steamId}`, {
+                            accountId: aid,
+                            accountName: account.displayName,
+                        });
+                    }
+
+                    _updatePlatformSyncAccount('steam', aid, {
+                        status: 'syncing',
+                        message: 'Loading owned games',
+                    });
+
+                    // ── DIAGNOSTIC: log cacheIsReady state before waiting ──
+                    console.log(`[Sync:${account.displayName}] cacheIsReady=${steamBridge._cacheIsReady} — calling waitForCacheReady(35s)`);
+                    await steamBridge.waitForCacheReady(60_000);
+                    console.log(`[Sync:${account.displayName}] ✅ waitForCacheReady done — fetching games`);
+
+                    const { result, rawGamesCount } = await fetchSteamOwnedGamesWithRetry(account, previousCount, initialSessionSteamId);
+                    if (result.status !== 'success') {
+                        accountResults[aid] = { status: 'error', rawGamesCount: 0, validationFailed: true };
+                        const friendlyError = createFriendlySyncError('steam', result?.message || 'Failed to load owned games');
+                        _updatePlatformSyncAccount('steam', aid, {
+                            status: 'error',
+                            finishedAt: new Date().toISOString(),
+                            gamesCount: previousCount,
+                            message: friendlyError.userMessage,
+                        });
+                        _pushPlatformSyncLog('steam', 'error', `getOwnedGames failed for ${account.displayName}: ${friendlyError.diagnosticMessage}`, {
+                            accountId: aid,
+                            accountName: account.displayName,
+                        });
+                        continue;
+                    }
+
+                    _pushPlatformSyncLog('steam', 'info', `Fetched ${rawGamesCount} owned games for ${account.displayName}`, {
+                        accountId: aid,
+                        accountName: account.displayName,
+                    });
+
+                    const ownedGames = await buildSteamOwnedGameEntries(account, result.games);
+                    mergeOwnedGamesIntoLibrary(mergedLibrary, ownedGames, account, 'steam');
+
+                    const accountStatus = rawGamesCount > 0 ? 'success' : (previousCount > 0 ? 'warning' : 'success');
+                    const accountMessage = rawGamesCount > 0
+                        ? `Found ${rawGamesCount} owned games`
+                        : (previousCount > 0 ? 'Steam returned 0 games. This might be a temporary sync issue, so your previous library data was kept.' : 'No owned games found');
+
+                    accountResults[aid] = {
+                        status: accountStatus,
+                        rawGamesCount,
+                        validationFailed: validationFailed || (rawGamesCount === 0 && previousCount > 0),
+                        allowZeroGames: previousCount === 0,
+                    };
+                    _updatePlatformSyncAccount('steam', aid, {
+                        status: accountStatus,
+                        finishedAt: new Date().toISOString(),
+                        gamesCount: rawGamesCount > 0 ? rawGamesCount : previousCount,
+                        gameTitles: summarizeGameTitles(result.games),
+                        message: accountMessage,
+                    });
+                } catch (err) {
+                    accountResults[aid] = { status: 'error', rawGamesCount: 0, validationFailed: true };
+                    const friendlyError = createFriendlySyncError('steam', err);
+                    _updatePlatformSyncAccount('steam', aid, {
+                        status: 'error',
+                        finishedAt: new Date().toISOString(),
+                        gamesCount: previousCount,
+                        message: friendlyError.userMessage,
+                    });
+                    _pushPlatformSyncLog('steam', 'error', `Failed to sync ${account.displayName}: ${friendlyError.diagnosticMessage}`, {
+                        accountId: aid,
+                        accountName: account.displayName,
+                    });
+                } finally {
+                    completedAccounts += 1;
+                    _updatePlatformSyncProgress('steam', {
+                        completedAccounts,
+                        totalAccounts: orderedAccounts.length,
+                        currentAccountId: aid,
+                        currentAccountName: account.displayName,
+                    });
+                }
+            }
+
+            _setPlatformSyncState('steam', (state) => {
+                state.phase = 'merge_local';
+                state.statusText = 'Merging local Steam installs';
+                return state;
+            });
+            _pushPlatformSyncLog('steam', 'info', 'Merging locally installed Steam games');
+
+            const localGames = await getLocalSteamGames().catch((err) => {
+                _pushPlatformSyncLog('steam', 'warn', `Failed to read local Steam manifests: ${err.message}`);
+                return [];
+            });
             let addedFromLocal = 0;
 
             for (const game of localGames) {
                 const gameId = `steam_${game.appid}`;
                 if (mergedLibrary.has(gameId)) {
-                    // Keep steamLicensedAccountIds / ownedBy* as from API only — do not mark every linked account as "owning" a family-shared install.
                     const existing = mergedLibrary.get(gameId);
                     if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
                 } else {
                     addedFromLocal++;
-                    const coverUrl = await downloadAndCacheCover(
-                        `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
-                        gameId
-                    );
                     mergedLibrary.set(gameId, {
                         id:                      gameId,
                         title:                   game.name,
                         platform:                'steam',
                         source:                  'steam',
-                        coverUrl,
+                        coverUrl:                await resolveCoverUrlForSync(
+                            `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
+                            gameId
+                        ),
                         appName:                 String(game.appid),
                         playtime:                0,
                         lastSynced:              new Date().toISOString(),
@@ -401,16 +1006,95 @@ const steamConnector = {
                     });
                 }
             }
-            console.log(`[MERGE] 📁 Added ${addedFromLocal} games from local manifests`);
+
+            const fallbackLocalAccount = orderedAccounts.length === 1
+                ? orderedAccounts[0]
+                : null;
+            const fallbackLocalAccountResult = fallbackLocalAccount
+                ? accountResults[String(fallbackLocalAccount.id)]
+                : null;
+
+            if (fallbackLocalAccount && fallbackLocalAccountResult?.rawGamesCount === 0 && localGames.length > 0) {
+                const fallbackAid = String(fallbackLocalAccount.id);
+                let fallbackAttached = 0;
+
+                for (const game of mergedLibrary.values()) {
+                    if (!game?.installOnly) continue;
+                    if (steamGameBelongsToAccount(game, fallbackAid)) continue;
+                    if (!Array.isArray(game.steamDetectedAccountIds)) game.steamDetectedAccountIds = [];
+                    if (!game.steamDetectedAccountIds.map(String).includes(fallbackAid)) {
+                        game.steamDetectedAccountIds.push(fallbackAid);
+                        fallbackAttached += 1;
+                    }
+                    if (!Array.isArray(game.ownedBy)) game.ownedBy = [];
+                    if (!game.ownedBy.includes(fallbackLocalAccount.displayName)) {
+                        game.ownedBy.push(fallbackLocalAccount.displayName);
+                    }
+                }
+
+                if (fallbackAttached > 0) {
+                    _pushPlatformSyncLog('steam', 'warn', `Steam reported 0 owned games, so ${fallbackAttached} locally detected games were attached to ${fallbackLocalAccount.displayName}.`, {
+                        accountId: fallbackAid,
+                        accountName: fallbackLocalAccount.displayName,
+                    });
+                }
+            }
+
+            const finalized = finalizeLibraryForAccounts({
+                platform: 'steam',
+                previousGames,
+                nextGames: Array.from(mergedLibrary.values()),
+                accounts: allAccounts,
+                accountResults,
+            });
+            const finalGames = finalized.games;
+            const summary = {
+                totalGames: finalGames.length,
+                installOnlyGames: finalGames.filter((game) => game.installOnly).length,
+                sampleTitles: summarizeGameTitles(finalGames, 5),
+            };
+
+            for (const account of allAccounts) {
+                const aid = String(account.id);
+                const existingState = _getPlatformSyncState('steam').accounts?.[aid] || {};
+                const accountGames = finalGames.filter((game) => steamGameBelongsToAccount(game, aid));
+                _updatePlatformSyncAccount('steam', aid, {
+                    gamesCount: finalized.validation.countsByAccount?.[aid] ?? existingState.gamesCount ?? 0,
+                    gameTitles: summarizeGameTitles(accountGames),
+                });
+            }
+
+            for (const issue of finalized.validation.issues || []) {
+                _pushPlatformSyncLog('steam', 'warn', issue);
+            }
+
+            await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
+
+            _updatePlatformSyncProgress('steam', {
+                completedAccounts: orderedAccounts.length,
+                totalAccounts: orderedAccounts.length,
+                currentAccountId: null,
+                currentAccountName: null,
+            });
+            _finishPlatformSync('steam', {
+                phase: 'done',
+                statusText: finalized.validation.issues.length > 0
+                    ? `Steam sync completed with recovery checks. ${finalGames.length} games ready.`
+                    : `Steam sync completed. ${finalGames.length} games ready.`,
+                validation: finalized.validation,
+                summary,
+            });
+            _pushPlatformSyncLog('steam', 'info', `Steam sync finished with ${finalGames.length} games and ${addedFromLocal} local-only additions`);
+            return finalGames;
         } catch (err) {
-            console.error('[PlatformSync] Failed to merge local Steam games:', err);
+            _finishPlatformSync('steam', {
+                phase: 'error',
+                statusText: `Steam sync failed: ${err.message}`,
+                lastError: err.message,
+            });
+            _pushPlatformSyncLog('steam', 'error', `Steam sync crashed: ${err.message}`);
+            throw err;
         }
-
-        const finalGames = Array.from(mergedLibrary.values());
-        console.log(`\n🎉 Final Steam Library: ${finalGames.length} games from ${accounts.length} account(s)\n`);
-
-        await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
-        return finalGames;
     },
 
     async getCachedLibrary() {
@@ -420,6 +1104,9 @@ const steamConnector = {
 
     async unlink(accountId) {
         let accounts = this.getAccounts();
+        const removedAccount = accountId
+            ? accounts.find((account) => String(account.id) === String(accountId)) || null
+            : null;
 
         if (accountId) {
             accounts = accounts.filter(a => a.id !== accountId);
@@ -435,6 +1122,10 @@ const steamConnector = {
             try { await fs.unlink(STEAM_MERGED_CACHE); } catch {}
             if (steamBridge.isRunning) await steamBridge.stop();
             _bridgeStarted = false;
+        } else if (removedAccount) {
+            const cachedGames = await this.getCachedLibrary();
+            const filteredGames = removeAccountFromLibrary('steam', cachedGames, removedAccount);
+            await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify(filteredGames, null, 2), 'utf8');
         }
     },
 };
@@ -458,24 +1149,30 @@ async function saveEpicAccountsList(accounts) {
     await fs.writeFile(EPIC_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
 }
 
-function runLegendary(args, configPath, timeoutMs = 120_000) {
+function runLegendary(args, configPath, timeoutMs = 45_000) {
     return new Promise((resolve, reject) => {
         if (!fsSync.existsSync(LEGENDARY_BIN)) {
             return reject(new Error(`legendary.exe not found at ${LEGENDARY_BIN}`));
         }
 
-        const env  = { ...process.env, LEGENDARY_CONFIG_PATH: configPath };
+        const env = { ...process.env, LEGENDARY_CONFIG_PATH: configPath };
         const proc = execFile(LEGENDARY_BIN, args, { env, timeout: timeoutMs, maxBuffer: 1024 * 1024 * 50 });
 
         let out = '', err = '';
-        proc.stdout?.on('data', d => { out += d; });
-        proc.stderr?.on('data', d => { err += d; });
+        proc.stdout?.on('data', (data) => { out += data; });
+        proc.stderr?.on('data', (data) => { err += data; });
 
-        proc.on('close', code => {
-            if (code === 0) resolve(out);
-            else reject(new Error(err.trim() || `legendary exited with code ${code}`));
+        proc.on('close', (code, signal) => {
+            if (code === 0) {
+                resolve(out);
+                return;
+            }
+            const stderrText = String(err || '').trim();
+            const stdoutText = String(out || '').trim();
+            const detail = stderrText || stdoutText || (signal ? `legendary terminated with signal ${signal}` : `legendary exited with code ${code}`);
+            reject(new Error(detail));
         });
-        proc.on('error', reject);
+        proc.on('error', (err) => reject(new Error(err?.message || 'Failed to start legendary.exe')));
     });
 }
 
@@ -546,6 +1243,100 @@ function _pickEpicCover(keyImages) {
     return keyImages[0]?.url || null;
 }
 
+async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null) {
+    if (targetAccountId && String(acc.id) !== String(targetAccountId)) {
+        return { status: 'skipped' };
+    }
+    const aid = String(acc.id);
+    const previousCount = countGamesForAccount('epic', previousGames, aid);
+
+    _setPlatformSyncState('epic', (state) => {
+        state.phase = 'sync_account';
+        state.statusText = `Syncing ${acc.displayName}`;
+        return state;
+    });
+    _updatePlatformSyncAccount('epic', aid, {
+        status: 'syncing',
+        startedAt: new Date().toISOString(),
+        finishedAt: null,
+        gamesCount: previousCount,
+        message: 'Reading Epic library',
+    });
+    _pushPlatformSyncLog('epic', 'info', `Reading Epic library for ${acc.displayName}`, {
+        accountId: aid,
+        accountName: acc.displayName,
+    });
+
+    try {
+        const confPath = getLegendaryConfPath(acc.id);
+        if (!fsSync.existsSync(confPath)) {
+            _pushPlatformSyncLog('epic', 'warn', `Skipping ${acc.displayName} because its config folder is missing`, {
+                accountId: aid,
+                accountName: acc.displayName,
+            });
+            _updatePlatformSyncAccount('epic', aid, {
+                status: 'warning',
+                finishedAt: new Date().toISOString(),
+                gamesCount: previousCount,
+                message: 'The saved Epic login is missing. Relink this account to sync again.',
+            });
+            return {
+                aid,
+                games: [],
+                result: { status: 'warning', rawGamesCount: 0, validationFailed: true },
+            };
+        }
+
+        _pushPlatformSyncLog('epic', 'info', `Running legendary list for ${acc.displayName}`, {
+            accountId: aid,
+            accountName: acc.displayName,
+        });
+
+        const raw = await runLegendary(['list', '--json'], confPath, 30_000);
+        const parsed = JSON.parse(raw);
+        const games = await buildEpicOwnedGameEntries(acc, parsed);
+        const rawGamesCount = Array.isArray(parsed) ? parsed.length : 0;
+        const result = {
+            status: rawGamesCount > 0 ? 'success' : (previousCount > 0 ? 'warning' : 'success'),
+            rawGamesCount,
+            validationFailed: rawGamesCount === 0 && previousCount > 0,
+            allowZeroGames: previousCount === 0,
+        };
+
+        _updatePlatformSyncAccount('epic', aid, {
+            status: result.status,
+            finishedAt: new Date().toISOString(),
+            gamesCount: rawGamesCount > 0 ? rawGamesCount : previousCount,
+            message: rawGamesCount > 0
+                ? `Found ${rawGamesCount} owned games`
+                : (previousCount > 0 ? 'Epic returned 0 games. Cached data will be verified.' : 'No owned games found'),
+        });
+        _pushPlatformSyncLog('epic', 'info', `Fetched ${rawGamesCount} games for ${acc.displayName}`, {
+            accountId: aid,
+            accountName: acc.displayName,
+        });
+
+        return { aid, games, result };
+    } catch (err) {
+        const friendlyError = createFriendlySyncError('epic', err);
+        _updatePlatformSyncAccount('epic', aid, {
+            status: 'error',
+            finishedAt: new Date().toISOString(),
+            gamesCount: previousCount,
+            message: friendlyError.userMessage,
+        });
+        _pushPlatformSyncLog('epic', 'error', `Failed to sync ${acc.displayName}: ${friendlyError.diagnosticMessage}`, {
+            accountId: aid,
+            accountName: acc.displayName,
+        });
+        return {
+            aid,
+            games: [],
+            result: { status: 'error', rawGamesCount: 0, validationFailed: true },
+        };
+    }
+}
+
 const epicConnector = {
     isLinked() {
         try { return fsSync.existsSync(EPIC_ACCOUNTS_FILE) && JSON.parse(fsSync.readFileSync(EPIC_ACCOUNTS_FILE, 'utf8')).length > 0; } 
@@ -586,45 +1377,124 @@ const epicConnector = {
             throw err;
         }
     },
-    async syncLibrary() {
+    async syncLibrary(targetAccountId = null) {
         await ensureDirs();
         const accounts = await getEpicAccountsList();
         if (accounts.length === 0) throw new Error('No Epic accounts linked.');
 
+        const previousGames = await this.getCachedLibrary();
         const mergedLibrary = new Map();
-        for (const acc of accounts) {
-            const confPath = getLegendaryConfPath(acc.id);
-            if (!fsSync.existsSync(confPath)) continue;
+        const accountResults = {};
+        let completedAccounts = 0;
 
-            try {
-                const raw = await runLegendary(['list', '--json'], confPath, 120_000);
-                const parsed = JSON.parse(raw);
+        // If targeting a specific account, filter the list
+        const accountsToSync = targetAccountId 
+            ? accounts.filter(a => String(a.id) === String(targetAccountId))
+            : accounts;
 
-                for (const entry of parsed) {
-                    const gameId = `epic_${entry.app_name}`;
-                    const remoteCoverUrl = _pickEpicCover(entry.metadata?.keyImages);
-                    const cachedCoverUrl = await downloadAndCacheCover(remoteCoverUrl, gameId);
+        if (accountsToSync.length === 0 && targetAccountId) {
+            console.warn(`[EpicSync] Target account ${targetAccountId} not found.`);
+        }
 
-                    if (mergedLibrary.has(gameId)) {
-                        const existingGame = mergedLibrary.get(gameId);
-                        if (!existingGame.ownedBy.includes(acc.displayName)) existingGame.ownedBy.push(acc.displayName);
-                        if (!existingGame.ownedByAccountIds.includes(acc.id)) existingGame.ownedByAccountIds.push(acc.id);
-                    } else {
-                        mergedLibrary.set(gameId, {
-                            id: gameId, title: entry.app_title || entry.app_name,
-                            platform: 'epic', source: 'epic', coverUrl: cachedCoverUrl, appName: entry.app_name,
-                            namespace: entry.namespace || entry.metadata?.namespace || '',
-                            catalogItemId: entry.catalog_item_id || entry.metadata?.id || '',
-                            lastSynced: new Date().toISOString(),
-                            ownedBy: [acc.displayName], ownedByAccountIds: [acc.id] 
-                        });
+        _startPlatformSync('epic', accountsToSync, `Syncing Epic library for ${accountsToSync.length} account(s)`);
+
+        for (const account of accountsToSync) {
+            _updatePlatformSyncAccount('epic', account.id, {
+                gamesCount: countGamesForAccount('epic', previousGames, account.id),
+                message: 'Queued for sync',
+            });
+        }
+
+        try {
+            const syncResults = await mapWithConcurrency(accountsToSync, 2, async (acc) => {
+                _updatePlatformSyncProgress('epic', {
+                    completedAccounts,
+                    totalAccounts: accountsToSync.length,
+                    currentAccountId: String(acc.id),
+                    currentAccountName: acc.displayName,
+                });
+                const result = await syncSingleEpicAccount(acc, previousGames, targetAccountId);
+                if (result.status === 'skipped') return null;
+
+                completedAccounts += 1;
+                _updatePlatformSyncProgress('epic', {
+                    completedAccounts,
+                    totalAccounts: accountsToSync.length,
+                    currentAccountId: String(acc.id),
+                    currentAccountName: acc.displayName,
+                });
+                return { account: acc, ...result };
+            });
+
+            for (const item of syncResults) {
+                if (!item) continue;
+                accountResults[item.aid] = item.result;
+                mergeOwnedGamesIntoLibrary(mergedLibrary, item.games, item.account, 'epic');
+            }
+
+            // If we are doing a partial sync, we MUST preserve the games from other accounts
+            // that were NOT part of this sync session.
+            if (targetAccountId) {
+                for (const prevGame of previousGames) {
+                    const isFromTarget = prevGame.ownedByAccountIds && prevGame.ownedByAccountIds.some(id => String(id) === String(targetAccountId));
+                    if (!isFromTarget) {
+                        const gid = prevGame.id;
+                        if (!mergedLibrary.has(gid)) {
+                            mergedLibrary.set(gid, prevGame);
+                        }
                     }
                 }
-            } catch (err) { console.error(`Failed to sync Epic:`, err); }
+            }
+
+            const finalized = finalizeLibraryForAccounts({
+                platform: 'epic',
+                previousGames,
+                nextGames: Array.from(mergedLibrary.values()),
+                accounts: accountsToSync,
+                accountResults,
+            });
+            const finalGames = finalized.games;
+
+            for (const acc of accountsToSync) {
+                const aid = String(acc.id);
+                const existingState = _getPlatformSyncState('epic').accounts?.[aid] || {};
+                _updatePlatformSyncAccount('epic', aid, {
+                    gamesCount: finalized.validation.countsByAccount?.[aid] ?? existingState.gamesCount ?? 0,
+                });
+            }
+
+            for (const issue of finalized.validation.issues || []) {
+                _pushPlatformSyncLog('epic', 'warn', issue);
+            }
+
+            await fs.writeFile(EPIC_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
+            _updatePlatformSyncProgress('epic', {
+                completedAccounts: accountsToSync.length,
+                totalAccounts: accountsToSync.length,
+                currentAccountId: null,
+                currentAccountName: null,
+            });
+            _finishPlatformSync('epic', {
+                phase: 'done',
+                statusText: finalized.validation.issues.length > 0
+                    ? `Epic sync completed with recovery checks. ${finalGames.length} games ready.`
+                    : `Epic sync completed. ${finalGames.length} games ready.`,
+                validation: finalized.validation,
+                summary: {
+                    totalGames: finalGames.length,
+                    installOnlyGames: 0,
+                },
+            });
+            return finalGames;
+        } catch (err) {
+            _finishPlatformSync('epic', {
+                phase: 'error',
+                statusText: `Epic sync failed: ${err.message}`,
+                lastError: err.message,
+            });
+            _pushPlatformSyncLog('epic', 'error', `Epic sync crashed: ${err.message}`);
+            throw err;
         }
-        const finalGames = Array.from(mergedLibrary.values());
-        await fs.writeFile(EPIC_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
-        return finalGames;
     },
     async getCachedLibrary() {
         try { return JSON.parse(await fs.readFile(EPIC_MERGED_CACHE, 'utf8')); } 
@@ -632,6 +1502,9 @@ const epicConnector = {
     },
     async unlink(accountId) {
         let accounts = await getEpicAccountsList();
+        const removedAccount = accountId
+            ? accounts.find((account) => String(account.id) === String(accountId)) || null
+            : null;
         if (accountId) {
             const confPath = getLegendaryConfPath(accountId);
             try { await runLegendary(['auth', '--delete'], confPath); } catch {}
@@ -646,13 +1519,20 @@ const epicConnector = {
             accounts = [];
         }
         await saveEpicAccountsList(accounts);
-        if (accounts.length === 0) { try { await fs.unlink(EPIC_MERGED_CACHE); } catch {} }
+        if (accounts.length === 0) {
+            try { await fs.unlink(EPIC_MERGED_CACHE); } catch {}
+        } else if (removedAccount) {
+            const cachedGames = await this.getCachedLibrary();
+            const filteredGames = removeAccountFromLibrary('epic', cachedGames, removedAccount);
+            await fs.writeFile(EPIC_MERGED_CACHE, JSON.stringify(filteredGames, null, 2), 'utf8');
+        }
     },
 };
 
 // ─── IPC Handler Registry ────────────────────────────────────
 
 function registerPlatformSyncHandlers(ipcMainRef, getMainWindow) {
+    _platformSyncWindowGetter = getMainWindow;
     const connectors = {
         epic: epicConnector,
         steam: steamConnector 
@@ -682,15 +1562,20 @@ function registerPlatformSyncHandlers(ipcMainRef, getMainWindow) {
         const connector = connectors[platform];
         if (!connector) throw new Error(`Unsupported platform: ${platform}`);
         console.log(`[PlatformSync] Linking platform: ${platform}`);
-        const displayName = await connector.link(getMainWindow?.());
-        return { status: 'success', displayName };
+        const linkRes = await connector.link(getMainWindow?.());
+        return { status: 'success', ...linkRes };
     }));
 
-    ipcMainRef.handle('platform-sync:sync', safeHandle(async (_e, platform) => {
+    ipcMainRef.handle('platform-sync:sync', safeHandle(async (_e, platform, accountId) => {
         const connector = connectors[platform];
         if (!connector) throw new Error(`Unsupported platform: ${platform}`);
-        const games = await connector.syncLibrary();
+        const games = await connector.syncLibrary(accountId);
         return { status: 'success', games };
+    }));
+
+    ipcMainRef.handle('platform-sync:get-state', safeHandle(async (_e, platform) => {
+        if (!platform) return { status: 'success', state: _clonePlain(_platformSyncState) };
+        return { status: 'success', state: _clonePlain(_getPlatformSyncState(platform)) };
     }));
 
     ipcMainRef.handle('platform-sync:get-cached', safeHandle(async (_e, platform) => {
@@ -735,8 +1620,8 @@ async function enrichProfilesWithSyncData(platform, switcherProfiles) {
             const realId = profile.platformAccountId ? String(profile.platformAccountId) : String(profile.id || profile.accountId || profile.username || profile.name);
             const isSynced = syncedAccounts.some(sa => String(sa.id) === realId);
             const ownedGames = library.filter((g) => {
-                if (platform === 'steam' && Array.isArray(g.steamLicensedAccountIds)) {
-                    return g.steamLicensedAccountIds.some((id) => String(id) === realId);
+                if (platform === 'steam') {
+                    return steamGameBelongsToAccount(g, realId);
                 }
                 return g.ownedByAccountIds && g.ownedByAccountIds.some((id) => String(id) === realId);
             }).map((g) => g.title);
