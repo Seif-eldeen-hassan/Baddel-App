@@ -1539,6 +1539,300 @@ function _applyAgFilters() {
 // PLATFORMS MODAL LOGIC (Multi-Account)
 // ==========================================
 let activePlatformView = null;
+const platformSyncStateCache = {};
+const platformSyncRenderTimers = {};
+let platformSyncListenerBound = false;
+let platformSyncOverlayTimer = null;
+
+function _escapePlatformSyncHtml(value) {
+    return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function _countPlatformAccountGames(platform, games, accountId) {
+    const aid = String(accountId);
+    return (games || []).filter((game) => {
+        if (!game || typeof game !== 'object') return false;
+        if (platform === 'steam') {
+            if (Array.isArray(game.steamLicensedAccountIds) && game.steamLicensedAccountIds.length > 0) {
+                return game.steamLicensedAccountIds.some((id) => String(id) === aid);
+            }
+            if (Array.isArray(game.ownedByAccountIds) && game.ownedByAccountIds.length > 0) {
+                return game.ownedByAccountIds.some((id) => String(id) === aid);
+            }
+            if (Array.isArray(game.steamDetectedAccountIds) && game.steamDetectedAccountIds.length > 0) {
+                return game.steamDetectedAccountIds.some((id) => String(id) === aid);
+            }
+        }
+        return Array.isArray(game.ownedByAccountIds) && game.ownedByAccountIds.some((id) => String(id) === aid);
+    }).length;
+}
+
+function _platformAccountOwnsGame(platform, game, accountId) {
+    return _countPlatformAccountGames(platform, [game], accountId) > 0;
+}
+
+function _summarizePlatformGameTitles(games, limit = 4) {
+    return [...new Set(
+        (games || [])
+            .map((game) => String(game?.title || '').trim())
+            .filter(Boolean)
+    )].slice(0, limit);
+}
+
+function _buildFriendlyPlatformSyncCopy(platform, state, mode = 'panel') {
+    const platformName = platform === 'steam' ? 'Steam' : 'library';
+    if (state?.lastError) {
+        return {
+            title: 'Sync stopped',
+            subtitle: state.lastError,
+        };
+    }
+
+    if (state?.isSyncing) {
+        if (state.phase === 'starting') {
+            return {
+                title: `Preparing ${platformName}`,
+                subtitle: 'Please keep this window open.',
+            };
+        }
+        if (state.phase === 'sync_account') {
+            const currentName = state.progress?.currentAccountName || 'your account';
+            return {
+                title: 'Checking your account',
+                subtitle: `We are reading ${currentName}'s library.`,
+            };
+        }
+        if (state.phase === 'merge_local') {
+            return {
+                title: 'Finishing your library',
+                subtitle: 'We are matching installed games and refreshing the list.',
+            };
+        }
+        return {
+            title: 'Syncing your library',
+            subtitle: 'This usually only takes a moment.',
+        };
+    }
+
+    const totalGames = Number(state?.summary?.totalGames || state?.validation?.totalGames || 0);
+    const installOnlyGames = Number(state?.summary?.installOnlyGames || 0);
+    if (mode === 'overlay') {
+        return {
+            title: 'Library updated',
+            subtitle: totalGames > 0
+                ? `${totalGames} game${totalGames === 1 ? '' : 's'} are ready.`
+                : 'Your library is up to date.',
+        };
+    }
+
+    if (installOnlyGames > 0 && totalGames > 0) {
+        return {
+            title: 'Library updated',
+            subtitle: `${totalGames} game${totalGames === 1 ? '' : 's'} ready, including ${installOnlyGames} detected on this device.`,
+        };
+    }
+
+    return {
+        title: 'Library updated',
+        subtitle: totalGames > 0
+            ? `${totalGames} game${totalGames === 1 ? '' : 's'} ready to browse.`
+            : 'Your synced accounts are ready.',
+    };
+}
+
+function _renderPlatformSyncOverlay(platform, state = _getPlatformSyncState(platform), options = {}) {
+    const overlay = document.getElementById('platformSyncSimpleOverlay');
+    const titleEl = document.getElementById('platformSyncSimpleTitle');
+    const subtitleEl = document.getElementById('platformSyncSimpleSubtitle');
+    const summaryEl = document.getElementById('platformSyncSimpleSummary');
+    const spinnerEl = document.getElementById('platformSyncSimpleSpinner');
+    if (!overlay || !titleEl || !subtitleEl || !summaryEl || !spinnerEl) return;
+
+    clearTimeout(platformSyncOverlayTimer);
+
+    const explicitVisible = options.visible === true;
+    const shouldShow = explicitVisible || (activePlatformView === platform && !!state?.isSyncing);
+    if (!shouldShow) {
+        overlay.classList.remove('visible', 'done', 'error');
+        return;
+    }
+
+    const customTitle = options.title;
+    const customSubtitle = options.subtitle;
+    const copy = _buildFriendlyPlatformSyncCopy(platform, state, 'overlay');
+    const summaryTitles = options.gameTitles || state?.summary?.sampleTitles || [];
+    const accountSummary = state?.progress?.totalAccounts > 0
+        ? `${state.progress.completedAccounts || 0}/${state.progress.totalAccounts || 0} account${state.progress.totalAccounts === 1 ? '' : 's'}`
+        : '';
+    const summaryItems = [accountSummary, ...summaryTitles].filter(Boolean).slice(0, 6);
+
+    titleEl.textContent = customTitle || copy.title;
+    subtitleEl.textContent = customSubtitle || copy.subtitle;
+    summaryEl.innerHTML = summaryItems.map((item) => `<span>${_escapePlatformSyncHtml(item)}</span>`).join('');
+    overlay.classList.add('visible');
+    overlay.classList.toggle('done', !state?.isSyncing && !state?.lastError);
+    overlay.classList.toggle('error', !!state?.lastError);
+    spinnerEl.style.display = state?.isSyncing ? 'inline-flex' : 'none';
+}
+
+function _hidePlatformSyncOverlay(delay = 0) {
+    const overlay = document.getElementById('platformSyncSimpleOverlay');
+    if (!overlay) return;
+    clearTimeout(platformSyncOverlayTimer);
+    if (delay > 0) {
+        platformSyncOverlayTimer = setTimeout(() => {
+            overlay.classList.remove('visible', 'done', 'error');
+        }, delay);
+        return;
+    }
+    overlay.classList.remove('visible', 'done', 'error');
+}
+
+function _getPlatformSyncState(platform) {
+    return platformSyncStateCache[platform] || null;
+}
+
+async function _refreshPlatformSyncState(platform) {
+    if (!window.electronAPI.platformSyncGetState) return _getPlatformSyncState(platform);
+    const res = await window.electronAPI.platformSyncGetState(platform);
+    if (res?.status === 'success' && res.state) {
+        platformSyncStateCache[platform] = res.state;
+        return res.state;
+    }
+    return _getPlatformSyncState(platform);
+}
+
+function _schedulePlatformAccountsRender(platform) {
+    clearTimeout(platformSyncRenderTimers[platform]);
+    platformSyncRenderTimers[platform] = setTimeout(() => {
+        if (activePlatformView === platform) {
+            renderPlatformAccounts(platform).catch(() => {});
+        }
+    }, 80);
+}
+
+function _getPlatformSyncStatusLabel(status) {
+    const labels = {
+        pending: 'Queued',
+        syncing: 'Syncing',
+        success: 'Synced',
+        warning: 'Recovered',
+        error: 'Error',
+    };
+    return labels[status] || 'Idle';
+}
+
+function _renderPlatformSyncStatusPanel(platform, state = _getPlatformSyncState(platform)) {
+    const panel = document.getElementById('platformSyncStatusPanel');
+    const syncBtn = document.getElementById('syncPlatformBtn');
+    const importBtn = document.getElementById('linkPlatformBtn');
+    if (!panel) return;
+
+    // We hide the combined panel if there's no active sync
+    const visible = state && state.isSyncing;
+    if (!visible) {
+        panel.style.display = 'none';
+        if (syncBtn) {
+            syncBtn.innerText = 'Sync Library';
+            syncBtn.disabled = false;
+        }
+        if (importBtn) importBtn.disabled = false;
+        _hidePlatformSyncOverlay();
+        return;
+    }
+
+    const statusClass = state.lastError ? 'error' : (state.isSyncing ? 'syncing' : '');
+    panel.style.display = 'flex';
+    panel.className = `platform-sync-status-panel ${statusClass}`.trim();
+
+    const progress = state.progress || {};
+    const percent = Number.isFinite(progress.percent) ? progress.percent : 0;
+    const copy = _buildFriendlyPlatformSyncCopy(platform, state);
+
+    panel.innerHTML = `
+        <div class="platform-sync-status-head">
+            ${state.isSyncing ? '<div class="acc-spinner"></div>' : '<div style="width:18px;height:18px;border-radius:50%;background:rgba(255,255,255,0.12);display:flex;align-items:center;justify-content:center;color:#66c0f4;font-size:12px;">✓</div>'}
+            <div class="platform-sync-status-copy">
+                <div class="platform-sync-status-title">${_escapePlatformSyncHtml(copy.title)}</div>
+                <div class="platform-sync-status-subtitle">${_escapePlatformSyncHtml(copy.subtitle)}</div>
+            </div>
+        </div>
+        <div class="platform-sync-progress">
+            <div class="platform-sync-progress-row">
+                <span>${_escapePlatformSyncHtml(progress.currentAccountName || 'Updating your library')}</span>
+                <span>${_escapePlatformSyncHtml(`${percent}%`)}</span>
+            </div>
+            <div class="platform-sync-progress-bar">
+                <div class="platform-sync-progress-fill" style="width:${Math.max(0, Math.min(100, percent))}%"></div>
+            </div>
+        </div>
+    `;
+
+    if (syncBtn) {
+        syncBtn.innerText = state.isSyncing ? 'Syncing...' : 'Sync Library';
+        syncBtn.disabled = !!state.isSyncing;
+    }
+    if (importBtn) importBtn.disabled = !!state.isSyncing;
+    _renderPlatformSyncOverlay(platform, state);
+}
+
+function _ensurePlatformSyncListener() {
+    if (platformSyncListenerBound || !window.electronAPI.onPlatformSyncState) return;
+    platformSyncListenerBound = true;
+    window.electronAPI.onPlatformSyncState((state) => {
+        if (!state?.platform) return;
+        platformSyncStateCache[state.platform] = state;
+        if (activePlatformView === state.platform) {
+            _renderPlatformSyncStatusPanel(state.platform, state);
+            _schedulePlatformAccountsRender(state.platform);
+        }
+    });
+}
+
+async function _runPlatformSync(platform, options = {}) {
+    const targetAccountId = options.targetAccountId || null;
+    const syncPromise = window.electronAPI.platformSyncSync(platform, targetAccountId);
+    await Promise.resolve();
+    await _refreshPlatformSyncState(platform).catch(() => null);
+    if (activePlatformView === platform) {
+        await renderPlatformAccounts(platform);
+    }
+
+    const syncRes = await syncPromise;
+    if (syncRes?.status === 'error') throw new Error(syncRes.message || 'Sync failed');
+
+    const nextState = await _refreshPlatformSyncState(platform).catch(() => null);
+    if (activePlatformView === platform) {
+        await renderPlatformAccounts(platform);
+    }
+    if (typeof renderAllGamesView === 'function') await renderAllGamesView();
+
+    if (nextState) {
+        _renderPlatformSyncOverlay(platform, nextState, {
+            visible: true,
+            gameTitles: nextState.summary?.sampleTitles || [],
+        });
+        _hidePlatformSyncOverlay(1600);
+    }
+
+    if (options.showSuccessToast !== false) {
+        const totalGames = Array.isArray(syncRes?.games) ? syncRes.games.length : 0;
+        showToast(`Library synced successfully! Found ${totalGames} games.`, 'success');
+    }
+
+    return syncRes;
+}
+
+if (document.readyState === 'loading') {
+    document.addEventListener('DOMContentLoaded', _ensurePlatformSyncListener);
+} else {
+    _ensurePlatformSyncListener();
+}
 
 function openPlatformsModal() {
     document.getElementById('platformsModal').classList.add('active');
@@ -1548,6 +1842,7 @@ function openPlatformsModal() {
 
 function closePlatformsModal() {
     document.getElementById('platformsModal').classList.remove('active');
+    _hidePlatformSyncOverlay();
 }
 
 function backToPlatformsList() {
@@ -1573,54 +1868,73 @@ async function updatePlatformsOverview() {
 
 async function openPlatformDetails(platform) {
     activePlatformView = platform;
-    
-    // نظبط الـ Active State في القائمة اللي على الشمال
     document.querySelectorAll('.platform-nav-item').forEach(el => el.classList.remove('active'));
     const activeItem = document.getElementById(`plat-nav-${platform}`);
     if (activeItem) activeItem.classList.add('active');
-    
+
     const titles = { 'epic': 'Epic Games', 'steam': 'Steam' };
     document.getElementById('currentPlatformTitle').innerText = titles[platform] || platform;
-    
+
+    await _refreshPlatformSyncState(platform).catch(() => null);
+    _renderPlatformSyncStatusPanel(platform);
     await renderPlatformAccounts(platform);
 }
 
-// بترسم لستة الحسابات وبتحسب كل حساب جاب كام لعبة
 async function renderPlatformAccounts(platform) {
     const listContainer = document.getElementById('linkedAccountsList');
     listContainer.innerHTML = '<div style="text-align:center; padding: 20px; color:#888;">Loading...</div>';
 
     try {
-        const accountsRes = await window.electronAPI.platformSyncGetAccounts(platform);
+        const [accountsRes, gamesRes, syncState] = await Promise.all([
+            window.electronAPI.platformSyncGetAccounts(platform),
+            window.electronAPI.platformSyncGetCached(platform),
+            _refreshPlatformSyncState(platform).catch(() => _getPlatformSyncState(platform)),
+        ]);
+        if (accountsRes?.status === 'error') throw new Error(accountsRes.message || 'Failed to load accounts');
+        if (gamesRes?.status === 'error') throw new Error(gamesRes.message || 'Failed to load cached games');
         const accounts = accountsRes.accounts || [];
+        const games = gamesRes.games || [];
+        platformSyncStateCache[platform] = syncState || platformSyncStateCache[platform];
+        _renderPlatformSyncStatusPanel(platform, syncState);
 
         if (accounts.length === 0) {
             listContainer.innerHTML = '<div style="text-align:center; padding: 20px; color:#888;">No accounts linked yet.</div>';
             return;
         }
 
-        // بنجيب الألعاب المتكيشة عشان نعد كل حساب جاب كام لعبة
-        const gamesRes = await window.electronAPI.platformSyncGetCached(platform);
-        const games = gamesRes.games || [];
-
         let html = '';
         for (const acc of accounts) {
-            // بنعد الألعاب اللي الحساب ده بيملكها
             const aid = String(acc.id);
-            const gamesCount = games.filter((g) => {
-                if (g.platform === 'steam' && Array.isArray(g.steamLicensedAccountIds)) {
-                    return g.steamLicensedAccountIds.some((id) => String(id) === aid);
-                }
-                return g.ownedByAccountIds && g.ownedByAccountIds.some((id) => String(id) === aid);
-            }).length;
-            
+            const baseGamesCount = _countPlatformAccountGames(platform, games, aid);
+            const syncAccountState = syncState?.accounts?.[aid] || null;
+            const displayGamesCount = Number.isFinite(syncAccountState?.gamesCount) ? syncAccountState.gamesCount : baseGamesCount;
+            const itemStatus = syncAccountState?.status || 'idle';
+            const statusLabel = syncAccountState ? _getPlatformSyncStatusLabel(itemStatus) : '';
+            const accountMessage = syncAccountState?.message || '';
+            const statusHtml = syncAccountState
+                ? `<div class="linked-account-status ${_escapePlatformSyncHtml(itemStatus)}">${itemStatus === 'syncing' ? '<span class="acc-mini-spinner"></span>' : ''}${_escapePlatformSyncHtml(statusLabel)}</div>`
+                : '';
+            const messageHtml = accountMessage
+                ? `<div class="linked-account-message">${_escapePlatformSyncHtml(accountMessage)}</div>`
+                : '';
             html += `
-                <div class="linked-account-item">
-                    <div class="acc-name">
-                        <h4>${acc.displayName}</h4>
-                        <span>${gamesCount} Games Library</span>
+                <div class="linked-account-item ${_escapePlatformSyncHtml(itemStatus)}">
+                    <div class="linked-account-item-main">
+                        <div class="linked-account-info">
+                            <div class="linked-account-name">${_escapePlatformSyncHtml(acc.displayName)}</div>
+                            <div class="linked-account-meta">
+                                <span>${_escapePlatformSyncHtml(`${displayGamesCount} Games`)}</span>
+                                ${statusHtml}
+                            </div>
+                        </div>
+                        <div class="linked-account-actions">
+                            <button class="linked-account-action sync-btn" onclick="syncSinglePlatformAccount('${acc.id}')" ${syncState?.isSyncing ? 'disabled' : ''}>
+                                ${itemStatus === 'syncing' ? '<span class="acc-mini-spinner"></span> SYNCING...' : 'SYNC'}
+                            </button>
+                            <button class="linked-account-action unlink-btn" onclick="unlinkPlatformAccount('${acc.id}')" ${syncState?.isSyncing ? 'disabled' : ''}>UNLINK</button>
+                        </div>
                     </div>
-                    <button class="btn-unlink" onclick="unlinkPlatformAccount('${acc.id}')">Unlink</button>
+                    ${messageHtml}
                 </div>
             `;
         }
@@ -1635,31 +1949,37 @@ async function renderPlatformAccounts(platform) {
 async function linkNewPlatformAccount() {
     if (!activePlatformView) return;
     try {
+        _renderPlatformSyncOverlay(activePlatformView, null, {
+            visible: true,
+            title: `Connecting ${activePlatformView === 'steam' ? 'Steam' : 'account'}`,
+            subtitle: activePlatformView === 'steam'
+                ? 'Finish the sign-in in the Steam window, then we will sync your games automatically.'
+                : 'Finish sign-in, then we will sync your games automatically.',
+        });
         const res = await window.electronAPI.platformSyncLink(activePlatformView);
+        if (res?.status === 'error') throw new Error(res.message || 'Failed to link account');
         if (res.status === 'success') {
-            // 1. تحديث الشاشة عشان الحساب يظهر
-            await renderPlatformAccounts(activePlatformView);
             await updatePlatformsOverview();
-            
-            // 2. نطلع رسالة للمستخدم إننا بنسحب الألعاب
+            await renderPlatformAccounts(activePlatformView);
+            _renderPlatformSyncOverlay(activePlatformView, null, {
+                visible: true,
+                title: 'Checking your account',
+                subtitle: `We linked ${res.displayName} and are syncing the library now.`,
+            });
             showToast(`Account "${res.displayName}" linked! Syncing library automatically...`, 'info');
 
             try {
-                // 3. ده السطر السحري اللي بيعمل Sync أوتوماتيك في الخلفية
-                const syncRes = await window.electronAPI.platformSyncSync(activePlatformView);
-
-                if (syncRes.status === 'success') {
-                    const n = Array.isArray(syncRes.games) ? syncRes.games.length : 0;
-                    showToast(`Library synced successfully! Found ${n} games.`, 'success');
-                    await renderPlatformAccounts(activePlatformView);
-                    if (typeof renderAllGamesView === 'function') await renderAllGamesView();
-                }
+                // Pass targetAccountId to sync only the newly linked account
+                await _runPlatformSync(activePlatformView, { targetAccountId: res.steamId });
+                await updatePlatformsOverview();
+                await renderPlatformAccounts(activePlatformView);
             } catch (err) {
                 showToast(`Account linked, but sync failed: ${err.message}`, 'error');
             }
         }
     } catch (err) {
         console.error('Link Error:', err);
+        _hidePlatformSyncOverlay();
         showToast('Failed to link account.', 'error');
     }
 }
@@ -1675,12 +1995,10 @@ async function unlinkPlatformAccount(accountId) {
             try {
                 await window.electronAPI.platformSyncUnlink(activePlatformView, accountId);
                 showToast('Account removed successfully.', 'success');
-                // نعمل ريفريش للستة بعد الحذف
+                await updatePlatformsOverview();
                 await renderPlatformAccounts(activePlatformView);
-                // ريفريش للمكتبة الأساسية لو إيبك
-                if (activePlatformView === 'epic' && typeof _renderEpicLibraryPanel === 'function') {
-                    await _renderEpicLibraryPanel();
-                }
+                if (typeof renderAllGamesView === 'function') await renderAllGamesView();
+                if (activePlatformView === 'epic' && typeof _renderEpicLibraryPanel === 'function') await _renderEpicLibraryPanel();
             } catch (err) {
                 console.error('Unlink Error:', err);
                 showToast('Failed to unlink account.', 'error');
@@ -1691,27 +2009,43 @@ async function unlinkPlatformAccount(accountId) {
 
 async function syncCurrentPlatform() {
     if (!activePlatformView) return;
-    const syncBtn = document.getElementById('syncPlatformBtn');
-    
     try {
-        syncBtn.innerText = 'Syncing...';
-        syncBtn.disabled = true;
-        
-        await window.electronAPI.platformSyncSync(activePlatformView);
-
-        await renderPlatformAccounts(activePlatformView);
-        if (typeof renderAllGamesView === 'function') await renderAllGamesView();
-
-        syncBtn.innerText = 'Sync Library';
-        syncBtn.disabled = false;
-        
+        _renderPlatformSyncOverlay(activePlatformView, null, {
+            visible: true,
+            title: 'Syncing your library',
+            subtitle: 'We are refreshing your linked games now.',
+        });
+        await _runPlatformSync(activePlatformView);
     } catch (err) {
         console.error('Sync Error:', err);
-        syncBtn.innerText = 'Sync Failed';
-        setTimeout(() => {
-            syncBtn.innerText = 'Sync Library';
-            syncBtn.disabled = false;
-        }, 3000);
+        _hidePlatformSyncOverlay();
+        showToast(`Sync failed: ${err.message}`, 'error');
+    } finally {
+        await _refreshPlatformSyncState(activePlatformView).catch(() => null);
+        _renderPlatformSyncStatusPanel(activePlatformView);
+    }
+}
+
+async function syncSinglePlatformAccount(accountId) {
+    if (!activePlatformView || !accountId) return;
+    try {
+        _renderPlatformSyncOverlay(activePlatformView, null, {
+            visible: true,
+            title: 'Syncing this account',
+            subtitle: 'We are refreshing games for this account only.',
+        });
+        await _runPlatformSync(activePlatformView, {
+            targetAccountId: String(accountId),
+            showSuccessToast: false,
+        });
+        showToast('Account synced successfully.', 'success');
+    } catch (err) {
+        console.error('Single Account Sync Error:', err);
+        _hidePlatformSyncOverlay();
+        showToast(`Account sync failed: ${err.message}`, 'error');
+    } finally {
+        await _refreshPlatformSyncState(activePlatformView).catch(() => null);
+        _renderPlatformSyncStatusPanel(activePlatformView);
     }
 }
 
