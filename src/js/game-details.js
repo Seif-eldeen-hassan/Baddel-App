@@ -12,6 +12,7 @@
 let _gdCurrentGameId   = null;
 let _gdCurrentMeta     = null;
 let _gdCurrentGame     = null;
+let _gdAchievementsLoaded = false;
 let _gdDownloadInterval = null;   // للـ demo download progress
 let _gdPreviousView    = 'home';  // عشان نعرف نرجع لأنهي شاشة
 let _gdLightboxImages = [];
@@ -160,6 +161,7 @@ window.closeGameDetails = function() {
     _gdCurrentGameId = null;
     _gdCurrentMeta   = null;
     _gdCurrentGame   = null;
+    _gdAchievementsLoaded = false;
     clearInterval(_gdDownloadInterval);
 
     // 🟢 نرجع للشاشة الصح اللي كنا فيها
@@ -195,6 +197,10 @@ function _gdResetUI() {
 
     // Reset accounts
     document.getElementById('gdAccountsList').innerHTML = '<div class="gd-no-accounts">Loading accounts…</div>';
+    const gdAchievementsList = document.getElementById('gdAchievementsList');
+    if (gdAchievementsList) {
+        gdAchievementsList.innerHTML = '<div class="gd-no-accounts">Open this tab to load achievements…</div>';
+    }
 
     // Reset cover
     const coverImg = document.getElementById('gdCover');
@@ -1098,20 +1104,35 @@ function _gdPopulateMeta(game, metaData) {
 
     // 2. Rating بدل Metacritic 
     const score = info.rating || null;
-    if (score) {
+    if (score || info.steamReview) {
         document.getElementById('gdRatingBlock').style.display = 'block';
-        document.getElementById('gdRatingScore').textContent = score;
-        const ratingLabelEl = document.getElementById('gdRatingLabel');
-        if (ratingLabelEl) {
-            const hasSteamReviewSource = !!(info.steamReview && typeof info.steamReview.scorePercent === 'number');
-            // Primary rating is IGDB in our pipeline; Steam review is fallback when IGDB is unavailable.
-            ratingLabelEl.textContent = hasSteamReviewSource ? 'Steam Reviews' : 'IGDB';
-        }
-        const stars = Math.round((score / 100) * 5);
+        const scoreEl = document.getElementById('gdRatingScore');
         const starsEl = document.getElementById('gdRatingStars');
-        starsEl.innerHTML = Array.from({length: 5}, (_, i) =>
-            `<span class="${i < stars ? '' : 'empty'}">★</span>`
-        ).join('');
+        const ratingLabelEl = document.getElementById('gdRatingLabel');
+
+        const hasSteamReviewSource = !!(info.steamReview && typeof info.steamReview.scorePercent === 'number');
+        if (hasSteamReviewSource) {
+            const desc = info.steamReview.reviewScoreDesc || 'Steam Reviews';
+            const reviews = Number(info.steamReview.totalReviews || 0);
+            scoreEl.textContent = desc;
+            scoreEl.style.fontSize = '1.3rem';
+            if (ratingLabelEl) {
+                ratingLabelEl.textContent = `${reviews.toLocaleString()} reviews`;
+            }
+            if (starsEl) starsEl.innerHTML = '';
+        } else {
+            scoreEl.textContent = score;
+            scoreEl.style.fontSize = '';
+            if (ratingLabelEl) {
+                ratingLabelEl.textContent = 'IGDB';
+            }
+            const stars = Math.round((score / 100) * 5);
+            if (starsEl) {
+                starsEl.innerHTML = Array.from({length: 5}, (_, i) =>
+                    `<span class="${i < stars ? '' : 'empty'}">★</span>`
+                ).join('');
+            }
+        }
     } else {
         document.getElementById('gdRatingBlock').style.display = 'none';
     }
@@ -1262,6 +1283,83 @@ function _gdPopulateMeta(game, metaData) {
 
     // Sidebar detail list
     _gdBuildDetailList(game, info);
+}
+
+function _gdExtractSteamAppId(game) {
+    const candidates = [
+        game?.allIds?.steam,
+        game?.id,
+        game?.command,
+    ];
+    for (const candidate of candidates) {
+        const match = String(candidate || '').match(/(\d{3,})/);
+        if (match) return match[1];
+    }
+    return null;
+}
+
+async function _gdPopulateAchievements(game) {
+    const container = document.getElementById('gdAchievementsList');
+    if (!container) return;
+
+    const steamAppId = _gdExtractSteamAppId(game);
+    if (!steamAppId) {
+        container.innerHTML = '<div class="gd-no-accounts">Achievements comparison is available for Steam games only.</div>';
+        return;
+    }
+
+    container.innerHTML = '<div class="gd-no-accounts">Loading achievements…</div>';
+    try {
+        const res = await window.electronAPI.getGameAchievements?.({
+            appId: steamAppId,
+            gameName: game.name,
+            id: game.id,
+            allIds: game.allIds,
+            command: game.command,
+        });
+
+        if (!res || res.status !== 'success') {
+            container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+            return;
+        }
+
+        const rows = Array.isArray(res.accounts) ? res.accounts : [];
+        if (!rows.length) {
+            container.innerHTML = '<div class="gd-no-accounts">No Steam accounts linked yet.</div>';
+            return;
+        }
+
+        const totalAchievements = Number(_gdCurrentMeta?.info?.achievementsTotal || 0) || null;
+        const esc = (v) => String(v ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#39;');
+        container.innerHTML = rows.map((acc) => {
+            const unlockedCount = Number(acc.unlockedCount || 0);
+            const denominator = totalAchievements && totalAchievements > 0
+                ? totalAchievements
+                : Math.max(unlockedCount, 1);
+            const percent = Math.max(0, Math.min(100, Math.round((unlockedCount / denominator) * 100)));
+            const summary = totalAchievements
+                ? `${unlockedCount}/${totalAchievements} unlocked`
+                : `${unlockedCount} unlocked`;
+            const subLine = acc.error || summary;
+            return `
+                <div class="gd-ach-card">
+                    <div class="gd-ach-head">
+                        <div class="gd-ach-name">${esc(acc.displayName || acc.accountId)}</div>
+                        <div class="gd-ach-meta">${percent}%</div>
+                    </div>
+                    <div class="gd-ach-bar"><div class="gd-ach-fill" style="width:${percent}%"></div></div>
+                    <div class="gd-ach-sub">${esc(subLine)}</div>
+                </div>
+            `;
+        }).join('');
+    } catch (e) {
+        container.innerHTML = '<div class="gd-no-accounts">Failed to load achievements for this game.</div>';
+    }
 }
 
 // ──────────────────────────────────────────
@@ -1873,6 +1971,11 @@ window.gdSwitchTab = function(tabName, btnEl) {
     if (content) {
         content.style.display = 'block';
         content.classList.add('active');
+    }
+
+    if (tabName === 'achievements' && _gdCurrentGame && !_gdAchievementsLoaded) {
+        _gdAchievementsLoaded = true;
+        _gdPopulateAchievements(_gdCurrentGame);
     }
 };
 

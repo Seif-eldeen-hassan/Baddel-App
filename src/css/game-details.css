@@ -507,7 +507,7 @@
     border: 1px solid var(--gd-border); border-radius: 14px;
     transition: all 0.3s ease;
 }
-.gd-account-item:hover { background: var(--gd-surface-hover); border-color: rgba(255,255,255,0.15); transform: translateY(-2px); }
+.gd-account-item:hover { background: var(--gd-surface-hover); border-color: rgba(255, 255, 255, 0.15); transform: translateY(-2px); }
 .gd-account-plat-icon { width: 36px; height: 36px; display: flex; align-items: center; justify-content: center; background: #fff; border-radius: 8px; }
 .gd-account-plat-icon img { width: 20px; height: 20px; object-fit: contain; }
 .gd-account-info { flex: 1; }
@@ -515,6 +515,43 @@
 .gd-account-plat { font-size: 0.75rem; color: var(--gd-text-muted); }
 .gd-account-status { padding: 6px 12px; border-radius: 20px; font-size: 0.75rem; font-weight: 700; }
 .gd-account-status.owned { background: rgba(48, 209, 88, 0.15); color: var(--gd-green); }
+
+/* ============================================================
+   ACHIEVEMENTS TAB
+   ============================================================ */
+.gd-achievements-list { display: flex; flex-direction: column; gap: 12px; }
+.gd-ach-card {
+    background: var(--gd-surface);
+    border: 1px solid var(--gd-border);
+    border-radius: 14px;
+    padding: 14px 16px;
+}
+.gd-ach-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+}
+.gd-ach-name { font-size: 0.92rem; font-weight: 700; color: #fff; }
+.gd-ach-meta { font-size: 0.78rem; color: var(--gd-text-muted); font-weight: 600; }
+.gd-ach-bar {
+    width: 100%;
+    height: 8px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.08);
+    overflow: hidden;
+}
+.gd-ach-fill {
+    height: 100%;
+    border-radius: 999px;
+    background: linear-gradient(90deg, #30d158, #8ef5b0);
+    transition: width 0.35s ease;
+}
+.gd-ach-sub {
+    margin-top: 8px;
+    font-size: 0.75rem;
+    color: var(--gd-text-muted);
+}
 
 /* ============================================================
    LIGHTBOX (GALLERY POPUP)

@@ -30,6 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // ---- Metadata & Playtime ----
     getMetadata:            (gameName, hints = {})    => ipcRenderer.invoke('get-game-metadata', gameName, hints),
+    getGameAchievements:    (payload)                 => ipcRenderer.invoke('get-game-achievements', payload),
     saveMetadata:           (gameId, meta)            => ipcRenderer.invoke('save-game-metadata', gameId, meta),
     updatePlaytime:         (gameId, minutes)         => ipcRenderer.invoke('update-playtime', gameId, minutes),
     onPlaytimeUpdated:      (cb)                      => ipcRenderer.on('playtime-updated', (_, data) => cb(data)),

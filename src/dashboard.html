@@ -448,6 +448,7 @@
                             <button class="gd-tab" data-tab="media" onclick="gdSwitchTab('media', this)">Media</button>
                             <button class="gd-tab" data-tab="requirements" onclick="gdSwitchTab('requirements', this)">Requirements</button>
                             <button class="gd-tab" data-tab="accounts" onclick="gdSwitchTab('accounts', this)">Accounts</button>
+                            <button class="gd-tab" data-tab="achievements" onclick="gdSwitchTab('achievements', this)">Achievements</button>
                         </div>
 
                         <div class="gd-tab-content active" id="gdTab-overview">
@@ -541,6 +542,20 @@
                                 </h3>
                                 <div class="gd-accounts-list" id="gdAccountsList">
                                     <div class="gd-no-accounts">Loading accounts…</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="gd-tab-content" id="gdTab-achievements" style="display:none">
+                            <div class="gd-section">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <path d="M8 21h8"></path><path d="M12 17v4"></path><path d="M7 4h10"></path><path d="M17 4v3a5 5 0 0 1-10 0V4"></path><path d="M5 7H4a2 2 0 0 1-2-2V4h3"></path><path d="M19 7h1a2 2 0 0 0 2-2V4h-3"></path>
+                                    </svg>
+                                    Steam Achievements by Account
+                                </h3>
+                                <div id="gdAchievementsList" class="gd-achievements-list">
+                                    <div class="gd-no-accounts">Open this tab to load achievements…</div>
                                 </div>
                             </div>
                         </div>

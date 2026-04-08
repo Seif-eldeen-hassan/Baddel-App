@@ -14,10 +14,11 @@ const { searchGame } = require('./services/steamgriddb');
 const { fetchGameInfo } = require('./services/rawg');
 const { fetchFromIGDB } = require('./services/igdb');
 const { registerAccountHandlers } = require('./accountsHandler');
-const { registerPlatformSyncHandlers } = require('./platformSync');
+const { registerPlatformSyncHandlers, steamConnector } = require('./platformSync');
 const analytics = require('./analytics');
 const psList = require('ps-list');
 const https = require('https');
+const steamBridge = require('./steamBridge');
 
 
 // ============================================================
@@ -938,6 +939,69 @@ function _parseStorefrontRequirements(html = '') {
     };
 }
 
+async function _fetchAchievementsForApp(appId) {
+    const normalizedAppId = String(appId || '').match(/(\d{3,})/)?.[1] || null;
+    if (!normalizedAppId) return { status: 'error', message: 'Invalid Steam app id' };
+
+    const accounts = steamConnector?.getAccounts?.() || [];
+    if (!accounts.length) {
+        return { status: 'success', appId: normalizedAppId, accounts: [] };
+    }
+
+    await steamBridge.start();
+    const activeSessionId = String(steamBridge.getLastSessionSteamId?.() || '');
+    const rows = [];
+
+    for (const account of accounts) {
+        const accountId = String(account.id);
+        const displayName = account.displayName || accountId;
+        try {
+            const creds = steamBridge.getCredentialsForAccount(accountId);
+            let authenticated = false;
+
+            if (creds) {
+                const authRes = await steamBridge.authenticate(creds, { waitForCache: false });
+                authenticated = authRes?.status === 'authenticated';
+            } else if (activeSessionId && activeSessionId === accountId) {
+                authenticated = true;
+            }
+
+            if (!authenticated) {
+                rows.push({
+                    accountId,
+                    displayName,
+                    unlockedCount: 0,
+                    unlocked: [],
+                    error: 'Not authenticated',
+                });
+                continue;
+            }
+
+            const achRes = await steamBridge.getAchievements([normalizedAppId]);
+            const unlocked = Array.isArray(achRes?.achievements?.[normalizedAppId])
+                ? achRes.achievements[normalizedAppId]
+                : [];
+            rows.push({
+                accountId,
+                displayName,
+                unlockedCount: unlocked.length,
+                unlocked,
+            });
+        } catch (err) {
+            rows.push({
+                accountId,
+                displayName,
+                unlockedCount: 0,
+                unlocked: [],
+                error: err?.message || 'Failed to load achievements',
+            });
+        }
+    }
+
+    rows.sort((a, b) => b.unlockedCount - a.unlockedCount);
+    return { status: 'success', appId: normalizedAppId, accounts: rows };
+}
+
 async function _findSteamAppIdByName(gameName) {
     try {
         const searchRes = await fetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
@@ -1044,6 +1108,7 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
                 screenshots,
                 requirements,
                 steamReview: reviewSummary,
+                achievementsTotal: Number(data.achievements?.total || 0) || null,
             },
         };
     } catch (err) {
@@ -1202,6 +1267,15 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
             requirements: chosenData?.info?.requirements || null,
         }
     };
+});
+
+ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
+    try {
+        const appId = payload.appId || _extractSteamAppId(payload.gameName || '', payload);
+        return await _fetchAchievementsForApp(appId);
+    } catch (err) {
+        return { status: 'error', message: err?.message || 'Failed to load achievements' };
+    }
 });
 
     // ---- Collections (registered once, inside whenReady) ----
