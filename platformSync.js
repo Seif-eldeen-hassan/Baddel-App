@@ -13,6 +13,7 @@ const https = require('https');
 const util = require('util');
 const execAsync = util.promisify(exec);
 const { getLocalSteamGames } = require('./gameScanner');
+const { resolveSteamCardImageUrl } = require('./services/steamLibraryAssets');
 const {
     orderAccountsForSync,
     countGamesForAccount,
@@ -346,7 +347,7 @@ async function buildSteamOwnedGameEntries(account, games = []) {
         platform: 'steam',
         source: 'steam',
         coverUrl: await resolveCoverUrlForSync(
-            `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
+            await resolveSteamCardImageUrl(game.appid, []),
             game.id
         ),
         appName: String(game.appid),
@@ -483,7 +484,7 @@ async function _ensureBridgeRunning() {
                         platform: 'steam',
                         source: 'steam',
                         coverUrl: await resolveCoverUrlForSync(
-                            `https://steamcdn-a.akamaihd.net/steam/apps/${g.appid}/library_600x900.jpg`,
+                            await resolveSteamCardImageUrl(g.appid, []),
                             g.id
                         ),
                         appName: String(g.appid),
@@ -993,7 +994,7 @@ const steamConnector = {
                         platform:                'steam',
                         source:                  'steam',
                         coverUrl:                await resolveCoverUrlForSync(
-                            `https://steamcdn-a.akamaihd.net/steam/apps/${game.appid}/library_600x900.jpg`,
+                            await resolveSteamCardImageUrl(game.appid, []),
                             gameId
                         ),
                         appName:                 String(game.appid),

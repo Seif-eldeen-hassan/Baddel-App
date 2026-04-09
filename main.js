@@ -11,6 +11,14 @@ const { BrowserView } = require('electron');
 const { scanAllGames, addManualGame, getSavedGames } = require('./gameScanner');
 const colHandler = require('./collectionsHandler');
 const { searchGame } = require('./services/steamgriddb');
+const {
+    resolveSteamCardImageUrl,
+    resolveSteamHeroImageUrl,
+    resolveSteamOfficialLogoUrl,
+    steamImageLinkExamples,
+    isSteamLibraryGridCoverUrl,
+    isSteamLibraryGridHeroUrl,
+} = require('./services/steamLibraryAssets');
 const { fetchGameInfo } = require('./services/rawg');
 const { fetchFromIGDB } = require('./services/igdb');
 const { registerAccountHandlers } = require('./accountsHandler');
@@ -875,6 +883,11 @@ function _normalizePlatformHints(hints = {}) {
     return [...plats];
 }
 
+function _isSteamHostedImageUrl(url) {
+    if (!url || typeof url !== 'string') return false;
+    return /steam(static|powered)|akamaihd\.net\/steam|steamcdn/i.test(url);
+}
+
 function _extractSteamAppId(gameName, hints = {}) {
     const candidates = [
         hints.steamAppId,
@@ -1086,8 +1099,40 @@ async function _fetchSteamReviewSummary(appId) {
     }
 }
 
-// Steam Storefront (details + images + trailer + requirements)
+// Steam Storefront (details + trailer + requirements). Card/hero: Store API images first, then CDN.
 async function fetchSteamStorefrontData(gameName, hints = {}) {
+    const _pickSteamMovieUrl = (movie = {}) => (
+        movie?.mp4?.max ||
+        movie?.mp4?.['480'] ||
+        movie?.webm?.max ||
+        movie?.webm?.['480'] ||
+        movie?.hls_h264 ||
+        movie?.dash_h264 ||
+        movie?.dash_av1 ||
+        null
+    );
+
+    const _emptySteamInfo = (reviewSummary) => ({
+        description: null,
+        genres: [],
+        developer: null,
+        publisher: null,
+        releaseDate: null,
+        rating: null,
+        platforms: [],
+        engine: null,
+        gameMode: null,
+        website: null,
+        trailer: null,
+        allTrailers: [],
+        isDirectVideo: false,
+        artworks: [],
+        screenshots: [],
+        requirements: null,
+        steamReview: reviewSummary,
+        achievementsTotal: null,
+    });
+
     try {
         const appId = _extractSteamAppId(gameName, hints) || await _findSteamAppIdByName(gameName);
         if (!appId) return null;
@@ -1101,22 +1146,23 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
             _fetchSteamReviewSummary(appId),
         ]);
         const detailsData = await detailsRes.json();
-        if (!detailsData[appId]?.success) return null;
+        const ok = !!detailsData[appId]?.success;
+        const data = ok ? detailsData[appId].data : null;
 
-        const data = detailsData[appId].data;
-        if (!data) return null;
-
-        // نفضل mp4/webm الأول (native support) — HLS/DASH fallback لو مفيش
-        const _pickSteamMovieUrl = (movie = {}) => (
-            movie?.mp4?.max ||
-            movie?.mp4?.['480'] ||
-            movie?.webm?.max ||
-            movie?.webm?.['480'] ||
-            movie?.hls_h264 ||
-            movie?.dash_h264 ||
-            movie?.dash_av1 ||
-            null
-        );
+        if (!data) {
+            const cover = await resolveSteamCardImageUrl(appId, []);
+            const heroImage = await resolveSteamHeroImageUrl(appId, []);
+            return {
+                cover,
+                heroImage,
+                logo: null,
+                steamAppId: appId,
+                usedSteamLibraryGridArt: !!(cover && heroImage && isSteamLibraryGridCoverUrl(cover) && isSteamLibraryGridHeroUrl(heroImage)),
+                storeCapsuleFallback: null,
+                storeHeroFallback: null,
+                info: _emptySteamInfo(reviewSummary),
+            };
+        }
 
         const trailer = _pickSteamMovieUrl(data.movies?.[0] || null);
         const allTrailers = (data.movies || []).map((movie, i) => ({
@@ -1134,10 +1180,31 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
             requirements = hasAny ? { minimum, recommended } : null;
         }
 
+        const storeCoverFallbacks = [
+            data.capsule_image,
+            data.capsule_imagev5,
+            data.header_image,
+            screenshots[0],
+        ].filter(Boolean);
+        const storeHeroFallbacks = [
+            data.background_raw,
+            data.background,
+            screenshots[0],
+            data.capsule_imagev5,
+            data.header_image,
+        ].filter(Boolean);
+
+        const cover = await resolveSteamCardImageUrl(appId, storeCoverFallbacks);
+        const heroImage = await resolveSteamHeroImageUrl(appId, storeHeroFallbacks);
+
         return {
-            cover: data.capsule_image || data.header_image || screenshots[0] || null,
-            heroImage: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
+            cover,
+            heroImage,
             logo: null,
+            steamAppId: appId,
+            usedSteamLibraryGridArt: !!(cover && heroImage && isSteamLibraryGridCoverUrl(cover) && isSteamLibraryGridHeroUrl(heroImage)),
+            storeCapsuleFallback: data.capsule_image || data.header_image || screenshots[0] || null,
+            storeHeroFallback: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
             info: {
                 description: _normalizeSteamDescription(data),
                 genres: (data.genres || []).map((g) => g.description).filter(Boolean),
@@ -1146,7 +1213,7 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
                 releaseDate: data.release_date?.date || null,
                 rating: typeof data.metacritic?.score === 'number' ? data.metacritic.score : null,
                 platforms: Object.entries(data.platforms || {})
-                    .filter(([, ok]) => !!ok)
+                    .filter(([, val]) => !!val)
                     .map(([k]) => k.toUpperCase()),
                 engine: null,
                 gameMode: null,
@@ -1163,7 +1230,20 @@ async function fetchSteamStorefrontData(gameName, hints = {}) {
         };
     } catch (err) {
         console.error('[Steam Storefront Fetch Error]', err);
-        return null;
+        const appId = _extractSteamAppId(gameName, hints);
+        if (!appId) return null;
+        const cover = await resolveSteamCardImageUrl(appId, []);
+        const heroImage = await resolveSteamHeroImageUrl(appId, []);
+        return {
+            cover,
+            heroImage,
+            logo: null,
+            steamAppId: appId,
+            usedSteamLibraryGridArt: !!(cover && heroImage && isSteamLibraryGridCoverUrl(cover) && isSteamLibraryGridHeroUrl(heroImage)),
+            storeCapsuleFallback: null,
+            storeHeroFallback: null,
+            info: _emptySteamInfo(null),
+        };
     }
 }
 
@@ -1223,9 +1303,10 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     let fallback2Source = null;
 
     if (isSteamGame) {
-        [primary, fallback1] = await Promise.all([steamPromise, igdbPromise]);
+        [primary, fallback1, fallback2] = await Promise.all([steamPromise, igdbPromise, rawgPromise]);
         primarySource = 'steam';
         fallback1Source = 'igdb';
+        fallback2Source = 'rawg';
     } else {
         [primary, fallback1, fallback2] = await Promise.all([igdbPromise, steamPromise, rawgPromise]);
         primarySource = 'igdb';
@@ -1233,6 +1314,44 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
         fallback2Source = 'rawg';
     }
     const sgdbData = await sgdbPromise;
+
+    if (isSteamGame && !primary) {
+        const onlyId = _extractSteamAppId(gameName, hints);
+        if (onlyId) {
+            const synCover = await resolveSteamCardImageUrl(onlyId, []);
+            const synHero = await resolveSteamHeroImageUrl(onlyId, []);
+            primary = {
+                cover: synCover,
+                heroImage: synHero,
+                logo: null,
+                steamAppId: onlyId,
+                usedSteamLibraryGridArt: !!(synCover && synHero && isSteamLibraryGridCoverUrl(synCover) && isSteamLibraryGridHeroUrl(synHero)),
+                storeCapsuleFallback: null,
+                storeHeroFallback: null,
+                info: {
+                    description: null,
+                    genres: [],
+                    developer: null,
+                    publisher: null,
+                    releaseDate: null,
+                    rating: null,
+                    platforms: [],
+                    engine: null,
+                    gameMode: null,
+                    website: null,
+                    trailer: null,
+                    allTrailers: [],
+                    isDirectVideo: false,
+                    artworks: [],
+                    screenshots: [],
+                    requirements: null,
+                    steamReview: null,
+                    achievementsTotal: null,
+                },
+            };
+            primarySource = 'steam';
+        }
+    }
 
     console.log(`✅ [APIs] All data fetched (or timed out).`);
 
@@ -1264,16 +1383,111 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
     };
 
     const rawgData = normalizeRawg(fallback2);
+    const rawgLogoCandidate = fallback2?.logoCandidate || null;
     const chosenData = primary || fallback1 || rawgData || {};
     const metadataSource = primary
         ? primarySource
         : (fallback1 ? fallback1Source : (rawgData ? fallback2Source : 'none'));
-    const usedSgdbImageFallback = !!(sgdbData && (!chosenData?.cover || !chosenData?.heroImage || !chosenData?.logo));
 
-    // images priority: chosen source first, then SGDB fallback
-    const cover     = chosenData?.cover || sgdbData?.cover || null;
-    const heroImage = chosenData?.heroImage || chosenData?.hero || sgdbData?.hero || null;
-    const logo      = chosenData?.logo || sgdbData?.logo || null;
+    const hintedSteamAppId = _extractSteamAppId(gameName, hints);
+    const resolvedSteamAppId = (primary && primary.steamAppId)
+        ? String(primary.steamAppId)
+        : (hintedSteamAppId ? String(hintedSteamAppId) : null);
+
+    let cover;
+    let heroImage;
+
+    if (isSteamGame && primary && primary.cover && primary.heroImage) {
+        cover = primary.cover;
+        heroImage = primary.heroImage;
+    } else if (isSteamGame) {
+        const sid = hintedSteamAppId;
+        if (sid) {
+            cover = await resolveSteamCardImageUrl(sid, []);
+            heroImage = await resolveSteamHeroImageUrl(sid, []);
+        } else {
+            cover = chosenData?.cover || sgdbData?.cover || null;
+            heroImage = chosenData?.heroImage || chosenData?.hero || sgdbData?.hero || null;
+        }
+    } else {
+        cover = chosenData?.cover || sgdbData?.cover || null;
+        heroImage = chosenData?.heroImage || chosenData?.hero || sgdbData?.hero || null;
+    }
+
+    const igdbResult = isSteamGame ? fallback1 : primary;
+    const rawgFirstShot = (Array.isArray(fallback2?.screenshots) && fallback2.screenshots[0])
+        ? fallback2.screenshots[0]
+        : null;
+
+    if (!cover || !heroImage) {
+        if (!cover) {
+            cover = sgdbData?.cover
+                || igdbResult?.cover
+                || rawgFirstShot
+                || chosenData?.cover
+                || primary?.storeCapsuleFallback
+                || null;
+        }
+        if (!heroImage) {
+            heroImage = sgdbData?.hero
+                || igdbResult?.heroImage
+                || rawgFirstShot
+                || chosenData?.heroImage
+                || chosenData?.hero
+                || primary?.storeHeroFallback
+                || null;
+        }
+    }
+
+    const usedSteamOfficialArtwork = !!(
+        cover &&
+        heroImage &&
+        _isSteamHostedImageUrl(cover) &&
+        _isSteamHostedImageUrl(heroImage)
+    );
+    const usedSteamLibraryGridArt = !!(isSteamLibraryGridCoverUrl(cover) && isSteamLibraryGridHeroUrl(heroImage));
+
+    let logo = sgdbData?.logo || null;
+    let logoSource = logo ? 'steamgriddb' : null;
+    if (!logo && resolvedSteamAppId) {
+        const steamLogo = await resolveSteamOfficialLogoUrl(resolvedSteamAppId);
+        if (steamLogo) {
+            logo = steamLogo;
+            logoSource = 'steam_cdn';
+        }
+    }
+    if (!logo && rawgLogoCandidate) {
+        logo = rawgLogoCandidate;
+        logoSource = 'rawg';
+    }
+    if (!logo && igdbResult?.cover) {
+        logo = igdbResult.cover;
+        logoSource = 'igdb_cover';
+    }
+
+    const usedSgdbImageFallback = !!(sgdbData && (
+        (isSteamGame && !usedSteamOfficialArtwork && (sgdbData.cover || sgdbData.hero)) ||
+        (!isSteamGame && (!chosenData?.cover || !chosenData?.heroImage) && (sgdbData.cover || sgdbData.hero)) ||
+        (!logo && sgdbData.logo)
+    ));
+
+    let steamImageNotice = null;
+    if (isSteamGame && !resolvedSteamAppId) {
+        steamImageNotice = {
+            code: 'steam_app_id_missing',
+            message: 'لم نتمكن من ربط اللعبة بمتجر Steam (لا يوجد App ID)؛ الصور المعروضة من مصادر أخرى وقد لا تطابق مكتبة Steam.',
+        };
+    } else if (
+        isSteamGame &&
+        resolvedSteamAppId &&
+        (cover || heroImage) &&
+        (!cover || !heroImage || !_isSteamHostedImageUrl(cover) || !_isSteamHostedImageUrl(heroImage))
+    ) {
+        steamImageNotice = {
+            code: 'steam_library_art_fallback',
+            message: 'بعض صور Steam غير متاحة على خادم Valve لهذه اللعبة؛ تم استكمال العرض من مصادر أخرى (أو صورة واحدة فقط من Steam).',
+        };
+    }
 
     const finalTrailer = chosenData?.info?.trailer || null;
     const finalAllTrailers = chosenData?.info?.allTrailers || [];
@@ -1287,6 +1501,9 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
                 : steamReviewFallbackRating)
     );
 
+    const steamDbg = steamImageLinkExamples(resolvedSteamAppId || 'APP_ID');
+    console.log(`[Steam images] appId=${resolvedSteamAppId || '—'} resolvedCover=${cover || '—'} resolvedHero=${heroImage || '—'} (library grid URLs often 404 for older apps — use header/capsule)`);
+
     console.log(`🎉 [BACKEND] DONE FOR: ${gameName}`);
     console.log(`======================================\n`);
 
@@ -1295,12 +1512,19 @@ ipcMain.handle('get-game-metadata', async (_, gameName, hints = {}) => {
         heroImage,
         hero: heroImage, // عشان الفرونت إند بتاعك
         logo,
+        logoSource,
         source: metadataSource,
+        steamImageNotice,
         debug: {
             metadataSource,
             usedSgdbImageFallback,
             platformHints: platforms,
             isSteamGame,
+            steamAppId: resolvedSteamAppId,
+            usedSteamLibraryGridArt,
+            usedSteamOfficialArtwork,
+            logoSource,
+            steamImageUrls: steamDbg,
         },
         info: {
             ...(chosenData?.info || {}),

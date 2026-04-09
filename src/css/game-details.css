@@ -77,6 +77,19 @@
     cursor: pointer;
     transition: all 0.3s var(--gd-bezier);
 }
+/* Steam artwork fallback notice (below sticky back bar) */
+.gd-steam-asset-notice {
+    display: none;
+    margin: 0 40px 0;
+    padding: 10px 14px;
+    font-size: 0.82rem;
+    line-height: 1.45;
+    color: #e8c170;
+    background: rgba(232, 193, 112, 0.08);
+    border: 1px solid rgba(232, 193, 112, 0.25);
+    border-radius: var(--gd-radius-sm);
+}
+
 .gd-back-btn:hover {
     background: rgba(255,255,255,0.1);
     transform: scale(1.05);
@@ -111,8 +124,22 @@
     background-position: center 20%;
     transform: scale(1.02);
     transition: background-image 0.8s ease;
-    filter: brightness(0.6) saturate(1.2);
+    /* Softer than before — heavy darken + saturate read as muddy blue on some Steam assets */
+    filter: brightness(0.78) saturate(1.05) contrast(1.02);
     animation: slowHeroZoom 20s infinite alternate linear;
+}
+
+/* Procedural “dead game” hero — no photo URL; gradient only */
+.gd-hero-bg.gd-procedural-art {
+    filter: none;
+    animation: gdProceduralHeroDrift 22s ease-in-out infinite alternate;
+    background-size: 200% 200%;
+    background-position: 50% 50%;
+}
+
+@keyframes gdProceduralHeroDrift {
+    0% { background-position: 0% 40%; }
+    100% { background-position: 100% 60%; }
 }
 
 @keyframes slowHeroZoom {
@@ -427,7 +454,52 @@
     box-shadow: 0 30px 60px rgba(0,0,0,0.9);
     border-color: rgba(255,255,255,0.2);
 }
-.gd-cover { width: 100%; height: 100%; object-fit: cover; }
+.gd-cover { 
+    width: 100%; height: 100%; object-fit: cover;
+    object-position: center top;
+    image-rendering: auto;
+    transition: filter 0.3s ease;
+}
+
+.gd-cover-wrap.gd-procedural-card .gd-cover-placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.gd-cover-wrap.gd-procedural-card #gdCoverInitials {
+    font-family: var(--font-heading);
+    font-size: clamp(2.2rem, 8vw, 3.4rem);
+    font-weight: 900;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: linear-gradient(135deg, rgba(255,255,255,0.95) 0%, rgba(255,255,255,0.35) 100%);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+    text-shadow: none;
+    filter: drop-shadow(0 4px 24px rgba(0,0,0,0.45));
+}
+
+.gd-cover.fallback-hero {
+    filter: brightness(0.4) saturate(0.8);
+}
+
+.gd-logo-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 85%;
+    max-height: 45%;
+    object-fit: contain;
+    z-index: 2;
+    pointer-events: none;
+    filter: drop-shadow(0 4px 10px rgba(0,0,0,0.9));
+    animation: gdFadeIn 0.6s var(--gd-bezier);
+}
 
 .gd-rating-block {
     background: var(--gd-surface);
@@ -557,33 +629,134 @@
     display: flex;
     flex-direction: column;
     gap: 6px;
+    max-height: 400px; /* Max height to avoid super long cards */
+    overflow-y: auto;
+    padding-right: 4px; /* Space for scrollbar */
 }
-.gd-ach-item {
-    display: grid;
-    grid-template-columns: 16px 1fr auto;
-    gap: 8px;
+/* Scrollbar styling for achievements */
+.gd-ach-items::-webkit-scrollbar {
+    width: 4px;
+}
+.gd-ach-items::-webkit-scrollbar-track {
+    background: transparent;
+}
+.gd-ach-items::-webkit-scrollbar-thumb {
+    background: rgba(255, 255, 255, 0.1);
+    border-radius: 999px;
+}
+.gd-ach-items::-webkit-scrollbar-thumb:hover {
+    background: rgba(255, 255, 255, 0.2);
+}
+/* ============================================================
+   STEAM REVIEWS STYLING
+   ============================================================ */
+.gd-review-summary {
+    display: flex;
+    flex-direction: column;
     align-items: center;
-    padding: 6px 8px;
+    gap: 2px;
+}
+.gd-review-title {
+    font-size: 1.6rem;
+    font-weight: 900;
+    color: #fff;
+    line-height: 1.2;
+    text-align: center;
+}
+.gd-review-count {
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #fff;
+    opacity: 0.9;
+    margin-bottom: 8px;
+}
+.gd-review-stats {
+    display: flex;
+    gap: 16px;
+    font-size: 0.95rem;
+    font-weight: 700;
+}
+.gd-review-pos {
+    color: #30d158; /* Steam Green */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.gd-review-neg {
+    color: #ff453a; /* Steam Red */
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+.gd-rating-label {
+    margin-top: 10px;
+    font-size: 0.7rem;
+    color: var(--gd-text-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 2px;
+    opacity: 0.6;
+}
+
+.gd-ach-item {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    padding: 10px 14px;
     border-radius: 8px;
-    background: rgba(255,255,255,0.03);
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    margin-bottom: 4px;
+}
+.gd-ach-icon-wrapper {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border-radius: 4px;
+    overflow: hidden;
+    position: relative;
+    box-shadow: 0 0 10px rgba(255, 170, 0, 0.2);
+    background: rgba(0,0,0,0.3);
+}
+.gd-ach-icon {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+.gd-ach-info {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
 }
 .gd-ach-dot {
     color: #30d158;
-    font-size: 0.75rem;
+    font-size: 1.1rem;
     font-weight: 700;
+    width: 44px;
+    text-align: center;
 }
 .gd-ach-item-name {
-    color: #d8d8d8;
-    font-size: 0.78rem;
-    font-weight: 600;
+    color: #fff;
+    font-size: 0.9rem;
+    font-weight: 700;
+    white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    white-space: nowrap;
+}
+.gd-ach-item-desc {
+    color: var(--gd-text-muted);
+    font-size: 0.78rem;
+    font-weight: 400;
+    line-height: 1.2;
 }
 .gd-ach-item-time {
     color: var(--gd-text-muted);
     font-size: 0.72rem;
+    font-weight: 500;
     white-space: nowrap;
+    text-align: right;
 }
 
 /* ============================================================

@@ -31,6 +31,70 @@ const GD_PLATFORM_LOGOS = {
     rockstar:{ img: '../assets/rockstar.png',  name: 'Rockstar',     color: '#1a1100' },
 };
 
+function _gdHashStr(s) {
+    let h = 2166136261;
+    const str = String(s || 'Game');
+    for (let i = 0; i < str.length; i++) {
+        h ^= str.charCodeAt(i);
+        h = Math.imul(h, 16777619);
+    }
+    return h >>> 0;
+}
+
+function _gdProceduralHeroLayers(name) {
+    const h = _gdHashStr(name);
+    const a = h % 360;
+    const b = (a + 47 + ((h >> 8) % 34)) % 360;
+    const c = (b + 52 + ((h >> 16) % 28)) % 360;
+    const x1 = 12 + (h % 58);
+    const y1 = 18 + ((h >> 4) % 42);
+    const x2 = 62 - (h % 38);
+    const y2 = 58 + ((h >> 12) % 28);
+    return [
+        `radial-gradient(ellipse 95% 75% at ${x1}% ${y1}%, hsla(${a}, 65%, 30%, 0.55) 0%, transparent 58%)`,
+        `radial-gradient(ellipse 80% 65% at ${x2}% ${y2}%, hsla(${b}, 60%, 24%, 0.45) 0%, transparent 52%)`,
+        `linear-gradient(158deg, hsl(${c}, 38%, 7%) 0%, hsl(${a}, 46%, 11%) 45%, hsl(${b}, 34%, 5%) 100%)`,
+    ].join(', ');
+}
+
+function _gdProceduralCardBg(name) {
+    const h = _gdHashStr(`${name}|card`);
+    const a = h % 360;
+    const b = (a + 38 + ((h >> 10) % 22)) % 360;
+    return `linear-gradient(148deg, hsl(${a}, 52%, 18%) 0%, hsl(${b}, 46%, 9%) 100%)`;
+}
+
+function _gdClearProceduralHero() {
+    const el = document.getElementById('gdHeroBg');
+    if (!el) return;
+    el.classList.remove('gd-procedural-art');
+    el.style.backgroundSize = '';
+}
+
+function _gdApplyProceduralHero(gameName) {
+    const el = document.getElementById('gdHeroBg');
+    if (!el) return;
+    el.classList.add('gd-procedural-art');
+    el.style.backgroundImage = _gdProceduralHeroLayers(gameName);
+}
+
+function _gdClearProceduralCard() {
+    const wrap = document.getElementById('gdCoverWrap');
+    const ph = document.getElementById('gdCoverPlaceholder');
+    if (wrap) wrap.classList.remove('gd-procedural-card');
+    if (ph) ph.style.background = '';
+}
+
+function _gdApplyProceduralCard(gameName) {
+    const wrap = document.getElementById('gdCoverWrap');
+    const ph = document.getElementById('gdCoverPlaceholder');
+    if (wrap) wrap.classList.add('gd-procedural-card');
+    if (ph) {
+        ph.style.background = _gdProceduralCardBg(gameName);
+        ph.style.display = 'flex';
+    }
+}
+
 // ──────────────────────────────────────────
 //  ENTRY POINT
 // ──────────────────────────────────────────
@@ -233,6 +297,19 @@ function _gdResetUI() {
         `;
     }
 
+    const steamNotice = document.getElementById('gdSteamAssetNotice');
+    if (steamNotice) {
+        steamNotice.style.display = 'none';
+        steamNotice.textContent = '';
+    }
+
+    _gdClearProceduralCard();
+    _gdClearProceduralHero();
+    const heroBgReset = document.getElementById('gdHeroBg');
+    if (heroBgReset) {
+        heroBgReset.style.backgroundImage = 'linear-gradient(135deg, #0f0f18, #1a1a28)';
+    }
+
     // Reset cover
     const coverImg = document.getElementById('gdCover');
     coverImg.style.display = 'none';
@@ -290,27 +367,44 @@ function _gdPopulateBasic(game) {
     // Logo
     if (game.logo) {
         const logoEl = document.getElementById('gdLogo');
+        logoEl.onerror = function _gdLogoOnErrorEarly() {
+            this.onerror = null;
+            this.style.display = 'none';
+            document.getElementById('gdTitle').style.display = 'block';
+        };
         logoEl.src = game.logo;
         logoEl.style.display = 'block';
         document.getElementById('gdTitle').style.display = 'none';
     }
 
-    // Hero background
-    // Hero background
     const heroBg = document.getElementById('gdHeroBg');
-    const heroSrc = game.heroImage || ''; // ✅ شلنا الـ game.image خالص
-    if (heroSrc) {
+    const heroSrc = game.heroImage || '';
+    if (heroSrc && heroBg) {
+        _gdClearProceduralHero();
         heroBg.style.backgroundImage = `url('${heroSrc.replace(/\\/g, '/')}')`;
-    } else {
-        // لو مفيش بانر، اعرض الخلفية الغامقة الشيك لحد ما الداتا تحمل
-        heroBg.style.backgroundImage = 'linear-gradient(135deg, #0f0f18, #1a1a28)';
+    } else if (heroBg) {
+        _gdApplyProceduralHero(game.name);
     }
 
-    // Cover art
-    if (game.image) {
-        const coverImg = document.getElementById('gdCover');
+    const coverImg = document.getElementById('gdCover');
+    if (game.image && coverImg) {
+        _gdClearProceduralCard();
+        coverImg.onerror = function _gdCoverErrBasic() {
+            this.onerror = null;
+            this.style.display = 'none';
+            _gdApplyProceduralCard(game.name);
+            const ph = document.getElementById('gdCoverPlaceholder');
+            if (ph) ph.style.display = 'flex';
+        };
         coverImg.src = game.image;
-        // onload handler يتشغل أوتوماتيك
+    } else {
+        if (coverImg) {
+            coverImg.removeAttribute('src');
+            coverImg.style.display = 'none';
+        }
+        _gdApplyProceduralCard(game.name);
+        const ph = document.getElementById('gdCoverPlaceholder');
+        if (ph) ph.style.display = 'flex';
     }
 
     // Cover initials
@@ -1084,6 +1178,17 @@ function _gdPopulateMeta(game, metaData) {
     const images = metaData || {};          
     const info = metaData?.info || {};        
 
+    const steamNoticeEl = document.getElementById('gdSteamAssetNotice');
+    if (steamNoticeEl) {
+        if (images.steamImageNotice?.message) {
+            steamNoticeEl.textContent = images.steamImageNotice.message;
+            steamNoticeEl.style.display = 'block';
+        } else {
+            steamNoticeEl.style.display = 'none';
+            steamNoticeEl.textContent = '';
+        }
+    }
+
     // 1. Description: IGDB بيبعت نص عادي، فهنحول الـ line breaks لـ <br> عشان التنسيق
     const descEl = document.getElementById('gdDesc');
     if (info.description) {
@@ -1099,38 +1204,63 @@ function _gdPopulateMeta(game, metaData) {
         descEl.innerHTML = `<span style="color:var(--gd-text-muted); font-style:italic;">No description available for "${game.name}".</span>`;
     }
 
-    // ── تحديث الـ Hero Background بالـ IGDB artwork ──
-    const heroSrc = images.heroImage || null; // ✅ شلنا الـ images.cover خالص
+    const heroSrc = images.heroImage || null;
     const heroBg = document.getElementById('gdHeroBg');
-    
+
     if (heroSrc && heroBg) {
+        _gdClearProceduralHero();
         heroBg.style.backgroundImage = `url('${heroSrc.replace(/\\/g, '/')}')`;
         game.heroImage = heroSrc;
-    } else if (heroBg) {
-        // لو حتى بعد ما الداتا رجعت مفيش Hero، سيب الخلفية الغامقة
-        heroBg.style.backgroundImage = 'linear-gradient(135deg, #0f0f18, #1a1a28)';
+    } else if (heroBg && metaData) {
+        _gdApplyProceduralHero(game.name);
+        game.heroImage = null;
     }
 
-    // ── تحديث الـ Cover لو مش موجود ──
-    if (images.cover && !game.image) {
+    const coverImg = document.getElementById('gdCover');
+    if (images.cover && coverImg) {
+        _gdClearProceduralCard();
         game.image = images.cover;
-        const coverImg = document.getElementById('gdCover');
-        if (coverImg) {
-            coverImg.src = images.cover;
-            coverImg.style.display = 'block';
-            document.getElementById('gdCoverPlaceholder').style.display = 'none';
-        }
+        coverImg.onerror = function _gdCoverErrMeta() {
+            this.onerror = null;
+            this.style.display = 'none';
+            _gdApplyProceduralCard(game.name);
+            const ph = document.getElementById('gdCoverPlaceholder');
+            if (ph) ph.style.display = 'flex';
+        };
+        coverImg.src = images.cover;
+        coverImg.style.display = 'block';
+        document.getElementById('gdCoverPlaceholder').style.display = 'none';
+    } else if (metaData && coverImg) {
+        game.image = null;
+        coverImg.removeAttribute('src');
+        coverImg.style.display = 'none';
+        _gdApplyProceduralCard(game.name);
+        document.getElementById('gdCoverPlaceholder').style.display = 'flex';
     }
 
-    // ── Logo (من SteamGridDB عادةً) ──
-    if (images.logo && !game.logo) {
+    // ── Logo: SGDB → Steam CDN → RAWG → IGDB cover؛ لو فشل التحميل أو مفيش لوجو نعرض اسم اللعبة ──
+    if (metaData && images.logo) {
         game.logo = images.logo;
         const logoEl = document.getElementById('gdLogo');
         if (logoEl) {
+            logoEl.onerror = function _gdLogoOnErrorMeta() {
+                this.onerror = null;
+                this.style.display = 'none';
+                document.getElementById('gdTitle').style.display = 'block';
+            };
             logoEl.src = images.logo;
             logoEl.style.display = 'block';
             document.getElementById('gdTitle').style.display = 'none';
         }
+    } else if (metaData) {
+        game.logo = null;
+        const logoEl = document.getElementById('gdLogo');
+        if (logoEl) {
+            logoEl.onerror = null;
+            logoEl.removeAttribute('src');
+            logoEl.style.display = 'none';
+        }
+        document.getElementById('gdTitle').style.display = 'block';
     }
 
     // 2. Rating بدل Metacritic 
@@ -1778,7 +1908,6 @@ function _gdBuildInfoGrid(game, meta) {
     // ❌ شلنا الـ Genre من هنا خالص زي ما طلبت
     add('Mode',         meta?.playerMode || meta?.gameMode || '—');
     add('Engine',       meta?.engine || '—');
-    add('Website',      meta?.website ? `<a href="#" onclick="window.electronAPI?.openExternal('${meta.website}'); return false;">${_gdTrimUrl(meta.website)}</a>` : null);
 
     grid.innerHTML = items.map(i => `
         <div class="gd-info-item">

@@ -48,7 +48,9 @@ async function fetchGameInfo(gameName) {
             metacritic: details.metacritic,
             screenshots: screens.results?.map(s => s.image) || [],
             trailer: trailerUrl,
-            requirements: pcReqs
+            requirements: pcReqs,
+            // Last-resort “logo” slot for metadata (wide key art — used only if SGDB + Steam have no logo)
+            logoCandidate: details.background_image || null,
         };
     } catch (error) {
         console.error("[RAWG API] Error fetching game info:", error);
