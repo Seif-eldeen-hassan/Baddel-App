@@ -18,6 +18,14 @@ const path        = require('path');
 const fs          = require('fs');
 const { spawn }   = require('child_process');
 const EventEmitter = require('events');
+const { validateCacheForWrite, redactSecrets } = require('./services/credentialValidator');
+
+// ─── Whole-file encryption constants ─────────────────────────
+const _CACHE_WF_VERSION = 'dpapi-v1';
+
+function _getSafeStorage() {
+    try { return require('electron').safeStorage; } catch { return null; }
+}
 
 // ─── Paths ───────────────────────────────────────────────────
 // app.getPath() only works inside Electron — use a lazy getter
@@ -26,23 +34,188 @@ function _getCacheFile() {
     return path.join(_getApp().getPath('userData'), 'platform-sync', 'steam_bridge_cache.json');
 }
 
-const PYTHON_BIN    = _findPython();
-const BRIDGE_SCRIPT = path.join(__dirname, 'baddel-steam-integration', 'src', 'baddel_bridge.py');
+/**
+ * Pure path resolver — accepts explicit parameters so it can be called from
+ * tests without requiring Electron.
+ *
+ * Packaged mode: prefers steam-runtime/baddel_bridge/baddel_bridge.exe.
+ *                Never falls back to python_env in production.
+ * Dev mode:      tries python_env venv, then system Python.
+ *
+ * Returns a diagnostics-rich object consumed by start() and diagnoseSteamRuntime().
+ */
+function _resolveRuntimePaths(isPackaged, base, existsFn) {
+    const exists = existsFn || fs.existsSync;
 
-function _findPython() {
-    const candidates = [
-        // Bundled virtualenv (ship this with the app)
-        path.join(__dirname, 'python_env', 'Scripts', 'python.exe'),   // Windows
-        path.join(__dirname, 'python_env', 'bin', 'python3'),           // macOS/Linux
-        // System fallbacks
-        'C:\\Users\\seife\\AppData\\Local\\Programs\\Python\\Python311\\python.exe',
-        'python',
+    // New PyInstaller --onefile path:
+    //   steam-runtime/baddel_bridge.exe
+    //
+    // Old PyInstaller --onedir path kept as fallback:
+    //   steam-runtime/baddel_bridge/baddel_bridge.exe
+    const bridgeExeCandidates = [
+        path.join(base, 'steam-runtime', 'baddel_bridge.exe'),
+        path.join(base, 'steam-runtime', 'baddel_bridge', 'baddel_bridge.exe'),
     ];
-    for (const p of candidates) {
-        if (!p.includes(path.sep)) return p; // system PATH entry
-        if (fs.existsSync(p)) return p;
+
+    const bridgeExe = bridgeExeCandidates.find(p => exists(p)) || bridgeExeCandidates[0];
+    const bridgeExeDir = path.dirname(bridgeExe);
+
+    const bridgeScript = path.join(base, 'baddel-steam-integration', 'src', 'baddel_bridge.py');
+    const bridgeSrcDir = path.join(base, 'baddel-steam-integration', 'src');
+
+    const bridgeExeExists = exists(bridgeExe);
+    const bridgeScriptExists = exists(bridgeScript);
+
+    if (isPackaged) {
+        const runtimeMode = 'pyinstaller-exe';
+        const error = bridgeExeExists ? null : 'Steam runtime is missing from this build.';
+        const diagnostics = {
+            isPackaged: true,
+            runtimeMode,
+            base,
+            bridgeExe,
+            bridgeExeDir,
+            bridgeExeExists,
+            bridgeExeCandidates,
+            pythonExe: null,
+            pythonExists: null,
+            bridgeScript,
+            bridgeScriptExists,
+            canRunBridgeVersionCheck: bridgeExeExists,
+            error,
+        };
+
+        return {
+            bridgeExe,
+            bridgeExeDir,
+            bridgeExeExists,
+            pythonBin: null,
+            bridgeScript,
+            bridgeSrcDir,
+            runtimeMode,
+            diagnostics,
+        };
     }
-    return 'python3';
+
+    // Dev mode — try python_env venv then system Python
+    const pythonCandidates = [
+        { p: path.join(base, 'python_env', 'Scripts', 'python.exe'), system: false },
+        { p: path.join(base, 'python_env', 'bin', 'python3'),         system: false },
+        { p: path.join(base, 'python_env', 'bin', 'python'),          system: false },
+        { p: 'python3', system: true },
+        { p: 'python',  system: true },
+    ];
+
+    const checked = [];
+    let pythonBin = null;
+    let pythonExists = null;
+
+    for (const { p, system } of pythonCandidates) {
+        if (system) {
+            checked.push({ path: p, exists: 'system-path' });
+            pythonBin = p;
+            pythonExists = 'system-path';
+            break;
+        }
+
+        const e = exists(p);
+        checked.push({ path: p, exists: e });
+
+        if (e) {
+            pythonBin = p;
+            pythonExists = true;
+            break;
+        }
+    }
+
+    const runtimeMode = 'python-source';
+    const error = pythonBin ? null : 'No Python found. Run scripts/build-python-env.bat or install Python 3.11.';
+
+    const diagnostics = {
+        isPackaged: false,
+        runtimeMode,
+        base,
+        bridgeExe,
+        bridgeExeDir,
+        bridgeExeExists,
+        bridgeExeCandidates,
+        pythonExe: pythonBin,
+        pythonExists,
+        bridgeScript,
+        bridgeScriptExists,
+        canRunBridgeVersionCheck: !!pythonBin || bridgeExeExists,
+        error,
+        checked,
+    };
+
+    return {
+        bridgeExe,
+        bridgeExeDir,
+        bridgeExeExists,
+        pythonBin,
+        bridgeScript,
+        bridgeSrcDir,
+        runtimeMode,
+        diagnostics,
+    };
+}
+
+/**
+ * Resolve the Steam bridge runtime at startup.
+ * Wraps _resolveRuntimePaths with the actual Electron app state.
+ */
+function resolveSteamRuntimePaths() {
+    const app = _getApp();
+    const isPackaged = app && app.isPackaged;
+    const base = isPackaged ? process.resourcesPath : __dirname;
+    return _resolveRuntimePaths(isPackaged, base);
+}
+
+/**
+ * Return a diagnostics snapshot — safe to call at any time, never throws.
+ */
+function diagnoseSteamRuntime() {
+    try {
+        const { diagnostics } = resolveSteamRuntimePaths();
+        return diagnostics;
+    } catch (e) {
+        return { isPackaged: null, runtimeMode: null, error: e.message };
+    }
+}
+
+/**
+ * Run baddel_bridge --self-test and return { ok, output?, error? }.
+ * Does not require Steam login.
+ */
+async function runBridgeSelfTest() {
+    const { execFile } = require('child_process');
+    const { promisify } = require('util');
+    const execFileAsync = promisify(execFile);
+
+    try {
+        const { bridgeExe, bridgeExeExists, pythonBin, bridgeScript, bridgeSrcDir, runtimeMode } =
+            resolveSteamRuntimePaths();
+
+        if (runtimeMode === 'pyinstaller-exe') {
+            if (!bridgeExeExists) return { ok: false, error: 'baddel_bridge.exe not found.' };
+            const { stdout } = await execFileAsync(bridgeExe, ['--self-test'], { timeout: 12_000 });
+            const out = stdout.trim();
+            return out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+        }
+
+        if (pythonBin && fs.existsSync(bridgeScript)) {
+            const { stdout } = await execFileAsync(
+                pythonBin, [bridgeScript, '--self-test'],
+                { timeout: 20_000, cwd: bridgeSrcDir },
+            );
+            const out = stdout.trim();
+            return out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+        }
+
+        return { ok: false, error: 'No runtime available for self-test.' };
+    } catch (e) {
+        return { ok: false, error: e.message };
+    }
 }
 
 // ─── Bridge Class ─────────────────────────────────────────────
@@ -56,6 +229,8 @@ class SteamBridge extends EventEmitter {
         this._buffer            = '';
         this._shutdownRequested = false;
         this._cacheIsReady      = false;       // true once Python fires cache_ready
+        /** Steam64 whose cache is currently ready — set from cache_ready event payload */
+        this._cacheReadySteamId  = null;
         /** Steam64 of whoever the Python bridge last authenticated as — used for gamesUpdate licensing only */
         this._lastSessionSteamId = null;
     }
@@ -68,28 +243,54 @@ class SteamBridge extends EventEmitter {
         await fs.promises.mkdir(path.dirname(_getCacheFile()), { recursive: true });
         this._migrateSteamCredentialKeys();
 
-        console.log('[SteamBridge] Starting Python bridge:', PYTHON_BIN, BRIDGE_SCRIPT);
+        // Resolve runtime paths lazily (app.isPackaged is stable by now).
+        const { pythonBin, bridgeScript, bridgeSrcDir,
+                bridgeExe, bridgeExeDir, bridgeExeExists,
+                runtimeMode, diagnostics } = resolveSteamRuntimePaths();
 
-        const BRIDGE_SRC_DIR = path.dirname(BRIDGE_SCRIPT);
+        console.log('[SteamBridge:RUNTIME] Resolved paths:', JSON.stringify(diagnostics));
 
-        this._proc = spawn(PYTHON_BIN, [BRIDGE_SCRIPT], {
-            stdio: ['pipe', 'pipe', 'pipe'],
-            cwd: BRIDGE_SRC_DIR,
-            env: {
-                ...process.env,
-                PYTHONUNBUFFERED: '1',
-                PYTHONPATH: BRIDGE_SRC_DIR,
-            },
-        });
+        if (runtimeMode === 'pyinstaller-exe') {
+            if (!bridgeExeExists) {
+                const msg = 'Steam runtime is missing from this build. Please reinstall Baddel Launcher.';
+                console.error('[SteamBridge:RUNTIME]', msg);
+                throw new Error(msg);
+            }
+            console.log(`[SteamBridge:RUNTIME] mode=packaged-exe bridgeExe=${bridgeExe}`);
+            this._proc = spawn(bridgeExe, [], {
+                stdio: ['pipe', 'pipe', 'pipe'],
+                cwd:   bridgeExeDir,
+                env:   { ...process.env, PYTHONUNBUFFERED: '1' },
+            });
+        } else {
+            // python-source (dev) mode
+            if (!pythonBin) {
+                const msg = 'Steam integration runtime is missing (no Python found). Run scripts/build-python-env.bat or install Python 3.11.';
+                console.error('[SteamBridge:RUNTIME]', msg);
+                throw new Error(msg);
+            }
+            if (!fs.existsSync(bridgeScript)) {
+                const msg = `Steam integration runtime is missing (bridge script not found: ${bridgeScript}).`;
+                console.error('[SteamBridge:RUNTIME]', msg);
+                throw new Error(msg);
+            }
+            console.log(`[SteamBridge:RUNTIME] mode=python-source python=${pythonBin} script=${bridgeScript}`);
+            this._proc = spawn(pythonBin, [bridgeScript], {
+                stdio: ['pipe', 'pipe', 'pipe'],
+                cwd:   bridgeSrcDir,
+                env:   { ...process.env, PYTHONUNBUFFERED: '1', PYTHONPATH: bridgeSrcDir },
+            });
+        }
 
         this._proc.stdout.setEncoding('utf8');
         this._proc.stdout.on('data', (chunk) => this._onData(chunk));
 
         this._proc.stderr.setEncoding('utf8');
         this._proc.stderr.on('data', (chunk) => {
+            const QUIET = process.env.BADDEL_QUIET_LOGS === '1';
             chunk.split('\n').filter(Boolean).forEach((line) => {
-                // Skip high-volume noise: server lists, heartbeats, raw message traces
-                const isNoise = (
+                // Always-skip noise (regardless of quiet mode)
+                const isAlwaysNoise = (
                     line.includes('Got servers from backend') ||
                     line.includes('ClientHeartBeat') ||
                     line.includes('Ignored message') ||
@@ -99,9 +300,43 @@ class SteamBridge extends EventEmitter {
                     line.includes('[In]') ||
                     line.includes('[Out]')
                 );
-                if (!isNoise) {
-                    console.log('[STEAM-PY]', line);
+                if (isAlwaysNoise) {
+                    this.emit('bridgeLog', { level: 'info', message: line });
+                    return;
                 }
+                // Additional noise suppressed only in quiet mode
+                if (QUIET) {
+                    const isAuthRelevant = (
+                        line.includes('ERROR') ||
+                        line.includes('CRITICAL') ||
+                        line.includes('Traceback') ||
+                        line.includes('AUTH POLL') ||
+                        line.includes('Steam login') ||
+                        line.includes('authenticate') ||
+                        line.includes('QRCode') ||
+                        line.includes(' QR ') ||
+                        line.includes('2FA') ||
+                        line.includes('Steam Guard') ||
+                        line.includes('[SteamBridge:AUTH]') ||
+                        line.includes('[SteamBridge:RUNTIME]') ||
+                        line.includes('[STEAM-LINK-DEBUG]')
+                    );
+                    const isProtocolNoise = (
+                        line.includes('Received user info') ||
+                        line.includes('ClientPersonaState') ||
+                        line.includes('ClientPICSProductInfoResponse') ||
+                        line.includes('Processing message ServiceMethodResponse Player.GetGameAchievements') ||
+                        line.includes('Unrecognized app structure') ||
+                        line.includes('cache') ||
+                        line.includes('library import') ||
+                        line.includes('Got mode=')
+                    );
+                    if (!isAuthRelevant && isProtocolNoise) {
+                        this.emit('bridgeLog', { level: 'info', message: line });
+                        return;
+                    }
+                }
+                console.log('[STEAM-PY]', redactSecrets(line));
                 this.emit('bridgeLog', { level: 'info', message: line });
             });
         });
@@ -111,6 +346,7 @@ class SteamBridge extends EventEmitter {
             this._proc         = null;
             this._ready        = false;
             this._cacheIsReady = false;
+            this._cacheReadySteamId = null;
             this._rejectAll('Steam bridge process exited unexpectedly');
             if (!this._shutdownRequested) {
                 this.emit('disconnected', { code, signal });
@@ -118,8 +354,15 @@ class SteamBridge extends EventEmitter {
         });
 
         this._proc.on('error', (err) => {
-            console.error('[SteamBridge] Spawn error:', err);
-            this.emit('error', err);
+            const isEnoent = err.code === 'ENOENT';
+            const msg = isEnoent
+                ? `Steam integration runtime is missing (${err.path || pythonBin}). Please reinstall Baddel Launcher.`
+                : `Steam bridge process error: ${err.message}`;
+            console.error('[SteamBridge:RUNTIME] Spawn error:', msg, 'code:', err.code);
+            this._rejectAll(msg);
+            this._proc  = null;
+            this._ready = false;
+            this.emit('error', new Error(msg));
         });
 
         // Tell the bridge to init and load persistent cache
@@ -139,6 +382,7 @@ class SteamBridge extends EventEmitter {
         }
         this._ready        = false;
         this._cacheIsReady = false;
+        this._cacheReadySteamId = null;
     }
 
     get isRunning() { return !!this._proc; }
@@ -163,6 +407,7 @@ class SteamBridge extends EventEmitter {
      */
     async authenticate(storedCredentials = null, options = {}) {
         this._cacheIsReady = false;
+        this._cacheReadySteamId = null;
         const waitForCache = options?.waitForCache === true;
         const cacheTimeoutMs = Number.isFinite(options?.cacheTimeoutMs) ? options.cacheTimeoutMs : 20_000;
         const targetId = storedCredentials?.steamAccountId || storedCredentials?.steam_id_plain || '?';
@@ -206,10 +451,48 @@ class SteamBridge extends EventEmitter {
     }
 
     /**
+     * Start a QR-code login session.
+     * Returns { status: 'need_qr', challengeUrl, interval }
+     */
+    async startQrLogin() {
+        return this._call('start_qr_login', {});
+    }
+
+    /**
+     * Start a password-based login.
+     * Returns { status: 'need_2fa'|'authenticated'|'need_login', ... }
+     */
+    async startPasswordLogin(username, password) {
+        return this._call('start_password_login', { username, password });
+    }
+
+    /**
+     * Submit a Steam Guard email or mobile authenticator code.
+     * method: 'email' | 'mobile'
+     */
+    async submitSteamGuardCode(code, method) {
+        return this._call('submit_steam_guard_code', { code, method });
+    }
+
+    /**
+     * Poll for current QR or device-confirmation auth status.
+     * Returns { status: 'pending_approval'|'authenticated'|'approval_expired'|'approval_denied' }
+     */
+    async pollSteamAuth() {
+        const res = await this._call('poll_auth_status', {});
+        if (res?.status === 'authenticated' && res.steamId != null && res.steamId !== '') {
+            this._currentSteamId = String(res.steamId);
+            this._lastSessionSteamId = String(res.steamId);
+        }
+        return res;
+    }
+
+    /**
      * Clear the current session and bridge cache.
      */
     async logout() {
         this._cacheIsReady = false;
+        this._cacheReadySteamId = null;
         this._currentSteamId = null;
         this._lastSessionSteamId = null;
         return this._call('logout', {});
@@ -228,37 +511,53 @@ class SteamBridge extends EventEmitter {
     }
 
     /**
-     * Resolves as soon as the Python games cache signals it is ready
-     * (i.e. the PICS pipeline has fully resolved all packages → apps → games).
+     * Resolves as soon as the Python games cache signals it is ready for the
+     * given target Steam account.
      *
-     * If the cache is already ready (e.g. loaded from disk on the second
-     * account in a multi-account sync), this resolves immediately.
+     * A stale `cache_ready` for a DIFFERENT account does NOT unblock this wait.
      *
-     * Always call this between authenticate() and getOwnedGames() to avoid
-     * receiving an empty games list.
-     *
-     * @param {number} timeoutMs  Maximum wait time in ms (default 35s).
-     *                            After the timeout we resolve anyway so the
-     *                            caller can still try getOwnedGames() and get
-     *                            whatever the cache has so far.
+     * @param {string} targetSteamId  The Steam64 id we are waiting for.
+     * @param {number} timeoutMs      Max wait in ms (default 35s). Resolves on
+     *                                timeout so the caller can still attempt
+     *                                getOwnedGames() with whatever is cached.
      */
-    waitForCacheReady(timeoutMs = 35_000) {
-        if (this._cacheIsReady) {
-            console.log('[SteamBridge:CACHE] Already ready — skipping wait');
+    waitForCacheReady(targetSteamId, timeoutMs = 35_000) {
+        const target = targetSteamId != null ? String(targetSteamId).trim() : '';
+
+        // Already ready for the right account — resolve immediately.
+        if (this._cacheIsReady && (!target || this._cacheReadySteamId === target)) {
+            console.log(`[SteamBridge:CACHE] Already ready for ${target || 'any'} — skipping wait`);
             return Promise.resolve();
         }
-        console.log(`[SteamBridge:CACHE] ⏳ Waiting for cache (timeout=${timeoutMs}ms) session=${this._lastSessionSteamId}`);
+
+        console.log(`[SteamBridge:CACHE] ⏳ Waiting for cache (timeout=${timeoutMs}ms) target=${target || 'any'} currentReady=${this._cacheReadySteamId}`);
+
         return new Promise((resolve) => {
-            const timer = setTimeout(() => {
-                console.warn(`[SteamBridge:CACHE] ⚠ TIMED OUT after ${timeoutMs}ms — cacheIsReady=${this._cacheIsReady} — proceeding anyway`);
+            let settled = false;
+
+            const finish = (reason) => {
+                if (settled) return;
+                settled = true;
+                clearTimeout(timer);
+                this.off('cacheReady', onReady);
+                console.log(`[SteamBridge:CACHE] ${reason} for target=${target}`);
                 resolve();
+            };
+
+            const timer = setTimeout(() => {
+                finish(`⚠ TIMED OUT after ${timeoutMs}ms — cacheIsReady=${this._cacheIsReady} cacheReadySteamId=${this._cacheReadySteamId} — proceeding anyway`);
             }, timeoutMs);
 
-            this.once('cacheReady', () => {
-                clearTimeout(timer);
-                console.log(`[SteamBridge:CACHE] ✅ Cache ready — session=${this._lastSessionSteamId}`);
-                resolve();
-            });
+            const onReady = (data) => {
+                const readySteamId = data?.steamAccountId ? String(data.steamAccountId).trim() : null;
+                if (!target || !readySteamId || readySteamId === target) {
+                    finish(`✅ Cache ready (event steamAccountId=${readySteamId})`);
+                } else {
+                    console.warn(`[SteamBridge:CACHE] Ignoring cache_ready for ${readySteamId} — waiting for ${target}`);
+                }
+            };
+
+            this.on('cacheReady', onReady);
         });
     }
 
@@ -357,13 +656,17 @@ class SteamBridge extends EventEmitter {
         switch (event) {
             case 'cache_ready':
                 // Python finished the PICS pipeline — games are now available.
-                console.log(`[SteamBridge:CACHE] 🎮 cache_ready event received — session=${this._lastSessionSteamId}`);
+                // data.steamAccountId identifies whose cache is ready.
                 this._cacheIsReady = true;
-                this.emit('cacheReady');
+                this._cacheReadySteamId = data?.steamAccountId ? String(data.steamAccountId).trim() : (this._lastSessionSteamId || null);
+                console.log(`[SteamBridge:CACHE] 🎮 cache_ready event received — cacheReadySteamId=${this._cacheReadySteamId}`);
+                // Emit the full data payload so account-scoped waitForCacheReady listeners can filter by steamAccountId.
+                this.emit('cacheReady', { steamAccountId: this._cacheReadySteamId });
                 break;
 
             case 'games_update':
-                // New games found in background — emit so UI can update
+                // New games found in background — emit so UI can update.
+                // Payload from Python is { steamAccountId, games } (or legacy raw array).
                 this.emit('gamesUpdate', data);
                 break;
 
@@ -408,50 +711,161 @@ class SteamBridge extends EventEmitter {
 
     // ── Persistent Cache ───────────────────────────────────────
 
+    /**
+     * Read and decrypt the cache file.
+     *
+     * Supported formats:
+     *   { _wf: 'dpapi-v1', data: '<base64>' }  → whole-file safeStorage encrypted (current)
+     *   { _steamCredentialsByAccount: ... }     → legacy plaintext (pre-migration)
+     *
+     * Returns {} on any failure so callers always get a safe empty object.
+     */
     _loadCache() {
         try {
-            return JSON.parse(fs.readFileSync(_getCacheFile(), 'utf8'));
+            const raw = fs.readFileSync(_getCacheFile(), 'utf8');
+            if (!raw) return {};
+            const parsed = JSON.parse(raw);
+            if (parsed && parsed._wf === _CACHE_WF_VERSION) {
+                const ss = _getSafeStorage();
+                if (!ss || !ss.isEncryptionAvailable()) {
+                    console.error('[SteamBridge:SECURITY] safeStorage unavailable — cannot decrypt credential cache. Steam accounts require reconnect.');
+                    return {};
+                }
+                try {
+                    const buf = Buffer.from(parsed.data, 'base64');
+                    return JSON.parse(ss.decryptString(buf));
+                } catch (e) {
+                    console.error('[SteamBridge:SECURITY] Failed to decrypt credential cache:', e.message, '— Steam accounts require reconnect.');
+                    return {};
+                }
+            }
+            // Legacy unencrypted format — returned as-is; migration scheduled at startup
+            return parsed || {};
         } catch {
             return {};
         }
     }
 
+    /**
+     * Validate, then whole-file encrypt and write the cache.
+     *
+     * Fails closed:
+     *  - If validation detects plaintext credentials → blocked, logged, not written.
+     *  - If safeStorage is unavailable → blocked, logged, not written.
+     *
+     * Returns true on success, false if the write was blocked or failed.
+     */
     _writeCache(cache) {
         try {
-            const content = JSON.stringify(cache, null, 2);
-            if (!content || content === '{}') {
-                 console.warn('[SteamBridge] Attempted to write empty cache — blocked');
-                 return;
+            // 1. Reject plaintext credentials
+            const { ok, reason, badKeys } = validateCacheForWrite(cache);
+            if (!ok) {
+                const detail = (badKeys || []).map((b) => `${b.steamId}: ${b.reason}`).join('; ') || reason;
+                console.error('[SteamBridge:SECURITY] Credential write BLOCKED — plaintext detected:', detail);
+                return false;
             }
-            fs.writeFileSync(_getCacheFile(), content, 'utf8');
+
+            // 2. Reject empty cache (prevents truncation)
+            const plaintext = JSON.stringify(cache, null, 2);
+            if (!plaintext || plaintext === '{}') {
+                console.warn('[SteamBridge] Attempted to write empty cache — blocked');
+                return false;
+            }
+
+            // 3. Whole-file encrypt with safeStorage (DPAPI on Windows)
+            const ss = _getSafeStorage();
+            if (!ss || !ss.isEncryptionAvailable()) {
+                console.error('[SteamBridge:SECURITY] safeStorage unavailable — refusing to write credential cache in plaintext');
+                return false;
+            }
+            const encrypted = ss.encryptString(plaintext);
+            const fileContent = JSON.stringify({ _wf: _CACHE_WF_VERSION, data: encrypted.toString('base64') });
+
+            // 4. Atomic write via temp-rename
+            const file = _getCacheFile();
+            const tmp  = file + '.tmp';
+            fs.writeFileSync(tmp, fileContent, 'utf8');
+            fs.renameSync(tmp, file);
+            return true;
         } catch (e) {
-            console.error('[SteamBridge] Failed to write cache:', e.message);
+            console.error('[SteamBridge:CREDENTIALS] Failed to write cache:', e.message);
+            return false;
         }
     }
 
-    /** Old builds saved creds under encrypted steam_id blob as key — re-key to steamAccountId. */
+    /**
+     * Run on startup to:
+     *   1. Detect legacy unencrypted cache and upgrade it to safeStorage whole-file encryption.
+     *   2. Re-key any credentials stored under encrypted-blob keys to plain Steam64 keys.
+     *   3. Delete the cache if plaintext tokens are found (forces reconnect).
+     */
     _migrateSteamCredentialKeys() {
         try {
-            const cache = this._loadCache();
-            const by = cache._steamCredentialsByAccount;
-            if (!by || typeof by !== 'object') return;
-            let changed = false;
+            const cacheFile = _getCacheFile();
+            if (!fs.existsSync(cacheFile)) return;
+
+            const raw = fs.readFileSync(cacheFile, 'utf8');
+            if (!raw) return;
+            const parsed = JSON.parse(raw);
+
+            // Already whole-file encrypted — re-key if needed, then re-write
+            if (parsed._wf === _CACHE_WF_VERSION) {
+                const cache = this._loadCache();
+                if (!cache || !cache._steamCredentialsByAccount) return;
+                let changed = false;
+                const by = cache._steamCredentialsByAccount;
+                for (const key of Object.keys(by)) {
+                    if (/^\d{10,20}$/.test(key)) continue;
+                    const val = by[key];
+                    const rawId = val && (val.steamAccountId ?? val.steam_id_plain);
+                    const nk = rawId != null ? String(rawId).trim() : '';
+                    if (nk && /^\d{10,20}$/.test(nk)) {
+                        if (!by[nk]) by[nk] = { ...val, steamAccountId: nk };
+                        else Object.assign(by[nk], val, { steamAccountId: nk });
+                        delete by[key];
+                        changed = true;
+                        console.log('[SteamBridge] Migrated credentials to Steam64 key:', nk);
+                    }
+                }
+                if (changed) this._writeCache(cache);
+                return;
+            }
+
+            // Legacy unencrypted format — validate before migrating
+            const cache = parsed;
+            const { ok, badKeys } = validateCacheForWrite(cache);
+            if (!ok) {
+                const detail = (badKeys || []).map((b) => `${b.steamId}: ${b.reason}`).join('; ');
+                console.error('[SteamBridge:SECURITY] Plaintext credentials detected in unencrypted cache:', detail);
+                console.error('[SteamBridge:SECURITY] Deleting credential cache. Steam accounts will require reconnect.');
+                try { fs.unlinkSync(cacheFile); } catch {}
+                return;
+            }
+
+            // Re-key legacy blob keys → plain Steam64 keys
+            const by = cache._steamCredentialsByAccount || {};
             for (const key of Object.keys(by)) {
                 if (/^\d{10,20}$/.test(key)) continue;
                 const val = by[key];
-                const raw = val && (val.steamAccountId ?? val.steam_id_plain);
-                const nk = raw != null && String(raw).trim() !== '' ? String(raw).trim() : '';
+                const rawId = val && (val.steamAccountId ?? val.steam_id_plain);
+                const nk = rawId != null ? String(rawId).trim() : '';
                 if (nk && /^\d{10,20}$/.test(nk)) {
                     if (!by[nk]) by[nk] = { ...val, steamAccountId: nk };
                     else Object.assign(by[nk], val, { steamAccountId: nk });
                     delete by[key];
-                    changed = true;
                     console.log('[SteamBridge] Migrated credentials to Steam64 key:', nk);
                 }
             }
-            if (changed) this._writeCache(cache);
+
+            // Upgrade: write with safeStorage encryption
+            const wrote = this._writeCache(cache);
+            if (wrote) {
+                console.log('[SteamBridge] Credential cache upgraded to whole-file encrypted format (safeStorage/DPAPI).');
+            }
         } catch (e) {
-            console.warn('[SteamBridge] Credential key migration skipped:', e.message);
+            if (e.code !== 'ENOENT') {
+                console.warn('[SteamBridge] Cache migration skipped:', e.message);
+            }
         }
     }
 
@@ -604,3 +1018,7 @@ class SteamBridge extends EventEmitter {
 const bridge = new SteamBridge();
 
 module.exports = bridge;
+module.exports.diagnoseSteamRuntime  = diagnoseSteamRuntime;
+module.exports.runBridgeSelfTest     = runBridgeSelfTest;
+// Exported for unit tests only — not part of the public API.
+module.exports._resolveRuntimePaths  = _resolveRuntimePaths;

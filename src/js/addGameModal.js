@@ -1,24 +1,35 @@
 // ============================================================
-// ADD GAME MODAL — UNIFIED (Browse + Path + Drag & Drop)
-// ============================================================
-// كيفية الاستخدام:
-//   - استبدل openPicker() القديمة بـ openAddGameModal()
-//   - احذف الـ functions القديمة:
-//     openPicker, navigate, renderDirs, goBack, selectExe,
-//     closePicker, confirmSelection, finalizeAddGame, closeNameEditor
+// ADD GAME MODAL — MULTI-SELECT (Browse + Path + Drag & Drop)
 // ============================================================
 
 let _agCurrentPath   = '';
-let _agSelectedPath  = '';
+let _agSelectedGames = []; // [{ path, fileName, name, source }]
 let _agCurrentTab    = 'browse';
 let _agDropZoneInit  = false;
 let pendingImageChanges = {};
+
+// ── Helpers ──────────────────────────────────────────────────
+function _agIsSupportedGameFile(p) {
+    return /\.(exe|lnk|url|bat)$/i.test(p);
+}
+
+function _agGuessGameName(fullPath, fileName) {
+    let name = fileName.replace(/\.[^/.]+$/, '');
+    const parts  = fullPath.split(/[\\/]/);
+    const parent = parts.length >= 2 ? parts[parts.length - 2] : '';
+    if (['game','launcher','app','bin','x64','x86'].includes(name.toLowerCase()) && parent) {
+        name = parent;
+    }
+    return name.replace(/[-_]/g, ' ').trim();
+}
+
+function _agNormPath(p) { return (p || '').toLowerCase().replace(/\//g, '\\'); }
 
 // ── Open / Close ────────────────────────────────────────────
 function openAddGameModal() {
     document.getElementById('addGameModal').classList.add('active');
     switchAGTab('browse');
-    _agOpenPicker();          // auto-load drives immediately
+    _agOpenPicker();
 }
 
 function closeAddGameModal() {
@@ -27,15 +38,19 @@ function closeAddGameModal() {
 }
 
 function _agReset() {
-    _agCurrentPath  = '';
-    _agSelectedPath = '';
-    document.getElementById('ag-game-name-input').value = '';
-    document.getElementById('ag-path-input').value = '';
+    _agCurrentPath   = '';
+    _agSelectedGames = [];
+    const pathInput = document.getElementById('ag-path-input');
+    if (pathInput) pathInput.value = '';
     document.getElementById('ag-path-status').innerHTML = '';
-    document.getElementById('ag-name-row').style.display = 'none';
-    document.getElementById('ag-save-btn').disabled = true;
+    document.getElementById('ag-selected-section').style.display = 'none';
+    document.getElementById('ag-selected-games-list').innerHTML  = '';
+    const btn = document.getElementById('ag-save-btn');
+    btn.disabled = true;
+    btn.textContent = 'Add to Library';
     document.getElementById('ag-drop-feedback').innerHTML = '';
     document.getElementById('ag-drop-zone').classList.remove('drag-over', 'drop-success');
+    document.querySelectorAll('.ag-dir-item.selected').forEach(el => el.classList.remove('selected'));
 }
 
 // ── Tab Switcher ─────────────────────────────────────────────
@@ -48,30 +63,121 @@ function switchAGTab(tab) {
     if (tab === 'drop' && !_agDropZoneInit) _agInitDropZone();
 }
 
-// ── Tab: BROWSE ──────────────────────────────────────────────
-async function _agOpenPicker() {
-    _agCurrentPath  = '';
-    _agSelectedPath = '';
-    document.getElementById('ag-current-path').innerText = 'Select Drive';
-    document.getElementById('ag-dir-list').innerHTML =
-        '<div class="ag-placeholder">Scanning drives…</div>';
-    try {
-        const drives = await window.electronAPI.getDrives();
-        _agRenderDirs(drives, true);
-    } catch (e) { console.error(e); }
+// ── Selection management ─────────────────────────────────────
+function _agAddChosenFile(fullPath, fileName, source) {
+    const norm = _agNormPath(fullPath);
+    if (_agSelectedGames.some(g => _agNormPath(g.path) === norm)) return false;
+    _agSelectedGames.push({ path: fullPath, fileName, name: _agGuessGameName(fullPath, fileName), source: source || 'browse' });
+    _agRenderSelectedList();
+    return true;
 }
 
-// Exposed as global so the Home button can call it
+function _agRemoveSelected(norm) {
+    _agSelectedGames = _agSelectedGames.filter(g => _agNormPath(g.path) !== norm);
+    document.querySelectorAll('.ag-dir-item[data-path]').forEach(el => {
+        if (_agNormPath(el.dataset.path) === norm) el.classList.remove('selected');
+    });
+    _agRenderSelectedList();
+}
+
+function _agClearAllSelected() {
+    _agSelectedGames = [];
+    document.querySelectorAll('.ag-dir-item.selected').forEach(el => el.classList.remove('selected'));
+    _agRenderSelectedList();
+}
+
+function _agRenderSelectedList() {
+    const section = document.getElementById('ag-selected-section');
+    const list    = document.getElementById('ag-selected-games-list');
+    const btn     = document.getElementById('ag-save-btn');
+    const count   = _agSelectedGames.length;
+
+    if (count === 0) {
+        section.style.display = 'none';
+        btn.disabled = true;
+        btn.textContent = 'Add to Library';
+        return;
+    }
+
+    section.style.display = 'flex';
+    btn.disabled = false;
+    btn.textContent = count === 1 ? 'Add Game' : `Add ${count} Games`;
+
+    list.innerHTML = '';
+    _agSelectedGames.forEach((game, idx) => {
+        const norm = _agNormPath(game.path);
+        const row  = document.createElement('div');
+        row.className = 'ag-sel-row';
+        row.innerHTML = `
+            <span class="ag-sel-filename" title="${game.path}">${game.fileName}</span>
+            <input type="text" class="modal-input ag-sel-name-input"
+                   value="${game.name.replace(/"/g, '&quot;')}" placeholder="Game name…">
+            <button class="ag-sel-remove" title="Remove"
+                    data-norm="${norm.replace(/"/g, '&quot;')}">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                     stroke-width="2.5" stroke-linecap="round">
+                    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+            </button>
+        `;
+        row.querySelector('.ag-sel-name-input').addEventListener('input', (e) => {
+            _agSelectedGames[idx].name = e.target.value;
+        });
+        row.querySelector('.ag-sel-remove').addEventListener('click', (e) => {
+            _agRemoveSelected(e.currentTarget.dataset.norm);
+        });
+        list.appendChild(row);
+    });
+
+    section.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+// ── Tab: BROWSE ──────────────────────────────────────────────
+async function _agOpenPicker() {
+    _agCurrentPath = '';
+    const pathLabel = document.getElementById('ag-current-path');
+    const list      = document.getElementById('ag-dir-list');
+    if (pathLabel) pathLabel.innerText = 'Select Drive';
+    if (list) list.innerHTML = '<div class="ag-placeholder">Scanning drives…</div>';
+
+    const fallbackIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2"
+        stroke-linecap="round" stroke-linejoin="round">
+        <rect x="3" y="4" width="18" height="14" rx="2"/><path d="M7 20h10"/><path d="M12 18v2"/>
+    </svg>`;
+    const fallbackDrives = [{ path: 'C:\\', label: 'Local Disk', icon: fallbackIcon, isQuick: false }];
+
+    try {
+        const drives = await Promise.race([
+            window.electronAPI.getDrives(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('getDrives timeout')), 12000))
+        ]);
+        _agRenderDirs(Array.isArray(drives) && drives.length ? drives : fallbackDrives, true);
+    } catch (e) {
+        console.warn('[AddGame] getDrives failed:', e);
+        if (typeof showToast === 'function') showToast('Could not scan drives. Showing C:\\ fallback.', 'warning');
+        _agRenderDirs(fallbackDrives, true);
+        const listEl = document.getElementById('ag-dir-list');
+        if (listEl) {
+            const warn = document.createElement('div');
+            warn.className = 'ag-placeholder';
+            warn.style.marginBottom = '10px';
+            warn.innerHTML = `<div style="display:flex;flex-direction:column;gap:8px;align-items:flex-start;">
+                <span>Drive scan failed. You can still browse from C:\\.</span>
+                <button class="ag-mini-btn" onclick="agOpenPicker()">Retry scan</button>
+            </div>`;
+            listEl.prepend(warn);
+        }
+    }
+}
+
 function agOpenPicker() { _agOpenPicker(); }
 
 async function _agNavigate(p, isDrive) {
     const target = (isDrive || p.includes(':\\')) ? p
         : (_agCurrentPath.endsWith('\\') ? _agCurrentPath + p : _agCurrentPath + '\\' + p);
-    _agCurrentPath  = target;
-    _agSelectedPath = '';
+    _agCurrentPath = target;
     document.getElementById('ag-current-path').innerText = 'Loading…';
-    document.getElementById('ag-dir-list').innerHTML =
-        '<div class="ag-placeholder">Loading…</div>';
+    document.getElementById('ag-dir-list').innerHTML = '<div class="ag-placeholder">Loading…</div>';
     try {
         const items = await window.electronAPI.listDirs(target);
         document.getElementById('ag-current-path').innerText = target;
@@ -106,37 +212,54 @@ function _agRenderDirs(items, isDrives = false) {
 
         if (isDrives) {
             div.innerHTML = `<div class="ag-item-icon">${item.icon}</div>
-                             <span class="ag-item-text">${item.isQuick ? item.label : `${item.label} (${item.path})`}</span>`;
+                <span class="ag-item-text">${item.isQuick ? item.label : `${item.label} (${item.path})`}</span>`;
             div.onclick = () => _agNavigate(item.path, true);
         } else if (item.type === 'dir') {
             div.innerHTML = `<div class="ag-item-icon">
-                <svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
-            </div><span class="ag-item-text">${item.name}</span>`;
+                <svg viewBox="0 0 24 24" fill="none" stroke="#0a84ff" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/>
+                </svg></div><span class="ag-item-text">${item.name}</span>`;
             div.onclick = () => _agNavigate(item.name, false);
         } else {
             const fileExt = item.name.substring(item.name.lastIndexOf('.')).toLowerCase();
             const exeIcon = item.icon
                 ? `<img src="${item.icon}" style="width:20px;height:20px;object-fit:contain;">`
-                : `<svg viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 12h4m-2-2v4m8-2h.01M16 10h.01"/></svg>`;
+                : `<svg viewBox="0 0 24 24" fill="none" stroke="#8e8e93" stroke-width="2"
+                       stroke-linecap="round" stroke-linejoin="round">
+                       <rect x="2" y="6" width="20" height="12" rx="2"/>
+                       <path d="M6 12h4m-2-2v4m8-2h.01M16 10h.01"/>
+                   </svg>`;
+            div.dataset.path = item.path;
+            // Restore selection state when re-rendering the same folder
+            if (_agSelectedGames.some(g => _agNormPath(g.path) === _agNormPath(item.path))) {
+                div.classList.add('selected');
+            }
             div.innerHTML = `<div class="ag-item-icon">${exeIcon}</div>
-                             <span class="ag-item-text">${item.name}</span>
-                             <span class="ag-item-badge">${fileExt}</span>`;
-            div.onclick = (e) => _agSelectExe(item.path, item.name, e);
+                <span class="ag-item-text">${item.name}</span>
+                <span class="ag-item-badge">${fileExt}</span>
+                <span class="ag-item-check">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                         stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <polyline points="20 6 9 17 4 12"/>
+                    </svg>
+                </span>`;
+            div.onclick = () => _agToggleExe(item.path, item.name, div);
         }
 
         list.appendChild(div);
     });
 }
 
-function _agSelectExe(fullPath, fileName, e) {
-    _agSelectedPath = fullPath;
-    document.getElementById('ag-current-path').innerText = 'Selected: ' + fileName;
-
-    // Highlight selected
-    document.querySelectorAll('.ag-dir-item').forEach(i => i.classList.remove('selected'));
-    if (e && e.currentTarget) e.currentTarget.classList.add('selected');
-
-    _agSetChosenFile(fullPath, fileName);
+function _agToggleExe(fullPath, fileName, divEl) {
+    const norm = _agNormPath(fullPath);
+    if (_agSelectedGames.some(g => _agNormPath(g.path) === norm)) {
+        _agRemoveSelected(norm);
+        divEl.classList.remove('selected');
+    } else {
+        _agAddChosenFile(fullPath, fileName, 'browse');
+        divEl.classList.add('selected');
+    }
 }
 
 // ── Tab: PATH ────────────────────────────────────────────────
@@ -144,21 +267,41 @@ function agValidatePath() {
     const val  = document.getElementById('ag-path-input').value.trim();
     const btn  = document.getElementById('ag-use-path-btn');
     const stat = document.getElementById('ag-path-status');
-    const isValidFile = /\.(exe|lnk|url|bat)$/i.test(val) && val.length > 5;
+    if (!val) { btn.disabled = true; stat.innerHTML = ''; return; }
 
-    btn.disabled = !isValidFile;
-    if (!val) { stat.innerHTML = ''; return; }
-    stat.innerHTML = isValidFile
-        ? `<span class="ag-status-ok">✓ Looks like a valid game path</span>`
-        : `<span class="ag-status-warn">⚠ Path should end with .exe, .lnk, .url, or .bat</span>`;
+    const paths      = val.split(/[\n;]/).map(p => p.trim()).filter(Boolean);
+    const validCount = paths.filter(p => _agIsSupportedGameFile(p) && p.length > 5).length;
+    btn.disabled = validCount === 0;
+    if (validCount === paths.length) {
+        stat.innerHTML = `<span class="ag-status-ok">✓ ${validCount} valid path${validCount > 1 ? 's' : ''}</span>`;
+    } else if (validCount > 0) {
+        stat.innerHTML = `<span class="ag-status-warn">⚠ ${validCount} of ${paths.length} valid</span>`;
+    } else {
+        stat.innerHTML = `<span class="ag-status-warn">⚠ Path must end with .exe, .lnk, .url, or .bat</span>`;
+    }
 }
 
 function agUsePath() {
     const val = document.getElementById('ag-path-input').value.trim();
     if (!val) return;
-    const parts   = val.split(/[\\/]/);
-    const fileName = parts[parts.length - 1];
-    _agSetChosenFile(val, fileName);
+    const paths = val.split(/[\n;]/).map(p => p.trim()).filter(p => p && _agIsSupportedGameFile(p) && p.length > 5);
+    if (!paths.length) return;
+
+    let added = 0, skipped = 0;
+    paths.forEach(p => {
+        const parts    = p.split(/[\\/]/);
+        const fileName = parts[parts.length - 1];
+        (_agAddChosenFile(p, fileName, 'path') ? added++ : skipped++);
+    });
+
+    if (added === 0) {
+        showToast('All paths already in selection', 'warning');
+    } else if (skipped > 0) {
+        showToast(`Added ${added}, skipped ${skipped} duplicate${skipped > 1 ? 's' : ''}`, 'info');
+    }
+    document.getElementById('ag-path-input').value = '';
+    document.getElementById('ag-path-status').innerHTML = '';
+    document.getElementById('ag-use-path-btn').disabled = true;
 }
 
 // ── Tab: DRAG & DROP ─────────────────────────────────────────
@@ -166,121 +309,95 @@ function _agInitDropZone() {
     _agDropZoneInit = true;
     const zone = document.getElementById('ag-drop-zone');
 
-    // Native Electron drag-in: لما بتسحب من Explorer الـ path بيجيله
-    zone.addEventListener('dragover', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        zone.classList.add('drag-over');
-    });
-    zone.addEventListener('dragleave', (e) => {
-        e.preventDefault(); e.stopPropagation();
-        zone.classList.remove('drag-over');
-    });
+    zone.addEventListener('dragover',  (e) => { e.preventDefault(); e.stopPropagation(); zone.classList.add('drag-over'); });
+    zone.addEventListener('dragleave', (e) => { e.preventDefault(); e.stopPropagation(); zone.classList.remove('drag-over'); });
     zone.addEventListener('drop', (e) => {
         e.preventDefault(); e.stopPropagation();
         zone.classList.remove('drag-over');
 
-        // في Electron, webUtils.getPathForFile بتجيب الـ path الحقيقي
-        const files = e.dataTransfer.files;
-        if (!files || files.length === 0) return;
+        const files = Array.from(e.dataTransfer.files || []);
+        if (!files.length) return;
 
-        const file = files[0];
-        
-        // 1. Electron بيوفر المسار الكامل هنا بشكل مباشر
-        let filePath = file.path; 
+        let added = 0, skipped = 0, invalid = 0;
+        files.forEach(file => {
+            let filePath = file.path;
+            if (!filePath && window.electronAPI?.getFilePath) {
+                try { filePath = window.electronAPI.getFilePath(file); } catch {}
+            }
+            if (!filePath) filePath = file.name;
 
-        // 2. لو مش موجود، نجرب نجيبه من الـ preload
-        if (!filePath && window.electronAPI && window.electronAPI.getFilePath) {
-            try { filePath = window.electronAPI.getFilePath(file); } catch {}
-        }
+            if (!_agIsSupportedGameFile(filePath) && !_agIsSupportedGameFile(file.name)) {
+                invalid++; return;
+            }
+            (_agAddChosenFile(filePath || file.name, file.name, 'drop') ? added++ : skipped++);
+        });
 
-        // 3. Fallback أخير 
-        if (!filePath) filePath = file.name;
-
-        // تعديل الـ Regex هنا لدعم باقي الأنواع
-        const isValidFile = /\.(exe|lnk|url|bat)$/i.test(filePath) || /\.(exe|lnk|url|bat)$/i.test(file.name);
         const feedback = document.getElementById('ag-drop-feedback');
-
-        if (!isValidFile) {
-            feedback.innerHTML = `<span class="ag-status-warn">⚠ Please drop a supported file (.exe, .lnk, .url, .bat)</span>`;
-            return;
-        }
-
-        zone.classList.add('drop-success');
-        feedback.innerHTML = `<span class="ag-status-ok">✓ ${file.name}</span>`;
-        _agSetChosenFile(filePath || file.name, file.name);
+        const parts = [];
+        if (added > 0)   parts.push(`<span class="ag-status-ok">✓ Added ${added} file${added > 1 ? 's' : ''}</span>`);
+        if (skipped > 0) parts.push(`<span class="ag-status-warn">⚠ ${skipped} duplicate${skipped > 1 ? 's' : ''} skipped</span>`);
+        if (invalid > 0) parts.push(`<span class="ag-status-warn">⚠ ${invalid} unsupported file${invalid > 1 ? 's' : ''} ignored</span>`);
+        feedback.innerHTML = parts.join(' &nbsp;');
+        if (added > 0) zone.classList.add('drop-success');
     });
 }
 
+// ── Browse search filter ─────────────────────────────────────
 function agFilterBrowse() {
     const query = document.getElementById('ag-browse-search').value.toLowerCase();
-    const items = document.querySelectorAll('#ag-dir-list .ag-dir-item');
-    
-    items.forEach(item => {
-        // بنجيب اسم الفايل/الفولدر من النص اللي جوه العنصر
-        const text = item.querySelector('.ag-item-text').innerText.toLowerCase();
-        
-        // لو الاسم فيه الحروف اللي كتبناها، نعرضه.. لو لأ، نخفيه
-        if (text.includes(query)) {
-            item.style.display = 'flex';
-        } else {
-            item.style.display = 'none';
-        }
+    document.querySelectorAll('#ag-dir-list .ag-dir-item').forEach(item => {
+        const text = item.querySelector('.ag-item-text')?.innerText.toLowerCase() || '';
+        item.style.display = text.includes(query) ? 'flex' : 'none';
     });
-}
-
-// ── Shared: after any method gives us a file path ───────────
-function _agSetChosenFile(fullPath, fileName) {
-    _agSelectedPath = fullPath;
-
-    // Smart name guess
-    let guessedName = fileName.replace(/\.[^/.]+$/, '');
-    const parts = fullPath.split(/[\\/]/);
-    const parentFolder = parts.length >= 2 ? parts[parts.length - 2] : '';
-    if (['game','launcher','app','bin','x64','x86'].includes(guessedName.toLowerCase()) && parentFolder) {
-        guessedName = parentFolder;
-    }
-    guessedName = guessedName.replace(/[-_]/g, ' ').trim();
-
-    document.getElementById('ag-chosen-path-label').innerText = fileName;
-    document.getElementById('ag-game-name-input').value = guessedName;
-    document.getElementById('ag-name-row').style.display = 'flex';
-    document.getElementById('ag-save-btn').disabled = false;
-
-    // Scroll name row into view
-    document.getElementById('ag-name-row').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
 // ── Finalize (Save) ─────────────────────────────────────────
 async function agFinalizeAddGame() {
-    const name = document.getElementById('ag-game-name-input').value.trim();
-    const path = _agSelectedPath;
-    if (!name) return showToast('Name required', 'error');
-    if (!path) return showToast('No file selected', 'error');
+    if (_agSelectedGames.length === 0) return showToast('No games selected', 'error');
 
-    const btn = document.getElementById('ag-save-btn');
-    btn.innerText = 'Adding…';
+    const btn   = document.getElementById('ag-save-btn');
+    const total = _agSelectedGames.length;
     btn.disabled = true;
 
-    try {
-        const res = await window.electronAPI.addManualGame(path, name);
-        if (res && res.status === 'error') {
-            showToast('Error: ' + (res.message || 'Failed to add game'), 'error');
-            return;
+    // Sync names from inputs one final time
+    document.querySelectorAll('.ag-sel-row').forEach((row, idx) => {
+        const ni = row.querySelector('.ag-sel-name-input');
+        if (ni && _agSelectedGames[idx]) {
+            const v = ni.value.trim();
+            if (v) _agSelectedGames[idx].name = v;
         }
-        showToast('Game Added!', 'success');
-        window.electronAPI.logGameAddedManual?.();
+    });
 
+    let successCount = 0, failCount = 0;
+    for (let i = 0; i < total; i++) {
+        const game = _agSelectedGames[i];
+        if (!game.name) { failCount++; continue; }
+        btn.textContent = `Adding ${i + 1}/${total}…`;
+        try {
+            const res = await window.electronAPI.addManualGame(game.path, game.name);
+            if (res && res.status === 'error') failCount++;
+            else successCount++;
+        } catch (e) {
+            console.error('[AddGame] failed:', game.path, e);
+            failCount++;
+        }
+    }
+
+    if (successCount > 0) {
+        const msg = failCount > 0
+            ? `Added ${successCount} game${successCount > 1 ? 's' : ''}, ${failCount} failed`
+            : `Added ${successCount} game${successCount > 1 ? 's' : ''} successfully`;
+        showToast(msg, failCount > 0 ? 'warning' : 'success');
+        window.electronAPI.logGameAddedManual?.();
         currentFilters.collectionId = null;
         allGamesData = await window.electronAPI.getGames();
         applyFilters();
         renderExploreCarousel();
         closeAddGameModal();
-    } catch (e) {
-        console.error('agFinalizeAddGame error:', e);
-        showToast('Error adding game', 'error');
-    } finally {
-        btn.innerText = 'Add to Library';
+    } else {
+        showToast(`Failed to add ${failCount} game${failCount > 1 ? 's' : ''}`, 'error');
         btn.disabled = false;
+        btn.textContent = total === 1 ? 'Add Game' : `Add ${total} Games`;
     }
 }
 
@@ -546,19 +663,144 @@ async function resetGameImage(type, skipToast = false) {
     // شيلنا refreshAllViews()
 }
 
+function _gsLooseKey(value) {
+    return String(value || '')
+        .trim()
+        .toLowerCase()
+        .replace(/[^a-z0-9]/g, '');
+}
+
+function _gsAddKey(set, value) {
+    const raw = String(value || '').trim().toLowerCase();
+    if (raw) set.add(raw);
+
+    const loose = _gsLooseKey(value);
+    if (loose) set.add(loose);
+}
+
+function _gsCollectAgPatchKeys(game = {}) {
+    const keys = new Set();
+
+    [
+        game.id,
+        game.installedId,
+        game.appName,
+        game.appid,
+        game.appId,
+        game.namespace,
+        game.catalogNamespace,
+        game.catalogItemId,
+        game.launcherGameId,
+        game.allIds?.steam,
+        game.allIds?.epic,
+        game.originalName,
+        game.originalTitle,
+        game.name,
+        game.title
+    ].forEach(v => _gsAddKey(keys, v));
+
+    [
+        game.originalName,
+        game.originalTitle,
+        game.name,
+        game.title
+    ].forEach(v => {
+        const titleKey = _gsLooseKey(v);
+        if (titleKey) keys.add(`title:${titleKey}`);
+    });
+
+    return keys;
+}
+
+function _gsMatchesAgGame(localGame, agGame) {
+    const localKeys = _gsCollectAgPatchKeys(localGame);
+    const agKeys = _gsCollectAgPatchKeys(agGame);
+
+    for (const key of agKeys) {
+        if (localKeys.has(key)) return true;
+    }
+
+    return false;
+}
+
+function _gsPatchAllGamesTitleAfterRename(localGame, newName) {
+    const patchOne = (game) => {
+        if (!game || !_gsMatchesAgGame(localGame, game)) return false;
+
+        game.title = newName;
+        game.name = newName;
+        game.customTitle = newName;
+        game.customTitleLocked = true;
+        game.titleSource = 'creator';
+        game.titleUpdatedAt = localGame.titleUpdatedAt || Date.now();
+
+        return true;
+    };
+
+    let changed = 0;
+
+    if (Array.isArray(window._allGamesCache)) {
+        window._allGamesCache.forEach(g => {
+            if (patchOne(g)) changed++;
+        });
+    }
+
+    if (Array.isArray(window._vs?.items)) {
+        window._vs.items.forEach(g => {
+            if (patchOne(g)) changed++;
+        });
+    }
+
+    if (window._vs?.cardCache instanceof Map) {
+        window._vs.cardCache.clear();
+    }
+
+    if (changed > 0 && typeof _applyAgFilters === 'function') {
+        try {
+            _applyAgFilters({ resetScroll: false });
+        } catch (_) {}
+    }
+
+    if (changed > 0 && typeof window._vsRender === 'function') {
+        try {
+            window._vsRender(true);
+        } catch (_) {}
+    }
+}
+
 async function saveGameSettings() {
     if (!selectedGameId) return;
 
     const g = allGamesData.find(x => String(x.id) === String(selectedGameId));
     if (!g) return;
 
+    const _patch = {};
+    const _artworkTs    = Date.now();  // single timestamp for the whole settings save
+    const _changedTypes = [];          // tracks which art types were updated (cover/hero/logo)
+
     // 1. حفظ الاسم الجديد للعبة (لو اتغير)
     const nameInput = document.getElementById('editGameNameInput');
     if (nameInput) {
         const newName = nameInput.value.trim();
         if (newName && newName !== g.name) {
-            await window.electronAPI.renameGame(selectedGameId, newName);
+            const oldName = g.name || g.title || '';
+            const res = await window.electronAPI.renameGame(selectedGameId, newName);
+
+            if (!g.originalName && oldName && oldName !== newName) {
+                g.originalName = oldName;
+            }
+
             g.name = newName;
+            g.title = newName;
+            g.customTitle = newName;
+            g.customTitleLocked = true;
+            g.titleSource = 'creator';
+            g.titleUpdatedAt = res?.titleUpdatedAt || Date.now();
+            _patch.name = newName;
+
+            if (typeof _gsPatchAllGamesTitleAfterRename === 'function') {
+                _gsPatchAllGamesTitleAfterRename(g, newName);
+            }
         }
     }
 
@@ -567,13 +809,38 @@ async function saveGameSettings() {
         const change = pendingImageChanges[type];
 
         if (change.action === 'update') {
-            await window.electronAPI.updateGameImage(selectedGameId, change.path, type);
+            const res = await window.electronAPI.updateGameImage(selectedGameId, change.path, type);
             localStorage.setItem(`${type}_${selectedGameId}`, change.path);
-            
-            if (type === 'cover') g.image = change.path;
-            if (type === 'hero') g.heroImage = change.path;
-            if (type === 'logo') g.logo = change.path;
 
+            if (type === 'cover') {
+                g.cover        = change.path;
+                g.image        = change.path;
+                g.coverUrl     = change.path;
+                g.defaultImage = change.path;
+                _patch.cover   = change.path;
+            }
+            if (type === 'hero') {
+                g.hero        = change.path;
+                g.heroImage   = change.path;
+                g.heroUrl     = change.path;
+                g.defaultHero = change.path;
+                _patch.hero   = change.path;
+            }
+            if (type === 'logo') {
+                g.logo        = change.path;
+                g.logoUrl     = change.path;
+                g.defaultLogo = change.path;
+                _patch.logo   = change.path;
+            }
+
+            _changedTypes.push(type);
+
+            // Keep frontend memory in sync immediately.
+            // Use artworkSource:'settings' (not 'creator') so Game Detail
+            // priority logic knows a newer Settings save overrides older Creator art.
+            g.customArtworkLocked = true;
+            g.artworkSource    = 'settings';
+            g.artworkUpdatedAt = _artworkTs;
         } else if (change.action === 'reset') {
             localStorage.removeItem(`${type}_${selectedGameId}`);
             let restoredPath = null;
@@ -584,9 +851,42 @@ async function saveGameSettings() {
                 console.error('Failed to reset in backend:', err);
             }
 
-            if (type === 'cover') g.image = restoredPath;
-            if (type === 'hero') g.heroImage = restoredPath;
-            if (type === 'logo') g.logo = restoredPath;
+            if (type === 'cover') {
+                g.image        = restoredPath;
+                g.coverUrl     = restoredPath;
+                g.defaultImage = restoredPath;
+            }
+            if (type === 'hero') {
+                g.heroImage   = restoredPath;
+                g.heroUrl     = restoredPath;
+                g.defaultHero = restoredPath;
+            }
+            if (type === 'logo') {
+                g.logo        = restoredPath;
+                g.logoUrl     = restoredPath;
+                g.defaultLogo = restoredPath;
+                _patch.logoCleared = true;
+            }
+        }
+    }
+
+    // Propagate changes to all live in-memory stores (sugg rail, _allGamesCache, VS)
+    if (Object.keys(_patch).length) {
+        if (_changedTypes.length) {
+            _patch.artworkSource    = 'settings';
+            _patch.artworkUpdatedAt = _artworkTs;
+        }
+        if (typeof window.__baddelApplyGameCustomOverride === 'function') {
+            window.__baddelApplyGameCustomOverride(g, _patch);
+        }
+        // Clear stale Creator Mode artwork from localStorage customGameDetails so
+        // _gdApplyCustomToGame no longer lets old posterImage win over game.image.
+        if (_changedTypes.length && typeof window._gdClearCustomDetailArtwork === 'function') {
+            window._gdClearCustomDetailArtwork(g, _changedTypes);
+        }
+        // If Game Detail is open for this game, update _gdCurrentGame and re-render.
+        if (typeof window._gdApplyExternalPatch === 'function') {
+            window._gdApplyExternalPatch(g, _patch);
         }
     }
 

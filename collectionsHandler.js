@@ -1,25 +1,25 @@
-const fs = require('fs').promises;
+'use strict';
+
+const fs     = require('fs').promises;
 const fsSync = require('fs');
-const path = require('path');
+const path   = require('path');
 const { app } = require('electron');
 
 const DATA_DIR  = path.join(app.getPath('userData'), 'BaddelLauncher');
 const DATA_FILE = path.join(DATA_DIR, 'collections.json');
 const FAV_ID    = 'fav_system_default';
 
+// Ensure storage directory and seed file exist at module load time.
 if (!fsSync.existsSync(DATA_DIR))  fsSync.mkdirSync(DATA_DIR, { recursive: true });
 if (!fsSync.existsSync(DATA_FILE)) fsSync.writeFileSync(DATA_FILE, '[]');
 
-// ============================================================
-// READ / WRITE
-// ============================================================
 async function getCollections() {
     try {
         let raw;
         try { raw = await fs.readFile(DATA_FILE, 'utf8'); }
         catch { raw = '[]'; }
 
-        let data = JSON.parse(raw);
+        const data = JSON.parse(raw);
 
         if (!data.find(c => c.id === FAV_ID)) {
             data.unshift({ id: FAV_ID, name: 'Favorites', image: null, gameIds: [], isSystem: true });
@@ -40,9 +40,6 @@ async function saveCollections(data) {
     }
 }
 
-// ============================================================
-// CRUD
-// ============================================================
 async function createCollection(name, imagePath) {
     const collections = await getCollections();
     const newColl = { id: `col_${Date.now()}`, name, image: imagePath || null, gameIds: [] };
@@ -96,7 +93,7 @@ async function updateCollectionDetails(collectionId, newName, newImage) {
     const collections = await getCollections();
     const index = collections.findIndex(c => c.id === collectionId);
     if (index === -1) return { status: 'error', message: 'Collection not found' };
-    if (newName != null)      collections[index].name  = newName;
+    if (newName    != null)  collections[index].name  = newName;
     if (newImage !== undefined) collections[index].image = newImage;
     await saveCollections(collections);
     return { status: 'success' };
@@ -109,5 +106,5 @@ module.exports = {
     removeGameFromCollection,
     deleteCollection,
     reorderCollection,
-    updateCollectionDetails
+    updateCollectionDetails,
 };

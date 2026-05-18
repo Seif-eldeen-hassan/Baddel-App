@@ -3,10 +3,22 @@
 // ============================================================
 const { contextBridge, ipcRenderer, webUtils, shell } = require('electron');
 
+// Expose the image-cache directory URL synchronously so domUtils.js can
+// initialise its file:// trust policy before any renderer code runs.
+// Uses sendSync so it is available immediately (no async IPC round-trip needed).
+// Wrapped in try/catch so a failure here NEVER prevents electronAPI from loading.
+try {
+    const cacheUrl = ipcRenderer.sendSync('get-image-cache-dir-url-sync');
+    if (cacheUrl) contextBridge.exposeInMainWorld('__BADDEL_CACHE_URL__', cacheUrl);
+} catch (err) {
+    console.warn('[Preload] Could not resolve image cache URL:', err && err.message);
+}
+
 contextBridge.exposeInMainWorld('electronAPI', {
 
     // ---- Library ----
     getGames:               ()                        => ipcRenderer.invoke('get-installed-games'),
+    getGameById:            (id)                      => ipcRenderer.invoke('get-game-by-id', id),
     scanAllGames:           ()                        => ipcRenderer.invoke('scan-all-games'),
     addManualGame:          (exePath, customName)     => ipcRenderer.invoke('add-manual-game', exePath, customName),
     removeGame:             (id)                      => ipcRenderer.invoke('remove-game', id),
@@ -16,8 +28,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getHiddenGames:         ()                        => ipcRenderer.invoke('get-hidden-games'),
     restoreSpecificGames:   (ids)                     => ipcRenderer.invoke('restore-specific-games', ids),
     deleteGamePermanently:  (id)                      => ipcRenderer.invoke('delete-game-permanently', id),
-    onLibraryUpdated:       (cb)                      => ipcRenderer.on('library-updated', (_, games) => cb(games)),
+    onLibraryUpdated:       (cb)                      => {
+        ipcRenderer.removeAllListeners('library-updated');
+        ipcRenderer.on('library-updated', (_, games) => cb(games));
+    },
     onGameImageUpdated:     (cb)                      => ipcRenderer.on('game-image-updated', (_, game) => cb(game)),
+    onAllGamesCoverCached:  (cb)                      => ipcRenderer.on('all-games-cover-cached', (_, payload) => cb(payload)),
 
     // ---- Images ----
     selectImage:            ()                        => ipcRenderer.invoke('select-game-image'),
@@ -25,19 +41,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resetGameImage:         (id, type)                => ipcRenderer.invoke('reset-game-image', id, type),
     cacheImage:             (url, gameId, type)       => ipcRenderer.invoke('cache-image', url, gameId, type),
     getCachedImage:         (gameId, type)             => ipcRenderer.invoke('get-cached-image', gameId, type),
+    probeLocalImage:        (fileUrl)                 => ipcRenderer.invoke('probe-local-image', fileUrl),
     cacheAllAssets:         (assets, gameId)          => ipcRenderer.invoke('cache-all-assets', assets, gameId),
+    pruneImageCache:        ()                        => ipcRenderer.invoke('prune-image-cache'),
+    getImageCacheDirUrl:    ()                        => ipcRenderer.invoke('get-image-cache-dir-url'),
     getFilePath:            (file)                    => webUtils.getPathForFile(file),
 
     // ---- Metadata & Playtime ----
     getMetadata:            (gameName, hints = {})    => ipcRenderer.invoke('get-game-metadata', gameName, hints),
     getGameAchievements:    (payload)                 => ipcRenderer.invoke('get-game-achievements', payload),
-    saveMetadata:           (gameId, meta)            => ipcRenderer.invoke('save-game-metadata', gameId, meta),
+    saveMetadata:           (gameId, meta, opts)      => ipcRenderer.invoke('save-game-metadata', gameId, meta, opts),
+    saveFullMetadata:       (gameId, title, platform, meta) => ipcRenderer.invoke('save-full-metadata', gameId, title, platform, meta),
+    loadFullMetadata:       (gameId)                        => ipcRenderer.invoke('load-full-metadata', gameId),
     updatePlaytime:         (gameId, minutes)         => ipcRenderer.invoke('update-playtime', gameId, minutes),
+    setTimeTrackingEnabled: (gameId, enabled)         => ipcRenderer.invoke('set-time-tracking-enabled', gameId, enabled),
+    getTimeTrackingEnabled: (gameId)                  => ipcRenderer.invoke('get-time-tracking-enabled', gameId),
     onPlaytimeUpdated:      (cb)                      => ipcRenderer.on('playtime-updated', (_, data) => cb(data)),
 
     // ---- Launch ----
-    launchGame:             (command, gameId, gamePath, gameName) =>
-                                ipcRenderer.invoke('launch-game', command, gameId, gamePath, gameName),
+    launchGame: (gameId, options = {}) =>
+                    ipcRenderer.invoke('launch-game', null, gameId, null, null, options),
 
     // ---- File Browser ----
     getDrives:              ()       => ipcRenderer.invoke('get-drives'),
@@ -63,8 +86,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
     getLiveStats:   () => ipcRenderer.invoke('get-live-stats'),
 
     // ---- Auto Update ----
-    onUpdateAvailable:  (cb) => ipcRenderer.on('update-available', (_, version) => cb(version)),
-    sendRestartUpdate:  ()   => ipcRenderer.send('restart-and-update'),
+    // بيجيب الـ version الحالية من الـ package.json
+    getAppVersion:          ()   => ipcRenderer.invoke('get-app-version'),
+    // بيبدأ check يدوي
+    checkForUpdates:        ()   => ipcRenderer.invoke('check-for-updates'),
+    // update متاحة — بيجيب الـ version الجديدة
+    onUpdateFound:          (cb) => ipcRenderer.on('update-found',             (_, version)  => cb(version)),
+    // مفيش update
+    onUpdateNotFound:       (cb) => ipcRenderer.on('update-not-found',         ()            => cb()),
+    // تقدم التحميل
+    onUpdateProgress:       (cb) => ipcRenderer.on('update-download-progress', (_, progress) => cb(progress)),
+    // التحميل خلص — جاهز للـ install
+    onUpdateReady:          (cb) => ipcRenderer.on('update-ready',             (_, version)  => cb(version)),
+    // خطأ
+    onUpdateError:          (cb) => ipcRenderer.on('update-error',             (_, msg)      => cb(msg)),
+    // اليوزر يضغط "Download" — invoke بدل send عشان يرجع result فوراً
+    startUpdateDownload:    ()   => ipcRenderer.invoke('start-update-download'),
+    // اليوزر يضغط "Restart & Install"
+    sendRestartUpdate:      ()   => ipcRenderer.send('restart-and-update'),
+    // status stream (preparing | downloading | downloaded | error | available)
+    onUpdateStatus:         (cb) => ipcRenderer.on('update-status', (_, data) => cb(data)),
+    // باقي من القديم للـ backward compat
+    onUpdateAvailable:      (cb) => ipcRenderer.on('update-found', (_, version) => cb(version)),
 
     // ============================================================
     // ---- STEAM ACCOUNTS ----
@@ -106,6 +149,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     switchUbisoft:        (name)       => ipcRenderer.invoke('switch-ubisoft-account', name),
     addNewUbisoftAccount: ()           => ipcRenderer.invoke('add-new-ubisoft-account'),
 
+    // ---- Riot Client path helpers (kept for backward compat — UI still calls these) ----
+    detectRiotClient:           ()   => ipcRenderer.invoke('detect-riot-client'),
+    selectRiotClientManually:   ()   => ipcRenderer.invoke('select-riot-client-manually'),
+    clearManualRiotClientPath:  ()   => ipcRenderer.invoke('clear-manual-riot-client-path'),
+
+    // ---- Generic launcher path helpers (all platforms) ----
+    detectLauncher:             (platform) => ipcRenderer.invoke('detect-launcher', platform),
+    selectLauncherManually:     (platform) => ipcRenderer.invoke('select-launcher-manually', platform),
+    clearManualLauncherPath:    (platform) => ipcRenderer.invoke('clear-manual-launcher-path', platform),
+
     deleteEpicProfile:    (name) => ipcRenderer.invoke('delete-epic-profile', name),
     deleteEAProfile:      (name) => ipcRenderer.invoke('delete-ea-profile', name),
     deleteRiotProfile:    (name) => ipcRenderer.invoke('delete-riot-profile', name),
@@ -136,7 +189,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // ============================================================
     platformSyncStatus:      ()           => ipcRenderer.invoke('platform-sync:status'),
     platformSyncGetAccounts: (platform)   => ipcRenderer.invoke('platform-sync:get-accounts', platform), // السطر الجديد
-    platformSyncLink:        (platform)   => ipcRenderer.invoke('platform-sync:link', platform),
+    platformSyncLink:        (platform, opts = {}) => ipcRenderer.invoke('platform-sync:link', platform, opts),
     platformSyncSync:        (platform, accountId) => ipcRenderer.invoke('platform-sync:sync', platform, accountId),
     platformSyncGetState:    (platform)   => ipcRenderer.invoke('platform-sync:get-state', platform),
     onPlatformSyncState:     (cb)         => {
@@ -144,17 +197,61 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('platform-sync:state', handler);
         return () => ipcRenderer.removeListener('platform-sync:state', handler);
     },
+    onPlatformSyncCompleted: (cb)         => {
+        const handler = (_, state) => cb(state);
+        ipcRenderer.on('platform-sync:completed', handler);
+        return () => ipcRenderer.removeListener('platform-sync:completed', handler);
+    },
+    onPlatformSyncFailed:    (cb)         => {
+        const handler = (_, state) => cb(state);
+        ipcRenderer.on('platform-sync:failed', handler);
+        return () => ipcRenderer.removeListener('platform-sync:failed', handler);
+    },
+    onPlatformLinkStateChanged: (cb) => {
+        const handler = (_, payload) => cb(payload);
+        ipcRenderer.on('platform-sync:link-state-changed', handler);
+        return () => ipcRenderer.removeListener('platform-sync:link-state-changed', handler);
+    },
+    removePlatformLinkListeners: () => {
+        ipcRenderer.removeAllListeners('platform-sync:link-state-changed');
+    },
     platformSyncGetCached:   (platform)   => ipcRenderer.invoke('platform-sync:get-cached', platform),
     platformSyncUnlink:      (platform, accountId) => ipcRenderer.invoke('platform-sync:unlink', platform, accountId), // التعديل هنا
+    // ---- Baddel Server ----
+    lookupGameServer:      (query)            => ipcRenderer.invoke('lookup-game-server', query),
+    enrichGameServer:      (gameId, data)     => ipcRenderer.invoke('enrich-game-server', gameId, data),
+    importAndEnrichServer: (platform, game)   => ipcRenderer.invoke('import-and-enrich-server', { platform, game }),
+    isCooldownActive:      ()                 => ipcRenderer.invoke('baddelapi-cooldown-active'),
+    resolveMetadataServer: (params)           => ipcRenderer.invoke('resolve-metadata', params),
+
     // ---- Shell ----
-    openExternal: (url) => ipcRenderer.invoke('open-external-url', url),
+    openExternal:    (url)     => ipcRenderer.invoke('open-external-url', url),
+    openInstallUrl:  (payload) => ipcRenderer.invoke('launcher:open-install-url', payload),
+
+    // ---- Named event subscriptions (allowlisted — no generic channel access) ----
+    onGameEnriched: (cb) => {
+        const handler = (_, payload) => cb(payload);
+        ipcRenderer.on('game-enriched', handler);
+        return () => ipcRenderer.removeListener('game-enriched', handler);
+    },
 
     // ---- Analytics Consent ----
     grantAnalyticsConsent:  () => ipcRenderer.invoke('analytics-grant-consent'),
     revokeAnalyticsConsent: () => ipcRenderer.invoke('analytics-revoke-consent'),
     isAnalyticsEnabled:     () => ipcRenderer.invoke('analytics-is-enabled'),
+    getConsentShown:        () => ipcRenderer.invoke('get-consent-shown'),
+    setConsentShown:        () => ipcRenderer.invoke('set-consent-shown'),
     logHudSensorToggled: (isEnabled) => ipcRenderer.invoke('analytics-log-hud-sensor', isEnabled),
     logGameSpinClicked: (isCustom) => ipcRenderer.invoke('analytics-log-game-spin', isCustom),
     logGameImageChanged:    (type, isReset) => ipcRenderer.invoke('analytics-log-image-changed', type, isReset),
     logFeedbackSent:        () => ipcRenderer.invoke('analytics-log-feedback'),
+
+    getDynamicGameExes: (gameId, gamePath) => ipcRenderer.invoke('get-dynamic-game-exes', gameId, gamePath),
+
+    // ---- Creator Page Pack ----
+    exportCreatorPagePack:  (defaultName, pageJson) => ipcRenderer.invoke('export-creator-page-pack', defaultName, pageJson),
+    importCreatorPagePack:  ()                      => ipcRenderer.invoke('import-creator-page-pack'),
+    resolveCreatorPageAssets: (pagePack, gameKey)   => ipcRenderer.invoke('resolve-creator-page-assets', pagePack, gameKey),
+    exportCreatorPage:      (defaultName, pageJson) => ipcRenderer.invoke('export-creator-page-pack', defaultName, pageJson),
+    importCreatorPage:      ()                      => ipcRenderer.invoke('import-creator-page-pack'),
 });

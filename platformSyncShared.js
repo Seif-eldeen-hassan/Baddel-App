@@ -207,11 +207,11 @@ function removeAccountFromLibrary(platform, games = [], account = {}) {
             game.ownedBy = game.ownedBy.filter((name) => String(name || '').trim().toLowerCase() !== displayName.toLowerCase());
         }
 
-        // 3. Keep the game if at least one OTHER account still owns it, OR if it's installed locally
+        // 3. Keep the game if at least one OTHER account still has a license for it, OR if it's installed locally.
+        // steamDetectedAccountIds is intentionally excluded — local install detection is NOT licensed ownership.
         const hasOtherOwners = (
             (Array.isArray(game.ownedByAccountIds) && game.ownedByAccountIds.length > 0) ||
-            (Array.isArray(game.steamLicensedAccountIds) && game.steamLicensedAccountIds.length > 0) ||
-            (Array.isArray(game.steamDetectedAccountIds) && game.steamDetectedAccountIds.length > 0)
+            (Array.isArray(game.steamLicensedAccountIds) && game.steamLicensedAccountIds.length > 0)
         );
 
         if (hasOtherOwners || game.installOnly === true) {
@@ -222,10 +222,380 @@ function removeAccountFromLibrary(platform, games = [], account = {}) {
     return filteredGames;
 }
 
+// ── Epic non-game filter ──────────────────────────────────────────────────────
+
+// Lowercase, strip punctuation/symbols. Safe for word-boundary regex matching.
+function normToken(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[''`™®©]/g, '')
+        .replace(/[^a-z0-9]+/g, ' ')
+        .trim();
+}
+
+// Extract Epic catalog category paths from metadata.categories.
+// Handles both [{path:"games"}] objects and plain string arrays.
+function _extractEpicCategories(entry) {
+    const cats = entry?.metadata?.categories;
+    if (!Array.isArray(cats)) return [];
+    return cats.map(c => {
+        if (typeof c === 'string') return c.toLowerCase();
+        if (c && typeof c === 'object') return String(c.path || c.name || '').toLowerCase();
+        return '';
+    }).filter(Boolean);
+}
+
+// Collect every identifying field Legendary exposes into one searchable string.
+function collectEpicEntryTokens(entry) {
+    const assetInfos = Object.values(entry?.asset_infos || {});
+    const catPaths   = _extractEpicCategories(entry).join(' ');
+    return [
+        entry?.app_name,
+        entry?.app_title,
+        entry?.title,
+        entry?.catalog_item_id,
+        entry?.namespace,
+        entry?.metadata?.namespace,
+        entry?.metadata?.title,
+        entry?.metadata?.description,
+        entry?.metadata?.productType,
+        catPaths,
+        entry?.app_type,
+        entry?.type,
+        entry?.metadata?.customAttributes?.ProductSlug?.value,
+        entry?.metadata?.customAttributes?.productType?.value,
+        entry?.metadata?.customAttributes?.com_epicgames_AppBlackList?.value,
+        ...assetInfos.map(a => a?.namespace),
+        ...assetInfos.map(a => a?.catalog_item_id),
+        ...assetInfos.map(a => a?.app_name),
+    ].filter(Boolean).join(' ');
+}
+
+// Exact normalized-title denylist — these are always non-games no matter what.
+const EPIC_NON_GAME_TITLE_DENYLIST = new Set([
+    'fab',
+    'fab marketplace',
+    'blueprint csv parsing',
+    'blueprintcsvparsing',
+    // Known real examples returned by Legendary
+    'advanced flock system multithreaded fish ai and reactive school behavior',
+    'agora static mesh thumbnail render extension',
+    'assets cleaner project cleaning tool',
+    // Tools / engines / non-game products
+    'unreal engine marketplace',
+    'ue marketplace',
+    'epic marketplace',
+    'epic games fab',
+    'fab plugin',
+    'fab library',
+    'twinmotion',
+    'realityscan',
+    'metahuman',
+    'unreal editor',
+    'unreal engine',
+    'uefn',
+]);
+
+/**
+ * Returns true if the Legendary entry is clearly a non-game: Fab asset, Unreal
+ * Marketplace plugin, tool, template, etc. Uses word-boundary regex so titles
+ * like "Fable" / "Fabric" / "Fabulous" are NEVER blocked.
+ */
+function isEpicNonGameAssetEntry(entry) {
+    const text    = normToken(collectEpicEntryTokens(entry));
+    const title   = normToken(entry?.app_title || entry?.title || entry?.app_name);
+    const appName = normToken(entry?.app_name);
+    const namespace = normToken(
+        entry?.namespace
+        || entry?.metadata?.namespace
+        || Object.values(entry?.asset_infos || {})[0]?.namespace
+    );
+
+    // 1. Exact denylist check.
+    if (EPIC_NON_GAME_TITLE_DENYLIST.has(title)    ||
+        EPIC_NON_GAME_TITLE_DENYLIST.has(appName)  ||
+        EPIC_NON_GAME_TITLE_DENYLIST.has(namespace)) {
+        return true;
+    }
+
+    // 2. Structural patterns that appear in asset/tool titles but never game titles.
+    if (/\bstatic mesh\b/.test(title))             return true;  // "Agora Static Mesh…"
+    if (/\bthumbnail render\b/.test(title))        return true;  // "…Thumbnail Render Extension"
+    if (/\bassets? cleaner\b/.test(title))         return true;  // "Assets Cleaner…"
+    if (/\bproject cleaning\b/.test(title))        return true;  // "…Project Cleaning Tool"
+    if (/\bflock system\b/.test(title))            return true;  // "Advanced Flock System…"
+    if (/\brender extension\b/.test(title))        return true;  // "…Render Extension"
+    if (/\bai system\b/.test(title) &&
+        /\b(tool|asset|plugin|unreal|ue|mesh|behavior)\b/.test(title)) return true;
+
+    // 3. Fab/Unreal/marketplace signal + any asset/tool/content keyword in full text.
+    if (/\b(fab|unreal|ue|uefn|marketplace)\b/.test(text) &&
+        /\b(asset|assets|plugin|plugins|content|template|sample|project|blueprint|csv|editor|tool|library|pack|mesh|material|texture|animation|vfx|sfx|audio)\b/.test(text)) {
+        return true;
+    }
+
+    // 4. Blueprint-as-tool patterns.
+    if (/\bblueprint\b/.test(text) &&
+        /\b(csv|parser|parsing|plugin|tool|template|asset|unreal|ue|marketplace)\b/.test(text)) {
+        return true;
+    }
+
+    // 5. Product/category metadata explicitly says tool/asset/plugin/content.
+    const productType = normToken([
+        entry?.metadata?.productType,
+        entry?.metadata?.customAttributes?.productType?.value,
+        entry?.app_type,
+        entry?.type,
+    ].filter(Boolean).join(' '));
+    if (/\b(asset|plugin|tool|editor|engine|marketplace|sample|template|project|mod|content)\b/.test(productType)) {
+        return true;
+    }
+
+    // 6. Category paths are non-game.
+    const catPaths = _extractEpicCategories(entry).join(' ');
+    if (catPaths &&
+        !/\bgames?\b/.test(catPaths) &&
+        /\b(plugin|content|project|asset|template|engine|editor|add[- ]?on|addon|sample|tool|script|blueprint)\b/.test(catPaths)) {
+        return true;
+    }
+
+    return false;
+}
+
+// Backward-compatible alias.
+const isFabOrMarketplaceEntry = isEpicNonGameAssetEntry;
+
+/**
+ * Returns true if there is a positive, unambiguous signal that this entry is a
+ * playable game. Only known-good signals are trusted; unknown = false.
+ */
+function isEpicPositiveGameEntry(entry) {
+    // Third-party store (EA App, Ubisoft Connect, etc.) → unambiguously a game.
+    if (entry?.third_party_store &&
+        String(entry.app_name  || '').trim() &&
+        String(entry.app_title || entry.title || '').trim()) {
+        return true;
+    }
+
+    // Epic catalog category path starts with "games" → it's a game.
+    const catPaths = _extractEpicCategories(entry);
+    if (catPaths.some(c => c.startsWith('games') || c === 'game')) return true;
+
+    // Explicit productType === "Game" (case-insensitive).
+    const productType = normToken(
+        entry?.metadata?.productType ||
+        entry?.metadata?.customAttributes?.productType?.value || ''
+    );
+    if (productType === 'game' || productType === 'base game') return true;
+
+    // Game-specific runtime attributes (cloud save / offline mode).
+    const canRunOffline  = entry?.metadata?.customAttributes?.CanRunOffline?.value;
+    const cloudSaveFolder = entry?.metadata?.customAttributes?.CloudSaveFolder?.value;
+    if ((canRunOffline || cloudSaveFolder) && !isEpicNonGameAssetEntry(entry)) return true;
+
+    // Has launch executable and nothing says it's an asset.
+    const hasExecutable = Boolean(
+        entry?.executable ||
+        entry?.launch_command ||
+        entry?.install?.executable
+    );
+    if (hasExecutable && !isEpicNonGameAssetEntry(entry)) return true;
+
+    return false;
+}
+
+/**
+ * Classifies a single Legendary entry into one of three buckets:
+ *   'keep'    — positive proof it is a game
+ *   'reject'  — positive proof it is not a game (asset/tool/marketplace)
+ *   'unknown' — neither proven game nor proven non-game → dropped by default
+ */
+function classifyEpicEntry(entry) {
+    if (!entry || typeof entry !== 'object') {
+        return { decision: 'reject', reason: 'invalid_entry' };
+    }
+    const appName = String(entry.app_name || '').trim();
+    const title   = String(entry.app_title || entry.title || entry.app_name || '').trim();
+    if (!appName || !title) {
+        return { decision: 'reject', reason: 'missing_app_name_or_title' };
+    }
+    if (isEpicNonGameAssetEntry(entry)) {
+        return { decision: 'reject', reason: 'non_game_asset_or_marketplace_item' };
+    }
+    if (isEpicPositiveGameEntry(entry)) {
+        return { decision: 'keep', reason: 'positive_game_signal' };
+    }
+    return { decision: 'unknown', reason: 'no_positive_game_signal' };
+}
+
+/**
+ * Returns true if the entry should be included in the library.
+ * This is the public gate: unknown entries are dropped by default.
+ */
+function isEpicPlayableGameEntry(entry) {
+    return classifyEpicEntry(entry).decision === 'keep';
+}
+
+/**
+ * Returns true if an already-cached Epic game record should survive a cleanup pass.
+ * Conservative: only evicts confirmed non-game entries, preserves unknowns.
+ */
+function isEpicSyncedGameAllowed(game) {
+    if (!game) return false;
+    if (game.platform !== 'epic' && game.source !== 'epic') return true;
+    return !isEpicNonGameAssetEntry({
+        app_name:  game.appName || game.app_name || game.id,
+        app_title: game.title  || game.name,
+        title:     game.title  || game.name,
+        namespace: game.namespace,
+        metadata: {
+            namespace:   game.namespace,
+            productType: game.productType,
+            categories:  game.categories,
+        },
+    });
+}
+
+/** Sync statuses that represent transient in-progress states. */
+const TRANSIENT_SYNC_STATUSES = new Set(['queued', 'pending', 'syncing', 'finalizing', 'starting']);
+
+function _isInvalidEpicName(name) {
+    if (!name) return true;
+    const n = String(name).toLowerCase().trim();
+    return n === '' ||
+        n === 'epic user' ||
+        n === 'epic account' ||
+        n.startsWith('epic_tmp') ||
+        /^epic epic_tmp/i.test(n);
+}
+
+/**
+ * Resolves an Epic account identity from a Legendary status payload.
+ * Handles `legendary status --json` format where `status.account` is a plain string.
+ * Never returns "epic_tmp*" as account id or display name.
+ * Returns { accountId, displayName, confidence, source }.
+ */
+function resolveEpicAccountIdentity(status, existingAccount = null, tmpId = null) {
+    // Extract account_id — prefer real IDs; epic_tmp is never authoritative
+    const rawAccountId =
+        status?.account_id          ||
+        status?.account?.account_id ||
+        status?.user?.account_id    ||
+        status?.accountId           ||
+        status?.user?.id;
+
+    const isTmpFallback = !rawAccountId || String(rawAccountId).startsWith('epic_tmp');
+    const accountId = isTmpFallback ? (tmpId || rawAccountId || null) : rawAccountId;
+    const confidence = isTmpFallback ? 'low' : 'high';
+
+    // Display name candidates — include status.account when it's a plain string
+    // (Legendary status --json returns { account: "DisplayName", ... })
+    const candidates = [
+        status?.display_name,
+        status?.displayName,
+        typeof status?.account === 'string' ? status.account : null,
+        status?.account?.display_name,
+        status?.account?.displayName,
+        status?.user?.display_name,
+        status?.user?.displayName,
+        status?.account_name,
+        status?.username,
+        status?.user?.username,
+        status?.account?.name,
+        status?.user?.name,
+        status?.email,
+        status?.user?.email,
+        !_isInvalidEpicName(existingAccount?.displayName) ? existingAccount?.displayName : null,
+    ].map(v => String(v || '').trim()).filter(v => v && !_isInvalidEpicName(v));
+
+    let displayName, source;
+    if (candidates.length > 0) {
+        displayName = candidates[0];
+        source = 'status';
+    } else if (accountId && !String(accountId).startsWith('epic_tmp')) {
+        displayName = `Epic ${String(accountId).slice(0, 8)}`;
+        source = 'id-derived';
+    } else {
+        displayName = 'Epic Account';
+        source = 'fallback';
+    }
+
+    return { accountId, displayName, confidence, source };
+}
+
+/**
+ * Given a persisted account record and the final deduplicated game count,
+ * returns the appropriate terminal (non-transient) UI status and message.
+ * Used to clean up stale in-progress states for non-target accounts after
+ * a targeted sync completes or fails.
+ */
+function computeTerminalAccountStatus(account, finalCount) {
+    if (
+        account?.needsReauth ||
+        account?.credentialStatus === 'missing' ||
+        account?.credentialStatus === 'invalid'
+    ) {
+        return { status: 'needs_reauth', message: 'Reconnect required' };
+    }
+    if (finalCount > 0 || account?.lastSyncedAt) {
+        return {
+            status: 'synced',
+            message: finalCount > 0 ? `Synced ${finalCount} games` : 'Previously synced',
+        };
+    }
+    return { status: 'idle', message: '' };
+}
+
+/**
+ * Compute the user-visible sync message for a Steam account after library
+ * finalization, where rawCount and finalCount can differ (dedup, library merge).
+ *
+ * @param {number} rawCount   - Games returned directly by the Steam API.
+ * @param {number} finalCount - Games actually in the Baddel library for this
+ *                              account after finalizeLibraryForAccounts().
+ * @param {number} prevCount  - Games that were in the cache before this sync.
+ */
+function computeSteamSyncMessage(rawCount, finalCount, prevCount) {
+    if (rawCount === 0 && prevCount > 0) {
+        return `Steam returned 0 games. Kept ${prevCount} cached games.`;
+    }
+    if (rawCount > 0 && finalCount !== rawCount) {
+        return `Steam returned ${rawCount} entries; ${finalCount} games synced`;
+    }
+    if (rawCount > 0) {
+        return `Synced ${finalCount} games`;
+    }
+    return 'No owned games found';
+}
+
+// Returns true when an Epic switcher profile folder contains real session data
+// (not just a phantom created by the old sync-link bug).
+// Accepts the list of entry names (strings) from fs.readdir on the profile dir.
+const REAL_EPIC_PROFILE_MARKERS = ['Data', 'Config', 'webcache', '_baddel_meta.json'];
+function isRealEpicSwitcherProfile(folderEntryNames) {
+    if (!Array.isArray(folderEntryNames)) return false;
+    const lower = folderEntryNames.map(n => String(n).toLowerCase());
+    return REAL_EPIC_PROFILE_MARKERS.some(m => lower.includes(m.toLowerCase()));
+}
+
 module.exports = {
     orderAccountsForSync,
     countGamesForAccount,
     preservePreviousAccountData,
     finalizeLibraryForAccounts,
     removeAccountFromLibrary,
+    computeSteamSyncMessage,
+    normToken,
+    collectEpicEntryTokens,
+    EPIC_NON_GAME_TITLE_DENYLIST,
+    isEpicNonGameAssetEntry,
+    isFabOrMarketplaceEntry,          // backward-compat alias
+    isEpicPositiveGameEntry,
+    classifyEpicEntry,
+    isEpicPlayableGameEntry,
+    isEpicSyncedGameAllowed,
+    resolveEpicAccountIdentity,
+    computeTerminalAccountStatus,
+    TRANSIENT_SYNC_STATUSES,
+    isRealEpicSwitcherProfile,
 };

@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data: file:; img-src 'self' data: blob: file: http: https:; media-src 'self' data: blob: file: http: https:; frame-src https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com; connect-src 'self' http: https:;">
     <title>Baddel Launcher</title>
     <link rel="stylesheet" href="css/dashboard.css">
     <link rel="stylesheet" href="css/accounts.css">
@@ -10,9 +11,8 @@
     <link rel="stylesheet" href="css/addGameModal.css">
     <link rel="stylesheet" href="css/game-details.css">
     <link rel="stylesheet" href="css/play-launcher.css">
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.css"/>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/Sortable/1.15.0/Sortable.min.js"></script>
-</head>
+    <link rel="stylesheet" href="../node_modules/driver.js/dist/driver.css"/>
+    <script src="../node_modules/sortablejs/Sortable.min.js"></script>
 <body>
 
     <div class="title-bar">
@@ -23,6 +23,12 @@
         <button class="help-btn" onclick="openSettingsModal()">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
             Settings
+        </button>
+        <!-- Update notification badge — hidden by default, shown when update found -->
+        <button id="updateBadgeBtn" class="help-btn update-badge-btn" onclick="openUpdateModal()" style="display:none; pointer-events:auto; color:#12ce18; border:1px solid rgba(18,206,24,0.3); background:rgba(18,206,24,0.08);">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            <span id="updateBadgeLabel">Update Available</span>
+            <span id="updateBadgeDot" style="width:6px;height:6px;background:#12ce18;border-radius:50%;display:inline-block;margin-left:2px;animation:badgePulse 1.5s infinite;"></span>
         </button>
         <div class="drag-region" style="flex-grow: 1; height: 100%; -webkit-app-region: drag;"></div>
         <div class="window-controls">
@@ -44,11 +50,15 @@
                 <span id="toggleIcon">&#9664;</span>
             </button>
 
-            <div class="sidebar-logo-area" onclick="navigateToHome()" style="cursor: pointer; transition: 0.2s;" onmouseover="this.style.transform='scale(1.05)'" onmouseout="this.style.transform='scale(1)'" title="Go to Home">
-                <div class="logo-box">
-                    <img src="../assets/app_icon.png" class="main-sidebar-logo" alt="B">
+            <div class="sidebar-logo-area" onclick="navigateToHome()" title="Go to Home">
+                <div class="brand-mark">
+                    <img src="../assets/app_icon.png" class="main-sidebar-logo" alt="Baddel">
                 </div>
-                <span class="nav-text logo-brand">BADDEL</span>
+
+                <div class="brand-lockup nav-text">
+                    <span class="brand-name">BADDEL</span>
+                    <span class="brand-line"></span>
+                </div>
             </div>
 
             <div class="sidebar-scroll-content">
@@ -117,7 +127,7 @@
                         <span class="nav-text">Rockstar</span><span class="platform-count" id="rockstarCount">—</span>
                     </div>
                     <div class="nav-item platform-item" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
-                        <div class="nav-icon platform-icon ubisoft-icon"><img src="../assets/ubisoft.png" alt="Ubisoft" style="width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));"></div>
+                        <div class="nav-icon platform-icon ubisoft-icon"><img src="../assets/Ubisoft_white.png" alt="Ubisoft" class="invert-on-dark" style="width: 20px; height: 20px; object-fit: contain;"></div>
                         <span class="nav-text">Ubisoft</span><span class="platform-count" id="ubisoftCount">—</span>
                     </div>
                     <div class="nav-item platform-item" id="nav-discord" onclick="selectAccountPlatform('discord')">
@@ -158,13 +168,17 @@
             <div id="libraryView">
                 
                 <section class="account-shortcuts-section" id="accountsShortcutsSection" style="display: none;">
-                    <h2 class="section-title">Quick Accounts</h2>
+                    <h2 class="jbi-title" style="font-size: 1.4rem; margin-bottom: 20px;">Quick Accounts</h2>
                     <div class="accounts-shortcuts-inner" id="accountsShortcutsInner"></div>
                 </section>
 
                 <section class="recently-played-section" id="recentlyPlayedSection" style="display: none;">
-                    <h2 class="section-title">Jump Back In</h2>
-                    <div class="recent-grid" id="recentGrid"></div>
+                    <div class="jbi-header" style="margin-bottom: 28px;">
+                        <div class="jbi-header-left">
+                            <h2 class="jbi-title" style="font-size: 1.4rem; ">Jump Back In <em class="jbi-subtitle" id="recentSessionCount"></em></h2>
+                        </div>
+                    </div>
+                    <div class="jbi-grid" id="recentGrid"></div>
                 </section>
 
                 <section class="explore-section">
@@ -179,31 +193,125 @@
                     <div class="games-grid explore-grid" id="exploreGrid"></div>
                 </section>
 
+                <!-- ── SYNCED LIBRARY SUGGESTIONS ─────────────────────────── -->
+                <section class="synced-suggestions-section" id="syncedSuggestionsSection" style="display:none;">
+                    <div class="synced-wrap">
+
+                        <!-- Head: eyebrow + title + subtitle | counts card -->
+                        <div class="synced-head">
+                            <div class="synced-head-left">
+                                <div class="synced-eye">
+                                    <span class="synced-pulse"></span>
+                                    From your synced libraries
+                                </div>
+                                <h2 class="synced-title">Ready to Install</h2>
+                                <p class="synced-sub">Owned but not yet on this machine — one click to queue the download.</p>
+                            </div>
+                            <div class="synced-counts" id="syncedSuggStats"></div>
+                        </div>
+
+                        <!-- Filter row -->
+                        <div class="synced-filters">
+                            <button class="sugg-pill active" data-filter="all"   onclick="setSyncedFilter('all',this)">Recommended</button>
+                            <button class="sugg-pill"        data-filter="steam"  onclick="setSyncedFilter('steam',this)">From Steam</button>
+                            <button class="sugg-pill"        data-filter="epic"   onclick="setSyncedFilter('epic',this)">From Epic</button>
+                        </div>
+
+                        <!-- CTA: no linked accounts -->
+                        <div class="synced-cta" id="syncedSuggCTA" style="display:none;">
+                            <div class="synced-cta-icon">
+                                <svg width="40" height="40" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                    <circle cx="9" cy="7" r="4" stroke="currentColor" stroke-width="1.5"/>
+                                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                            </div>
+                            <p class="synced-cta-msg">Connect a gaming account to see your owned-but-not-installed games here.</p>
+                            <div id="syncedCtaBtns" class="synced-cta-btns"></div>
+                        </div>
+
+                        <!-- Loading state -->
+                        <div class="synced-sugg-loading" id="syncedSuggLoading" style="display:none;">
+                            <span class="synced-spinner"></span> Loading synced libraries…
+                        </div>
+
+                        <!-- Body: feature | rail -->
+                        <div class="synced-body" id="syncedSuggBody" style="display:none;">
+                            <div class="synced-feature" id="syncedFeatureWrap"></div>
+                            <div class="synced-rail"    id="syncedRail"></div>
+                        </div>
+
+                        <!-- Empty state: all synced games already installed -->
+                        <div class="synced-empty" id="syncedSuggEmpty" style="display:none;"></div>
+
+                    </div>
+                </section>
+
                 <section class="surprise-me-section" id="surpriseMeSection">
-                    <div class="surprise-header">
-                        <h2 class="section-title">Can't Decide?</h2>
-                        <p style="color: #666; font-size: 0.85rem; margin-top: -15px; margin-bottom: 20px;">Let fate choose your next adventure.</p>
-                    </div>
-                    <div class="roulette-container">
-                        <div class="roulette-card" id="rouletteCard">
-                            <img id="rouletteImg" src="" alt="Random Game" style="display: none;">
-                            <div id="rouletteGraphic" class="roulette-css-graphic">
-                                <div class="magic-blur"></div>
-                                <div class="crystal-orb"><div class="inner-glow"></div></div>
+
+                    <div class="roulette-shell">
+                        <!-- Header row -->
+                        <header class="surprise-header">
+                            <div class="surprise-header-text">
+                                <h2 class="section-title">Can't Decide?</h2>
+                                <p>Let fate choose your next adventure.</p>
                             </div>
-                            <div class="roulette-overlay"><div id="rouletteName">Ready to spin?</div></div>
-                        </div>
-                        <div class="roulette-controls">
-                            <div style="display: flex; gap: 10px; width: 100%; justify-content: center;">
-                                <button class="btn-spin" id="spinBtn" onclick="startRoulette()">
-                                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg>
-                                    Surprise Me
-                                </button>
-                                <button class="btn-secondary-hero" onclick="openRoulettePool()" style="width: 54px; height: 54px; border-radius: 12px; margin: 0; flex-shrink: 0;" title="Custom Spin Pool">&#9881;</button>
+                            <!-- ── Mode selector ────────────────────────────── -->
+                            <div class="roulette-mode-selector" id="rouletteModeSelector">
+                                <p class="roulette-mode-label">Spin for:</p>
+                                <div class="roulette-mode-btns">
+                                    <button class="roulette-mode-btn" id="modeBtnPlay" onclick="setRouletteMode('play')">
+                                        <span class="roulette-mode-icon">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+                                        </span>
+                                        <span class="roulette-mode-title">Play</span>
+                                        <span class="roulette-mode-sub">Installed library</span>
+                                    </button>
+                                    <button class="roulette-mode-btn" id="modeBtnInstall" onclick="setRouletteMode('install')">
+                                        <span class="roulette-mode-icon">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="3" x2="12" y2="16"/></svg>
+                                        </span>
+                                        <span class="roulette-mode-title">Install</span>
+                                        <span class="roulette-mode-sub">Synced accounts</span>
+                                    </button>
+                                </div>
                             </div>
-                            <button class="btn-play-result" id="playResultBtn" style="display:none;" onclick="playRouletteResult()">&#9654; PLAY NOW</button>
+                        </header>
+
+                        <!-- Two-column body -->
+                        <div class="roulette-layout">
+                            <!-- Left: game card -->
+                            <div class="roulette-card-zone">
+                                <div class="roulette-card" id="rouletteCard" onclick="onRouletteCardClick()">
+                                    <img id="rouletteImg" alt="Random Game" style="display: none;">
+                                    <div id="rouletteGraphic" class="roulette-css-graphic">
+                                        <div class="magic-blur"></div>
+                                        <div class="crystal-orb"><div class="inner-glow"></div></div>
+                                    </div>
+                                    <div class="roulette-overlay"></div>
+                                </div>
+                                <!-- Game title below the card — avoids cluttering the image -->
+                                <div class="roulette-caption" aria-live="polite">
+                                    <div id="rouletteName" class="roulette-caption-name">Choose a mode first</div>
+                                </div>
+                            </div>
+
+                            <!-- Right: action panel -->
+                            <div class="roulette-action-panel">
+                                <div class="roulette-controls">
+                                    <div class="roulette-spin-row">
+                                        <button class="btn-spin" id="spinBtn" onclick="startRoulette()" disabled title="Choose a mode first">
+                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg>
+                                            Surprise Me
+                                        </button>
+                                        <button class="btn-secondary-hero" id="roulettePoolBtn" onclick="openRoulettePool()" style="width: 44px; height: 44px; border-radius: 10px; margin: 0; flex-shrink: 0; display: none;" title="Custom Spin Pool">&#9881;</button>
+                                    </div>
+                                    <button class="btn-play-result" id="playResultBtn" style="display:none;" onclick="playRouletteResult()">&#9654; PLAY NOW</button>
+                                </div>
+                            </div>
                         </div>
                     </div>
+
                 </section>
 
                 <section class="system-stats-section" id="systemStatsSection">
@@ -243,50 +351,133 @@
 
             <div id="installedGamesView" style="display: none;">
                 <section class="library-section" style="padding-top: 20px;">
+
+                    <!-- Static top header: title + utility buttons (never scrolls away) -->
                     <header class="library-header" id="installedHeader">
                         <h2 class="section-title" id="libraryTitle">Installed Games</h2>
                         <div class="header-right">
                             <button id="btn-scan" class="icon-btn" onclick="reloadLibrary()" title="Scan Library">&#8635;</button>
-
                             <button id="btn-recycle" class="icon-btn" onclick="openRecycleBin()" title="Recycle Bin">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"></path><line x1="10" y1="11" x2="10" y2="17"></line><line x1="14" y1="11" x2="14" y2="17"></line></svg>
                             </button>
                             <button id="btn-add-game" class="add-game-btn" onclick="openAddGameModal()">+ Add Game</button>
-                            
-                            <div class="custom-dropdown" id="platformDropdown">
-                                <div class="dropdown-trigger" onclick="toggleDropdown(event)">
-                                    <span id="selectedPlatformText">All Platforms</span> &#9660;
-                                </div>
-                                <div class="dropdown-menu" id="dropdownMenu">
-                                    <div class="dropdown-item" onclick="selectPlatform('all', 'All Platforms')">All Platforms</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('steam', 'Steam')">Steam</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('epic games', 'Epic Games')">Epic Games</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('riot games', 'Riot Games')">Riot Games</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('ubisoft connect', 'Ubisoft')">Ubisoft </div>
-                                    <div class="dropdown-item" onclick="selectPlatform('ea app', 'EA App')">EA App</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('xbox', 'Xbox / Store')">Xbox / Store</div>
-                                    <div class="dropdown-item" onclick="selectPlatform('manual', 'Manual')">Manual</div>
-                                </div>
-                            </div>
-                            <div class="custom-dropdown" id="sortDropdown">
-                                <div class="dropdown-trigger" onclick="toggleSortDropdown(event)">
-                                    <span id="selectedSortText">Custom Order</span> &#9660;
-                                </div>
-                                <div class="dropdown-menu" id="sortMenu">
-                                    <div class="dropdown-item" onclick="selectSort('manual', 'Custom Order')">Custom Order</div>
-                                    <div class="dropdown-item" onclick="selectSort('name', 'Alphabetical (A-Z)')">Alphabetical (A-Z)</div>
-                                    <div class="dropdown-item" onclick="selectSort('playtime', 'Highest Playtime')">Highest Playtime</div>
-                                    <div class="dropdown-item" onclick="selectSort('last_played', 'Recently Played')">Recently Played</div>
-                                </div>
-                            </div>
-                            
-                            <div class="search-container">
-                                <input type="text" id="searchInput" placeholder="Search library..." onkeyup="filterGames()">
-                            </div>
                         </div>
                     </header>
-                    
+
+                    <!-- ── Sticky toolbar: LEFT = search/platform/sort  RIGHT = view/display/count ── -->
+                    <div class="ig-toolbar-sticky" id="igToolbarSticky">
+                    <div class="ig-toolbar">
+
+                        <!-- LEFT GROUP: Search + Platform + Sort -->
+                        <div class="ig-filter-group">
+
+                            <!-- Search -->
+                            <div class="ag-search-wrap">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="searchInput" class="ag-search-input" placeholder="Search installed…" onkeyup="igFilterGames()">
+                                <button class="ag-search-clear" id="igSearchClear" onclick="igClearSearch()" title="Clear" style="display:none;">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                            </div>
+
+                            <!-- Platform dropdown — fully isolated IG handler -->
+                            <div class="custom-dropdown ig-sort-dropdown" id="igPlatformDropdown">
+                                <div class="dropdown-trigger ig-sort-trigger" onclick="toggleIgPlatformDropdown(event)" id="igPlatformTrigger">
+                                    <span id="igSelectedPlatformText">All Platforms</span>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="dropdown-menu ig-dropdown-menu" id="igPlatformMenu">
+                                    <div class="dropdown-item" onclick="igSelectPlatform('all','All Platforms')">All Platforms</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('steam','Steam')">Steam</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('epic','Epic Games')">Epic Games</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('riot','Riot Games')">Riot Games</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('ubisoft','Ubisoft')">Ubisoft</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('ea','EA App')">EA App</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('xbox','Xbox / Store')">Xbox / Store</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('manual','Manual')">Manual</div>
+                                </div>
+                            </div>
+
+                            <!-- Sort dropdown — fully isolated IG handler -->
+                            <div class="custom-dropdown ig-sort-dropdown" id="igSortDropdown">
+                                <div class="dropdown-trigger ig-sort-trigger" onclick="toggleIgSortDropdown(event)" id="igSortTrigger">
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
+                                    <span id="igSortLabel">Custom Order</span>
+                                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                </div>
+                                <div class="dropdown-menu ig-dropdown-menu" id="igSortMenu">
+                                    <div class="dropdown-item ig-sort-item active" data-value="manual"       onclick="igSelectSort('manual','Custom Order',this)">Custom Order</div>
+                                    <div class="dropdown-item ig-sort-item"        data-value="name"         onclick="igSelectSort('name','Alphabetical (A–Z)',this)">Alphabetical (A–Z)</div>
+                                    <div class="dropdown-item ig-sort-item"        data-value="playtime"     onclick="igSelectSort('playtime','Highest Playtime',this)">Highest Playtime</div>
+                                    <div class="dropdown-item ig-sort-item"        data-value="last_played"  onclick="igSelectSort('last_played','Recently Played',this)">Recently Played</div>
+                                </div>
+                            </div>
+
+                        </div><!-- /.ig-filter-group -->
+
+                        <!-- RIGHT GROUP: View toggle + Display + Count -->
+                        <div class="ag-controls-group">
+
+                            <!-- View toggle -->
+                            <div class="ag-view-toggle" id="igViewToggle">
+                                <button class="ag-view-btn active" id="igViewGrid" onclick="setIgViewMode('grid')" title="Grid View">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                </button>
+                                <button class="ag-view-btn" id="igViewList" onclick="setIgViewMode('list')" title="List View">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                                </button>
+                            </div>
+
+                            <!-- Display / density panel -->
+                            <div class="custom-dropdown ag-display-dropdown" id="igDisplayDropdown">
+                                <button class="ag-display-trigger" id="igDisplayTrigger" onclick="toggleIgDisplayPanel(event)" title="Display Settings">
+                                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+                                    <span>Display</span>
+                                </button>
+                                <div class="ag-display-panel" id="igDisplayPanel">
+                                    <div class="adp-section">
+                                        <div class="adp-label" id="igDensityLabel">Card Size</div>
+                                        <div class="adp-seg">
+                                            <button class="adp-seg-btn ig-density-btn" data-density="compact" onclick="setIgDensity('compact',this)">Compact</button>
+                                            <button class="adp-seg-btn ig-density-btn active" data-density="normal" onclick="setIgDensity('normal',this)">Normal</button>
+                                            <button class="adp-seg-btn ig-density-btn" data-density="large" onclick="setIgDensity('large',this)">Large</button>
+                                        </div>
+                                    </div>
+                                    <div class="adp-section">
+                                        <div class="adp-label">Show Fields</div>
+                                        <div class="adp-fields" id="igAdpFields">
+                                            <label class="adp-field-toggle"><input type="checkbox" id="igAdpFieldTitle"      checked onchange="setIgField('title',this.checked)"><span>Title</span></label>
+                                            <label class="adp-field-toggle"><input type="checkbox" id="igAdpFieldPlatform"   checked onchange="setIgField('platform',this.checked)"><span>Platform</span></label>
+                                            <label class="adp-field-toggle"><input type="checkbox" id="igAdpFieldPlaytime"   checked onchange="setIgField('playtime',this.checked)"><span>Playtime</span></label>
+                                            <label class="adp-field-toggle"><input type="checkbox" id="igAdpFieldLastPlayed"        onchange="setIgField('lastPlayed',this.checked)"><span>Last Played</span></label>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <span class="ag-result-count" id="igResultCount"></span>
+
+                        </div><!-- /.ag-controls-group -->
+
+                    </div><!-- /.ig-toolbar -->
+                    </div><!-- /.ig-toolbar-sticky -->
+
+                    <!-- Grid view -->
                     <div class="games-grid" id="gamesGrid"></div>
+
+                    <!-- List view -->
+                    <div class="ig-list-view" id="igListView" style="display:none;">
+                        <div class="ag-list-header">
+                            <div class="ag-list-col ag-col-thumb"></div>
+                            <div class="ag-list-col ag-col-title">Title</div>
+                            <div class="ag-list-col ag-col-platforms">Platform</div>
+                            <div class="ag-list-col ag-col-playtime">Playtime</div>
+                            <div class="ag-list-col ag-col-lastplayed">Last Played</div>
+                            <div class="ag-list-col ag-col-play"></div>
+                        </div>
+                        <div id="igListBody"></div>
+                    </div>
+
                 </section>
             </div>
 
@@ -308,40 +499,116 @@
                     </header>
 
                     <!-- ── Filter + Search + Sort Bar ── -->
+                    <div class="ag-toolbar-sticky" id="agToolbarSticky">
                     <div class="ag-toolbar">
-                        <!-- Search -->
-                        <div class="ag-search-wrap">
-                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                            <input type="text" id="allGamesSearch" class="ag-search-input" placeholder="Search games…" onkeyup="filterAllGames()">
-                        </div>
 
-                        <!-- Platform filter pills -->
-                        <div class="ag-filter-pills" id="agFilterPills">
-                            <button class="ag-pill active" data-platform="all" onclick="setAgPlatformFilter('all', this)">All</button>
-                            <button class="ag-pill" data-platform="steam" onclick="setAgPlatformFilter('steam', this)">
-                                <img src="../assets/Steam.png" alt="Steam" class="ag-pill-icon">Steam
-                            </button>
-                            <button class="ag-pill" data-platform="epic" onclick="setAgPlatformFilter('epic', this)">
-                                <img src="../assets/epic.svg" alt="Epic" class="ag-pill-icon ag-pill-icon-invert">Epic
-                            </button>
-                        </div>
+                        <!-- ROW 1: Search (left, grows) + Controls (right, fixed) -->
+                        <div class="ag-toolbar-row ag-toolbar-row--top">
 
-                        <!-- Sort -->
-                        <div class="ag-sort-wrap">
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
-                            <select class="ag-sort-select" id="agSortSelect" onchange="setAgSort(this.value)">
-                                <option value="title_asc">A → Z</option>
-                                <option value="title_desc">Z → A</option>
-                                <option value="playtime_desc">Most Played</option>
-                                <option value="multi_first">Multi-Platform First</option>
-                            </select>
-                        </div>
+                            <div class="ag-search-wrap">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                                <input type="text" id="allGamesSearch" class="ag-search-input" placeholder="Search games…" oninput="filterAllGames()">
+                                <button class="ag-search-clear" id="agSearchClear" onclick="agClearSearch()" title="Clear search">
+                                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                </button>
+                            </div>
 
-                        <!-- Result count -->
-                        <span class="ag-result-count" id="agResultCount"></span>
-                    </div>
+                            <!-- RIGHT: Sort + View toggle + Display settings + Result count -->
+                            <div class="ag-controls-group">
+                                <div class="custom-dropdown ag-sort-dropdown" id="agSortDropdown">
+                                    <div class="dropdown-trigger ag-sort-trigger" onclick="toggleAgSortDropdown(event)" id="agSortTrigger">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="15" y2="12"/><line x1="3" y1="18" x2="9" y2="18"/></svg>
+                                        <span id="agSortLabel">A → Z</span>
+                                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#666" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                    </div>
+                                    <div class="dropdown-menu ag-sort-menu" id="agSortMenu">
+                                        <div class="dropdown-item ag-sort-item active" data-value="title_asc" onclick="setAgSortCustom('title_asc','A → Z',this)">A → Z</div>
+                                        <div class="dropdown-item ag-sort-item" data-value="title_desc" onclick="setAgSortCustom('title_desc','Z → A',this)">Z → A</div>
+                                        <div class="dropdown-item ag-sort-item" data-value="playtime_desc" onclick="setAgSortCustom('playtime_desc','Most Played',this)">Most Played</div>
+                                        <div class="dropdown-item ag-sort-item" data-value="multi_first" onclick="setAgSortCustom('multi_first','Multi-Platform First',this)">Multi-Platform First</div>
+                                    </div>
+                                </div>
 
-                    <div id="epicNotLinked" style="display:none;">
+                                <div class="ag-view-toggle" id="agViewToggle">
+                                    <button class="ag-view-btn active" id="agViewGrid" onclick="setAgViewMode('grid')" title="Grid View">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                                    </button>
+                                    <button class="ag-view-btn" id="agViewList" onclick="setAgViewMode('list')" title="List View">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                                    </button>
+                                </div>
+
+                                <div class="custom-dropdown ag-display-dropdown" id="agDisplayDropdown">
+                                    <button class="ag-display-trigger" onclick="toggleAgDisplayPanel(event)" title="Display Settings">
+                                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9"/></svg>
+                                        <span>Display</span>
+                                    </button>
+                                    <div class="ag-display-panel" id="agDisplayPanel">
+                                        <div class="adp-section">
+                                            <div class="adp-label" id="adpDensityLabel">Card Size</div>
+                                            <div class="adp-seg" id="adpDensitySeg">
+                                                <button class="adp-seg-btn" data-density="compact" onclick="setAgDensity('compact',this)">Compact</button>
+                                                <button class="adp-seg-btn active" data-density="normal" onclick="setAgDensity('normal',this)">Normal</button>
+                                                <button class="adp-seg-btn" data-density="large" onclick="setAgDensity('large',this)">Large</button>
+                                            </div>
+                                        </div>
+                                        <div class="adp-section">
+                                            <div class="adp-label">Show Fields</div>
+                                            <div class="adp-fields" id="adpFields">
+                                                <label class="adp-field-toggle"><input type="checkbox" id="adpFieldTitle" checked onchange="setAgField('title',this.checked)"><span>Title</span></label>
+                                                <label class="adp-field-toggle"><input type="checkbox" id="adpFieldPlatforms" checked onchange="setAgField('platforms',this.checked)"><span>Platforms</span></label>
+                                                <label class="adp-field-toggle"><input type="checkbox" id="adpFieldLastPlayed" onchange="setAgField('lastPlayed',this.checked)"><span>Last Played</span></label>
+                                                <label class="adp-field-toggle"><input type="checkbox" id="adpFieldPlaytime" onchange="setAgField('playtime',this.checked)"><span>Playtime</span></label>
+                                                <label class="adp-field-toggle"><input type="checkbox" id="adpFieldInstalled" onchange="setAgField('installed',this.checked)"><span>Install Badge</span></label>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <span class="ag-result-count" id="agResultCount"></span>
+                            </div>
+                        </div><!-- /.ag-toolbar-row--top -->
+
+                        <!-- ROW 2: Platform pills + Account dropdown + Installed toggle -->
+                        <div class="ag-toolbar-row ag-toolbar-row--filters">
+
+                            <div class="ag-filter-group">
+                                <div class="ag-filter-pills" id="agFilterPills">
+                                    <button class="ag-pill active" data-platform="all" onclick="setAgPlatformFilter('all', this)">All</button>
+                                    <button class="ag-pill" data-platform="steam" onclick="setAgPlatformFilter('steam', this)">
+                                        <img src="../assets/Steam.png" alt="Steam" class="ag-pill-icon">Steam
+                                    </button>
+                                    <button class="ag-pill" data-platform="epic" onclick="setAgPlatformFilter('epic', this)">
+                                        <img src="../assets/epic.svg" alt="Epic" class="ag-pill-icon ag-pill-icon-invert">Epic
+                                    </button>
+
+                                    <!-- All Accounts dropdown — inline with pills -->
+                                    <div class="custom-dropdown ag-account-dropdown" id="agAccountDropdown" style="margin-left: 10px;">
+                                        <div class="dropdown-trigger ag-account-trigger" onclick="toggleAgAccountDropdown(event)" style="display:flex;align-items:center;gap:5px;padding:5px 12px;font-size:0.75rem;font-weight:500;color:#aaa;background:rgba(255,255,255,0.05);border:1.5px solid rgba(255,255,255,0.1);border-radius:20px;cursor:pointer;white-space:nowrap;">
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+                                            <span id="selectedAgAccountText">All Accounts</span>
+                                            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#888" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                                        </div>
+                                        <div class="dropdown-menu ag-account-menu" id="agAccountMenu">
+                                            <div class="dropdown-item" onclick="setAgAccountFilter('all', 'All Accounts')">All Accounts</div>
+                                        </div>
+                                    </div>
+
+                                    <!-- Installed toggle — inline with pills -->
+                                    <button class="ag-installed-toggle" id="agInstalledToggle" onclick="toggleAgInstalledFilter()" style="margin-left: 6px;">
+                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M4 16v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="3" x2="12" y2="16"/></svg>
+                                        Installed
+                                    </button>
+                                </div>
+
+                            </div>
+
+                        </div><!-- /.ag-toolbar-row--filters -->
+
+                    </div><!-- /.ag-toolbar -->
+                    </div><!-- /.ag-toolbar-sticky -->
+
+                                        <div id="epicNotLinked" style="display:none;">
                         <div class="platform-link-banner epic-link-banner">
                             <div class="plb-icon">
                                 <img src="../assets/epic.svg" alt="Epic" style="width:32px;height:32px;filter:brightness(0) invert(1);">
@@ -365,6 +632,17 @@
                     </div>
 
                     <div class="games-grid" id="allGamesGrid"></div>
+                    <div class="ag-list-view" id="allGamesList" style="display:none;">
+                        <div class="ag-list-header">
+                            <div class="ag-list-col ag-col-thumb"></div>
+                            <div class="ag-list-col ag-col-title">Title</div>
+                            <div class="ag-list-col ag-col-platforms ag-list-field-platforms">Platforms</div>
+                            <div class="ag-list-col ag-col-playtime ag-list-field-playtime">Playtime</div>
+                            <div class="ag-list-col ag-col-lastplayed ag-list-field-lastPlayed">Last Played</div>
+                            <div class="ag-list-col ag-col-installed ag-list-field-installed">Installed</div>
+                        </div>
+                        <div id="agListBody"></div>
+                    </div>
                 </section>
             </div>
 
@@ -382,9 +660,46 @@
                         <span class="gd-breadcrumb-sep">/</span>
                         <span class="gd-breadcrumb-name" id="gdBreadcrumbName">—</span>
                     </div>
+                    <button class="gd-creator-entry-btn" id="gdCreatorModeBtn" onclick="gdOpenCreatorMode()" title="Creator Mode" aria-label="Creator Mode">
+                        <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M12 20h9"/>
+                            <path d="M16.5 3.5a2.12 2.12 0 0 1 3 3L7 19l-4 1 1-4Z"/>
+                        </svg>
+                        <span>Creator Mode</span>
+                    </button>
                 </div>
-
-                <div class="gd-steam-asset-notice" id="gdSteamAssetNotice" style="display:none;" role="status" aria-live="polite"></div>
+                <div class="gd-creator-toolbar" id="gdCreatorToolbar" style="display:none">
+                    <div class="gd-creator-toolbar-copy">
+                        <strong>Creator Mode</strong>
+                        <span>Edit this page directly.</span>
+                    </div>
+                    <div class="gd-creator-toolbar-actions">
+                        <button class="gd-creator-tool-btn primary" onclick="gdCreatorSave()">Save</button>
+                        <button class="gd-creator-tool-btn" onclick="gdCreatorTogglePreview()" id="gdCreatorPreviewBtn">Preview</button>
+                        <div class="gd-creator-more-wrap" id="gdCreatorMoreWrap">
+                            <button class="gd-creator-tool-btn" id="gdCreatorMoreBtn" onclick="gdCreatorToggleMore(event)" aria-haspopup="true" aria-expanded="false">
+                                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="1"/><circle cx="19" cy="12" r="1"/><circle cx="5" cy="12" r="1"/></svg>
+                                More
+                            </button>
+                            <div class="gd-creator-more-menu" id="gdCreatorMoreMenu" role="menu">
+                                <button type="button" id="gdCreatorShareBtn" onclick="gdExportCreatorPage()" role="menuitem">
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="5" r="3"/><circle cx="6" cy="12" r="3"/><circle cx="18" cy="19" r="3"/><line x1="8.59" y1="13.51" x2="15.42" y2="17.49"/><line x1="15.41" y1="6.51" x2="8.59" y2="10.49"/></svg>
+                                    Share Page Pack
+                                </button>
+                                <button type="button" onclick="gdImportCreatorPage()" role="menuitem">
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                                    Load Page Pack
+                                </button>
+                                <button type="button" onclick="gdStartCreatorTour(true)" role="menuitem">
+                                    <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                                    Help
+                                </button>
+                                <button type="button" class="danger" onclick="gdCreatorReset()" role="menuitem">Reset</button>
+                                <button type="button" onclick="gdCreatorCancel()" role="menuitem">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
 
                 <div class="gd-hero" id="gdHero">
                     <div class="gd-hero-bg" id="gdHeroBg"></div>
@@ -437,6 +752,8 @@
                                     <span id="gdLastPlayed">Never played</span>
                                 </div>
                             </div>
+
+                            <div id="gdTimeTrackingRow" style="display:none"></div>
                         </div>
                     </div>
                 </div>
@@ -449,13 +766,32 @@
                             <button class="gd-tab active" data-tab="overview" onclick="gdSwitchTab('overview', this)">Overview</button>
                             <button class="gd-tab" data-tab="media" onclick="gdSwitchTab('media', this)">Media</button>
                             <button class="gd-tab" data-tab="requirements" onclick="gdSwitchTab('requirements', this)">Requirements</button>
-                            <button class="gd-tab" data-tab="accounts" onclick="gdSwitchTab('accounts', this)">Accounts</button>
+                            <button class="gd-tab" data-tab="ratings" id="gdTabBtn-ratings" onclick="gdSwitchTab('ratings', this)" style="display:none">Ratings</button>
                             <button class="gd-tab" data-tab="achievements" onclick="gdSwitchTab('achievements', this)">Achievements</button>
+                            <button class="gd-tab" data-tab="accounts" onclick="gdSwitchTab('accounts', this)">Accounts</button>
                         </div>
 
                         <div class="gd-tab-content active" id="gdTab-overview">
-                            <div class="gd-section">
-                                <div class="gd-desc" id="gdDesc">Loading description…</div>
+                            <div class="gd-section" id="gdMetadataSourcesSection" style="display:none">
+                                <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2">
+                                        <circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/>
+                                    </svg>
+                                    Asset Sources (Debug)
+                                </h3>
+                                <div class="gd-metadata-sources" id="gdMetadataSources">
+                                    <!-- Metadata sources will be injected here -->
+                                </div>
+                            </div>
+
+                            <div class="gd-section" id="gdShortDescSection" style="display:none">
+                                  <h3 class="gd-section-title">
+                                    <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                        <circle cx="12" cy="12" r="10"></circle><line x1="12" y1="16" x2="12" y2="12"></line><line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                    </svg>
+                                    Overview
+                                </h3>
+                                <div class="gd-short-desc" id="gdShortDescText"></div>
                             </div>
 
                             <div class="gd-section" id="gdTrailerSection" style="display:none">
@@ -561,7 +897,15 @@
                                 </div>
                             </div>
                         </div>
-
+                        <div class="gd-tab-content" id="gdTab-ratings" style="display:none">
+                        <div class="gd-section">
+                            <h3 class="gd-section-title">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon></svg>
+                                All Ratings & Reviews
+                            </h3>
+                            <div id="gdFullRatingsContainer" style="margin-top: 15px;"></div>
+                        </div>
+                    </div>
                     </div><div class="gd-sidebar">
 
                         <div class="gd-cover-wrap" id="gdCoverWrap">
@@ -590,9 +934,88 @@
         
         <button class="gd-lightbox-nav next" onclick="gdNavLightbox(1)">&#10095;</button>
     </div>
+    <!-- ══════════════════════════════════════════
+         BADDEL SPLASH SCREEN LOADER — LETTERBOXED CINEMATIC
+    ══════════════════════════════════════════ -->
     <div id="mainLoader" class="loader-container active">
-        <img src="../assets/app_icon.png" class="simple-logo" alt="Loading...">
-        <div class="loader-tagline" id="loaderTagline">BUILT BY A GAMER, FOR GAMERS.</div>
+
+        <!-- Particle canvas -->
+        <canvas class="splash-canvas" id="splashCanvas"></canvas>
+
+        <!-- Scan line sweep -->
+        <div class="splash-scan" id="splashScan"></div>
+
+        <!-- Vignette -->
+        <div class="splash-vignette"></div>
+
+        <!-- Corner brackets -->
+        <div class="splash-corner splash-corner-tl"></div>
+        <div class="splash-corner splash-corner-tr"></div>
+        <div class="splash-corner splash-corner-bl"></div>
+        <div class="splash-corner splash-corner-br"></div>
+
+        <!-- Top HUD -->
+        <div class="splash-hud-top" id="splashHudTop">
+            <span class="splash-hud-text">BADDEL LAUNCHER · v2.0</span>
+            <div class="splash-hud-dot"></div>
+            <span class="splash-hud-text" id="splashHudClock">00:00:00</span>
+        </div>
+
+        <!-- Bottom HUD -->
+        <div class="splash-hud-bot" id="splashHudBot">
+            <span class="splash-hud-text">ALL LAUNCHERS · ONE HOME</span>
+            <span class="splash-hud-text" id="splashFrameCounter">00</span>
+        </div>
+
+        <!-- Center stage -->
+        <div class="splash-center" id="splashCenter">
+
+            <!-- Logo with spinning rings -->
+            <div class="splash-logo-wrap" id="splashLogoImg">
+                <div class="splash-ring-outer"></div>
+                <div class="splash-ring-inner"></div>
+
+                <!-- Premium SVG arc spinner -->
+                <svg class="splash-arc-svg" viewBox="0 0 116 116" xmlns="http://www.w3.org/2000/svg">
+                    <!-- Outer orbit track -->
+                    <circle class="splash-arc-track" cx="58" cy="58" r="55"/>
+                    <!-- Tick marks at 0°, 90°, 180°, 270° -->
+                    <line class="splash-arc-tick" x1="58" y1="3"  x2="58" y2="7"  />
+                    <line class="splash-arc-tick" x1="113" y1="58" x2="109" y2="58"/>
+                    <line class="splash-arc-tick" x1="58" y1="113" x2="58" y2="109"/>
+                    <line class="splash-arc-tick" x1="3"  y1="58" x2="7"  y2="58" />
+                    <!-- Primary chasing arc -->
+                    <circle class="splash-arc-primary" cx="58" cy="58" r="55"/>
+                    <!-- Secondary trailing arc -->
+                    <circle class="splash-arc-secondary" cx="58" cy="58" r="55"/>
+                    <!-- Inner counter-spin arc (tighter radius) -->
+                    <circle class="splash-arc-inner" cx="58" cy="58" r="46"/>
+                </svg>
+                <div class="splash-logo-box">
+                    <img src="../assets/app_icon.png" class="splash-logo-img" alt="BADDEL">
+                </div>
+            </div>
+
+            <!-- Wordmark -->
+            <div class="splash-wordstack">
+                <div class="splash-name" id="splashName">BADDEL</div>
+                <div class="splash-sub"  id="splashSub">Every launcher · One place</div>
+            </div>
+
+            <!-- Status row -->
+            <div class="splash-status" id="splashStatus">
+                <div class="splash-status-dash"></div>
+                <div class="splash-status-text" id="splashStatusText">INITIALIZING</div>
+                <div class="splash-status-cursor"></div>
+                <div class="splash-status-dash"></div>
+            </div>
+
+        </div>
+
+        <!-- Progress bar -->
+        <div class="splash-progress-track">
+            <div class="splash-progress-bar" id="splashProgressBar"></div>
+        </div>
     </div>
     
     <div id="launchOverlay" class="launch-overlay">
@@ -666,17 +1089,17 @@
 
             <div class="ag-panel" id="ag-panel-path" style="display:none;">
                 <div class="ag-path-panel">
-                    <p class="ag-hint">Paste the full path to the game file (<strong>.exe, .lnk, .url, .bat</strong>)</p>
+                    <p class="ag-hint">Paste one or more paths to game files (<strong>.exe, .lnk, .url, .bat</strong>)<br>One path per line, or separate with semicolons.</p>
                     <div class="ag-path-input-row">
-                        <input
-                            type="text"
+                        <textarea
                             id="ag-path-input"
-                            class="modal-input ag-path-field"
-                            placeholder="e.g.  C:\Games\MyGame\game.exe"
+                            class="modal-input ag-path-field ag-path-textarea"
+                            placeholder="C:\Games\Game1\game.exe&#10;C:\Games\Game2\game.exe"
                             oninput="agValidatePath()"
-                        >
+                            rows="3"
+                        ></textarea>
                         <button class="ag-use-btn" id="ag-use-path-btn" onclick="agUsePath()" disabled>
-                            Use This
+                            Add Paths
                         </button>
                     </div>
                     <div class="ag-path-status" id="ag-path-status"></div>
@@ -688,18 +1111,18 @@
                     <div class="ag-drop-icon">
                         <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><polyline points="8 17 12 21 16 17"/><line x1="12" y1="12" x2="12" y2="21"/><path d="M20.88 18.09A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.29"/></svg>
                     </div>
-                    <p class="ag-drop-title">Drop your <span>game file</span> here</p>
-                    <p class="ag-drop-sub">Supported formats: .exe, .lnk, .url, .bat</p>
+                    <p class="ag-drop-title">Drop <span>game files</span> here</p>
+                    <p class="ag-drop-sub">Supported formats: .exe, .lnk, .url, .bat — drop multiple at once</p>
                     <div class="ag-drop-feedback" id="ag-drop-feedback"></div>
                 </div>
             </div>
 
-            <div class="ag-name-row" id="ag-name-row" style="display:none;">
-                <div class="ag-name-preview">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
-                    <span id="ag-chosen-path-label" class="ag-chosen-label">game file</span>
+            <div class="ag-selected-section" id="ag-selected-section" style="display:none;">
+                <div class="ag-selected-header">
+                    <span id="ag-selected-count-label" class="ag-sel-count"></span>
+                    <button class="ag-clear-btn" onclick="_agClearAllSelected()">Clear all</button>
                 </div>
-                <input type="text" id="ag-game-name-input" class="modal-input" placeholder="Game name…">
+                <div class="ag-selected-games-list" id="ag-selected-games-list"></div>
             </div>
 
             <div class="ag-footer">
@@ -854,11 +1277,102 @@
                 <div class="help-tab" onclick="switchHelpTab('feedback')">Send Feedback</div>
             </div>
             <div id="tabGuide" class="help-content active">
-                <h3 style="margin-bottom:15px; color:white; font-size:1.1rem;">How to use Baddel Launcher:</h3>
-                <ul class="guide-list">
-                    <li><strong>Add a Game:</strong> Click the "+ Add Game" button or use the auto-scanner.</li>
-                    <li><strong>Surprise Me:</strong> Click the roulette button to let the app pick a random game for you.</li>
-                </ul>
+                <div class="guide-sections">
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+                            Game Library
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Auto-Scan:</strong> Baddel automatically detects all your installed games from Steam, Epic, EA, Ubisoft, Riot, Rockstar, and Discord.</li>
+                            <li><strong>Two Views:</strong> Switch between <em>All Games</em> (everything you own) and <em>Installed Games</em> (ready to play).</li>
+                            <li><strong>Manual Add:</strong> Use the "+ Add Game" button to add any game not detected automatically.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                            Search, Filter & Sort
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Search:</strong> Type in the search bar to instantly filter your library.</li>
+                            <li><strong>Filters:</strong> Filter by platform, playtime, last played, and more.</li>
+                            <li><strong>Grid / List:</strong> Toggle between card grid view and compact list view.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/></svg>
+                            Surprise Me
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Play Mode:</strong> Picks a random game from your installed games and launches it.</li>
+                            <li><strong>Install Mode:</strong> Picks a random game you own but haven't installed yet.</li>
+                            <li><strong>Custom Pool:</strong> Set a specific list of games for the roulette to pick from.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+                            Creator Mode
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Customize Any Game:</strong> Change hero image, poster, logo, description, screenshots, and trailers.</li>
+                            <li><strong>Drag & Drop:</strong> Drop images or videos directly onto a game's page to update it.</li>
+                            <li><strong>Export / Import:</strong> Share your custom page packs with friends.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
+                            Synced Library
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Connect Accounts:</strong> Link your Steam and Epic Games accounts.</li>
+                            <li><strong>Uninstalled Games:</strong> See all games you own across platforms that aren't installed yet.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></svg>
+                            Collections
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Custom Collections:</strong> Organize your games into unlimited groups.</li>
+                            <li><strong>Favorites:</strong> Star any game to add it to your Favorites list.</li>
+                            <li><strong>Reorder:</strong> Drag and drop games within any collection.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+                            Playtime & Stats
+                        </div>
+                        <ul class="guide-list">
+                            <li><strong>Auto-Tracking:</strong> Baddel tracks how long you play each game automatically.</li>
+                            <li><strong>Lifetime Stats:</strong> See your total playtime across your entire library.</li>
+                            <li><strong>Per-Game Toggle:</strong> Disable tracking for any specific game.</li>
+                        </ul>
+                    </div>
+
+                    <div class="guide-section">
+                        <div class="guide-section-title">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+                            System Monitor
+                        </div>
+                        <ul class="guide-list">
+                            <li>Live <strong>CPU, GPU, RAM, and Network</strong> usage shown while you browse your library.</li>
+                        </ul>
+                    </div>
+
+                </div>
             </div>
             <div id="tabFeedback" class="help-content">
                 <h3 style="margin-bottom:15px; color:white; font-size:1.1rem;">Got an idea or found a bug?</h3>
@@ -873,13 +1387,77 @@
     </div>
 
     <div id="updateModal" class="modal-overlay">
-        <div class="modal-box confirm-box">
-            <h2 class="modal-title" style="color: #0a84ff;">Update Available</h2>
-            <p class="confirm-msg" id="updateMessage" style="margin-top: 10px;">A new version of Baddel is ready to install. Restart to apply?</p>
-            <div class="modal-actions" style="justify-content: center; margin-top: 25px;">
-                <button class="btn-cancel" onclick="closeUpdateModal()">Later</button>
-                <button class="btn-primary" onclick="installUpdate()">Restart & Update</button>
+        <div class="modal-box confirm-box" style="width: 420px;">
+
+            <!-- State 1: update available, not downloaded yet -->
+            <div id="updateStateAvailable">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#12ce18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                    <h2 class="modal-title" style="margin:0; font-size:1.1rem; color:#fff;">Update Available</h2>
+                </div>
+                <p id="updateAvailableMsg" style="color:#888; font-size:0.85rem; margin-bottom:20px;">A new version is available.</p>
+                <div class="modal-actions" style="justify-content:center;">
+                    <button class="btn-cancel" onclick="closeUpdateModal()">Later</button>
+                    <button class="btn-primary" id="btnStartDownload" onclick="startUpdateDownload()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                        Download Update
+                    </button>
+                </div>
             </div>
+
+            <!-- State 2: downloading with progress -->
+            <div id="updateStateDownloading" style="display:none;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#12ce18" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    <h2 class="modal-title" style="margin:0; font-size:1.1rem; color:#fff;">Downloading Update</h2>
+                </div>
+                <p id="updateDownloadInfo" style="color:#888; font-size:0.82rem; margin-bottom:6px;">Preparing download...</p>
+                <p id="updateDownloadSubLabel" style="color:#666; font-size:0.78rem; margin-bottom:10px; min-height:1em;"></p>
+                <!-- Progress bar -->
+                <div style="background:#1a1a1a; border-radius:6px; overflow:hidden; height:6px; margin-bottom:8px;">
+                    <div id="updateProgressBar" style="height:100%; width:0%; background:#12ce18; border-radius:6px; transition:width 0.3s ease;"></div>
+                </div>
+                <div style="display:flex; justify-content:space-between; margin-bottom:18px;">
+                    <span id="updateProgressPct" style="color:#888; font-size:0.78rem;">0%</span>
+                    <span id="updateProgressSpeed" style="color:#888; font-size:0.78rem;">— MB/s</span>
+                </div>
+                <div class="modal-actions" style="justify-content:center;">
+                    <button class="btn-cancel" onclick="closeUpdateModal()">Hide — Downloading in background</button>
+                </div>
+            </div>
+
+            <!-- State 4: error during download (never reverts to available — shows retry) -->
+            <div id="updateStateError" style="display:none;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    <h2 class="modal-title" style="margin:0; font-size:1.1rem; color:#fff;">Download Failed</h2>
+                </div>
+                <p id="updateErrorMsg" style="color:#ff6b60; font-size:0.85rem; margin-bottom:20px;">Something went wrong. Try again.</p>
+                <div class="modal-actions" style="justify-content:center;">
+                    <button class="btn-cancel" onclick="closeUpdateModal()">Later</button>
+                    <button class="btn-primary" id="btnRetryDownload" onclick="startUpdateDownload()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        Retry Download
+                    </button>
+                </div>
+            </div>
+
+            <!-- State 3: downloaded, ready to restart -->
+            <div id="updateStateReady" style="display:none;">
+                <div style="display:flex; align-items:center; gap:10px; margin-bottom:6px;">
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#30d158" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                    <h2 class="modal-title" style="margin:0; font-size:1.1rem; color:#fff;">Ready to Install</h2>
+                </div>
+                <p id="updateReadyMsg" style="color:#888; font-size:0.85rem; margin-bottom:20px;">Download complete. Restart now to apply the update.</p>
+                <div class="modal-actions" style="justify-content:center;">
+                    <button class="btn-cancel" onclick="closeUpdateModal()">Later</button>
+                    <button class="btn-primary" onclick="installUpdate()" style="background:#30d158; color:#000;">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px;"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></svg>
+                        Restart & Install
+                    </button>
+                </div>
+            </div>
+
         </div>
     </div>
     <div id="roulettePoolModal" class="modal-overlay">
@@ -918,7 +1496,7 @@
             </div>
         </div>
     </div>
-    <div id="settingsModal" class="modal-overlay">
+    <div id="settingsModal" class="modal-overlay settings-overlay">
     <div class="modal-content" style="max-width: 500px;">
         <div class="modal-header" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
             <h2 style="margin: 0;">Settings</h2>
@@ -941,34 +1519,63 @@
                 </label>
             </div>
 
+            <!-- Version & Update section -->
+            <div class="setting-item" style="flex-direction:column; align-items:flex-start; gap:12px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <div class="setting-info">
+                        <h3>App Version</h3>
+                        <p style="margin:5px 0 0; font-size:13px; color:#aaa;">
+                            Baddel Launcher Beta &nbsp;<span id="settingsVersionLabel" style="color:#555;">—</span>
+                        </p>
+                    </div>
+                    <button id="settingsCheckUpdateBtn" class="btn-cancel" style="font-size:0.78rem; padding:7px 14px; flex-shrink:0;" onclick="settingsCheckForUpdate()">Check for Updates</button>
+                </div>
+                <!-- Update status row — hidden until there's something to show -->
+                <div id="settingsUpdateRow" style="display:none; width:100%; background:#0d0d0d; border:1px solid #1e1e1e; border-radius:8px; padding:12px 14px;">
+                    <!-- available -->
+                    <div id="settingsUpdateAvailable" style="display:none;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <p style="font-size:0.85rem; color:#fff; margin-bottom:3px;">Update Available</p>
+                                <p id="settingsUpdateAvailableMsg" style="font-size:0.78rem; color:#666;">—</p>
+                            </div>
+                            <button class="btn-primary" style="font-size:0.78rem; padding:7px 14px;" onclick="closeSettingsModal(); startUpdateDownload(); openUpdateModal();">Download</button>
+                        </div>
+                    </div>
+                    <!-- downloading -->
+                    <div id="settingsUpdateDownloading" style="display:none;">
+                        <p style="font-size:0.85rem; color:#fff; margin-bottom:8px;">Downloading Update...</p>
+                        <div style="background:#1a1a1a; border-radius:6px; overflow:hidden; height:5px; margin-bottom:6px;">
+                            <div id="settingsProgressBar" style="height:100%; width:0%; background:#12ce18; border-radius:6px; transition:width 0.3s;"></div>
+                        </div>
+                        <div style="display:flex; justify-content:space-between;">
+                            <span id="settingsProgressPct" style="color:#666; font-size:0.76rem;">0%</span>
+                            <span id="settingsProgressSpeed" style="color:#666; font-size:0.76rem;">— MB/s</span>
+                        </div>
+                    </div>
+                    <!-- ready -->
+                    <div id="settingsUpdateReady" style="display:none;">
+                        <div style="display:flex; justify-content:space-between; align-items:center;">
+                            <div>
+                                <p style="font-size:0.85rem; color:#30d158; margin-bottom:3px;">✓ Ready to Install</p>
+                                <p id="settingsUpdateReadyMsg" style="font-size:0.78rem; color:#666;">Restart to apply the update.</p>
+                            </div>
+                            <button class="btn-primary" style="font-size:0.78rem; padding:7px 14px; background:#30d158; color:#000;" onclick="installUpdate()">Restart & Install</button>
+                        </div>
+                    </div>
+                    <!-- up to date -->
+                    <div id="settingsUpToDate" style="display:none;">
+                        <p style="font-size:0.85rem; color:#30d158;">✓ You're up to date</p>
+                    </div>
+                    <!-- error -->
+                    <div id="settingsUpdateError" style="display:none;">
+                        <p style="font-size:0.85rem; color:#ff453a;">⚠ Could not check for updates</p>
+                    </div>
+                </div>
             </div>
-    </div>
-</div>
-    <style>
-/* استدعاء خط تجوال العربي الاحترافي */
-@import url('https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&display=swap');
-
-@keyframes consentSlideIn {
-    from { opacity: 0; transform: translateY(20px) scale(0.96); }
-    to   { opacity: 1; transform: translateY(0)   scale(1); }
-}
-
-.consent-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
-    gap: 32px;
-    margin-bottom: 30px;
-}
-
-.consent-list-item {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    margin-bottom: 12px;
-}
-
-.consent-list-item:last-child { margin-bottom: 0; }
-</style>
+        </div><!-- end modal-body -->
+    </div><!-- end modal-content -->
+</div><!-- end settingsModal -->
 
 <div id="analyticsConsentOverlay" style="display:none; position:fixed; inset:0; background:rgba(0,0,0,0.8); z-index:99999; align-items:center; justify-content:center; backdrop-filter:blur(8px);">
     
@@ -985,10 +1592,8 @@
     ">
         
         <div style="display: flex; justify-content: center; margin-bottom: 30px;">
-            <div style="width:56px; height:56px; border-radius:16px; background:rgba(255,255,255,0.04); border:1px solid rgba(255,255,255,0.08); display:flex; align-items:center; justify-content:center; box-shadow: 0 10px 20px rgba(0,0,0,0.3);">
-                <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="rgba(255,255,255,0.8)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
-                </svg>
+            <div style="width:64px; height:64px; border-radius:18px; background:rgba(34,255,68,0.06); border:1px solid rgba(34,255,68,0.15); display:flex; align-items:center; justify-content:center; box-shadow: 0 0 24px rgba(34,255,68,0.12), 0 10px 20px rgba(0,0,0,0.4);">
+                <img src="../assets/app_icon.png" alt="Baddel" style="width:46px; height:46px; border-radius:12px; object-fit:cover;">
             </div>
         </div>
 
@@ -1088,75 +1693,14 @@
     </div>
 </div>
 
-<script>
-// ============================================================
-// ANALYTICS CONSENT LOGIC (BULLETPROOF VERSION)
-// ============================================================
-
-const CONSENT_KEY = 'baddel_analytics_consent_shown';
-
-async function initAnalyticsConsent() {
-    // التأكد إن اليوزر مجاوبش قبل كده
-    if (localStorage.getItem(CONSENT_KEY) === 'true') {
-        return; 
-    }
-
-    await new Promise(r => setTimeout(r, 100)); 
-    
-    const overlay = document.getElementById('analyticsConsentOverlay');
-    if (overlay) {
-        overlay.style.zIndex = '9999999'; 
-        overlay.style.display = 'flex';
-    }
-}
-
-// دالة لحفظ القرار وإخفاء الشاشة فوراً
-function closeAndSaveConsent() {
-    localStorage.setItem(CONSENT_KEY, 'true');
-    
-    const overlay = document.getElementById('analyticsConsentOverlay');
-    if (overlay) {
-        overlay.style.opacity = '0';
-        overlay.style.transition = 'opacity 0.2s';
-        setTimeout(() => overlay.style.display = 'none', 200);
-    }
-}
-
-// في حالة الموافقة
-async function handleConsentAccept() {
-    closeAndSaveConsent();
-    try {
-        if (window.electronAPI && window.electronAPI.grantAnalyticsConsent) {
-            await window.electronAPI.grantAnalyticsConsent();
-            console.log('[Analytics] Consent granted.');
-        }
-    } catch(e) {
-        console.warn('[Analytics] Error:', e);
-    }
-}
-
-// في حالة الرفض
-async function handleConsentDecline() {
-    closeAndSaveConsent();
-    try {
-        if (window.electronAPI && window.electronAPI.revokeAnalyticsConsent) {
-            await window.electronAPI.revokeAnalyticsConsent();
-        }
-        console.log('[Analytics] Consent declined.');
-    } catch(e) {
-        console.warn('[Analytics] Error:', e);
-    }
-}
-
-document.addEventListener('DOMContentLoaded', () => {
-    initAnalyticsConsent();
-});
-</script>
-
-    <script src="https://cdn.jsdelivr.net/npm/driver.js@1.0.1/dist/driver.js.iife.js"></script>
+    <script src="js/domUtils.js"></script>
+    <script src="js/analyticsConsent.js"></script>
+    <script src="../node_modules/driver.js/dist/driver.js.iife.js"></script>
     <script src="../tour.js"></script>
+    <script src="js/platformResolver.js"></script>
+    <script src="js/platformOwnership.js"></script>
     <script src="js/app.js"></script>
-    <script src="js/accounts.js"></script>  
+    <script src="js/accounts.js"></script>
     <script src="js/addAccountModal.js"></script>
     <script src="js/addGameModal.js"></script>
     <script src="js/game-details.js"></script>

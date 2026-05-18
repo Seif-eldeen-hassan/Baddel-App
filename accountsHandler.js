@@ -4,14 +4,16 @@ const path          = require('path');
 const fs            = require('fs').promises;
 const fsSync        = require('fs');
 const os            = require('os');
-const { exec, spawn } = require('child_process');
-const { execSync }    = require('child_process');
+const { execFile, spawn } = require('child_process');
 const crypto          = require('crypto');
 const { app, net, shell } = require('electron');
 const util          = require('util');
-const execAsync     = util.promisify(exec);
+const execFileAsync = util.promisify(execFile);
 const DiscordRPC    = require('discord-rpc');
-const analytics = require('./analytics');
+const analytics             = require('./analytics');
+const riotPathResolver      = require('./services/riotPathResolver');
+const launcherPathResolver  = require('./services/launcherPathResolver');
+const { isRealEpicSwitcherProfile } = require('./platformSyncShared');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -52,6 +54,39 @@ function spawnExe(exePath, args = []) {
         shell:    false,  // CRITICAL: no shell → no injection surface
     });
     child.unref(); // Don't keep the event loop alive
+}
+
+const PLATFORM_DISPLAY_NAMES = {
+    steam:    'Steam',
+    epic:     'Epic Games Launcher',
+    ea:       'EA App',
+    riot:     'Riot Client',
+    ubisoft:  'Ubisoft Connect',
+    rockstar: 'Rockstar Games Launcher',
+    discord:  'Discord',
+};
+
+function createLauncherMissingError(platform) {
+    const name = PLATFORM_DISPLAY_NAMES[platform] || 'Required launcher';
+    const err = new Error(`${name} is not installed. Please install ${name} first, then try again.`);
+    err.code = 'LAUNCHER_NOT_INSTALLED';
+    err.platform = platform;
+    return err;
+}
+
+function requireExistingLauncherExe(platform, exePath) {
+    if (!exePath || !fsSync.existsSync(exePath)) {
+        throw createLauncherMissingError(platform);
+    }
+
+    return exePath;
+}
+
+async function launchRequiredLauncher(platform, resolver, args = []) {
+    const exe = await resolver();
+    const validExe = requireExistingLauncherExe(platform, exe);
+    spawnExe(validExe, args);
+    return validExe;
 }
 
 // ─── Encryption Layer ─────────────────────────────────────────────────────────
@@ -377,7 +412,7 @@ async function safeWriteJson(p, obj) {
 // ─── Registry Helpers ────────────────────────────────────────────────────────
 
 function regQuery(key, value) {
-    return execAsync(`reg query "${key}" /v "${value}" 2>nul`)
+    return execFileAsync('reg.exe', ['query', key, '/v', value])
         .then(r => {
             const m = r.stdout.match(/REG_\w+\s+(.+)/);
             return m ? m[1].trim() : null;
@@ -386,24 +421,24 @@ function regQuery(key, value) {
 }
 
 function regSet(key, value, type, data) {
-    return execAsync(`reg add "${key}" /v "${value}" /t ${type} /d "${data}" /f`).catch(() => null);
+    return execFileAsync('reg.exe', ['add', key, '/v', value, '/t', type, '/d', data, '/f']).catch(() => null);
 }
 
 function regDelete(key, value) {
-    return execAsync(`reg delete "${key}" /v "${value}" /f 2>nul`).catch(() => null);
+    return execFileAsync('reg.exe', ['delete', key, '/v', value, '/f']).catch(() => null);
 }
 
 // ─── Process Helpers ─────────────────────────────────────────────────────────
 
 async function killProcess(exeName) {
-    try { await execAsync(`taskkill /IM "${exeName}" /F 2>nul`); } catch { /* already dead */ }
+    try { await execFileAsync('taskkill.exe', ['/IM', exeName, '/F']); } catch { /* already dead */ }
 }
 
 async function waitForProcessDeath(exeName, maxMs = 5000) {
     const start = Date.now();
     while (Date.now() - start < maxMs) {
         try {
-            const { stdout } = await execAsync(`tasklist /FI "IMAGENAME eq ${exeName}" /FO CSV /NH 2>nul`);
+            const { stdout } = await execFileAsync('tasklist.exe', ['/FI', `IMAGENAME eq ${exeName}`, '/FO', 'CSV', '/NH']);
             if (!stdout.toLowerCase().includes(exeName.toLowerCase())) return true;
         } catch { return true; }
         await new Promise(r => setTimeout(r, 400));
@@ -416,11 +451,7 @@ async function createEABridge(target, link) {
         await fs.rm(link, { recursive: true, force: true }).catch(() => {});
     }
     await fs.mkdir(path.dirname(link), { recursive: true });
-    try {
-        execSync(`mklink /J "${link}" "${target}"`, { stdio: 'ignore' });
-    } catch {
-        await fs.symlink(target, link, 'junction');
-    }
+    await fs.symlink(target, link, 'junction');
 }
 
 async function findExeFromShortcut(shortcutName) {
@@ -432,12 +463,15 @@ async function findExeFromShortcut(shortcutName) {
     for (const searchDir of searchPaths) {
         if (!fsSync.existsSync(searchDir)) continue;
         try {
-            const { stdout } = await execAsync(`where /r "${searchDir}" "${shortcutName}.lnk" 2>nul`);
+            const { stdout } = await execFileAsync('where.exe', ['/r', searchDir, `${shortcutName}.lnk`]);
             const lnkPath = stdout.trim().split(/\r?\n/)[0];
             if (!lnkPath || !fsSync.existsSync(lnkPath)) continue;
 
-            const psCmd = `powershell -NoProfile -Command "(New-Object -COM WScript.Shell).CreateShortcut('${lnkPath.trim().replace(/'/g, "''")}').TargetPath"`;
-            const { stdout: target } = await execAsync(psCmd);
+            const safeLnk = lnkPath.trim().replace(/'/g, "''");
+            const { stdout: target } = await execFileAsync('powershell.exe', [
+                '-NoProfile', '-Command',
+                `(New-Object -COM WScript.Shell).CreateShortcut('${safeLnk}').TargetPath`
+            ]);
             const exePath = target.trim();
             if (exePath && fsSync.existsSync(exePath)) return exePath;
         } catch { /* continue */ }
@@ -446,8 +480,7 @@ async function findExeFromShortcut(shortcutName) {
 }
 
 async function findUbisoftExe() {
-    return await findExeFromShortcut('Ubisoft Connect')
-        || path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Ubisoft', 'Ubisoft Game Launcher', 'UbisoftConnect.exe');
+    return launcherPathResolver.findLauncherExe('ubisoft');
 }
 
 // ─── Profile Helpers ─────────────────────────────────────────────────────────
@@ -482,6 +515,43 @@ async function getProfilesWithMeta(savedDir) {
 }
 
 // ─── STEAM ───────────────────────────────────────────────────────────────────
+function _steamAccountAliases(account) {
+    const aliases = new Set();
+
+    const add = (value) => {
+        const s = String(value || '').trim().toLowerCase();
+        if (s) aliases.add(s);
+    };
+
+    if (!account) return aliases;
+
+    if (typeof account !== 'object') {
+        add(account);
+        return aliases;
+    }
+
+    add(account.id);
+    add(account.steamId);
+    add(account.SteamID);
+    add(account.username);
+    add(account.AccountName);
+    add(account.displayName);
+    add(account.PersonaName);
+    add(account.name);
+
+    return aliases;
+}
+
+function _steamAccountsMatch(a, b) {
+    const aa = _steamAccountAliases(a);
+    const bb = _steamAccountAliases(b);
+
+    for (const x of aa) {
+        if (bb.has(x)) return true;
+    }
+
+    return false;
+}
 
 async function getSteamPath() {
     const fromReg = await regQuery(STEAM_REG64, 'InstallPath')
@@ -530,14 +600,26 @@ async function getLocalSteamAvatar(steamId) {
         const steamPath = await getSteamPath();
         if (!steamPath) return null;
 
-        const cacheDir = path.join(steamPath, 'config', 'avatarcache');
+        const avatarCacheDir = path.join(steamPath, 'config', 'avatarcache');
         const candidates = [
-            path.join(cacheDir, `${steamId}_full.jpg`),
-            path.join(cacheDir, `${steamId}_medium.jpg`),
-            path.join(cacheDir, `${steamId}.jpg`),
+            path.join(avatarCacheDir, `${steamId}_full.jpg`),
+            path.join(avatarCacheDir, `${steamId}_medium.jpg`),
+            path.join(avatarCacheDir, `${steamId}.jpg`),
         ];
-        for (const p of candidates) {
-            if (fsSync.existsSync(p)) return `file://${p.replace(/\\/g, '/')}`;
+        for (const src of candidates) {
+            if (!fsSync.existsSync(src)) continue;
+            // Copy into image_cache so the renderer's file:// trust policy allows it
+            try {
+                const imageCacheDir = path.join(app.getPath('userData'), 'image_cache');
+                fsSync.mkdirSync(imageCacheDir, { recursive: true });
+                const dest = path.join(imageCacheDir, `steam_avatar_${steamId}${path.extname(src)}`);
+                if (!fsSync.existsSync(dest)) fsSync.copyFileSync(src, dest);
+                const { filePathToFileUrl } = require('./services/imageWebpCache');
+                return filePathToFileUrl(dest);
+            } catch {
+                // Copy failed — return raw file URL as fallback (may be blocked by policy)
+                return `file:///${src.replace(/\\/g, '/')}`;
+            }
         }
         return null;
     } catch {
@@ -570,6 +652,31 @@ async function getSteamAvatarUrl(steamId) {
 async function switchSteam(username) {
     const steamPath = await getSteamPath();
     if (!steamPath) throw new Error('Steam installation not found.');
+    const accounts = await parseSteamLoginUsers(steamPath);
+    const activeAccount = accounts.find(a => a?.mostRecent) || null;
+
+    const targetAccount =
+        accounts.find(a => _steamAccountsMatch(a, username)) ||
+        accounts.find(a => _steamAccountsMatch(a, { username })) ||
+        null;
+
+    if (activeAccount && targetAccount && _steamAccountsMatch(activeAccount, targetAccount)) {
+        console.log('[Steam] Switch skipped — selected account is already active', {
+            requested: username,
+            activeAccount,
+            targetAccount,
+        });
+
+        return {
+            status: 'success',
+            skipped: true,
+            alreadyActive: true,
+            username: activeAccount.username,
+            steamId: activeAccount.steamId,
+            displayName: activeAccount.displayName,
+            message: 'Steam account already active.',
+        };
+    }
 
     await killProcess('steam.exe');
     await waitForProcessDeath('steam.exe', 4000);
@@ -589,9 +696,9 @@ async function switchSteam(username) {
     }
 
     const steamExe = path.join(steamPath, 'steam.exe');
-    // Pass username as a separate argv element — no shell, no injection surface.
     const safeUsername = username.replace(/[^a-zA-Z0-9_\-@.]/g, '');
-    if (fsSync.existsSync(steamExe)) spawnExe(steamExe, ['-login', safeUsername]);
+    requireExistingLauncherExe('steam', steamExe);
+    spawnExe(steamExe, ['-login', safeUsername]);
     analytics.logAccountSwitched('steam').catch(() => {});
     return { status: 'success', username };
 }
@@ -622,7 +729,8 @@ async function addNewSteamAccount() {
     }
 
     const steamExe = path.join(steamPath, 'steam.exe');
-    if (fsSync.existsSync(steamExe)) spawnExe(steamExe);
+    requireExistingLauncherExe('steam', steamExe);
+    spawnExe(steamExe);
 
     return { status: 'success' };
 }
@@ -634,22 +742,30 @@ function getEpicSavedDir() { return path.join(DATA_DIR(), 'epic'); }
 async function getEpicProfiles() {
     const dir = getEpicSavedDir();
     const names = await getProfiles(dir);
-    return names.map(name => {
-        // نحاول نقرأ sync_link.json عشان نجيب الـ Epic Account ID الحقيقي
+    const profiles = [];
+    for (const name of names) {
+        // Phantom profiles (folders that only contain sync_link.json with no real
+        // Epic session data) must not appear in the switcher. They are created by
+        // the old buggy library-sync flow and contain no actual login session.
+        const entries = (() => { try { return fsSync.readdirSync(path.join(dir, name)); } catch { return []; } })();
+        if (!isRealEpicSwitcherProfile(entries)) {
+            console.log(`[Accounts] Skipping phantom Epic profile "${name}" (no real session data).`);
+            continue;
+        }
         const linkFile = path.join(dir, name, 'sync_link.json');
         let platformAccountId = null;
         try {
             const raw = fsSync.readFileSync(linkFile, 'utf8');
             platformAccountId = JSON.parse(raw).platformAccountId || null;
-        } catch { /* مفيش sync_link بعد — هيشتغل بالـ fallback */ }
-
-        return {
-            id:                name,          // اسم الفولدر — بيُستخدم للـ switch
+        } catch { /* no sync_link yet — will work via fallback */ }
+        profiles.push({
+            id:                name,
             displayName:       name,
             username:          name,
-            platformAccountId,               // الـ Epic ID الحقيقي (لو موجود)
-        };
-    });
+            platformAccountId,
+        });
+    }
+    return profiles;
 }
 
 function getEpicLivePaths() {
@@ -660,6 +776,14 @@ function getEpicLivePaths() {
         config:   path.join(savedPath, 'Config'),
         webCache: path.join(savedPath, 'webcache'),
     };
+}
+
+async function findEpicExe() {
+    return launcherPathResolver.findLauncherExe('epic');
+}
+
+async function launchEpic() {
+    return launchRequiredLauncher('epic', findEpicExe);
 }
 
 async function syncEpicCurrentAccount() {
@@ -770,7 +894,7 @@ async function switchEpic(nextProfileName) {
             const lastActive = ((await safeReadFile(activeEpicProfilePath)) || '').trim();
             if (lastActive === nextProfileName.trim()) {
                 analytics.logAccountSwitched('epic').catch(() => {});
-                shell.openExternal('com.epicgames.launcher://');
+                await launchEpic();
                 return { status: 'success', name: nextProfileName.trim() };
             }
         } catch { /* ignored */ }
@@ -793,7 +917,7 @@ async function switchEpic(nextProfileName) {
     if (fsSync.existsSync(path.join(sourceProfile, 'webcache'))) await secureCopyDir(path.join(sourceProfile, 'webcache'), webCache,  'decrypt');
 
     await safeWriteFile(activeEpicProfilePath, nextProfileName.trim());
-    shell.openExternal('com.epicgames.launcher://');
+    await launchEpic();
 
     analytics.logAccountSwitched('epic').catch(() => {});
     return { status: 'success', name: nextProfileName };
@@ -809,7 +933,15 @@ async function addNewEpicAccount() {
     if (fsSync.existsSync(savedPath)) await removeDir(savedPath);
     await ensureDir(savedPath);
 
-    shell.openExternal('com.epicgames.launcher://');
+    try {
+        await launchEpic();
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics('epic').catch(() => null);
+            return { success: false, code: 'LAUNCHER_NOT_INSTALLED', platform: 'epic', message: err.message, diagnostics };
+        }
+        throw err;
+    }
     return { status: 'success' };
 }
 
@@ -829,7 +961,7 @@ async function ensureEAKilled() {
     const isDead = await waitForProcessDeath('EADesktop.exe', 15000);
     if (!isDead) eaLog('EA Desktop took too long. Forcing termination.', 'WARN');
 
-    try { await execAsync(`net stop EABackgroundService 2>nul`); } catch { /* ignored */ }
+    try { await execFileAsync('net.exe', ['stop', 'EABackgroundService']); } catch { /* ignored */ }
     await waitForProcessDeath('EABackgroundService.exe', 5000);
 
     for (const p of ['EADesktop.exe', 'Link2EA.exe', 'EABackgroundService.exe', 'EAConnect_microsoft.exe', 'EACrashReporter.exe']) {
@@ -909,21 +1041,11 @@ async function saveEAAccount(profileName) {
 }
 
 async function findEAExe() {
-    const candidates = [
-        path.join(process.env['ProgramFiles']       || 'C:\\Program Files',       'Electronic Arts', 'EA Desktop', 'EA Desktop', 'EADesktop.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Electronic Arts', 'EA Desktop', 'EA Desktop', 'EADesktop.exe'),
-    ];
-    for (const c of candidates) if (fsSync.existsSync(c)) return c;
-    return await findExeFromShortcut('EA') || candidates[0];
+    return launcherPathResolver.findLauncherExe('ea');
 }
 
 async function launchEA() {
-    const exe = await findEAExe();
-    if (exe && fsSync.existsSync(exe)) {
-        spawnExe(exe);
-    } else {
-        eaLog('EA Desktop executable not found.', 'WARN');
-    }
+    return launchRequiredLauncher('ea', findEAExe);
 }
 
 async function switchEA(nextProfileName) {
@@ -991,7 +1113,15 @@ async function addNewEAAccount() {
 
     if (fsSync.existsSync(eaLocal)) await fs.rm(eaLocal, { recursive: true, force: true }).catch(() => {});
 
-    await launchEA();
+    try {
+        await launchEA();
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics('ea').catch(() => null);
+            return { success: false, code: 'LAUNCHER_NOT_INSTALLED', platform: 'ea', message: err.message, diagnostics };
+        }
+        throw err;
+    }
     return { status: 'success' };
 }
 
@@ -1006,19 +1136,11 @@ function getRiotLivePath() {
 async function getRiotProfiles() { return getProfilesWithMeta(getRiotSavedDir()); }
 
 async function findRiotClientExe() {
-    const candidates = [
-        'C:\\Riot Games\\Riot Client\\RiotClientServices.exe',
-        path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Riot Games', 'Riot Client', 'RiotClientServices.exe'),
-    ];
-    for (const c of candidates) if (fsSync.existsSync(c)) return c;
-    return null;
+    return riotPathResolver.findRiotClientExe();
 }
 
-function launchRiotClient() {
-    findRiotClientExe().then(exe => {
-        if (exe) spawnExe(exe);
-        else shell.openExternal('riotclient://launch');
-    });
+async function launchRiotClient() {
+    return launchRequiredLauncher('riot', findRiotClientExe);
 }
 
 async function ensureRiotKilled() {
@@ -1077,7 +1199,7 @@ async function switchRiotAccount(nextProfileName) {
     if (fsSync.existsSync(activeRiotProfilePath)) {
         const lastActive = ((await safeReadFile(activeRiotProfilePath)) || '').trim();
         if (lastActive === nextProfileName.trim()) {
-            launchRiotClient();
+            await launchRiotClient();
             analytics.logAccountSwitched('riot').catch(() => {});
             return { status: 'success', name: nextProfileName.trim() };
         }
@@ -1099,7 +1221,7 @@ async function switchRiotAccount(nextProfileName) {
     }
 
     await safeWriteFile(activeRiotProfilePath, nextProfileName.trim());
-    launchRiotClient();
+    await launchRiotClient();
 
     analytics.logAccountSwitched('riot').catch(() => {});
     return { status: 'success', name: nextProfileName };
@@ -1114,7 +1236,20 @@ async function addNewRiotAccount() {
     const tokenFile = path.join(getRiotLivePath(), 'Data', 'RiotGamesPrivateSettings.yaml');
     if (fsSync.existsSync(tokenFile)) await fs.unlink(tokenFile).catch(() => {});
 
-    launchRiotClient();
+    try {
+        await launchRiotClient();
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await riotPathResolver.getRiotDetectionDiagnostics().catch(() => null);
+            return {
+                success:     false,
+                code:        'RIOT_CLIENT_NOT_FOUND',
+                message:     'Riot Client was not found automatically. If it is installed, click "Locate Riot Client" to find it manually.',
+                diagnostics,
+            };
+        }
+        throw err;
+    }
     return { status: 'success' };
 }
 
@@ -1233,8 +1368,8 @@ async function saveUbisoftAccount(name) {
     await safeWriteJson(path.join(dest, '_baddel_meta.json'), {
         savedAt:   new Date().toISOString(),
         name:      name.trim(),
-        regToken:  encryptString(token),   // stored encrypted
-        regUserId: userId,                 // not a secret, no encryption needed
+        regToken:  await encryptString(token),   // stored encrypted
+        regUserId: userId,                        // not a secret, no encryption needed
     });
 
     await safeWriteFile(activeUbisoftProfilePath, name.trim());
@@ -1252,8 +1387,7 @@ async function switchUbisoftAccount(name) {
         const lastActive = ((await safeReadFile(activeUbisoftProfilePath)) || '').trim();
         if (lastActive === name.trim()) {
             ubiLog('Account already active. Launching...', 'SUCCESS');
-            const ubisoftExe = await findUbisoftExe();
-            if (ubisoftExe && fsSync.existsSync(ubisoftExe)) spawnExe(ubisoftExe);
+            await launchRequiredLauncher('ubisoft', findUbisoftExe);
             analytics.logAccountSwitched('ubisoft').catch(() => {});
             return { status: 'success', name: name.trim() };
         }
@@ -1283,7 +1417,7 @@ async function switchUbisoftAccount(name) {
             const meta   = await safeReadJson(path.join(lastStore, '_baddel_meta.json')) || {};
             await safeWriteJson(path.join(lastStore, '_baddel_meta.json'), {
                 ...meta,
-                regToken:  encryptString(token),  // encrypt before vaulting
+                regToken:  await encryptString(token),  // encrypt before vaulting
                 regUserId: userId,
             });
         }
@@ -1300,7 +1434,7 @@ async function switchUbisoftAccount(name) {
 
     ubiLog('Restoring registry keys...', 'INFO');
     const meta = await safeReadJson(path.join(srcProfile, '_baddel_meta.json'));
-    if (meta?.regToken)  await regSet(UBISOFT_REG, 'Remembered login', 'REG_SZ', decryptString(meta.regToken));
+    if (meta?.regToken)  await regSet(UBISOFT_REG, 'Remembered login', 'REG_SZ', await decryptString(meta.regToken));
     if (meta?.regUserId) await regSet(UBISOFT_REG, 'Uid',              'REG_SZ', meta.regUserId);
 
     await safeWriteFile(activeUbisoftProfilePath, name.trim());
@@ -1334,7 +1468,7 @@ async function addNewUbisoftAccount() {
             const meta   = await safeReadJson(path.join(lastStore, '_baddel_meta.json')) || {};
             await safeWriteJson(path.join(lastStore, '_baddel_meta.json'), {
                 ...meta,
-                regToken:  encryptString(token),  // encrypt before vaulting
+                regToken:  await encryptString(token),  // encrypt before vaulting
                 regUserId: userId,
             });
         }
@@ -1346,9 +1480,15 @@ async function addNewUbisoftAccount() {
     await regDelete(UBISOFT_REG, 'Remembered login');
     await regDelete(UBISOFT_REG, 'Uid');
 
-    const ubisoftExe = await findUbisoftExe();
-    if (ubisoftExe && fsSync.existsSync(ubisoftExe)) spawnExe(ubisoftExe);
-
+    try {
+        await launchRequiredLauncher('ubisoft', findUbisoftExe);
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics('ubisoft').catch(() => null);
+            return { success: false, code: 'LAUNCHER_NOT_INSTALLED', platform: 'ubisoft', message: err.message, diagnostics };
+        }
+        throw err;
+    }
     return { status: 'success' };
 }
 
@@ -1360,6 +1500,53 @@ function getRockstarDataPath() {
 }
 
 function getRockstarSavedDir() { return path.join(DATA_DIR(), 'rockstar'); }
+function getDocumentsPathSafe() {
+    const candidates = [];
+
+    try {
+        const electronDocs = app.getPath('documents');
+        if (electronDocs) candidates.push(electronDocs);
+    } catch (err) {
+        console.warn('[Rockstar] app.getPath("documents") failed:', err.message);
+    }
+
+    if (process.env.USERPROFILE) {
+        candidates.push(path.join(process.env.USERPROFILE, 'Documents'));
+    }
+
+    if (process.env.OneDrive) {
+        candidates.push(path.join(process.env.OneDrive, 'Documents'));
+    }
+
+    if (process.env.OneDriveConsumer) {
+        candidates.push(path.join(process.env.OneDriveConsumer, 'Documents'));
+    }
+
+    if (process.env.OneDriveCommercial) {
+        candidates.push(path.join(process.env.OneDriveCommercial, 'Documents'));
+    }
+
+    candidates.push(path.join(os.homedir(), 'Documents'));
+
+    for (const candidate of candidates) {
+        if (!candidate) continue;
+
+        try {
+            if (fsSync.existsSync(candidate)) return candidate;
+        } catch {}
+    }
+
+    return candidates.find(Boolean) || path.join(os.homedir(), 'Documents');
+}
+
+function getRockstarSocialClubProfilesPath() {
+    return path.join(
+        getDocumentsPathSafe(),
+        'Rockstar Games',
+        'Social Club',
+        'Profiles'
+    );
+}
 
 async function getRockstarProfiles() { return getProfilesWithMeta(getRockstarSavedDir()); }
 
@@ -1373,36 +1560,33 @@ async function ensureRockstarKilled() {
 }
 
 async function findRockstarExe() {
-    const candidates = [
-        path.join(process.env['ProgramFiles'] || 'C:\\Program Files', 'Rockstar Games', 'Launcher', 'Launcher.exe'),
-        path.join(process.env['ProgramFiles(x86)'] || 'C:\\Program Files (x86)', 'Rockstar Games', 'Launcher', 'Launcher.exe'),
-    ];
-    for (const c of candidates) if (fsSync.existsSync(c)) return c;
-    return await findExeFromShortcut('Rockstar Games Launcher') || candidates[0];
+    return launcherPathResolver.findLauncherExe('rockstar');
 }
 
 async function launchRockstar() {
-    const exe = await findRockstarExe();
-    if (exe && fsSync.existsSync(exe)) {
-        spawnExe(exe);
-        rockstarLog('Launched Rockstar Launcher.', 'SUCCESS');
-    } else {
-        rockstarLog('Rockstar Launcher executable not found.', 'WARN');
-    }
+    await launchRequiredLauncher('rockstar', findRockstarExe);
+    rockstarLog('Launched Rockstar Launcher.', 'SUCCESS');
 }
 
 async function saveRockstarAccount(name) {
     try {
-        // المسار الأساسي اللي فيه بيانات الدخول
-        const socialClubProfiles = path.join(app.getPath('documents'), 'Rockstar Games', 'Social Club', 'Profiles');
-        // المسار اللي هنحفظ فيه الأكونت جوه Baddel
-        const backupPath = path.join(app.getPath('userData'), 'accounts', 'rockstar', name);
+        if (!name || !String(name).trim()) {
+            throw new Error('Account name is required.');
+        }
 
-        // نعمل الفولدر لو مش موجود وننسخ فيه البروفايل
+
+        const cleanName = sanitizeName(String(name).trim());
+        const socialClubProfiles = getRockstarSocialClubProfilesPath();
+        const backupPath = path.join(app.getPath('userData'), 'accounts', 'rockstar', cleanName);
+
+        if (!fsSync.existsSync(socialClubProfiles)) {
+            throw new Error('No Rockstar Social Club profile found. Please log in to Rockstar Launcher first, then save the account.');
+        }
+
         await fs.mkdir(path.dirname(backupPath), { recursive: true });
         await fs.cp(socialClubProfiles, backupPath, { recursive: true, force: true });
-        
-        return { success: true };
+
+        return { success: true, status: 'success' };
     } catch (error) {
         console.error('Error saving Rockstar account:', error);
         throw error;
@@ -1410,14 +1594,17 @@ async function saveRockstarAccount(name) {
 }
 
 async function switchRockstarAccount(name) {
-    try {
-        try {
-            await execAsync('taskkill /F /IM Launcher.exe /T');
-            await execAsync('taskkill /F /IM RockstarService.exe /T');
-            await execAsync('taskkill /F /IM SocialClubHelper.exe /T');
-        } catch (e) { }
+    if (!name || !String(name).trim()) {
+        throw new Error('Account name is required.');
+    }
 
-        const socialClubProfiles = path.join(app.getPath('documents'), 'Rockstar Games', 'Social Club', 'Profiles');
+    name = sanitizeName(String(name).trim());
+    try {
+        await ensureRockstarKilled().catch(err => {
+            console.warn('[Rockstar] Failed to fully close Rockstar processes:', err.message);
+        });
+
+        const socialClubProfiles = getRockstarSocialClubProfilesPath();
         const backupPath = path.join(app.getPath('userData'), 'accounts', 'rockstar', name);
 
         // هنمسح فولدر الحساب الحالي بس، من غير ما نلمس الكاش بتاع اللانشر
@@ -1429,8 +1616,7 @@ async function switchRockstarAccount(name) {
         const activeProfilePath = path.join(app.getPath('userData'), 'active_rockstar_profile.json');
         await fs.writeFile(activeProfilePath, JSON.stringify({ name }));
 
-        const rockstarExe = "C:\\Program Files\\Rockstar Games\\Launcher\\Launcher.exe";
-        spawn(rockstarExe, [], { detached: true, stdio: 'ignore' }).unref();
+        await launchRockstar();
 
         return { success: true };
     } catch (error) {
@@ -1440,25 +1626,26 @@ async function switchRockstarAccount(name) {
 }
 
 async function addNewRockstarAccount() {
+    analytics.logAddAccountClicked('rockstar').catch(() => {});
+    await ensureRockstarKilled().catch(err => {
+        console.warn('[Rockstar] Failed to fully close Rockstar processes:', err.message);
+    });
+
+    const socialClubProfiles = getRockstarSocialClubProfilesPath();
+    await fs.rm(socialClubProfiles, { recursive: true, force: true }).catch(err => {
+        console.warn('[Rockstar] Could not clear Social Club profiles:', err.message);
+    });
+
     try {
-        try {
-            await execAsync('taskkill /F /IM Launcher.exe /T');
-            await execAsync('taskkill /F /IM RockstarService.exe /T');
-            await execAsync('taskkill /F /IM SocialClubHelper.exe /T');
-        } catch (e) { }
-
-        const socialClubProfiles = path.join(app.getPath('documents'), 'Rockstar Games', 'Social Club', 'Profiles');
-
-        // نمسح بروفايل الدخول عشان نجبره يطلب إيميل وباسورد جديد
-        try { await fs.rm(socialClubProfiles, { recursive: true, force: true }); } catch (err) {}
-
-        const rockstarExe = "C:\\Program Files\\Rockstar Games\\Launcher\\Launcher.exe";
-        spawn(rockstarExe, [], { detached: true, stdio: 'ignore' }).unref();
-
-        return { success: true };
-    } catch (error) {
-        console.error('Error in addNewRockstarAccount:', error);
-        throw error;
+        await launchRockstar();
+        rockstarLog('Launched Rockstar Launcher for new account login.', 'SUCCESS');
+        return { status: 'success' };
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics('rockstar').catch(() => null);
+            return { success: false, code: 'LAUNCHER_NOT_INSTALLED', platform: 'rockstar', message: err.message, diagnostics };
+        }
+        throw err;
     }
 }
 
@@ -1491,9 +1678,9 @@ async function getDiscordProfiles() {
 
 async function ensureDiscordKilled() {
     discordLog('Terminating all Discord processes...', 'INFO');
-    try { await execAsync('taskkill /IM "Discord.exe" 2>nul'); } catch {}
-    try { await execAsync('taskkill /IM "DiscordPTB.exe" 2>nul'); } catch {}
-    try { await execAsync('taskkill /IM "DiscordCanary.exe" 2>nul'); } catch {}
+    try { await execFileAsync('taskkill.exe', ['/IM', 'Discord.exe', '/F']); } catch {}
+    try { await execFileAsync('taskkill.exe', ['/IM', 'DiscordPTB.exe', '/F']); } catch {}
+    try { await execFileAsync('taskkill.exe', ['/IM', 'DiscordCanary.exe', '/F']); } catch {}
 
     await new Promise(r => setTimeout(r, 1500));
     await killProcess('Discord.exe');
@@ -1536,27 +1723,11 @@ async function moveDiscordFolder(src, dest) {
 }
 
 async function launchDiscord() {
-    const localDiscord = path.join(process.env.LOCALAPPDATA || path.join(os.homedir(), 'AppData', 'Local'), 'Discord');
-    let exePath = path.join(localDiscord, 'Update.exe');
-    let args    = '--processStart Discord.exe';
-
-    if (!fsSync.existsSync(exePath)) {
-        try {
-            const dirs    = await fs.readdir(localDiscord);
-            const appDirs = dirs.filter(d => d.startsWith('app-')).sort().reverse();
-            if (appDirs.length > 0) {
-                exePath = path.join(localDiscord, appDirs[0], 'Discord.exe');
-                args    = '';
-            }
-        } catch { /* ignored */ }
-    }
-
-    if (fsSync.existsSync(exePath)) {
-        spawnExe(exePath, args ? args.split(" ").filter(Boolean) : []);
-        discordLog(`Launched Discord: ${exePath}`, 'SUCCESS');
-    } else {
-        discordLog('Discord.exe not found.', 'ERROR');
-    }
+    const spec = await launcherPathResolver.getLauncherLaunchSpec('discord');
+    if (!spec) throw createLauncherMissingError('discord');
+    spawnExe(spec.exePath, spec.args);
+    discordLog(`Launched Discord: ${spec.exePath}`, 'SUCCESS');
+    return spec.exePath;
 }
 
 async function fetchActiveDiscordAvatar() {
@@ -1642,7 +1813,15 @@ async function addNewDiscordAccount() {
     }
 
     discordLog('Discord cleared. Launching...', 'SUCCESS');
-    await launchDiscord();
+    try {
+        await launchDiscord();
+    } catch (err) {
+        if (err.code === 'LAUNCHER_NOT_INSTALLED') {
+            const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics('discord').catch(() => null);
+            return { success: false, code: 'LAUNCHER_NOT_INSTALLED', platform: 'discord', message: err.message, diagnostics };
+        }
+        throw err;
+    }
     return { status: 'success' };
 }
 
@@ -1707,7 +1886,11 @@ function safeHandle(fn) {
             return await fn(...args);
         } catch (err) {
             console.error('[IPC] Handler error:', err);
-            return { status: 'error', message: err?.message || 'An unexpected error occurred.' };
+            return {
+                status:  'error',
+                message: err?.message || 'An unexpected error occurred.',
+                code:    err?.code    || undefined,
+            };
         }
     };
 }
@@ -1785,6 +1968,28 @@ const IPC_HANDLERS = [
     ['save-riot-account',     (_, name)    => saveRiotAccount(name)],
     ['switch-riot-account',   (_, name)    => switchRiotAccount(name)],
     ['add-new-riot-account',  ()           => addNewRiotAccount()],
+    ['detect-riot-client',    async () => {
+        const p = await riotPathResolver.findRiotClientExe();
+        if (p) return { found: true, path: p };
+        const diagnostics = await riotPathResolver.getRiotDetectionDiagnostics().catch(() => null);
+        return { found: false, diagnostics };
+    }],
+    ['clear-manual-riot-client-path', async () => {
+        await riotPathResolver.clearSavedManualRiotClientPath();
+        return { success: true };
+    }],
+
+    // ── Generic launcher detection (all platforms) ─────────────────────────
+    ['detect-launcher', async (_, platform) => {
+        const p = await launcherPathResolver.findLauncherExe(platform).catch(() => null);
+        if (p) return { found: true, path: p, platform };
+        const diagnostics = await launcherPathResolver.getLauncherDetectionDiagnostics(platform).catch(() => null);
+        return { found: false, platform, diagnostics };
+    }],
+    ['clear-manual-launcher-path', async (_, platform) => {
+        await launcherPathResolver.clearManualLauncherPath(platform);
+        return { success: true, platform };
+    }],
 
     // ── Ubisoft ────────────────────────────────────────────────────────────
     ['get-ubisoft-profiles',    async () => require('./platformSync').enrichProfilesWithSyncData('ubisoft', await getUbisoftProfiles().catch(() => []))],
@@ -1826,4 +2031,4 @@ function registerAccountHandlers(ipcMain) {
 
 
 
-module.exports = { registerAccountHandlers, clearEncryptionKeyCache };
+module.exports = { registerAccountHandlers, clearEncryptionKeyCache, getEpicProfiles };

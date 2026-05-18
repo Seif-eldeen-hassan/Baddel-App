@@ -2,6 +2,7 @@
    BADDEL LAUNCHER - PLAY LAUNCHER MODAL (play-launcher.css)
    Aesthetic: Premium Dark, Cinematic, Glassmorphism
    ============================================================ */
+@import url('./fonts.css');
 
 /* ── Backdrop ── */
 .pl-backdrop {
@@ -76,6 +77,7 @@
     width: 52px;
     height: 68px;
     object-fit: cover;
+    object-position: center bottom;
     border-radius: 10px;
     border: 1px solid rgba(255,255,255,0.12);
     box-shadow: 0 8px 24px rgba(0,0,0,0.5);
@@ -115,7 +117,7 @@
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
-    font-family: 'Outfit', 'Montserrat', sans-serif;
+    font-family: var(--font-brand);
 }
 
 /* ── Close Button ── */
@@ -552,6 +554,26 @@
 }
 
 /* ── Ownership Badges ── */
+.pl-badge-unknown {
+    background: rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.45);
+    border: 1px solid rgba(255,255,255,0.12);
+    font-size: 10px;
+    padding: 2px 7px;
+    border-radius: 10px;
+    white-space: nowrap;
+    cursor: help;
+}
+.pl-badge-missing {
+    color: #ffb020;
+    background: rgba(255, 176, 32, 0.10);
+    border-color: rgba(255, 176, 32, 0.30);
+}
+.po-row-disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    pointer-events: none;
+}
 .pl-badge-owned {
     color: #30d158;
     background: rgba(48, 209, 88, 0.12);
@@ -665,4 +687,75 @@
 .pl-ghost-go-btn:hover {
     background: rgba(255,255,255,0.15);
     color: #fff;
+}
+
+
+
+
+.pl-selected-platform-icon img {
+    width: 20px;
+    height: 20px;
+    object-fit: contain;
+}
+
+.pl-selected-platform-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+
+    width: fit-content;
+    max-width: 100%;
+
+    margin: 6px 0 10px 0;
+    padding: 5px 9px;
+
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+
+    background: rgba(255, 255, 255, 0.035);
+    box-shadow: none;
+}
+
+.pl-selected-platform-icon {
+    width: 20px;
+    height: 20px;
+    border-radius: 999px;
+
+    display: flex;
+    align-items: center;
+    justify-content: center;
+
+    background: color-mix(in srgb, var(--plat-accent, #fff) 18%, transparent);
+    border: 1px solid color-mix(in srgb, var(--plat-accent, #fff) 28%, transparent);
+
+    flex: 0 0 auto;
+}
+
+.pl-selected-platform-icon img {
+    width: 12px;
+    height: 12px;
+    object-fit: contain;
+}
+
+.pl-selected-platform-text {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.pl-selected-platform-kicker {
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+    font-weight: 700;
+    line-height: 1;
+}
+
+.pl-selected-platform-name {
+    font-size: 11px;
+    color: rgba(255, 255, 255, 0.82);
+    font-weight: 800;
+    line-height: 1;
 }
