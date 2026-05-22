@@ -4,7 +4,7 @@ node_modules/
 # builds
 dist/
 build/
-build-temp/
+build-tmp/
 build-venv/
 bin/
 *.exe
