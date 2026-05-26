@@ -31,7 +31,9 @@ function validateExecutablePath(rawPath) {
         e.code = 'INVALID_PATH';
         throw e;
     }
-    const normalized = path.normalize(rawPath.trim());
+    let stripped = rawPath.trim();
+    if (stripped.startsWith('"') && stripped.endsWith('"')) stripped = stripped.slice(1, -1).trim();
+    const normalized = path.normalize(stripped);
     const ext = path.extname(normalized).toLowerCase();
     if (!ALLOWED_EXE_EXTS.has(ext)) {
         const e = new Error(`Extension not allowed: ${ext}`);
@@ -95,16 +97,46 @@ async function openProtocolUrl(rawUrl) {
 
 /**
  * Launch an executable safely using spawn (no shell interpolation).
- * `rawPath` is validated before spawning.
- * Returns a ChildProcess so the caller can attach tracking listeners.
+ * Resolves to `{ ok: true, pid: number }` after 500 ms if no early error,
+ * or `{ ok: false, error: Error }` if spawn emits 'error' first.
+ *
+ * @param {string} rawPath
+ * @param {string[]} [args]
+ * @param {{ cwd?: string }} [options]
+ * @returns {Promise<{ ok: boolean, pid?: number, error?: Error }>}
  */
-function launchExecutable(rawPath, args = []) {
+function launchExecutable(rawPath, args = [], options = {}) {
     const exePath = validateExecutablePath(rawPath);
-    return spawn(exePath, args, {
-        shell:       false,
-        detached:    true,
-        windowsHide: false,
-        stdio:       'ignore',
+    let cwd;
+    if (options.cwd && fs.existsSync(options.cwd)) {
+        cwd = options.cwd;
+    } else {
+        const dir = path.dirname(exePath);
+        if (dir && fs.existsSync(dir)) cwd = dir;
+    }
+    let child;
+    try {
+        child = spawn(exePath, args, {
+            shell:       false,
+            detached:    true,
+            windowsHide: false,
+            stdio:       'ignore',
+            cwd,
+        });
+    } catch (syncErr) {
+        console.error(`[safeLauncher] sync spawn error exe=${path.basename(exePath)}:`, syncErr.message);
+        return Promise.resolve({ ok: false, error: syncErr });
+    }
+    return new Promise(resolve => {
+        child.on('spawn', () =>
+            console.log(`[safeLauncher] spawn pid=${child.pid} exe=${path.basename(exePath)}`));
+        child.on('error', err => {
+            console.error(`[safeLauncher] error exe=${path.basename(exePath)}:`, err.message);
+            resolve({ ok: false, error: err });
+        });
+        child.on('exit', (code, signal) =>
+            console.log(`[safeLauncher] exit pid=${child.pid} code=${code} signal=${signal}`));
+        setTimeout(() => resolve({ ok: true, pid: child.pid }), 500);
     });
 }
 

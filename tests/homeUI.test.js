@@ -1777,7 +1777,7 @@ test('tracker: startGameTracking stores userLaunched flag on tracker object', ()
 test('tracker: launch-game IPC passes userLaunched=true to startGameTracking', () => {
     const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
     const idx = js.indexOf("'launch-game'");
-    const slice = js.slice(idx, idx + 5500);
+    const slice = js.slice(idx, idx + 10500);
     assert.match(slice, /userLaunched.*true|true.*userLaunched/);
 });
 
@@ -2270,4 +2270,50 @@ test('main.js: allTrailers entries include sources array', () => {
     const snippet = _mainSrc.slice(allTrailersIdx, allTrailersIdx + 400);
     assert.match(snippet, /sources/,
         'each allTrailers entry must include a sources array from _pickSteamMovieSources');
+});
+
+// ── Artwork refresh: _patchGameInMemory / _patchVisibleGameCard helpers ───────
+
+test('app.js: _patchGameInMemory and _patchVisibleGameCard are defined in section 6', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    assert.ok(src.includes('function _patchGameInMemory'), '_patchGameInMemory must be defined');
+    assert.ok(src.includes('function _patchVisibleGameCard'), '_patchVisibleGameCard must be defined');
+    assert.ok(src.includes('function _normalizeArtworkAliases'), '_normalizeArtworkAliases must be defined');
+    // helpers must appear before processQueue (section 6)
+    const patchIdx    = src.indexOf('function _patchGameInMemory');
+    const processIdx  = src.indexOf('async function processQueue');
+    assert.ok(patchIdx < processIdx, '_patchGameInMemory defined before processQueue');
+});
+
+test('app.js: processQueue cacheAllAssets branch updates imgElement.src after localAssets.cover', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const cacheStart = src.indexOf('window.electronAPI.cacheAllAssets({ cover: meta.cover');
+    assert.ok(cacheStart > -1, 'cacheAllAssets call found in processQueue');
+    const block = src.slice(cacheStart, cacheStart + 3000);
+    assert.match(block, /imgElement\.src\s*=/, 'imgElement.src must be set after cacheAllAssets resolves');
+    assert.match(block, /finalCover/, 'finalCover variable must be used');
+    assert.match(block, /_patchGameInMemory/, '_patchGameInMemory called after caching');
+    assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called after caching');
+});
+
+test('app.js: onGameImageUpdated uses _patchGameInMemory and does not early-return on missing id', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const handlerStart = src.indexOf('window.electronAPI.onGameImageUpdated');
+    assert.ok(handlerStart > -1, 'onGameImageUpdated handler found');
+    const block = src.slice(handlerStart, handlerStart + 600);
+    // Must use _patchGameInMemory, not the old idx === -1 return pattern
+    assert.match(block, /_patchGameInMemory/, '_patchGameInMemory used in handler');
+    assert.ok(!block.includes("if (idx === -1) return"), 'early-return on missing id must be removed');
+    // Must set aliases
+    assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called');
+});
+
+test('main.js: save-game-metadata handler emits game-image-updated on success', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const handlerIdx = src.indexOf("ipcMain.handle('save-game-metadata'");
+    assert.ok(handlerIdx > -1, 'save-game-metadata handler found');
+    const block = src.slice(handlerIdx, handlerIdx + 600);
+    assert.match(block, /game-image-updated/, 'game-image-updated event emitted after save');
+    assert.match(block, /result\?\.status === 'success'/, 'emit guarded by success check');
+    assert.match(block, /getSavedGames/, 'getSavedGames used to find updated game record');
 });

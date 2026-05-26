@@ -33,6 +33,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.on('library-updated', (_, games) => cb(games));
     },
     onGameImageUpdated:     (cb)                      => ipcRenderer.on('game-image-updated', (_, game) => cb(game)),
+    onGameDeletedPermanently: (cb)                    => {
+        ipcRenderer.removeAllListeners('game-deleted-permanently');
+        ipcRenderer.on('game-deleted-permanently', (_, payload) => cb(payload));
+    },
     onAllGamesCoverCached:  (cb)                      => ipcRenderer.on('all-games-cover-cached', (_, payload) => cb(payload)),
 
     // ---- Images ----
@@ -59,8 +63,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onPlaytimeUpdated:      (cb)                      => ipcRenderer.on('playtime-updated', (_, data) => cb(data)),
 
     // ---- Launch ----
-    launchGame: (gameId, options = {}) =>
-                    ipcRenderer.invoke('launch-game', null, gameId, null, null, options),
+    launchGame: (arg1, arg2 = {}, arg3 = null, arg4 = null, arg5 = {}) => {
+        const isLegacyCall =
+            typeof arg2 === 'string' ||
+            typeof arg3 === 'string' ||
+            typeof arg4 === 'string';
+        if (isLegacyCall) {
+            return ipcRenderer.invoke('launch-game', arg1, arg2, arg3, arg4, arg5 || {});
+        }
+        return ipcRenderer.invoke('launch-game', null, arg1, null, null, arg2 || {});
+    },
 
     // ---- File Browser ----
     getDrives:              ()       => ipcRenderer.invoke('get-drives'),
@@ -108,6 +120,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
     onUpdateStatus:         (cb) => ipcRenderer.on('update-status', (_, data) => cb(data)),
     // باقي من القديم للـ backward compat
     onUpdateAvailable:      (cb) => ipcRenderer.on('update-found', (_, version) => cb(version)),
+
+    // ---- STARTUP TOGGLE ----
+    getStartupEnabled:   ()       => ipcRenderer.invoke('get-startup-enabled'),
+    setStartupEnabled:   (enable) => ipcRenderer.invoke('set-startup-enabled', enable),
+
+    // ---- UPDATE NOTES ----
+    getPendingUpdateNotes:  ()        => ipcRenderer.invoke('get-pending-update-notes'),
+    markUpdateNotesShown:   (version) => ipcRenderer.invoke('mark-update-notes-shown', version),
 
     // ============================================================
     // ---- STEAM ACCOUNTS ----
@@ -225,8 +245,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resolveMetadataServer: (params)           => ipcRenderer.invoke('resolve-metadata', params),
 
     // ---- Shell ----
-    openExternal:    (url)     => ipcRenderer.invoke('open-external-url', url),
-    openInstallUrl:  (payload) => ipcRenderer.invoke('launcher:open-install-url', payload),
+    openExternal:      (url)     => ipcRenderer.invoke('open-external-url', url),
+    openCommunityUrl:  (url)     => ipcRenderer.invoke('open-community-url', url),
+    openInstallUrl:    (payload) => ipcRenderer.invoke('launcher:open-install-url', payload),
 
     // ---- Named event subscriptions (allowlisted — no generic channel access) ----
     onGameEnriched: (cb) => {

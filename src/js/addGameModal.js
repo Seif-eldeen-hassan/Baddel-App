@@ -369,6 +369,7 @@ async function agFinalizeAddGame() {
     });
 
     let successCount = 0, failCount = 0;
+    const addedGames = [];
     for (let i = 0; i < total; i++) {
         const game = _agSelectedGames[i];
         if (!game.name) { failCount++; continue; }
@@ -376,7 +377,10 @@ async function agFinalizeAddGame() {
         try {
             const res = await window.electronAPI.addManualGame(game.path, game.name);
             if (res && res.status === 'error') failCount++;
-            else successCount++;
+            else {
+                successCount++;
+                if (res?.game) addedGames.push(res.game);
+            }
         } catch (e) {
             console.error('[AddGame] failed:', game.path, e);
             failCount++;
@@ -390,10 +394,32 @@ async function agFinalizeAddGame() {
         showToast(msg, failCount > 0 ? 'warning' : 'success');
         window.electronAPI.logGameAddedManual?.();
         currentFilters.collectionId = null;
+
+        closeAddGameModal();
+
+        const hydratedGames = [];
+        for (const g of addedGames) {
+            if (typeof window.hydrateManualGameArtworkNow === 'function') {
+                try {
+                    const hydrated = await window.hydrateManualGameArtworkNow(g);
+                    hydratedGames.push(hydrated || g);
+                } catch (e) {
+                    console.error('[ManualAddArtwork] hydrate failed', g.id, e);
+                    hydratedGames.push(g);
+                }
+            } else {
+                hydratedGames.push(g);
+            }
+        }
+
         allGamesData = await window.electronAPI.getGames();
+
+        for (const g of hydratedGames) {
+            if (typeof _patchGameInMemory === 'function') _patchGameInMemory(g);
+        }
+
         applyFilters();
         renderExploreCarousel();
-        closeAddGameModal();
     } else {
         showToast(`Failed to add ${failCount} game${failCount > 1 ? 's' : ''}`, 'error');
         btn.disabled = false;

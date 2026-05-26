@@ -27,6 +27,21 @@ const { generateMetadataCandidates } = require('./services/candidateGenerator');
 
 // All image/game data is now handled by baddelApi server
 
+// ─── Shortcut args parser ─────────────────────────────────────────────────────
+// Split a Windows shortcut "args" string into an array suitable for spawn().
+// Handles double-quoted tokens (e.g. "-config \"C:\\my path\\cfg.ini\"") and
+// unquoted whitespace-delimited tokens.  Returns [] for empty/null input.
+function parseShortcutArgs(rawArgs) {
+    if (!rawArgs || typeof rawArgs !== 'string') return [];
+    const args = [];
+    const re = /"([^"\\]*(?:\\.[^"\\]*)*)"|(\S+)/g;
+    let m;
+    while ((m = re.exec(rawArgs.trim())) !== null) {
+        args.push(m[1] !== undefined ? m[1] : m[2]);
+    }
+    return args;
+}
+
 // ─── Cache file stem helper ───────────────────────────────────────────────────
 // Single source of truth for the file name prefix used by every asset writer
 // and reader (findInCache, deleteGameImages, registerImageDownloader, IPC handlers).
@@ -427,6 +442,43 @@ class BaddelEngine {
             console.error('[DB] Init error:', err);
             this.dbCache = [];
         }
+        this._migrateLnkRecords();
+    }
+
+    // Fix manual .lnk records written by the broken patch that stored the
+    // .lnk path as game.path instead of the real install directory.
+    _migrateLnkRecords() {
+        let changed = false;
+        for (const game of this.dbCache) {
+            const isManual = game.scannerPlatform === 'manual' || game.platform === 'Manual';
+            const cmdIsLnk = (game.command || '').toLowerCase().endsWith('.lnk');
+            if (!isManual || !cmdIsLnk || !game.executablePath) continue;
+
+            // path should be the install folder, not the .lnk file
+            const expectedPath = path.dirname(game.executablePath);
+            if (game.path !== expectedPath) {
+                game.path = expectedPath;
+                changed = true;
+            }
+            if (!game.shortcutPath) {
+                game.shortcutPath = game.command;
+                changed = true;
+            }
+            const expectedFolder = path.basename(path.dirname(game.executablePath));
+            if (!game.folderName || game.folderName !== expectedFolder) {
+                game.folderName = expectedFolder;
+                changed = true;
+            }
+            const expectedExeName = path.parse(game.executablePath).name;
+            if (!game.exeName || game.exeName !== expectedExeName) {
+                game.exeName = expectedExeName;
+                changed = true;
+            }
+        }
+        if (changed) {
+            console.log('[DB] Migrated broken .lnk records to use install directory as path.');
+            this.saveDatabase();
+        }
     }
 
     async flushDatabase() {
@@ -610,6 +662,8 @@ class BaddelEngine {
         this.dbCache = this.dbCache.filter(g => String(g.id) !== String(gameId));
         if (this.dbCache.length < before) {
             this.deleteGameImages(gameId);
+            try { mrm.clearJob(gameId); } catch (_) {}
+            try { await metadataCacheStore.deleteEntry(gameId); } catch (_) {}
             this.saveDatabase();
             return { status: 'success' };
         }
@@ -1496,41 +1550,36 @@ if ('logo' in metadata) {
     // ============================================================
     // MANUAL ADD
     // ============================================================
-async addManualGame(exePath, customName = null, notifyCallback = null) {
+async addManualGame(launchPath, customName = null, notifyCallback = null, options = {}) {
+        const lnkTarget     = options?.lnkTarget    || null;
+        const metadataPath  = options?.metadataPath || lnkTarget || launchPath;
+        const shortcutArgs  = options?.shortcutArgs || '';
+        const shortcutCwd   = options?.shortcutCwd  || null;
+        const forceMetadata = options?.forceMetadata === true || options?.force === true;
+
         try {
-            const stats = await fs.stat(exePath);
+            const stats = await fs.stat(launchPath);
             if (!stats.isFile()) return { status: 'error', message: 'File not found' };
 
-            const rawExeStem   = path.parse(exePath).name;
-            const exeName      = rawExeStem.replace(/[-_]/g, ' ').trim();
-            const parentFolder = path.basename(path.dirname(exePath)).replace(/[-_]/g, ' ').trim();
+            // effectivePath is the real executable (or lnk target) used for
+            // metadata — never a Desktop .lnk path.
+            const effectivePath  = metadataPath;
+            const rawExeStem     = path.parse(effectivePath).name;
+            const exeName        = rawExeStem.replace(/[-_]/g, ' ').trim();
+            const parentFolder   = path.basename(path.dirname(effectivePath)).replace(/[-_]/g, ' ').trim();
 
-            // ── Search candidate order ─────────────────────────────────────────
-            // Priority: parent folder (most human-readable) → custom name →
-            // cleaned exe stem → raw exe stem (compact / camelCase).
-            // Deduplication keeps the first occurrence of each unique name.
-            const seen = new Set();
-            const searchSteps = [
-                { name: parentFolder, source: 'Folder Name' },
-                { name: customName,   source: 'User Input'  },
-                { name: exeName,      source: 'EXE Name'    },
-                { name: rawExeStem,   source: 'Raw EXE Stem'},
-            ].filter(s => {
-                const n = s.name?.trim();
-                if (!n || seen.has(n.toLowerCase())) return false;
-                seen.add(n.toLowerCase());
-                return true;
-            });
-
-            // Compute stable ID up-front so we can check MRM and dup-detect before
-            // making any network calls.
-            const tempId = this.generateStableId({ command: `"${exePath}"`, name: customName || exeName });
+            // Compute stable ID from effectivePath so the same game reached via
+            // different .lnk shortcuts doesn't create duplicate DB entries.
+            const tempId = this.generateStableId({ command: effectivePath, name: customName || exeName });
 
             // ── Duplicate / re-add check ───────────────────────────────────────
-            const normalizedPath = path.normalize(exePath).toLowerCase().trim();
-            const existingIndex = this.dbCache.findIndex(g =>
-                path.normalize((g.command || '').replace(/"/g, '').trim()).toLowerCase() === normalizedPath
-            );
+            const normalizedLaunchPath    = path.normalize(launchPath).toLowerCase().trim();
+            const normalizedEffectivePath = path.normalize(effectivePath).toLowerCase().trim();
+            const existingIndex = this.dbCache.findIndex(g => {
+                const cmd = path.normalize((g.command || '').replace(/"/g, '').trim()).toLowerCase();
+                const exe = path.normalize((g.executablePath || '').replace(/"/g, '').trim()).toLowerCase();
+                return cmd === normalizedLaunchPath || exe === normalizedEffectivePath;
+            });
             if (existingIndex > -1) {
                 const existing = this.dbCache[existingIndex];
                 if (existing.isHidden) { existing.isHidden = false; this.saveDatabase(); }
@@ -1547,25 +1596,23 @@ async addManualGame(exePath, customName = null, notifyCallback = null) {
                 .replace(/-{2,}/g, '-')
                 .replace(/^-+|-+$/g, '');
 
-            // Build MRM candidates using the centralized generator so camelCase
-            // splitting and franchise alias expansion are applied uniformly.
+            // Build MRM candidates using effectivePath so a Desktop .lnk doesn't
+            // mislead camelCase splitting or franchise alias expansion.
             const mrmCandidates = generateMetadataCandidates({
                 name:       customName || parentFolder,
                 folderName: parentFolder,
                 exeName:    rawExeStem,
-                pathHint:   exePath,
+                pathHint:   effectivePath,
             });
 
             // ── Route ALL resolution through MRM ──────────────────────────────
-            // MRM handles: Stage 1 DB lookups → Stage 2 transient resolver →
-            // 429 cooldown → NOT_FOUND / AMBIGUOUS / RESOLVED persistence.
             let finalMetadata = null;
             let finalName     = primaryTitle;
             let validationDeferred = false;
 
             const mrmStatus = mrm.getStatus(tempId);
 
-            if (mrmStatus === MRM_STATUS.COOLDOWN) {
+            if (mrmStatus === MRM_STATUS.COOLDOWN && !forceMetadata) {
                 console.log(`[Manual Add] MRM cooldown active for "${primaryTitle}" — deferred`);
                 validationDeferred = true;
             } else {
@@ -1574,9 +1621,11 @@ async addManualGame(exePath, customName = null, notifyCallback = null) {
                     candidates:  mrmCandidates,
                     title:       primaryTitle,
                     slug:        _toSlug(primaryTitle) || undefined,
-                    exeName:     exeName     || undefined,
+                    exeName:     exeName      || undefined,
                     folderName:  parentFolder || undefined,
-                    pathHint:    exePath     || undefined,
+                    pathHint:    effectivePath || undefined,
+                    force:       forceMetadata || undefined,
+                    bypassTtl:   forceMetadata || undefined,
                 });
 
                 if (resolveResult) {
@@ -1584,26 +1633,41 @@ async addManualGame(exePath, customName = null, notifyCallback = null) {
                     if (!customName) finalName = resolveResult.matchedName || primaryTitle;
                     console.log(`[Manual Add] ✓ MRM resolved "${primaryTitle}" via ${resolveResult._resolveSource}`);
                 } else {
-                    // MRM returned null — check if a cooldown was just registered
-                    if (mrm.getStatus(tempId) === MRM_STATUS.COOLDOWN) {
+                    if (mrm.getStatus(tempId) === MRM_STATUS.COOLDOWN && !forceMetadata) {
                         console.warn(`[Manual Add] MRM entered cooldown for "${primaryTitle}" — deferred`);
                         validationDeferred = true;
                     }
                 }
             }
+
+            const isLnk = launchPath.toLowerCase().endsWith('.lnk');
+            // installDir is the real game folder, never the Desktop / shortcut folder
+            const installDir = fsSync.existsSync(effectivePath)
+                ? path.dirname(effectivePath)
+                : path.dirname(launchPath);
+
             const newGame = {
-                id: tempId,
-                name: finalName,
-                command: `"${exePath}"`,
-                platform: 'Manual',
-                // Populate art from metadata immediately — avoids a blank card
+                id:              tempId,
+                name:            finalName,
+                command:         launchPath,
+                shortcutPath:    isLnk ? launchPath : null,
+                path:            installDir,
+                executablePath:  effectivePath,
+                folderName:      parentFolder,
+                exeName:         rawExeStem,
+                launchArgs:      parseShortcutArgs(shortcutArgs),
+                launchCwd:       shortcutCwd || installDir,
+                rawShortcutArgs: shortcutArgs || '',
+                scannerPlatform: 'manual',
+                installSource:   'manual',
+                isInstalled:     true,
+                platform:        'Manual',
                 image:     finalMetadata?.cover     || finalMetadata?.image     || null,
                 heroImage: finalMetadata?.heroImage || finalMetadata?.hero      || null,
                 logo:      finalMetadata?.logo                                  || null,
-                score: 100,
-                isHidden: false,
-                addedAt: new Date().toISOString(),
-                // Flag for background pipeline: retry art resolution later
+                score:     100,
+                isHidden:  false,
+                addedAt:   new Date().toISOString(),
                 ...(validationDeferred ? {
                     needsValidation:    true,
                     validationDeferred: true,
@@ -1623,9 +1687,13 @@ async addManualGame(exePath, customName = null, notifyCallback = null) {
                     .catch(err => console.warn('[Manual Add] Failed to persist full metadata:', err.message));
             }
 
-            // Kick off background image download to local WebP cache
-            if (finalMetadata) this.backgroundDownload(finalMetadata, tempId, notifyCallback, { source: 'addManual' });
-            return { status: 'success', game: newGame };
+            // Download images to local WebP cache before returning so the
+            // renderer receives a game with file:// cover/hero/logo already set.
+            if (finalMetadata) {
+                await this.backgroundDownload(finalMetadata, tempId, notifyCallback, { source: 'addManual' });
+            }
+            const hydratedGame = this.dbCache.find(g => String(g.id) === String(tempId)) || newGame;
+            return { status: 'success', game: hydratedGame };
         } catch (err) {
             console.error('[Manual Add]', err);
             return { status: 'error', message: err.message };
@@ -3195,6 +3263,32 @@ function _resolveGenericLookup(name) {
 /** Platforms that use the Steam/Epic server enrich flow — skip from this pipeline. */
 const _SERVER_ENRICH_PLATFORMS = new Set(['steam', 'Steam', 'epic', 'Epic Games', 'epic games']);
 
+// ── Background pipeline path helpers ─────────────────────────────────────────
+// Prefer executablePath (the real binary) over game.path (install dir) or
+// the potentially-quoted command string, so .lnk shortcuts never pollute the
+// metadata candidate generator with a Desktop folder path.
+function _metadataPathForGame(game) {
+    return (
+        game.executablePath ||
+        game.launchCommand  ||
+        (game.command || '').replace(/^"|"$/g, '').trim() ||
+        game.path ||
+        ''
+    );
+}
+
+function _metadataFolderForGame(game) {
+    if (game.folderName) return game.folderName;
+    const p = _metadataPathForGame(game);
+    if (!p) return undefined;
+    try {
+        const ext = path.extname(p).toLowerCase();
+        // If p has an extension it's a file — use its parent dir name.
+        // If no extension it's a directory — use the directory's own name.
+        return ext ? path.basename(path.dirname(p)) : path.basename(p);
+    } catch { return undefined; }
+}
+
 /**
  * Run the background metadata pipeline for all installed non-Steam/Epic games.
  * Safe to call multiple times — skips games that already have persisted metadata
@@ -3354,11 +3448,12 @@ async function runBackgroundMetadataPipeline(games) {
         // ── Route ALL resolution through MRM (Stage 1 DB + Stage 2 transient) ─
         // Use the centralized candidate generator so compact names like "ACMirage"
         // get camelCase-split + franchise-alias expansion.
+        const metadataPath = _metadataPathForGame(game);
         const candidates = generateMetadataCandidates({
             name:       game.name,
-            folderName: game.folderName || game.path ? require('path').basename(require('path').dirname(game.path || game.command || '')) : undefined,
-            exeName:    game.exeName,
-            pathHint:   game.path || (game.command || '').replace(/^"|"$/g, '').trim() || undefined,
+            folderName: _metadataFolderForGame(game),
+            exeName:    game.exeName || (metadataPath ? path.parse(metadataPath).name : undefined),
+            pathHint:   metadataPath || undefined,
         });
 
         console.log(`${gameTag} MRM candidates: ${candidates.map(c => c.title || c.slug).join(', ')}`);
@@ -3486,7 +3581,7 @@ function registerGameImageUpdatedNotifier(fn) {
 
 module.exports = {
     scanAllGames:          () => engine.startGlobalScan(),
-    addManualGame:         (exePath, customName, cb) => engine.addManualGame(exePath, customName, cb),
+    addManualGame:         (launchPath, customName, cb, opts) => engine.addManualGame(launchPath, customName, cb, opts),
     getSavedGames:         () => engine.getStoredGames(),
     getMissingInstalledGames: () => engine.getMissingInstalledGames(),
     renameGame:            (id, name) => engine.renameGame(id, name),

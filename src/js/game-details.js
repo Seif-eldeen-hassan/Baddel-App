@@ -8729,8 +8729,28 @@ async function _gdRefreshGameFromDbAfterMutation(gameId, opts = {}) {
         patchArray(window.allGamesData, 'window.allGamesData');
     }
 
-    patchArray(window._allGamesCache, 'window._allGamesCache');
-    patchArray(window._vs?.items, 'window._vs.items');
+    const _gdBelongsInAllGames =
+        typeof window._agIsUserLibraryGame === 'function'
+            ? window._agIsUserLibraryGame(freshGame)
+            : false;
+
+    if (_gdBelongsInAllGames) {
+        patchArray(window._allGamesCache, 'window._allGamesCache');
+        patchArray(window._vs?.items, 'window._vs.items');
+    } else {
+        // Remove installed-only game from All Games caches so it can't linger there.
+        const _removeById = (arr) => {
+            if (!Array.isArray(arr)) return;
+            for (let i = arr.length - 1; i >= 0; i--) {
+                const g = arr[i];
+                if (g && (freshIds.has(String(g.id || '')) || freshIds.has(String(g.appName || '')))) {
+                    arr.splice(i, 1);
+                }
+            }
+        };
+        _removeById(window._allGamesCache);
+        _removeById(window._vs?.items);
+    }
 
     // حدّث اللعبة الحالية في صفحة التفاصيل
     if (_gdCurrentGame && String(_gdCurrentGame.id || '') === freshId) {

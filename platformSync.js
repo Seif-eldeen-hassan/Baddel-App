@@ -1633,10 +1633,21 @@ const steamConnector = {
     },
 
     async link(parentWindow) {
+        steamAuthLog('[PlatformSync:Steam] link:start');
         await ensureDirs();
-        await _ensureBridgeRunning();
+        steamAuthLog('[PlatformSync:Steam] ensureDirs:ok');
+        try {
+            await _ensureBridgeRunning();
+        } catch (err) {
+            console.error('[PlatformSync:Steam] Failed to start Steam bridge:', err);
+            const e = new Error(`Steam bridge failed to start: ${err.message || err}`);
+            e.code = 'STEAM_BRIDGE_START_FAILED';
+            throw e;
+        }
+        steamAuthLog('[PlatformSync:Steam] bridge:running');
 
         const authResult = await _openSteamLoginWindow(parentWindow, null);
+        steamAuthLog('[PlatformSync:Steam] auth window returned:', authResult?.status);
 
         if (authResult.status !== 'authenticated') {
             throw new Error('Steam authentication failed');
@@ -2976,17 +2987,28 @@ function registerPlatformSyncHandlers(ipcMainRef, getMainWindow) {
         return { status: 'success', accounts: connector.getAccounts() };
     }));
 
-    ipcMainRef.handle('platform-sync:link', safeHandle(async (_e, platform, opts = {}) => {
-        const connector = connectors[platform];
-        if (!connector) throw new Error(`Unsupported platform: ${platform}`);
-        syncLog(`[PlatformSync] Linking platform: ${platform} addToSwitcher=${!!opts?.addToSwitcher}`);
+    ipcMainRef.handle('platform-sync:link', async (event, platform, opts = {}) => {
         const mainWin = getMainWindow?.();
-        const emitState = (status, message, extra = {}) =>
-            _emitLinkState(mainWin, platform, status, message, extra);
-        const linkRes = await connector.link(mainWin, emitState, opts);
-        if (typeof linkRes === 'string') return { status: 'success', displayName: linkRes };
-        return { status: 'success', ...linkRes };
-    }));
+        const parentWindow = BrowserWindow.fromWebContents(event.sender) || mainWin || BrowserWindow.getFocusedWindow();
+        try {
+            const connector = connectors[platform];
+            if (!connector) throw new Error(`Unsupported platform: ${platform}`);
+            syncLog(`[PlatformSync] Linking platform: ${platform} addToSwitcher=${!!opts?.addToSwitcher}`);
+            const emitState = (status, message, extra = {}) =>
+                _emitLinkState(parentWindow, platform, status, message, extra);
+            const linkRes = await connector.link(parentWindow, emitState, opts);
+            if (typeof linkRes === 'string') return { status: 'success', displayName: linkRes };
+            return { status: 'success', ...linkRes };
+        } catch (err) {
+            console.error('[PlatformSync] Link error:', err);
+            _emitLinkState(parentWindow, platform, 'failed', err.message || 'Link failed');
+            return {
+                status: 'error',
+                code: err.code || err.name || 'PLATFORM_LINK_FAILED',
+                message: err.message || 'Failed to link account.',
+            };
+        }
+    });
 
     ipcMainRef.handle('platform-sync:sync', safeHandle(async (_e, platform, accountId) => {
         const connector = connectors[platform];

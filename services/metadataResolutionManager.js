@@ -180,6 +180,14 @@ class MetadataResolutionManager {
     async resolve(gameId, hints = {}) {
         const id  = String(gameId);
         const TAG = `[MRM][${id.slice(0, 12)}]`;
+
+        const force = hints.force === true || hints.bypassTtl === true || hints.ignoreTtl === true;
+        if (force) {
+            console.log(`${TAG} FORCE resolve requested — clearing persisted job state`);
+            this.clearJob(id);
+            this._inflight.delete(id);
+        }
+
         const st  = this.getStatus(id);
 
         if (st === STATUS.RESOLVED) {

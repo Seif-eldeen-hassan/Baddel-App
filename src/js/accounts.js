@@ -2419,6 +2419,63 @@ if (diskFirst) {
     }
 }
 
+// ── User-library game classifier ──────────────────────────────────────────────
+// Returns true only for games that belong in All Games:
+//   Steam/Epic synced library records, manual/user-added games, and account-owned
+//   merged records.  Auto-scanned installed-only games (Xbox, MS Store, EA registry
+//   scan, etc.) return false — they belong in Installed Games only.
+function _agIsUserLibraryGame(g) {
+    if (!g) return false;
+
+    const platform = (typeof _normPlatform === 'function')
+        ? _normPlatform(g.platform || g.scannerPlatform || g.installSource || '')
+        : String(g.platform || g.scannerPlatform || g.installSource || '').toLowerCase().trim();
+    const scanner  = String(g.scannerPlatform || '').toLowerCase();
+
+    // Manual/local/installed-only games do NOT belong in All Games.
+    // They belong in Installed Games / local views only.
+    if (
+        platform === 'manual' ||
+        scanner  === 'manual' ||
+        g.installSource === 'manual' ||
+        g.userAdded     === true ||
+        g.addedManually === true
+    ) {
+        return false;
+    }
+
+    // Evidence that the record came from a synced account library (not just a local scan).
+    const hasSyncedAccountEvidence =
+        (Array.isArray(g.accountKeys)                && g.accountKeys.length > 0)             ||
+        (Array.isArray(g.accounts)                   && g.accounts.length > 0)                ||
+        (Array.isArray(g.owners)                     && g.owners.length > 0)                  ||
+        (Array.isArray(g.ownedByAccountIds)          && g.ownedByAccountIds.length > 0)       ||
+        (Array.isArray(g.steamLicensedAccountIds)    && g.steamLicensedAccountIds.length > 0) ||
+        !!g.libraryAccountId  ||
+        !!g.ownerAccountId    ||
+        !!g.accountId         ||
+        g.librarySource === 'synced-account' ||
+        g.syncSource    === 'platform-sync'  ||
+        g._agSource     === 'platform-sync';
+
+    // Steam/Epic only belong when they came from a linked account library,
+    // not merely from a local installed scanner.
+    const isSteamOrEpic =
+        platform === 'steam' || platform === 'epic' ||
+        scanner  === 'steam' || scanner  === 'epic';
+    if (isSteamOrEpic && hasSyncedAccountEvidence) return true;
+
+    // Everything else is an auto-scanned installed-only record.
+    return false;
+}
+
+function _agGetUserLibraryGames(games) {
+    return (Array.isArray(games) ? games : []).filter(_agIsUserLibraryGame);
+}
+
+window._agIsUserLibraryGame   = _agIsUserLibraryGame;
+window._agGetUserLibraryGames = _agGetUserLibraryGames;
+
 async function navigateToAllGames(opts = {}) {
     // تحديث الـ sidebar active state
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
@@ -2455,20 +2512,58 @@ async function navigateToAllGames(opts = {}) {
         if (accountText) accountText.innerText = s.accountLabel || 'All Accounts';
     }
 
-    // ── FIX: If cache already exists, skip full rebuild — just re-filter ──
-    if (window._allGamesCache && window._allGamesCache.length > 0) {
-        _agRenderAccountFilterOptions(window._allGamesCache);
-        _applyAgFilters();
-
-        // Restore scroll position after paint
-        if (opts.restoreState?.scrollTop) {
-            requestAnimationFrame(() => {
-                const el = document.getElementById('mainContentArea');
-                if (el) el.scrollTop = opts.restoreState.scrollTop;
-            });
+    // ── Account gate: if no Steam/Epic account is linked, always show onboarding ──
+    // This must come BEFORE inspecting the cache so that removing all accounts
+    // while the cache is still populated correctly resets to the empty state.
+    {
+        const _syncSt = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
+        const _hasLinked = _syncSt?.steam === true || _syncSt?.epic === true;
+        if (!_hasLinked) {
+            window._allGamesCache    = [];
+            window._allGamesRawCache = [];
+            window._agNoLinkedAccounts = true;
+            _agSetEmptyPageMode(true);
+            _agSetToolbarVisible(false);
+            _agRenderEmptyOnboarding();
+            _agRenderAccountFilterOptions([]);
+            return;
         }
-        return;
     }
+
+    // Sanitize: evict any installed-only records that may have leaked in via
+    // _patchGameInMemory or _gdRefreshGameFromDbAfterMutation before we inspect
+    // or render the cache.
+    if (Array.isArray(window._allGamesCache)) {
+        window._allGamesCache = _agGetUserLibraryGames(window._allGamesCache);
+    }
+    if (Array.isArray(window._allGamesRawCache)) {
+        window._allGamesRawCache = _agGetUserLibraryGames(window._allGamesRawCache);
+    }
+
+    // ── FIX: If cache already exists, skip full rebuild — just re-filter ──
+    // But only skip if the cache contains actual user-library games, not just
+    // auto-scanned installed-only records (e.g. Xbox / MS Store games).
+    if (window._allGamesCache && window._allGamesCache.length > 0) {
+        const libraryCache = _agGetUserLibraryGames(window._allGamesCache);
+        if (libraryCache.length > 0) {
+            window._allGamesCache = libraryCache;
+            _agRenderAccountFilterOptions(window._allGamesCache);
+            _applyAgFilters();
+
+            // Restore scroll position after paint
+            if (opts.restoreState?.scrollTop) {
+                requestAnimationFrame(() => {
+                    const el = document.getElementById('mainContentArea');
+                    if (el) el.scrollTop = opts.restoreState.scrollTop;
+                });
+            }
+            return;
+        }
+        // Cache only had installed-only games — treat as empty for onboarding purposes.
+        if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames-existing-cache')) return;
+    }
+
+    if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames')) return;
 
     await renderAllGamesView();
 }
@@ -2541,11 +2636,14 @@ function _agRenderEmptyOnboarding() {
     const grid = document.getElementById('allGamesGrid');
     const list = document.getElementById('allGamesList');
     if (!grid) return;
+    _agSetEmptyPageMode(true);
+    _agSetToolbarVisible(false);
     window._agNoLinkedAccounts = true;
 
     // Clear content and apply empty-mode class — all layout is handled by CSS
     grid.innerHTML = '';
     grid.classList.add('ag-empty-mode');
+    if (list) list.style.display = 'none';
     // Clear any leftover inline styles from previous renders
     grid.style.display       = '';
     grid.style.flexDirection = '';
@@ -2612,6 +2710,50 @@ function _agRenderEmptyOnboarding() {
     `;
 
     grid.appendChild(panel);
+}
+
+async function _agHasLinkedSteamOrEpicAccounts() {
+    try {
+        const steamRes     = await window.electronAPI?.platformSyncGetAccounts?.('steam');
+        const epicRes      = await window.electronAPI?.platformSyncGetAccounts?.('epic');
+        const steamAccounts = steamRes?.accounts || [];
+        const epicAccounts  = epicRes?.accounts  || [];
+        return steamAccounts.length > 0 || epicAccounts.length > 0;
+    } catch (err) {
+        console.warn('[AllGamesEmpty] account check failed:', err);
+        return false;
+    }
+}
+
+async function _agMaybeRenderEmptyOnboarding(reason = '') {
+    // Use the raw cache (before library filtering) so that installed-only games
+    // don't incorrectly count as "has library games".
+    const rawCache     = Array.isArray(window._allGamesRawCache) ? window._allGamesRawCache : window._allGamesCache;
+    const libraryGames = _agGetUserLibraryGames(rawCache);
+    const hasGames     = libraryGames.length > 0;
+
+    if (hasGames) {
+        window._agNoLinkedAccounts = false;
+        _agSetEmptyPageMode(false);
+        _agSetToolbarVisible(true);
+        return false;
+    }
+
+    const hasLinkedAccounts = await _agHasLinkedSteamOrEpicAccounts();
+
+    if (!hasLinkedAccounts) {
+        console.log('[AllGamesEmpty] showing onboarding:', reason);
+        window._agNoLinkedAccounts = true;
+        _agSetEmptyPageMode(true);
+        _agSetToolbarVisible(false);
+        _agRenderEmptyOnboarding();
+        return true;
+    }
+
+    window._agNoLinkedAccounts = false;
+    _agSetEmptyPageMode(false);
+    _agSetToolbarVisible(true);
+    return false;
 }
 
 window.renderAllGamesView = async function() {
@@ -2685,30 +2827,36 @@ window.renderAllGamesView = async function() {
             if (mergedGamesMap.has(cleanTitle)) {
                 // اللعبة موجودة أصلاً! هنضيف المنصة والـ ID للبيانات القديمة
                 const existingGame = mergedGamesMap.get(cleanTitle);
-                
+
                 // إضافة المنصة الجديدة لو مش موجودة
                 if (!existingGame.platforms.includes(game.platform)) {
                     existingGame.platforms.push(game.platform);
                 }
-                
+
                 // حفظ الـ IDs بتاعت المنصتين عشان لو حبيت تشغلها من مكان معين
                 existingGame.allIds[game.platform] = game.id;
+                existingGame._agSource     = 'platform-sync';
+                existingGame.librarySource = 'synced-account';
                 _agMergeAccountMeta(existingGame, game, accountNameByKey);
-                
+
             } else {
                 // أول مرة نشوف اللعبة دي، هنجهز لها المصفوفات
                 const newGame = { ...game };
-                newGame.platforms = [game.platform]; // مصفوفة فيها المنصات
-                newGame.allIds = { [game.platform]: game.id }; // Object فيه الـ ID بتاع كل منصة
+                newGame.platforms      = [game.platform]; // مصفوفة فيها المنصات
+                newGame.allIds         = { [game.platform]: game.id }; // Object فيه الـ ID بتاع كل منصة
+                newGame._agSource      = 'platform-sync';
+                newGame.librarySource  = 'synced-account';
                 _agMergeAccountMeta(newGame, game, accountNameByKey);
                 mergedGamesMap.set(cleanTitle, newGame);
             }
         });
 
         // تحويل الـ Map لـ Array عشان الـ Cache
-        window._allGamesCache = await _agApplyInstalledCreatorOverrides(
+        const _rawResolved = await _agApplyInstalledCreatorOverrides(
             Array.from(mergedGamesMap.values())
         );
+        window._allGamesRawCache = _rawResolved;
+        window._allGamesCache    = _agGetUserLibraryGames(_rawResolved);
 
         if (window._vs?.cardCache) window._vs.cardCache.clear();
 
@@ -2717,7 +2865,9 @@ window.renderAllGamesView = async function() {
             allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
         }
         _agRenderAccountFilterOptions(window._allGamesCache);
-        
+
+        if (await _agMaybeRenderEmptyOnboarding('renderAllGamesView')) return;
+
         _renderAllGamesViewModeAware(window._allGamesCache);
     } catch (err) {
         grid.innerHTML = `<div style="color:#e74c3c; padding:24px;">Error loading library: ${err.message}</div>`;
@@ -2743,7 +2893,11 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
 
         // Rebuild cache silently (no loading spinner, no innerHTML wipe)
         try {
-            if (window._agNoLinkedAccounts) return;
+            if (window._agNoLinkedAccounts) {
+                // Games may have just arrived after account link — do a full rebuild.
+                await renderAllGamesView();
+                return;
+            }
             const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
             const isEpicLinked = status?.epic === true;
             const isSteamLinked = status?.steam === true;
@@ -2775,11 +2929,15 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     const existingGame = mergedGamesMap.get(cleanTitle);
                     if (!existingGame.platforms.includes(game.platform)) existingGame.platforms.push(game.platform);
                     existingGame.allIds[game.platform] = game.id;
+                    existingGame._agSource     = 'platform-sync';
+                    existingGame.librarySource = 'synced-account';
                     _agMergeAccountMeta(existingGame, game, accountNameByKey);
                 } else {
                     const newGame = { ...game };
-                    newGame.platforms = [game.platform];
-                    newGame.allIds = { [game.platform]: game.id };
+                    newGame.platforms     = [game.platform];
+                    newGame.allIds        = { [game.platform]: game.id };
+                    newGame._agSource     = 'platform-sync';
+                    newGame.librarySource = 'synced-account';
                     _agMergeAccountMeta(newGame, game, accountNameByKey);
                     mergedGamesMap.set(cleanTitle, newGame);
                 }
@@ -2800,14 +2958,22 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
             newCache = await _agApplyInstalledCreatorOverrides(newCache);
             if (window._vs?.cardCache) window._vs.cardCache.clear();
 
-            window._allGamesCache = newCache;
+            window._allGamesRawCache = newCache;
+            window._allGamesCache    = _agGetUserLibraryGames(newCache);
+
+            if (window._allGamesCache.length > 0) {
+                window._agNoLinkedAccounts = false;
+                _agSetEmptyPageMode(false);
+                _agSetToolbarVisible(true);
+                _agResetAllGamesGridMode();
+            }
 
             await _agHydrateCachedCoversIntoAllGames();
 
             const allGamesCount = document.getElementById('allGamesCount');
-            if (allGamesCount) allGamesCount.textContent = newCache.length > 0 ? newCache.length : '—';
+            if (allGamesCount) allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
 
-            _agRenderAccountFilterOptions(newCache);
+            _agRenderAccountFilterOptions(window._allGamesCache);
             const scroller = document.getElementById('mainContentArea');
             const keepScrollTop = scroller ? scroller.scrollTop : 0;
 
@@ -3938,6 +4104,16 @@ function _agIsInstalled(game) {
 }
 
 function _applyAgFilters(options = {}) {
+    // Always filter the cache to user-library games before rendering, so that
+    // auto-scanned installed-only records (Xbox, MS Store, etc.) never appear
+    // in All Games even if they were pushed into _allGamesCache by app.js patches.
+    const cache = _agGetUserLibraryGames(window._allGamesCache || []);
+    if (cache.length === 0 && window._agNoLinkedAccounts) {
+        _agSetEmptyPageMode(true);
+        _agSetToolbarVisible(false);
+        _agRenderEmptyOnboarding();
+        return;
+    }
     if (window._agNoLinkedAccounts) return;
     const resetScroll = options.resetScroll !== false;
     // Invalidate installed-map if allGamesData reference changed since last build
@@ -3947,7 +4123,7 @@ function _applyAgFilters(options = {}) {
     }
 
     const { platform, sort, search, account } = window._agState;
-    let pool = [...(window._allGamesCache || [])];
+    let pool = [...cache];
 
     // 1. platform filter
     if (platform !== 'all') {
@@ -4873,8 +5049,13 @@ async function renderPlatformAccounts(platform) {
 async function linkNewPlatformAccount() {
     if (!activePlatformView) return;
 
-    const isEpic = activePlatformView !== 'steam';
-    const platform = activePlatformView;
+    const platform = String(activePlatformView || '').toLowerCase();
+    if (!['steam', 'epic'].includes(platform)) {
+        console.error('[PlatformLink] Invalid activePlatformView:', activePlatformView);
+        showToast(`Invalid platform: ${activePlatformView}`, 'error');
+        return;
+    }
+    const isEpic = platform === 'epic';
 
     // Disable Link Account and Sync Library buttons while linking
     const linkBtn = document.getElementById('linkPlatformBtn');
@@ -4959,7 +5140,6 @@ async function linkNewPlatformAccount() {
         if (isEpic) startTimeoutWarnings();
 
         const res = await window.electronAPI.platformSyncLink(platform);
-        cleanup();
 
         if (res?.status === 'error') throw new Error(res.message || 'Failed to link account');
         if (res.status === 'success') {
@@ -4983,10 +5163,12 @@ async function linkNewPlatformAccount() {
             await renderPlatformAccounts(platform);
         }
     } catch (err) {
-        cleanup();
-        console.error('Link Error:', err);
+        console.error('[PlatformLink] Link Error:', { platform, message: err?.message, error: err });
         _hidePlatformSyncOverlay();
-        showToast('Failed to link account.', 'error');
+        const msg = err?.message || err?.details?.message || err?.error || 'Unknown error';
+        showToast(`Failed to link ${platform === 'steam' ? 'Steam' : 'Epic'} account: ${msg}`, 'error');
+    } finally {
+        cleanup();
     }
 }
 

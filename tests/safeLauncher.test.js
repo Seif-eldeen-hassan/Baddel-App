@@ -87,3 +87,20 @@ test('safeLauncher: data: URL is rejected', () => {
 test('safeLauncher: http:// URL is rejected', () => {
     assert.throws(() => validateProtocolUrl('http://example.com'), /not allowed/i);
 });
+
+// ─── validateExecutablePath — outer-quote stripping ───────────────────────────
+
+test('safeLauncher: quoted .exe path is accepted after stripping outer quotes', () => {
+    const tmp = path.join(os.tmpdir(), `baddel_test_quoted_${Date.now()}.exe`);
+    fs.writeFileSync(tmp, '');
+    try {
+        const result = validateExecutablePath(`"${tmp}"`);
+        assert.equal(result, path.normalize(tmp));
+    } finally {
+        fs.unlinkSync(tmp);
+    }
+});
+
+test('safeLauncher: quoted .exe path with bad extension is still rejected', () => {
+    assert.throws(() => validateExecutablePath('"C:\\evil\\payload.bat"'), /not allowed/i);
+});

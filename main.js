@@ -53,6 +53,111 @@ const _updState = {
     stallTimer:   null,   // reset on every download-progress; fires if progress stops for 120 s
 };
 
+// ── Update notes — show once per installed version ────────────────────────────
+
+const UPDATE_NOTES_STATE_FILE = path.join(app.getPath('userData'), 'update-notes-state.json');
+
+function readUpdateNotesState() {
+    try {
+        return JSON.parse(fsSync.readFileSync(UPDATE_NOTES_STATE_FILE, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+
+function writeUpdateNotesState(state) {
+    try {
+        fsSync.writeFileSync(UPDATE_NOTES_STATE_FILE, JSON.stringify(state, null, 2), 'utf8');
+    } catch (err) {
+        console.warn('[UpdateNotes] Failed to write state:', err?.message || err);
+    }
+}
+
+// Keep this map updated for every release.
+// The modal only shows when pendingVersion === app.getVersion()
+// and that version has not been marked as shown.
+function getUpdateNotesForVersion(version) {
+    const notesByVersion = {
+        '1.1.2': {
+            version: '1.1.2',
+            title: 'Baddel has been updated',
+            subtitle: "Here's what's new in this version.",
+            items: [
+                {
+                    title: 'Manual game launching is now more reliable.',
+                    description: 'Games added manually now open using the same behavior as Windows double-click.'
+                },
+                {
+                    title: 'Added Community & Socials.',
+                    description: 'You can now find our official Discord, Instagram, X, LinkedIn, and TikTok channels inside the launcher.'
+                }
+            ],
+            footer: 'Thanks for using Baddel.'
+        }
+    };
+
+    return notesByVersion[String(version)] || {
+        version:  String(version || app.getVersion()),
+        title:    'Baddel has been updated',
+        subtitle: 'This version includes improvements, fixes, and performance updates.',
+        items: [
+            {
+                title:       'Improvements and fixes.',
+                description: 'Baddel has been updated with the latest fixes and improvements.'
+            }
+        ],
+        footer: 'Thanks for using Baddel.'
+    };
+}
+
+function markUpdateNotesPending(version) {
+    if (!version) return;
+    const state = readUpdateNotesState();
+    writeUpdateNotesState({
+        ...state,
+        pendingVersion: String(version),
+        fromVersion:    app.getVersion(),
+        shownVersions:  Array.isArray(state.shownVersions) ? state.shownVersions : [],
+        createdAt:      new Date().toISOString()
+    });
+    console.log('[UpdateNotes] Pending notes for version:', version);
+}
+
+function getPendingUpdateNotesPayload() {
+    const state          = readUpdateNotesState();
+    const currentVersion = app.getVersion();
+    const pendingVersion = String(state.pendingVersion || '');
+
+    if (!pendingVersion) return null;
+    if (pendingVersion !== String(currentVersion)) return null;
+
+    const shownVersions = Array.isArray(state.shownVersions)
+        ? state.shownVersions.map(String)
+        : [];
+
+    if (shownVersions.includes(pendingVersion)) return null;
+
+    return getUpdateNotesForVersion(pendingVersion);
+}
+
+function markUpdateNotesShown(version) {
+    const state = readUpdateNotesState();
+    const v = String(version || app.getVersion());
+
+    const shownVersions = new Set(
+        Array.isArray(state.shownVersions) ? state.shownVersions.map(String) : []
+    );
+    shownVersions.add(v);
+
+    writeUpdateNotesState({
+        ...state,
+        shownVersions:   Array.from(shownVersions),
+        lastShownVersion: v,
+        lastShownAt:     new Date().toISOString()
+    });
+    console.log('[UpdateNotes] Marked shown:', v);
+}
+
 let _updateInstallStarted = false;
 
 function _sendUpdateStatus(payload) {
@@ -287,6 +392,11 @@ ipcMain.on('restart-and-update', () => {
         }
     } catch {}
 
+    const targetVersion = _updState.version || autoUpdater?.currentVersion?.version;
+    if (targetVersion) {
+        markUpdateNotesPending(targetVersion);
+    }
+
     setTimeout(() => {
         try {
             console.log('[AutoUpdater] calling quitAndInstall...');
@@ -394,13 +504,31 @@ function _readReadyToInstallProtectedImageIds(userDataPath) {
 }
 
 // ============================================================
+// STARTUP LAUNCH MODE DETECTION
+// ============================================================
+const _startupArgv = process.argv.map(a => String(a).toLowerCase());
+const isStartupLaunch =
+    _startupArgv.includes('--hidden') ||
+    _startupArgv.includes('--startup') ||
+    _startupArgv.includes('--autostart');
+
+console.log('[Startup] isStartupLaunch:', isStartupLaunch, 'argv:', process.argv);
+
+// ============================================================
 // SINGLE INSTANCE LOCK
 // ============================================================
 const hasLock = app.requestSingleInstanceLock();
 if (!hasLock) {
     app.quit();
 } else {
-    app.on('second-instance', () => {
+    app.on('second-instance', (_event, secondArgv) => {
+        const secondIsStartup = secondArgv.some(a =>
+            ['--hidden', '--startup', '--autostart'].includes(String(a).toLowerCase())
+        );
+        if (secondIsStartup) {
+            console.log('[Startup] ignored second startup instance');
+            return;
+        }
         if (!mainWindow) return;
         if (mainWindow.isMinimized()) mainWindow.restore();
         if (!mainWindow.isVisible()) mainWindow.show();
@@ -414,9 +542,17 @@ if (!hasLock) {
 // ERROR HANDLING
 // ============================================================
 process.on('uncaughtException', (error) => {
-    console.error(error);
-    dialog.showErrorBox('Crashing Error', error.stack || error.message);
+    console.error('[Fatal][uncaughtException]', error);
+    // Only show the error dialog when the window is visible — at boot-time
+    // (isStartupLaunch) the window may not exist yet, so skip the dialog.
+    if (!isStartupLaunch) {
+        try { dialog.showErrorBox('Crashing Error', error.stack || error.message); } catch {}
+    }
     process.exit(1);
+});
+
+process.on('unhandledRejection', (reason) => {
+    console.error('[Fatal][unhandledRejection]', reason);
 });
 
 // ============================================================
@@ -1378,15 +1514,26 @@ function createWindow() {
     mainWindow.maximize();
     mainWindow.loadFile(path.join(__dirname, 'src', 'dashboard.html'));
     mainWindow.once('ready-to-show', () => {
-        mainWindow.show();
-        if (autoUpdater) {
-            autoUpdater.checkForUpdates().catch(err => console.warn('[AutoUpdater] Startup check failed:', err.message));
-            setInterval(() => autoUpdater && autoUpdater.checkForUpdates().catch(err => console.warn('[AutoUpdater] Periodic check failed:', err.message)), 14400000);
+        if (isStartupLaunch) {
+            // Boot-time launch: stay hidden in tray, do not steal focus.
+            console.log('[Startup] launched hidden to tray');
+        } else {
+            mainWindow.show();
         }
-        // Background library sync — fires 12 s after window shows so the first
-        // render completes before any sync I/O competes with the DB or network.
+
+        // Auto-updater check — delayed at boot to avoid hitting the network
+        // before Windows has fully initialised the network stack.
+        runAfterStartupGrace('checkForUpdates', () => {
+            if (autoUpdater) {
+                autoUpdater.checkForUpdates().catch(err => console.warn('[AutoUpdater] Startup check failed:', err.message));
+                setInterval(() => autoUpdater && autoUpdater.checkForUpdates().catch(err => console.warn('[AutoUpdater] Periodic check failed:', err.message)), 14400000);
+            }
+        }, 60000);
+
+        // Background library sync — fires 12 s after window shows (or after the
+        // startup grace period) so the first render cycle settles first.
         if (process.env.BADDEL_DISABLE_STARTUP_SYNC !== '1') {
-            setTimeout(() => autoSyncOnStartup(), 12_000);
+            runAfterStartupGrace('autoSyncOnStartup', () => autoSyncOnStartup(), 45000);
         } else {
             console.log('[DEV] Startup platform auto-sync disabled via BADDEL_DISABLE_STARTUP_SYNC=1');
         }
@@ -1536,10 +1683,14 @@ app.whenReady().then(async () => {
     // ── Auto-updater (must be after app is ready — electron-updater reads package.json) ──
     setupAutoUpdater();
 
-    await analytics.init(); // starts PostHog queue + GA4 realtime heartbeat
+    // Analytics init — deferred at boot so the network flush doesn't fail during
+    // the Windows startup window where network services may not be ready yet.
+    // For normal launches, runAfterStartupGrace returns fn() so await still works.
+    await runAfterStartupGrace('analytics.init', () => analytics.init(), 30000);
+
     setupWindowsIntegration();
-    refreshDriveCache();
-    startGlobalWatcher();
+    runAfterStartupGrace('refreshDriveCache', () => refreshDriveCache(), 20000);
+    runAfterStartupGrace('startGlobalWatcher', () => startGlobalWatcher(), 30000);
 
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
@@ -1696,20 +1847,29 @@ app.whenReady().then(async () => {
 
     ipcMain.handle('add-manual-game', async (_, exePath, customName) => {
         try { ipcValidation.assertPathLike(exePath, 'exePath'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
+        let lnkTarget    = null;
+        let metadataPath = exePath;
+        let shortcutArgs = '';
+        let shortcutCwd  = null;
         if (exePath.toLowerCase().endsWith('.lnk')) {
             try {
                 const details = shell.readShortcutLink(exePath);
-                if (details.target) exePath = details.target;
-            } catch { /* ignore shortcut errors */ }
+                if (details.target) {
+                    lnkTarget    = details.target;
+                    metadataPath = details.target;
+                }
+                shortcutArgs = details.args || '';
+                shortcutCwd  = details.cwd || details.workingDirectory ||
+                    (lnkTarget ? path.dirname(lnkTarget) : null);
+            } catch { /* ignore shortcut read errors */ }
         }
-        
-        // 🔴 إنشاء الدالة اللي هتبعت الإشعار للـ Frontend
         const notifyGameImageUpdated = (game) => {
             if (mainWindow) mainWindow.webContents.send('game-image-updated', game);
         };
-
-        // 🔴 تمرير الدالة للـ Scanner
-        const result = await require('./gameScanner').addManualGame(exePath, customName, notifyGameImageUpdated);
+        const result = await require('./gameScanner').addManualGame(
+            exePath, customName, notifyGameImageUpdated,
+            { lnkTarget, metadataPath, shortcutArgs, shortcutCwd, forceMetadata: true }
+        );
         if (result.status === 'success') {
             analytics.logGameAddedManual().catch(() => {});
         }
@@ -1751,16 +1911,30 @@ app.whenReady().then(async () => {
     ipcMain.handle('delete-game-permanently', async (_, id) => {
         try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
         const result = await require('./gameScanner').deleteGamePermanently(id);
-        if (result.status === 'success') analytics.logGameDeletedForever().catch(() => {});
+        if (result.status === 'success') {
+            analytics.logGameDeletedForever().catch(() => {});
+            if (mainWindow && !mainWindow.isDestroyed()) {
+                mainWindow.webContents.send('game-deleted-permanently', { id });
+            }
+        }
         return result;
     });
     ipcMain.handle('reorder-library', (_, ids) => {
         try { ipcValidation.assertArrayOfStrings(ids, 'ids'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
         return require('./gameScanner').reorderLibrary(ids);
     });
-    ipcMain.handle('save-game-metadata', (_, id, meta, opts) => {
+    ipcMain.handle('save-game-metadata', async (_, id, meta, opts) => {
         try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        return require('./gameScanner').updateGameMetadata(id, meta, opts || {});
+        const result = await require('./gameScanner').updateGameMetadata(id, meta, opts || {});
+        if (result?.status === 'success') {
+            try {
+                const game = require('./gameScanner').getSavedGames().find(g => String(g.id) === String(id));
+                if (game && mainWindow && !mainWindow.isDestroyed()) {
+                    mainWindow.webContents.send('game-image-updated', game);
+                }
+            } catch (_) {}
+        }
+        return result;
     });
     ipcMain.handle('save-full-metadata', (_, gameId, title, platform, meta) => {
         try {
@@ -2393,144 +2567,260 @@ app.whenReady().then(async () => {
     });
 
     // ---- Game Launch ----
-    // ---- Game Launch ----
 ipcMain.handle('launch-game', async (_, command, gameId, gamePath, gameName, options = {}) => {
-    // Trust boundary: if gameId is provided, resolve command/path/name from the
-    // trusted games DB and ignore whatever the renderer sent.
+    // Trust boundary: if gameId is provided, resolve all fields from the trusted
+    // games DB and ignore whatever the renderer sent for command/path/name.
+    let trusted = null;
     if (gameId) {
         const allGames = getSavedGames();
-        const trusted = allGames.find(g => String(g.id) === String(gameId));
+        trusted = allGames.find(g => String(g.id) === String(gameId)) || null;
         if (!trusted) {
             console.warn('[LaunchGame] gameId not found in trusted DB:', gameId);
-            return { status: 'error', message: 'Game not found.' };
+            return { status: 'error', code: 'GAME_NOT_FOUND', message: 'Game not found.' };
         }
         command  = trusted.command || trusted.path || '';
         gamePath = trusted.path    || gamePath     || '';
         gameName = trusted.name    || gameName     || '';
-        console.log('[LaunchGame] resolved command from trusted DB for gameId:', gameId);
+        console.log('[LaunchGame] resolved from trusted DB — gameId:', gameId, 'command:', command);
     }
 
     if (typeof command !== 'string' || !command.trim()) {
-        return { status: 'error', message: 'Invalid launch command.' };
+        return { status: 'error', code: 'INVALID_COMMAND', message: 'Invalid launch command.' };
     }
     const cleanCmd = String(command || '').replace(/"/g, '').trim();
+    const ext      = path.extname(cleanCmd).toLowerCase();
+
+    // ── Diagnostics snapshot ─────────────────────────────────────────────────
+    const diag = {
+        id:              gameId   || null,
+        name:            gameName || null,
+        command,
+        cleanCmd,
+        gamePath:        gamePath || null,
+        ext,
+        existsCommand:   fsSync.existsSync(cleanCmd),
+        existsGamePath:  gamePath ? fsSync.existsSync(gamePath) : false,
+        isFile:          null,
+        isDirectory:     null,
+        shortcutPath:    trusted?.shortcutPath    || null,
+        executablePath:  trusted?.executablePath  || null,
+        launchArgs:      trusted?.launchArgs      || [],
+        launchCwd:       trusted?.launchCwd || trusted?.cwd || gamePath || null,
+    };
+    try {
+        if (diag.existsCommand) {
+            const s = fsSync.statSync(cleanCmd);
+            diag.isFile      = s.isFile();
+            diag.isDirectory = s.isDirectory();
+        }
+    } catch { /**/ }
+    console.log('[LaunchDiag]', diag);
+
+    // Helper: build a structured error and attach diagnostics
+    const launchError = (code, message) => ({ status: 'error', code, message, diagnostics: diag });
+
+    // ── Manual game fast path — always shell.openPath, never spawn ──────────
+    const isManualGame =
+        trusted && (
+            trusted.scannerPlatform === 'manual' ||
+            trusted.installSource   === 'manual' ||
+            trusted.platform        === 'Manual'
+        );
+
+    if (isManualGame) {
+        let manualLaunchPath = trusted.shortcutPath || trusted.command || cleanCmd;
+        // Strip outer quotes just in case
+        if (manualLaunchPath.startsWith('"') && manualLaunchPath.endsWith('"')) {
+            manualLaunchPath = manualLaunchPath.slice(1, -1).trim();
+        }
+        console.log('[Launch] Manual game — shell.openPath:', manualLaunchPath);
+        if (!fsSync.existsSync(manualLaunchPath)) {
+            return {
+                status:      'error',
+                code:        'PATH_NOT_FOUND',
+                message:     `Manual game path not found: ${manualLaunchPath}`,
+                diagnostics: {
+                    gameId,
+                    gameName,
+                    manualLaunchPath,
+                    command:        trusted.command        || null,
+                    shortcutPath:   trusted.shortcutPath   || null,
+                    executablePath: trusted.executablePath || null,
+                    path:           trusted.path           || null,
+                },
+            };
+        }
+        const openErr = await shell.openPath(manualLaunchPath);
+        if (openErr) {
+            return {
+                status:      'error',
+                code:        'SHELL_OPENPATH_ERROR',
+                message:     openErr,
+                diagnostics: {
+                    gameId,
+                    gameName,
+                    manualLaunchPath,
+                    command:        trusted.command        || null,
+                    shortcutPath:   trusted.shortcutPath   || null,
+                    executablePath: trusted.executablePath || null,
+                    path:           trusted.path           || null,
+                },
+            };
+        }
+        const trackPath = trusted.executablePath || manualLaunchPath;
+        startGameTracking(gameId, trusted.command || manualLaunchPath, trackPath, gameName, 'high', true /* userLaunched */);
+        analytics.logGameLaunched(_detectPlatform(trusted.command || manualLaunchPath)).catch(() => {});
+        return { status: 'success', method: 'manual-shell-openpath' };
+    }
 
     try {
         let launchSuccess = false;
 
+        // ── Branch A/B: protocol URLs (steam://, com.epicgames.launcher://, etc.) ──
         if (cleanCmd.includes('://')) {
-    const isEpic = cleanCmd.startsWith('com.epicgames.launcher://');
-    const isSteam = cleanCmd.startsWith('steam://');
+            const isEpic  = cleanCmd.startsWith('com.epicgames.launcher://');
+            const isSteam = cleanCmd.startsWith('steam://');
 
-    const PROCESS_NAMES = {
-        // مهم جدًا:
-        // لا تستخدم EpicWebHelper هنا لأنه ممكن يكون شغال في الخلفية
-        // واللانشر نفسه مش جاهز يستقبل play command.
-        epic:  ['epicgameslauncher.exe'],
-        steam: ['steam.exe', 'steamwebhelper.exe'],
-    };
+            const PROCESS_NAMES = {
+                // Do NOT include EpicWebHelper here — it may be running in the background
+                // while the launcher itself is not yet ready to accept a play command.
+                epic:  ['epicgameslauncher.exe'],
+                steam: ['steam.exe', 'steamwebhelper.exe'],
+            };
 
-    const platformKey = isEpic ? 'epic' : isSteam ? 'steam' : null;
-    const names = platformKey ? PROCESS_NAMES[platformKey] : [];
+            const platformKey = isEpic ? 'epic' : isSteam ? 'steam' : null;
+            const names       = platformKey ? PROCESS_NAMES[platformKey] : [];
 
-    const launchKey = `${platformKey || 'protocol'}:${cleanCmd}`;
-    if (_launchInFlight.has(launchKey)) {
-        console.log(`[Launch] Already in-flight, ignoring duplicate: ${launchKey}`);
-        return { status: 'success', duplicate: true };
-    }
+            const launchKey = `${platformKey || 'protocol'}:${cleanCmd}`;
+            if (_launchInFlight.has(launchKey)) {
+                console.log(`[Launch] Already in-flight, ignoring duplicate: ${launchKey}`);
+                return { status: 'success', duplicate: true };
+            }
 
-    _launchInFlight.add(launchKey);
-
-    try {
-        const wasRunning = platformKey ? await _launcherIsRunning(names) : false;
-        const forceRetryAfterOpen = !!options.forceRetryAfterOpen;
-
-        const openProtocol = async (url, reason = 'play') => {
-            console.log(`[Launch] open protocol (${reason})`, { platformKey, url });
-
+            _launchInFlight.add(launchKey);
             try {
-                if (typeof _openProtocolUrlReliable === 'function') {
-                    await _openProtocolUrlReliable(url, `play-${reason}`);
-                } else {
-                    await safeLauncher.openProtocolUrl(url);
-                }
-            } catch (e) {
-                await safeLauncher.openProtocolUrl(url);
-            }
-        };
+                const wasRunning        = platformKey ? await _launcherIsRunning(names) : false;
+                const forceRetryAfterOpen = !!options.forceRetryAfterOpen;
 
-        let launcherInfo = null;
-
-        if (platformKey) {
-            launcherInfo = await _getExternalLauncherInfo(platformKey);
-
-            if (!launcherInfo.available) {
-                return {
-                    success: false,
-                    status: 'error',
-                    code: launcherInfo.code,
-                    platform: platformKey,
-                    message: launcherInfo.message,
-                    error: launcherInfo.message,
+                const openProtocol = async (url, reason = 'play') => {
+                    console.log(`[Launch] open protocol (${reason})`, { platformKey, url });
+                    try {
+                        if (typeof _openProtocolUrlReliable === 'function') {
+                            await _openProtocolUrlReliable(url, `play-${reason}`);
+                        } else {
+                            await safeLauncher.openProtocolUrl(url);
+                        }
+                    } catch { await safeLauncher.openProtocolUrl(url); }
                 };
-            }
-        }
 
-        if (isEpic) {
-            // Epic play: normalize to AppName-only URL then use the same cold-start
-            // readiness flow used by install (_waitForEpicUiStable).
-            const epicPlayResult = await _openEpicPlayUrlWithColdStartRecovery(cleanCmd, wasRunning);
-            launchSuccess = true;
-            console.log('[Launch] Epic play dispatch complete', epicPlayResult);
-        } else {
-            // Steam / other protocol: warm play + account-switch retry (non-Epic only)
-            await openProtocol(cleanCmd, `${platformKey || 'custom'}-warm-play`);
-            launchSuccess = true;
-
-            if (platformKey && forceRetryAfterOpen) {
-                const appeared = await _waitForLauncherProcess(names, 25000, 1000);
-
-                if (appeared) {
-                    const graceMs = 7000;
-                    console.log(`[Launch] retry ${platformKey}, forceRetry=${forceRetryAfterOpen}, grace=${graceMs}`);
-                    await new Promise(r => setTimeout(r, graceMs));
-                    await openProtocol(cleanCmd, `${platformKey}-force-retry`);
+                if (platformKey) {
+                    const launcherInfo = await _getExternalLauncherInfo(platformKey);
+                    if (!launcherInfo.available) {
+                        return {
+                            success:  false,
+                            status:   'error',
+                            code:     launcherInfo.code,
+                            platform: platformKey,
+                            message:  launcherInfo.message,
+                            error:    launcherInfo.message,
+                            diagnostics: diag,
+                        };
+                    }
                 }
-            }
-        }
 
-    } finally {
-        setTimeout(() => {
-            _launchInFlight.delete(launchKey);
-        }, isEpic ? 70000 : 5000);
-    }
-    }else if (cleanCmd.toLowerCase().endsWith('.lnk')) {
+                if (isEpic) {
+                    const epicPlayResult = await _openEpicPlayUrlWithColdStartRecovery(cleanCmd, wasRunning);
+                    launchSuccess = true;
+                    console.log('[Launch] Epic play dispatch complete', epicPlayResult);
+                } else {
+                    await openProtocol(cleanCmd, `${platformKey || 'custom'}-warm-play`);
+                    launchSuccess = true;
+                    if (platformKey && forceRetryAfterOpen) {
+                        const appeared = await _waitForLauncherProcess(names, 25000, 1000);
+                        if (appeared) {
+                            const graceMs = 7000;
+                            console.log(`[Launch] retry ${platformKey}, forceRetry=${forceRetryAfterOpen}, grace=${graceMs}`);
+                            await new Promise(r => setTimeout(r, graceMs));
+                            await openProtocol(cleanCmd, `${platformKey}-force-retry`);
+                        }
+                    }
+                }
+            } finally {
+                setTimeout(() => _launchInFlight.delete(launchKey), isEpic ? 70000 : 5000);
+            }
+
+        // ── Branch A: prefer stored shortcutPath (preserves Windows shortcut args/cwd) ──
+        } else if (trusted?.shortcutPath && fsSync.existsSync(trusted.shortcutPath)) {
+            console.log('[Launch] Branch A — shortcutPath:', trusted.shortcutPath);
+            const err = await shell.openPath(trusted.shortcutPath);
+            if (err) return launchError('SHELL_OPENPATH_ERROR', `shell.openPath failed: ${err}`);
+            launchSuccess = true;
+
+        // ── Branch B: .lnk without stored shortcutPath ───────────────────────
+        } else if (ext === '.lnk') {
+            console.log('[Launch] Branch B — .lnk openPath:', cleanCmd);
+            if (!diag.existsCommand) return launchError('PATH_NOT_FOUND', `Shortcut not found: ${cleanCmd}`);
             const err = await shell.openPath(cleanCmd);
-            if (err) throw new Error(err);
+            if (err) return launchError('SHELL_OPENPATH_ERROR', `shell.openPath failed: ${err}`);
+            launchSuccess = true;
+
+        // ── Branch C: .url file — parse URL= line and open via safeLauncher ──
+        } else if (ext === '.url') {
+            console.log('[Launch] Branch C — .url file:', cleanCmd);
+            if (!diag.existsCommand) return launchError('PATH_NOT_FOUND', `URL file not found: ${cleanCmd}`);
+            let urlTarget = null;
+            try {
+                const urlContents = fsSync.readFileSync(cleanCmd, 'utf8');
+                const urlMatch = urlContents.match(/^URL=(.+)$/im);
+                if (urlMatch) urlTarget = urlMatch[1].trim();
+            } catch (e) {
+                return launchError('PATH_NOT_FOUND', `Could not read .url file: ${e.message}`);
+            }
+            if (!urlTarget) return launchError('INVALID_COMMAND', 'No URL= found in .url file.');
+            try {
+                await safeLauncher.openProtocolUrl(urlTarget);
+                launchSuccess = true;
+            } catch (e) {
+                return launchError('SHELL_OPENPATH_ERROR', `Protocol open failed: ${e.message}`);
+            }
+
+        // ── Branch D: .exe — direct spawn with stored args and cwd ──────────
+        } else if (ext === '.exe') {
+            console.log('[Launch] Branch D — .exe spawn:', cleanCmd);
+            if (!diag.existsCommand) return launchError('PATH_NOT_FOUND', `Executable not found: ${cleanCmd}`);
+            const spawnArgs = (trusted?.launchArgs?.length) ? trusted.launchArgs : [];
+            let spawnCwd;
+            try {
+                const s = diag.launchCwd ? fsSync.statSync(diag.launchCwd) : null;
+                spawnCwd = (s && s.isDirectory()) ? diag.launchCwd : path.dirname(cleanCmd);
+            } catch { spawnCwd = path.dirname(cleanCmd); }
+            let spawnResult;
+            try {
+                spawnResult = await safeLauncher.launchExecutable(cleanCmd, spawnArgs, { cwd: spawnCwd });
+            } catch (err) {
+                spawnResult = { ok: false, error: err };
+            }
+            if (!spawnResult.ok) {
+                const msg = spawnResult.error?.message || 'Spawn failed';
+                console.error('[Launch] Branch D spawn failed:', msg, 'cmd:', cleanCmd, 'args:', spawnArgs);
+                return launchError('SPAWN_ERROR', msg);
+            }
             launchSuccess = true;
 
         } else {
-            launchSuccess = await new Promise(resolve => {
-                try {
-                    const child = safeLauncher.launchExecutable(command);
-                    child.on('error', () => resolve(false));
-                    setTimeout(() => resolve(true), 500);
-                } catch {
-                    resolve(false);
-                }
-            });
+            return launchError('EXT_NOT_SUPPORTED', `Unsupported launch file type: ${ext || '(no extension)'}`);
         }
 
         if (launchSuccess) {
             startGameTracking(gameId, command, gamePath, gameName, 'high', true /* userLaunched */);
             analytics.logGameLaunched(_detectPlatform(command)).catch(() => {});
+            return { status: 'success' };
         }
-
-        return { status: 'success' };
+        return launchError('SPAWN_ERROR', 'Failed to start game process.');
 
     } catch (err) {
         console.error('[Launch Error]', err);
-        return { status: 'error', message: 'Game not found or protocol not registered.' };
+        return launchError('SPAWN_ERROR', err.message || 'Game not found or protocol not registered.');
     }
 });
 
@@ -3474,10 +3764,17 @@ ipcMain.handle('get-game-metadata', async (_, originalGameName, hints = {}) => {
         const gameId  = hints.id || null;
         const mrmKey  = gameId || `anon:${_toSlug(originalGameName)}`;
 
+        const forceMetadata =
+            hints.force      === true ||
+            hints.bypassTtl  === true ||
+            hints.ignoreTtl  === true ||
+            hints.source === 'manual-add-readd' ||
+            hints.source === 'manual-add';
+
         // Gate on terminal / cooldown MRM states before any network calls.
         if (mrm) {
             const mrmStatus = mrm.getStatus(mrmKey);
-            if (mrmStatus === 'cooldown') {
+            if (!forceMetadata && mrmStatus === 'cooldown') {
                 const job = mrm.getJob(mrmKey);
                 console.log(`[get-game-metadata] MRM cooldown for "${originalGameName}" until ${new Date(job?.cooldownUntil).toISOString()}`);
                 return { _mrmStatus: 'cooldown', _cooldownUntil: job?.cooldownUntil };
@@ -3513,6 +3810,8 @@ ipcMain.handle('get-game-metadata', async (_, originalGameName, hints = {}) => {
                 exeName:      hints.exeName    || undefined,
                 folderName:   hints.folderName || undefined,
                 pathHint:     rawPathHint      || undefined,
+                force:        forceMetadata    || undefined,
+                bypassTtl:    forceMetadata    || undefined,
             });
             if (resolveResult) {
                 resolveResult.meta._resolveSource = resolveResult._resolveSource;
@@ -3803,15 +4102,67 @@ ipcMain.handle('get-live-stats', async () => {
 });
 
 // ============================================================
+// STARTUP PREFERENCE HELPERS
+// ============================================================
+const STARTUP_PREF_FILE = path.join(app.getPath('userData'), 'startup-preferences.json');
+
+function readStartupPrefs() {
+    try {
+        return JSON.parse(fs.readFileSync(STARTUP_PREF_FILE, 'utf8'));
+    } catch {
+        return {};
+    }
+}
+
+function writeStartupPrefs(prefs) {
+    try {
+        fs.writeFileSync(STARTUP_PREF_FILE, JSON.stringify(prefs, null, 2), 'utf8');
+    } catch (err) {
+        console.warn('[Startup] Failed to write startup preferences:', err?.message || err);
+    }
+}
+
+function getStartupExePath() {
+    return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+}
+
+function applyStartupSetting(enabled, reason = 'unknown') {
+    if (!app.isPackaged) return false;
+
+    const exePath = getStartupExePath();
+    app.setLoginItemSettings({
+        openAtLogin: !!enabled,
+        path: exePath,
+        args: ['--hidden', '--startup'],
+    });
+
+    console.log(`[Startup] openAtLogin=${!!enabled} reason=${reason} path=${exePath}`);
+    return true;
+}
+
+// Delays heavy boot tasks when launched at Windows startup so services/network
+// are ready before we hit the disk, registry, or network.
+function runAfterStartupGrace(label, fn, delayMs = 45000) {
+    if (!isStartupLaunch) {
+        return fn();
+    }
+
+    console.log(`[Startup] delaying ${label} by ${delayMs}ms`);
+    setTimeout(() => {
+        Promise.resolve()
+            .then(fn)
+            .catch(err => console.warn(`[Startup] delayed task failed: ${label}`, err?.message || err));
+    }, delayMs);
+}
+
+// ============================================================
 // WINDOWS INTEGRATION (STARTUP + SHORTCUTS)
 // ============================================================
 function setupWindowsIntegration() {
     if (!app.isPackaged) return;
-    const exePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
+    const exePath = getStartupExePath();
 
-    // ✅ Do NOT force openAtLogin here — we respect whatever the user last set.
-    // The startup toggle is fully controlled via 'get-startup-enabled' / 'set-startup-enabled' IPC.
-
+    // Create Start Menu shortcut
     const shortcutPath = path.join(
         app.getPath('appData'), 'Microsoft', 'Windows', 'Start Menu', 'Programs', 'Baddel Launcher.lnk'
     );
@@ -3826,28 +4177,63 @@ function setupWindowsIntegration() {
     } catch (err) {
         console.error('[Startup] Failed to create shortcuts:', err);
     }
+
+    // Apply startup setting: respect explicit user preference; default to enabled on first run.
+    const prefs = readStartupPrefs();
+    if (prefs.userSetStartupEnabled === true) {
+        // User has explicitly toggled — honour their choice unconditionally.
+        applyStartupSetting(!!prefs.startupEnabled, 'user-preference');
+    } else {
+        // No explicit user preference yet → enable startup by default.
+        applyStartupSetting(true, 'default-first-run');
+        writeStartupPrefs({
+            ...prefs,
+            startupEnabled: true,
+            userSetStartupEnabled: false,
+            defaultAppliedAt: prefs.defaultAppliedAt || new Date().toISOString(),
+        });
+    }
+
+    // Log current Windows login-item state for diagnostics
+    try {
+        console.log('[Startup] loginItemSettings:', app.getLoginItemSettings());
+    } catch {}
 }
 
 // ---- Startup toggle IPC ----
-// Returns the current Windows login-item state (true = enabled, false = disabled).
 ipcMain.handle('get-startup-enabled', () => {
     if (!app.isPackaged) return false;
-    const settings = app.getLoginItemSettings();
-    return settings.openAtLogin;
+
+    const prefs = readStartupPrefs();
+    // If the user has an explicit preference, return that — not the OS state which
+    // may transiently lag on a fresh install.
+    if (prefs.userSetStartupEnabled === true) {
+        return !!prefs.startupEnabled;
+    }
+
+    // No explicit preference yet; fall back to actual Windows login-item state.
+    try {
+        return !!app.getLoginItemSettings().openAtLogin;
+    } catch {
+        return true; // default: enabled
+    }
 });
 
-// Sets the Windows login-item state. Pass true to enable, false to disable.
-// This is the ONLY place that calls setLoginItemSettings — setupWindowsIntegration
-// deliberately no longer touches it so user preference is always respected.
 ipcMain.handle('set-startup-enabled', (_, enable) => {
-    if (!app.isPackaged) return;
-    const exePath = process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
-    app.setLoginItemSettings({
-        openAtLogin: !!enable,
-        path: exePath,
-        args: ['--hidden'],
+    if (!app.isPackaged) return { status: 'dev', enabled: false };
+
+    const enabled = !!enable;
+    applyStartupSetting(enabled, 'user-toggle');
+
+    const prefs = readStartupPrefs();
+    writeStartupPrefs({
+        ...prefs,
+        startupEnabled: enabled,
+        userSetStartupEnabled: true,
+        updatedAt: new Date().toISOString(),
     });
-    console.log(`[Startup] openAtLogin set to ${!!enable}`);
+
+    return { status: 'success', enabled };
 });
 
 
@@ -3892,6 +4278,67 @@ ipcMain.handle('open-external-url', async (_event, url) => {
     } catch (err) {
         console.warn('[Security] open-external-url blocked:', String(url || '').slice(0, 80), err.message);
         return ipcValidation.sanitizeErrorForRenderer(err, 'Protocol not allowed.');
+    }
+});
+
+// ── Community Hub: strict domain allowlist for official social links ──────────
+const _COMMUNITY_ALLOWED_DOMAINS = new Set([
+    'discord.gg',
+    'instagram.com',
+    'www.instagram.com',
+    'x.com',
+    'www.x.com',
+    'linkedin.com',
+    'www.linkedin.com',
+    'tiktok.com',
+    'www.tiktok.com',
+]);
+
+ipcMain.handle('open-community-url', async (_event, url) => {
+    try {
+        ipcValidation.assertString(url, 'url', 2048);
+        let parsed;
+        try { parsed = new URL(String(url)); } catch {
+            const e = new Error('Invalid URL');
+            e.code = 'INVALID_URL';
+            throw e;
+        }
+        if (parsed.protocol !== 'https:') {
+            const e = new Error(`Only https allowed, got: ${parsed.protocol}`);
+            e.code = 'PROTOCOL_NOT_ALLOWED';
+            throw e;
+        }
+        const host = parsed.hostname.toLowerCase();
+        if (!_COMMUNITY_ALLOWED_DOMAINS.has(host)) {
+            const e = new Error(`Domain not allowed: ${host}`);
+            e.code = 'DOMAIN_NOT_ALLOWED';
+            throw e;
+        }
+        await shell.openExternal(url);
+        return { status: 'success' };
+    } catch (err) {
+        console.warn('[Community] open-community-url blocked:', String(url || '').slice(0, 80), err.message);
+        return ipcValidation.sanitizeErrorForRenderer(err, 'URL not allowed.');
+    }
+});
+
+// ── Update notes IPC ─────────────────────────────────────────────────────────
+
+ipcMain.handle('get-pending-update-notes', () => {
+    try {
+        return { status: 'success', notes: getPendingUpdateNotesPayload() };
+    } catch (err) {
+        console.warn('[UpdateNotes] get failed:', err?.message || err);
+        return { status: 'error', message: err?.message || String(err), notes: null };
+    }
+});
+
+ipcMain.handle('mark-update-notes-shown', (_event, version) => {
+    try {
+        markUpdateNotesShown(version || app.getVersion());
+        return { status: 'success' };
+    } catch (err) {
+        return { status: 'error', message: err?.message || String(err) };
     }
 });
 

@@ -2509,37 +2509,62 @@ if (window.electronAPI.onLibraryUpdated) {
 }
 
 
+if (window.electronAPI.onGameDeletedPermanently) {
+    window.electronAPI.onGameDeletedPermanently(({ id }) => {
+        if (typeof _clearArtworkLocalState === 'function') _clearArtworkLocalState(id);
+    });
+}
+
 if (window.electronAPI.onGameImageUpdated) {
     window.electronAPI.onGameImageUpdated((updatedGame) => {
-        const idx = allGamesData.findIndex(g => String(g.id) === String(updatedGame.id));
-        if (idx === -1) return;
+        const patched = _patchGameInMemory(updatedGame);
 
-        // Update the in-memory record (This includes cover, hero, and logo)
-        allGamesData[idx] = { ...allGamesData[idx], ...updatedGame };
+        const belongsInAllGames =
+            typeof window._agIsUserLibraryGame === 'function'
+                ? window._agIsUserLibraryGame(patched || updatedGame)
+                : false;
 
-        const cacheBuster = `?t=${Date.now()}`;
-
-        // Update the card's cover image in the DOM
-        const cardImg = document.querySelector(`[data-id="${updatedGame.id}"] .actual-img`);
-        if (cardImg && updatedGame.image) {
-            cardImg.classList.remove('img-loaded');
-            cardImg.addEventListener('load', () => cardImg.classList.add('img-loaded'), { once: true });
-            cardImg.src = updatedGame.image + cacheBuster;
-            cardImg.style.opacity = '';
+        if (belongsInAllGames) {
+            _patchVisibleGameCard(patched);
+        } else {
+            const _eid = String(updatedGame.id);
+            window._allGamesCache = Array.isArray(window._allGamesCache)
+                ? window._allGamesCache.filter(g => String(g.id) !== _eid) : [];
+            window._allGamesRawCache = Array.isArray(window._allGamesRawCache)
+                ? window._allGamesRawCache.filter(g => String(g.id) !== _eid) : [];
+            document.querySelector(`#allGamesView [data-id="${CSS.escape(_eid)}"]`)?.remove();
+            // Fire-and-forget: show onboarding if no accounts are linked
+            ;(async () => {
+                try {
+                    const _st = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
+                    if (_st?.steam !== true && _st?.epic !== true) {
+                        if (typeof _agSetEmptyPageMode === 'function')    _agSetEmptyPageMode(true);
+                        if (typeof _agSetToolbarVisible === 'function')   _agSetToolbarVisible(false);
+                        if (typeof _agRenderEmptyOnboarding === 'function') _agRenderEmptyOnboarding();
+                    }
+                } catch (_) {}
+            })();
         }
 
-        // If this game is the current hero, refresh the hero section too
-        if (currentHeroGameId === String(updatedGame.id)) {
-            updateHeroSection(updatedGame.id);
+        // If card not yet rendered, trigger a full re-render of the current view
+        if (!document.querySelector(`[data-id="${CSS.escape(String(updatedGame.id))}"]`)) {
+            if (currentView === 'home') {
+                renderRecentlyPlayed();
+                renderExploreCarousel();
+                renderSyncedSuggestions();
+                applyHeroForHome();
+            } else {
+                applyFilters();
+            }
         }
 
-        // 🔴 السحر هنا: لو المستخدم فاتح إعدادات اللعبة دي تحديداً، اعملها إعادة تحميل تلقائي
+        if (currentHeroGameId === String(updatedGame.id)) updateHeroSection(updatedGame.id);
+
+        // If this game's settings modal is open, refresh it
         if (selectedGameId === String(updatedGame.id)) {
             const settingsModal = document.getElementById('gameSettingsModal');
             if (settingsModal && settingsModal.classList.contains('active')) {
-                if (typeof openGameSettings === 'function') {
-                    openGameSettings(selectedGameId);
-                }
+                if (typeof openGameSettings === 'function') openGameSettings(selectedGameId);
             }
         }
     });
@@ -3746,9 +3771,15 @@ async function triggerLaunchSequence(gameId) {
 
     try {
         const launchRes = await window.electronAPI.launchGame(game.command, game.id, trackPath, game.name);
-        if (launchRes && launchRes.status === 'error') throw new Error(launchRes.message);
+        if (launchRes && launchRes.status === 'error') {
+            console.error('[Launch] failed code=' + launchRes.code + ' msg=' + launchRes.message, launchRes.diagnostics || '');
+            throw new Error(launchRes.message);
+        }
     } catch (e) {
-        showToast('Error starting game! Make sure it\'s installed.', 'error');
+        const hint = e?.message?.includes('not found') || e?.message?.includes('NOT_FOUND')
+            ? 'Game file not found — check the installation path.'
+            : 'Error starting game! Make sure it\'s installed.';
+        showToast(hint, 'error');
         overlay.classList.remove('active');
         isLaunching = false;
         return;
@@ -3767,13 +3798,95 @@ async function triggerLaunchSequence(gameId) {
 // ============================================================
 // 6. IMAGE QUEUE & METADATA
 // ============================================================
+
+function _normalizeArtworkAliases(g) {
+    if (!g) return g;
+    const cover = g.image || g.defaultImage || g.coverUrl || g.cover || null;
+    const hero  = g.heroImage || g.defaultHero || g.heroUrl || g.hero || null;
+    const logo  = g.logo || g.defaultLogo || g.logoUrl || null;
+    if (cover) { g.image = cover; g.defaultImage = cover; g.coverUrl = cover; }
+    if (hero)  { g.heroImage = hero; g.defaultHero = hero; g.heroUrl = hero; }
+    if (logo)  { g.logo = logo; g.defaultLogo = logo; g.logoUrl = logo; }
+    return g;
+}
+
+function _patchGameInMemory(updatedGame) {
+    if (!updatedGame || !updatedGame.id) return null;
+    const normalized = _normalizeArtworkAliases({ ...updatedGame });
+    const id = String(normalized.id);
+
+    const idx = allGamesData.findIndex(g => String(g.id) === id);
+    if (idx >= 0) {
+        allGamesData[idx] = _normalizeArtworkAliases({ ...allGamesData[idx], ...normalized });
+    } else {
+        allGamesData.push(normalized);
+    }
+    window.allGamesData = allGamesData;
+
+    const belongsInAllGames =
+        typeof window._agIsUserLibraryGame === 'function'
+            ? window._agIsUserLibraryGame(normalized)
+            : false;
+
+    if (Array.isArray(window._allGamesCache)) {
+        const cidx = window._allGamesCache.findIndex(g => String(g.id) === id);
+        if (belongsInAllGames) {
+            if (cidx >= 0) {
+                window._allGamesCache[cidx] = _normalizeArtworkAliases({ ...window._allGamesCache[cidx], ...normalized });
+            } else {
+                window._allGamesCache.push(normalized);
+            }
+        } else if (cidx >= 0) {
+            window._allGamesCache.splice(cidx, 1);
+        }
+    }
+
+    if (Array.isArray(window._allGamesRawCache)) {
+        const ridx = window._allGamesRawCache.findIndex(g => String(g.id) === id);
+        if (belongsInAllGames) {
+            if (ridx >= 0) {
+                window._allGamesRawCache[ridx] = _normalizeArtworkAliases({ ...window._allGamesRawCache[ridx], ...normalized });
+            } else {
+                window._allGamesRawCache.push(normalized);
+            }
+        } else if (ridx >= 0) {
+            window._allGamesRawCache.splice(ridx, 1);
+        }
+    }
+
+    if (window._vs?.cardCache instanceof Map) window._vs.cardCache.delete(id);
+    if (window._vs?._coverQueued instanceof Set) window._vs._coverQueued.delete(id);
+
+    return allGamesData.find(g => String(g.id) === id) || normalized;
+}
+
+function _patchVisibleGameCard(updatedGame) {
+    const g = _normalizeArtworkAliases(updatedGame);
+    if (!g || !g.id) return;
+    const cover = g.image || g.defaultImage || g.coverUrl || null;
+    if (!cover) return;
+    const card = document.querySelector(`[data-id="${CSS.escape(String(g.id))}"]`);
+    const img  = card?.querySelector?.('.actual-img');
+    if (img) {
+        img.classList.remove('img-loaded');
+        img.addEventListener('load', () => img.classList.add('img-loaded'), { once: true });
+        img.src = safeImageUrl(cover) + (cover.startsWith('file://') ? `?t=${Date.now()}` : '');
+        img.style.opacity  = '';
+        img.style.display  = 'block';
+    }
+}
+
 async function fetchMetadata(imgElement, game) {
     const cacheKey = 'cover_' + game.id;
     const storedCover = localStorage.getItem(cacheKey);
 
-    // 1. In-memory path is already a local file — use it instantly
+    // 1. In-memory path is already a local file — probe it first (may be gone after Delete Forever)
     if (game.image && game.image.startsWith('file://')) {
-        imgElement.src = game.image; checkBackgroundAssets(game); return;
+        const alive = await window.electronAPI.probeLocalImage(game.image).catch(() => false);
+        if (alive) { imgElement.src = game.image; checkBackgroundAssets(game); return; }
+        // File is gone — clear stale references so we fall through to a fresh fetch
+        game.image = null; game.defaultImage = null; game.coverUrl = null;
+        localStorage.removeItem('cover_' + game.id);
     }
 
     // 1b. Creator-locked with any URL — trust game.image, skip stale localStorage/server
@@ -3781,9 +3894,12 @@ async function fetchMetadata(imgElement, game) {
         imgElement.src = game.image; checkBackgroundAssets(game); return;
     }
 
-    // 2. localStorage has a local file path
+    // 2. localStorage has a local file path — probe before trusting
     if (storedCover && storedCover.startsWith('file://')) {
-        imgElement.src = storedCover; game.image = storedCover; checkBackgroundAssets(game); return;
+        const alive = await window.electronAPI.probeLocalImage(storedCover).catch(() => false);
+        if (alive) { imgElement.src = storedCover; game.image = storedCover; checkBackgroundAssets(game); return; }
+        // File is gone — drop stale entry
+        localStorage.removeItem(cacheKey);
     }
 
     // 3. Check disk cache directly (handles reinstall where localStorage was wiped)
@@ -3877,28 +3993,52 @@ async function processQueue() {
             if (window.electronAPI.cacheAllAssets) {
                 window.electronAPI.cacheAllAssets({ cover: meta.cover, hero: metaHero, logo: metaLogo }, game.id)
                     .then(localAssets => {
-                        if (localAssets.cover) { game.image = localAssets.cover; localStorage.setItem('cover_' + game.id, localAssets.cover); }
-                        if (localAssets.hero)  { game.heroImage = localAssets.hero;  localStorage.setItem('hero_' + game.id, localAssets.hero); }
-                        if (localAssets.logo)  { game.logo = localAssets.logo;  localStorage.setItem('logo_' + game.id, localAssets.logo); }
-                        console.log(`[BaddelAPIEnrichAssets] ${game.name} cached: hero=${localAssets.hero || 'none'}`);
-                        window.electronAPI.saveMetadata(game.id, { cover: localAssets.cover, hero: localAssets.hero, logo: localAssets.logo });
+                        const finalCover = localAssets.cover || meta.cover || null;
+                        const finalHero  = localAssets.hero  || metaHero  || null;
+                        const finalLogo  = localAssets.logo  || metaLogo  || null;
 
-                        // If this game is the active hero target, repaint now that local paths are ready
-                        if (currentHeroGameId === String(game.id)) {
-                            updateHeroSection(game.id);
+                        if (finalCover) {
+                            game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
+                            localStorage.setItem('cover_' + game.id, finalCover);
+                            if (imgElement) {
+                                imgElement.classList.remove('img-loaded');
+                                imgElement.addEventListener('load', () => imgElement.classList.add('img-loaded'), { once: true });
+                                imgElement.src = safeImageUrl(finalCover) + (finalCover.startsWith('file://') ? `?t=${Date.now()}` : '');
+                                imgElement.style.opacity = '';
+                                imgElement.style.display = 'block';
+                            }
+                        }
+                        if (finalHero) {
+                            game.heroImage = finalHero; game.defaultHero = finalHero; game.heroUrl = finalHero;
+                            localStorage.setItem('hero_' + game.id, finalHero);
+                        }
+                        if (finalLogo) {
+                            game.logo = finalLogo; game.defaultLogo = finalLogo; game.logoUrl = finalLogo;
+                            localStorage.setItem('logo_' + game.id, finalLogo);
                         }
 
-                        // Persist full structured fallback metadata with local disk paths substituted in
+                        console.log(`[BaddelAPIEnrichAssets] ${game.name} cached: cover=${finalCover || 'none'} hero=${finalHero || 'none'}`);
+
+                        const patched = _patchGameInMemory({
+                            ...game,
+                            image: finalCover || game.image, defaultImage: finalCover || game.defaultImage, coverUrl: finalCover || game.coverUrl,
+                            heroImage: finalHero || game.heroImage, defaultHero: finalHero || game.defaultHero, heroUrl: finalHero || game.heroUrl,
+                            logo: finalLogo || game.logo, defaultLogo: finalLogo || game.defaultLogo, logoUrl: finalLogo || game.logoUrl,
+                        });
+                        _patchVisibleGameCard(patched);
+
+                        window.electronAPI.saveMetadata(game.id, { cover: finalCover, hero: finalHero, logo: finalLogo }).catch(() => {});
+
+                        if (currentHeroGameId === String(game.id)) updateHeroSection(game.id);
+
                         if (window.electronAPI.saveFullMetadata && meta) {
-                            const fullMeta = {
+                            window.electronAPI.saveFullMetadata(game.id, game.name, game.platform, {
                                 ...meta,
-                                cover:     localAssets.cover || meta.cover,
-                                heroImage: localAssets.hero  || metaHero,
-                                hero:      localAssets.hero  || metaHero,
-                                logo:      localAssets.logo  || metaLogo,
-                            };
-                            window.electronAPI.saveFullMetadata(game.id, game.name, game.platform, fullMeta)
-                                .catch(() => {});
+                                cover:     finalCover || meta.cover,
+                                heroImage: finalHero  || metaHero,
+                                hero:      finalHero  || metaHero,
+                                logo:      finalLogo  || metaLogo,
+                            }).catch(() => {});
                         }
                     })
                     .catch(() => {});
@@ -4267,6 +4407,158 @@ async function restoreSelectedGames() {
     reloadLibrary();
 }
 
+function _clearArtworkLocalState(gameId) {
+    if (!gameId) return;
+    const id = String(gameId);
+
+    try {
+        localStorage.removeItem('cover_' + id);
+        localStorage.removeItem('hero_'  + id);
+        localStorage.removeItem('logo_'  + id);
+    } catch {}
+
+    if (window._vs?.cardCache instanceof Map) {
+        window._vs.cardCache.delete(id);
+    }
+
+    if (window._vs?._coverQueued instanceof Set) {
+        window._vs._coverQueued.delete(id);
+    }
+
+    if (Array.isArray(window._allGamesCache)) {
+        window._allGamesCache = window._allGamesCache.filter(g => String(g.id) !== id);
+    }
+
+    if (Array.isArray(window._allGamesRawCache)) {
+        window._allGamesRawCache = window._allGamesRawCache.filter(g => String(g.id) !== id);
+    }
+
+    if (Array.isArray(allGamesData)) {
+        allGamesData = allGamesData.filter(g => String(g.id) !== id);
+        window.allGamesData = allGamesData;
+    }
+}
+window._clearArtworkLocalState = _clearArtworkLocalState;
+
+async function _isUsableLocalArtwork(url) {
+    if (!url) return false;
+    if (!String(url).startsWith('file://')) return true;
+    try {
+        const ok = await window.electronAPI.probeLocalImage(url);
+        return !!ok;
+    } catch {
+        return false;
+    }
+}
+
+async function hydrateManualGameArtworkNow(game) {
+    if (!game || !game.id) return;
+    console.log('[ManualAddArtwork] readd hydrate start', game.id, game.name);
+
+    const rawCover = localStorage.getItem('cover_' + game.id);
+    const rawHero  = localStorage.getItem('hero_'  + game.id);
+    const rawLogo  = localStorage.getItem('logo_'  + game.id);
+
+    const coverOk = await _isUsableLocalArtwork(rawCover);
+    const heroOk  = await _isUsableLocalArtwork(rawHero);
+    const logoOk  = await _isUsableLocalArtwork(rawLogo);
+
+    if (!coverOk && rawCover) {
+        console.log('[ManualAddArtwork] stale local cover removed', game.id, rawCover);
+        localStorage.removeItem('cover_' + game.id);
+    }
+    if (!heroOk && rawHero) {
+        localStorage.removeItem('hero_' + game.id);
+    }
+    if (!logoOk && rawLogo) {
+        localStorage.removeItem('logo_' + game.id);
+    }
+
+    const existingCover = coverOk ? rawCover : null;
+    const existingHero  = heroOk  ? rawHero  : null;
+    const existingLogo  = logoOk  ? rawLogo  : null;
+
+    const meta = await window.electronAPI.getMetadata(game.name, {
+        id:             game.id,
+        platform:       game.platform || 'manual',
+        existingCover:  existingCover,
+        existingHero:   existingHero,
+        existingLogo:   existingLogo,
+        command:        game.command,
+        path:           game.executablePath || game.path || game.command,
+        executablePath: game.executablePath,
+        folderName:     game.folderName,
+        exeName:        game.exeName,
+        allIds:         game.allIds,
+        platforms:      game.platforms,
+        force:          true,
+        bypassTtl:      true,
+        source:         'manual-add-readd',
+    });
+    if (!meta) return;
+
+    const metaHero = meta.hero || meta.heroImage || null;
+    const metaLogo = meta.logo || meta.defaultLogo || null;
+
+    if (metaHero) game.heroImage = metaHero;
+    if (metaLogo) game.logo      = metaLogo;
+
+    let finalCover =
+        meta.cover ||
+        meta.image ||
+        meta.defaultImage ||
+        meta.coverUrl ||
+        null;
+    let finalHero  = metaHero;
+    let finalLogo  = metaLogo;
+
+    if (window.electronAPI.cacheAllAssets) {
+        try {
+            const localAssets = await window.electronAPI.cacheAllAssets(
+                { cover: finalCover, hero: finalHero, logo: finalLogo }, game.id
+            );
+            finalCover = localAssets.cover || finalCover;
+            finalHero  = localAssets.hero  || finalHero;
+            finalLogo  = localAssets.logo  || finalLogo;
+        } catch (e) {
+            console.error('[ManualAddArtwork] cacheAllAssets failed', game.id, e);
+        }
+    }
+
+    if (finalCover) {
+        game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
+        localStorage.setItem('cover_' + game.id, finalCover);
+    }
+    if (finalHero) {
+        game.heroImage = finalHero;
+        localStorage.setItem('hero_' + game.id, finalHero);
+    }
+    if (finalLogo) {
+        game.logo = finalLogo;
+        localStorage.setItem('logo_' + game.id, finalLogo);
+    }
+
+    if (finalCover || finalHero || finalLogo) {
+        await window.electronAPI.saveMetadata?.(game.id, {
+            cover:           finalCover,
+            hero:            finalHero,
+            logo:            finalLogo,
+            image:           finalCover,
+            heroImage:       finalHero,
+            artworkSource:   'manual-add',
+            artworkUpdatedAt: Date.now(),
+        }, { source: 'server-details', force: true }).catch(err => {
+            console.warn('[ManualAddArtwork] saveMetadata failed', err);
+        });
+    }
+
+    const patched = _patchGameInMemory(game);
+    _patchVisibleGameCard(patched);
+    applyFilters();
+    return patched;
+}
+window.hydrateManualGameArtworkNow = hydrateManualGameArtworkNow;
+
 function hardDeleteGame(id) {
     openConfirmModal(
         'Delete Forever?',
@@ -4274,7 +4566,9 @@ function hardDeleteGame(id) {
         'Delete Forever',
         async () => {
             await window.electronAPI.deleteGamePermanently(id);
+            _clearArtworkLocalState(id);
             openRecycleBin();
+            reloadLibrary?.();
         }
     );
 }
@@ -5842,6 +6136,7 @@ function _shortName(name) {
 }
 
 document.addEventListener('DOMContentLoaded', () => setTimeout(initSystemStats, 1000));
+document.addEventListener('DOMContentLoaded', () => setTimeout(checkAndShowUpdateNotes, 900));
 
 // ============================================================
 // CONFIRM MODAL
@@ -5940,8 +6235,59 @@ function updateFooterStats() {
 // ============================================================
 // HELP & FEEDBACK
 // ============================================================
-function openHelpModal() { document.getElementById('helpModal').classList.add('active'); }
+function openHelpModal(tab) {
+    document.getElementById('helpModal').classList.add('active');
+    if (tab) switchHelpTab(tab);
+}
 function closeHelpModal() { document.getElementById('helpModal').classList.remove('active'); }
+
+function _positionHelpDropdown() {
+    const wrap = document.getElementById('helpDropdownWrap');
+    const menu = document.getElementById('helpDropdownMenu');
+    if (!wrap || !menu) return;
+    const rect = wrap.getBoundingClientRect();
+    menu.style.left = rect.left + 'px';
+    menu.style.top  = (rect.bottom + 6) + 'px';
+}
+
+function toggleHelpDropdown(e) {
+    if (e) { e.preventDefault(); e.stopPropagation(); }
+    const menu = document.getElementById('helpDropdownMenu');
+    if (!menu) return;
+    const willOpen = !menu.classList.contains('active');
+    menu.classList.toggle('active', willOpen);
+    if (willOpen) _positionHelpDropdown();
+}
+
+function closeHelpDropdown() {
+    const menu = document.getElementById('helpDropdownMenu');
+    if (menu) menu.classList.remove('active');
+}
+
+function handleHelpDropdownAction(e, action) {
+    if (e) {
+        e.preventDefault();
+        e.stopPropagation();
+        if (typeof e.stopImmediatePropagation === 'function') e.stopImmediatePropagation();
+    }
+    closeHelpDropdown();
+    if (action === 'help')      { openHelpModal('guide');    return; }
+    if (action === 'bug')       { openHelpModal('feedback'); return; }
+    if (action === 'community') { openCommunityModal();      return; }
+}
+window.handleHelpDropdownAction = handleHelpDropdownAction;
+
+// Capture pointerdown inside wrap to stop it bubbling to the outside-click handler
+document.addEventListener('pointerdown', function _helpDropdownPointerDown(e) {
+    const wrap = document.getElementById('helpDropdownWrap');
+    if (wrap && wrap.contains(e.target)) e.stopPropagation();
+}, true);
+
+// Close when clicking outside the wrap
+document.addEventListener('click', function _helpDropdownOutside(e) {
+    const wrap = document.getElementById('helpDropdownWrap');
+    if (wrap && !wrap.contains(e.target)) closeHelpDropdown();
+});
 
 function switchHelpTab(tab) {
     document.querySelectorAll('.help-tab').forEach(t => t.classList.remove('active'));
@@ -6328,6 +6674,18 @@ async function openSettingsModal() {
     const modal  = document.getElementById('settingsModal');
     const toggle = document.getElementById('analyticsToggle');
 
+    // startup toggle
+    const startupToggle = document.getElementById('startupToggle');
+    if (startupToggle && window.electronAPI?.getStartupEnabled) {
+        try {
+            const result = await window.electronAPI.getStartupEnabled();
+            // result may be boolean or { enabled: boolean }
+            startupToggle.checked = typeof result === 'object' ? !!result?.enabled : !!result;
+        } catch {
+            startupToggle.checked = true; // default on
+        }
+    }
+
     // analytics toggle
     if (window.electronAPI && window.electronAPI.isAnalyticsEnabled) {
         const isEnabled = await window.electronAPI.isAnalyticsEnabled();
@@ -6374,7 +6732,108 @@ async function toggleAnalytics(checkbox) {
     } catch (err) {
         console.error(err);
         // لو حصل إيرور نرجع الزرار زي ما كان
-        checkbox.checked = !isEnabled; 
+        checkbox.checked = !isEnabled;
         showToast('Error saving setting.', 'error');
+    }
+}
+
+async function toggleStartup(checkbox) {
+    const enabled = checkbox.checked;
+    try {
+        if (window.electronAPI?.setStartupEnabled) {
+            await window.electronAPI.setStartupEnabled(enabled);
+        }
+        showToast(enabled ? 'Baddel will launch at Windows startup.' : 'Startup launch disabled.', 'success');
+    } catch (err) {
+        console.error('[Startup] toggle failed:', err);
+        checkbox.checked = !enabled;
+        showToast('Error saving setting.', 'error');
+    }
+}
+
+// ── What's New / Update Notes Modal ───────────────────────────────────────────
+
+let _pendingUpdateNotesVersion = null;
+
+async function checkAndShowUpdateNotes() {
+    try {
+        if (!window.electronAPI?.getPendingUpdateNotes) return;
+        const result = await window.electronAPI.getPendingUpdateNotes();
+        if (result?.status === 'success' && result.notes && result.notes.version) {
+            showUpdateNotesModal(result.notes);
+        }
+    } catch (err) {
+        console.error('[UpdateNotes] checkAndShowUpdateNotes error:', err);
+    }
+}
+
+function showUpdateNotesModal(notes) {
+    _pendingUpdateNotesVersion = notes.version || null;
+    const titleEl    = document.getElementById('updateNotesTitle');
+    const subtitleEl = document.getElementById('updateNotesSubtitle');
+    const listEl     = document.getElementById('updateNotesList');
+    const footerEl   = document.getElementById('updateNotesFooter');
+
+    if (titleEl)    titleEl.textContent    = notes.title    || 'Baddel has been updated';
+    if (subtitleEl) subtitleEl.textContent = notes.subtitle || "Here's what's new in this version.";
+    if (footerEl)   footerEl.textContent   = notes.footer   || 'Thanks for using Baddel.';
+
+    if (listEl) {
+        listEl.innerHTML = '';
+        const items = Array.isArray(notes.items) ? notes.items : [];
+        items.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'update-notes-item';
+            const titleP = document.createElement('p');
+            titleP.className = 'update-notes-item-title';
+            titleP.textContent = item.title || '';
+            const descP = document.createElement('p');
+            descP.className = 'update-notes-item-desc';
+            descP.textContent = item.description || '';
+            div.appendChild(titleP);
+            div.appendChild(descP);
+            listEl.appendChild(div);
+        });
+    }
+
+    const modal = document.getElementById('updateNotesModal');
+    if (modal) modal.classList.add('active');
+}
+
+async function closeUpdateNotesModal() {
+    const modal = document.getElementById('updateNotesModal');
+    if (modal) modal.classList.remove('active');
+    if (_pendingUpdateNotesVersion && window.electronAPI?.markUpdateNotesShown) {
+        try {
+            await window.electronAPI.markUpdateNotesShown(_pendingUpdateNotesVersion);
+        } catch (err) {
+            console.error('[UpdateNotes] markUpdateNotesShown error:', err);
+        }
+        _pendingUpdateNotesVersion = null;
+    }
+}
+
+window.closeUpdateNotesModal = closeUpdateNotesModal;
+
+// ── Community Hub ──────────────────────────────────────────────────────────────
+
+function openCommunityModal() {
+    const modal = document.getElementById('communityModal');
+    if (modal) modal.classList.add('active');
+}
+
+function closeCommunityModal() {
+    const modal = document.getElementById('communityModal');
+    if (modal) modal.classList.remove('active');
+}
+
+async function openCommunityLink(url) {
+    try {
+        if (window.electronAPI?.openCommunityUrl) {
+            await window.electronAPI.openCommunityUrl(url);
+        }
+    } catch (err) {
+        console.error('[Community] failed to open link:', url, err);
+        showToast('Could not open link.', 'error');
     }
 }

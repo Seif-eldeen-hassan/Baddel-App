@@ -40,12 +40,19 @@ function _getCacheFile() {
  *
  * Packaged mode: prefers steam-runtime/baddel_bridge/baddel_bridge.exe.
  *                Never falls back to python_env in production.
- * Dev mode:      tries python_env venv, then system Python.
+ * Dev mode:      prefers python_env venv. Falls back to system Python only
+ *                when BADDEL_ALLOW_SYSTEM_PYTHON=1 is set.
+ *
+ * @param {boolean}  isPackaged
+ * @param {string}   base
+ * @param {function} [existsFn]  Defaults to fs.existsSync (override in tests)
+ * @param {function} [envFn]     Defaults to (k) => process.env[k] (override in tests)
  *
  * Returns a diagnostics-rich object consumed by start() and diagnoseSteamRuntime().
  */
-function _resolveRuntimePaths(isPackaged, base, existsFn) {
+function _resolveRuntimePaths(isPackaged, base, existsFn, envFn) {
     const exists = existsFn || fs.existsSync;
+    const getEnv = typeof envFn === 'function' ? envFn : (k) => process.env[k];
 
     // New PyInstaller --onefile path:
     //   steam-runtime/baddel_bridge.exe
@@ -97,14 +104,30 @@ function _resolveRuntimePaths(isPackaged, base, existsFn) {
         };
     }
 
-    // Dev mode — try python_env venv then system Python
+    // Dev mode — prefer python_env venv; fall back to system Python only when
+    // BADDEL_ALLOW_SYSTEM_PYTHON=1 is explicitly set.
+    const allowSystemPython = getEnv('BADDEL_ALLOW_SYSTEM_PYTHON') === '1';
+
+    const pythonEnvExe  = path.join(base, 'python_env', 'Scripts', 'python.exe');
+    const pythonEnvBin3 = path.join(base, 'python_env', 'bin', 'python3');
+    const pythonEnvBin  = path.join(base, 'python_env', 'bin', 'python');
+
+    const pythonEnvExists = exists(pythonEnvExe) || exists(pythonEnvBin3) || exists(pythonEnvBin);
+
+    const requirementsPath = path.join(base, 'baddel-steam-integration', 'requirements.txt');
+
     const pythonCandidates = [
-        { p: path.join(base, 'python_env', 'Scripts', 'python.exe'), system: false },
-        { p: path.join(base, 'python_env', 'bin', 'python3'),         system: false },
-        { p: path.join(base, 'python_env', 'bin', 'python'),          system: false },
-        { p: 'python3', system: true },
-        { p: 'python',  system: true },
+        { p: pythonEnvExe,  system: false },
+        { p: pythonEnvBin3, system: false },
+        { p: pythonEnvBin,  system: false },
     ];
+
+    if (allowSystemPython) {
+        pythonCandidates.push(
+            { p: 'python3', system: true },
+            { p: 'python',  system: true },
+        );
+    }
 
     const checked = [];
     let pythonBin = null;
@@ -129,7 +152,12 @@ function _resolveRuntimePaths(isPackaged, base, existsFn) {
     }
 
     const runtimeMode = 'python-source';
-    const error = pythonBin ? null : 'No Python found. Run scripts/build-python-env.bat or install Python 3.11.';
+    let error = null;
+    if (!pythonBin) {
+        error = allowSystemPython
+            ? 'No Python found. Run scripts/build-python-env.bat or install Python 3.11.'
+            : 'Steam Python environment is missing. Run scripts/build-python-env.bat';
+    }
 
     const diagnostics = {
         isPackaged: false,
@@ -141,6 +169,9 @@ function _resolveRuntimePaths(isPackaged, base, existsFn) {
         bridgeExeCandidates,
         pythonExe: pythonBin,
         pythonExists,
+        selectedPython: pythonBin,
+        pythonEnvExists,
+        requirementsPath,
         bridgeScript,
         bridgeScriptExists,
         canRunBridgeVersionCheck: !!pythonBin || bridgeExeExists,
@@ -173,18 +204,26 @@ function resolveSteamRuntimePaths() {
 
 /**
  * Return a diagnostics snapshot — safe to call at any time, never throws.
+ * Includes selfTestOutput from the most recent runBridgeSelfTest() call, if any.
  */
 function diagnoseSteamRuntime() {
     try {
         const { diagnostics } = resolveSteamRuntimePaths();
-        return diagnostics;
+        return {
+            ...diagnostics,
+            selfTestOutput: _lastSelfTestResult ? (_lastSelfTestResult.output || _lastSelfTestResult.error || null) : null,
+        };
     } catch (e) {
-        return { isPackaged: null, runtimeMode: null, error: e.message };
+        return { isPackaged: null, runtimeMode: null, error: e.message, selfTestOutput: null };
     }
 }
 
+/** Stores the output from the most recent self-test run (used by diagnoseSteamRuntime). */
+let _lastSelfTestResult = null;
+
 /**
  * Run baddel_bridge --self-test and return { ok, output?, error? }.
+ * Captures both stdout and stderr so missing-module errors are surfaced clearly.
  * Does not require Steam login.
  */
 async function runBridgeSelfTest() {
@@ -197,24 +236,54 @@ async function runBridgeSelfTest() {
             resolveSteamRuntimePaths();
 
         if (runtimeMode === 'pyinstaller-exe') {
-            if (!bridgeExeExists) return { ok: false, error: 'baddel_bridge.exe not found.' };
-            const { stdout } = await execFileAsync(bridgeExe, ['--self-test'], { timeout: 12_000 });
-            const out = stdout.trim();
-            return out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+            if (!bridgeExeExists) {
+                const r = { ok: false, error: 'baddel_bridge.exe not found.' };
+                _lastSelfTestResult = r;
+                return r;
+            }
+            try {
+                const { stdout } = await execFileAsync(bridgeExe, ['--self-test'], { timeout: 12_000 });
+                const out = stdout.trim();
+                const r = out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+                _lastSelfTestResult = r;
+                return r;
+            } catch (e) {
+                const stdout = typeof e.stdout === 'string' ? e.stdout.trim() : '';
+                const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
+                const output = [stdout, stderr].filter(Boolean).join('\n') || e.message;
+                const r = { ok: false, error: e.message, output };
+                _lastSelfTestResult = r;
+                return r;
+            }
         }
 
         if (pythonBin && fs.existsSync(bridgeScript)) {
-            const { stdout } = await execFileAsync(
-                pythonBin, [bridgeScript, '--self-test'],
-                { timeout: 20_000, cwd: bridgeSrcDir },
-            );
-            const out = stdout.trim();
-            return out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+            try {
+                const { stdout } = await execFileAsync(
+                    pythonBin, [bridgeScript, '--self-test'],
+                    { timeout: 20_000, cwd: bridgeSrcDir },
+                );
+                const out = stdout.trim();
+                const r = out === 'BRIDGE_OK' ? { ok: true } : { ok: false, output: out };
+                _lastSelfTestResult = r;
+                return r;
+            } catch (e) {
+                const stdout = typeof e.stdout === 'string' ? e.stdout.trim() : '';
+                const stderr = typeof e.stderr === 'string' ? e.stderr.trim() : '';
+                const output = [stdout, stderr].filter(Boolean).join('\n') || e.message;
+                const r = { ok: false, error: e.message, output };
+                _lastSelfTestResult = r;
+                return r;
+            }
         }
 
-        return { ok: false, error: 'No runtime available for self-test.' };
+        const r = { ok: false, error: 'No runtime available for self-test.' };
+        _lastSelfTestResult = r;
+        return r;
     } catch (e) {
-        return { ok: false, error: e.message };
+        const r = { ok: false, error: e.message };
+        _lastSelfTestResult = r;
+        return r;
     }
 }
 
@@ -274,6 +343,16 @@ class SteamBridge extends EventEmitter {
                 console.error('[SteamBridge:RUNTIME]', msg);
                 throw new Error(msg);
             }
+            // Pre-flight: run --self-test to verify Python dependencies before spawning.
+            // This surfaces ModuleNotFoundError (e.g. missing certifi) immediately.
+            const selfTest = await runBridgeSelfTest();
+            if (!selfTest.ok) {
+                const detail = selfTest.output || selfTest.error || 'Unknown error';
+                const msg = `Steam bridge self-test failed: ${detail}`;
+                console.error('[SteamBridge:RUNTIME] Self-test failed:', detail);
+                throw new Error(msg);
+            }
+
             console.log(`[SteamBridge:RUNTIME] mode=python-source python=${pythonBin} script=${bridgeScript}`);
             this._proc = spawn(pythonBin, [bridgeScript], {
                 stdio: ['pipe', 'pipe', 'pipe'],

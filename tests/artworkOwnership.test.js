@@ -236,7 +236,7 @@ test('app.js: fetchMetadata short-circuits for customArtworkLocked games', () =>
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
     const fnStart = src.indexOf('async function fetchMetadata');
     assert.ok(fnStart !== -1, 'fetchMetadata must exist');
-    const fnBody = src.slice(fnStart, fnStart + 700);
+    const fnBody = src.slice(fnStart, fnStart + 1500);
     assert.match(fnBody, /customArtworkLocked/, 'fetchMetadata must check customArtworkLocked');
 });
 
