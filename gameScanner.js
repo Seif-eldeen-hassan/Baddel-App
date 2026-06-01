@@ -1244,6 +1244,11 @@ class BaddelEngine {
             this._recordSkip('ea', 'exe_missing', { name, path: installDir });
             return null;
         }
+        // Prefer a real game-specific launch URL; fall back to the exe path directly.
+        // eadesktop://mobilehome/default is the EA App homepage, not a game launch URL.
+        const eaLaunchCmd = (candidate.LaunchCommand && !/mobilehome/i.test(candidate.LaunchCommand))
+            ? candidate.LaunchCommand
+            : exe;
         const game = {
             id: appId ? `ea-${appId}` : `ea-${_hashShort(normalizePath(installDir))}`,
             name,
@@ -1254,8 +1259,9 @@ class BaddelEngine {
             path: installDir,
             executablePath: exe,
             exeCandidates: [path.basename(exe)],
-            command: candidate.LaunchCommand || `eadesktop://mobilehome/default`,
-            launchCommand: candidate.LaunchCommand || `eadesktop://mobilehome/default`,
+            command: eaLaunchCmd,
+            launchCommand: eaLaunchCmd,
+            launchCwd: path.dirname(exe),
             score: 100,
             allIds: appId ? { ea: String(appId) } : {},
             scanSourceDetail: candidate.scanSourceDetail || 'ea_uninstall_registry',
@@ -2348,26 +2354,32 @@ async backgroundDownload(metadata, gameId, notifyCallback = null, { source = 'pi
             const totalPathDropped = totalAfterBloat - afterPathValidation.length;
 
             // ── Map to display-name candidates ───────────────────────────────
-            const allCandidates = afterPathValidation.map(app => ({
-                name: app.Name
-                    .replace(/Microsoft\./i, '')
-                    .replace(/\./g, ' ')
-                    .replace(/([a-z])([A-Z])/g, '$1 $2')
-                    .trim(),
-                packageFamilyName: app.PackageFamilyName,
-                platform: 'Xbox / Store',
-                scannerPlatform: 'xbox',
-                installSource: 'scanner',
-                launcherGameId: app.PackageFamilyName,
-                path: app.InstallLocation,
-                command: `explorer.exe shell:AppsFolder\\${app.PackageFamilyName}!App`,
-                launchCommand: `explorer.exe shell:AppsFolder\\${app.PackageFamilyName}!App`,
-                installVerified: true,
-                isInstalled: true,
-                allIds: { xbox: app.PackageFamilyName },
-                scanSourceDetail: `appx-${scanMode}`,
-                score: 90,
-            }));
+            const allCandidates = afterPathValidation.map(app => {
+                const appUserModelId  = `${app.PackageFamilyName}!App`;
+                const appsFolderTarget = `shell:AppsFolder\\${appUserModelId}`;
+                return {
+                    name: app.Name
+                        .replace(/Microsoft\./i, '')
+                        .replace(/\./g, ' ')
+                        .replace(/([a-z])([A-Z])/g, '$1 $2')
+                        .trim(),
+                    packageFamilyName: app.PackageFamilyName,
+                    appUserModelId,
+                    launchType:      'uwp-appsfolder',
+                    platform:        'Xbox / Store',
+                    scannerPlatform: 'xbox',
+                    installSource:   'scanner',
+                    launcherGameId:  app.PackageFamilyName,
+                    path:            app.InstallLocation,
+                    command:         appsFolderTarget,
+                    launchCommand:   appsFolderTarget,
+                    installVerified: true,
+                    isInstalled:     true,
+                    allIds:          { xbox: app.PackageFamilyName },
+                    scanSourceDetail: `appx-${scanMode}`,
+                    score: 90,
+                };
+            });
             allCandidates.forEach(c => {
                 c.id = `xbox-${String(c.packageFamilyName || c.name).replace(/[^a-z0-9_-]+/gi, '-')}`;
                 c.installedGameKey = makeInstalledGameKey(c);

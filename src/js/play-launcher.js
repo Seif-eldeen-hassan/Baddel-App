@@ -876,8 +876,12 @@ async function _plDoActualLaunch(game) {
             game.id,
             { forceRetryAfterOpen: !!game.__forceRetryAfterOpen }
         );
-        if (launchRes?.status === 'error') throw new Error(launchRes.message);
+        if (launchRes?.status === 'error') {
+            console.error('[PlayLauncher] Launch failed:', launchRes);
+            throw new Error(launchRes.message || launchRes.code || 'Launch failed');
+        }
     } catch (e) {
+        console.error('[PlayLauncher] Error starting game:', e);
         if (typeof showToast === 'function') showToast('Error starting game!', 'error');
         if (overlay) overlay.classList.remove('active');
         window.isLaunching = false;

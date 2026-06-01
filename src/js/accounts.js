@@ -286,7 +286,9 @@ async function renderAccountsView(platform) {
                 </div>
             </div>
 
-            <div class="accounts-list-section" style="--plat-accent: ${cfg.accent};">
+            <div id="accountsOnboardWrap" class="accounts-onboard-wrap" style="display:none;"></div>
+
+            <div class="accounts-list-section" id="accountsListSection" style="--plat-accent: ${cfg.accent};">
                 <div class="accounts-list-header">
                     <span class="accounts-list-label">Saved Accounts</span>
                     <span class="accounts-list-count" id="accountsCount">Loading...</span>
@@ -358,15 +360,88 @@ async function loadAccountsForPlatform(platform) {
         if (heroCount) heroCount.textContent = count;
 
         if (!Array.isArray(profiles) || profiles.length === 0) {
-            grid.innerHTML = `
-                <div class="accounts-empty">
-                    <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="1.5"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                    <p>No saved accounts yet.</p>
-                    <span>Click "Add New Account" to get started.</span>
-                </div>
-            `;
+            const cfg = PLATFORM_CONFIG[platform];
+            const accent = cfg?.accent || '#ffffff';
+            const isLight = (function(hex) {
+                const h = hex.replace('#','');
+                if (h.length < 6) return false;
+                const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+                return (r*299 + g*587 + b*114) / 1000 > 128;
+            })(accent);
+            const numColor = isLight ? '#000' : '#fff';
+
+            const isDarkLogo = platform === 'epic' || platform === 'ubisoft';
+            const logoHtml = cfg?.logoImg
+                ? `<img src="${cfg.logoImg}" ${isDarkLogo ? 'style="filter:brightness(0) invert(1);"' : ''} alt="${escapeHtml(cfg.name)}">`
+                : '';
+
+            const step = (n, text) =>
+                `<div class="acc-onboard-step">
+                    <div class="acc-onboard-step-num" style="background:${accent};color:${numColor};">${n}</div>
+                    <div class="acc-onboard-step-text">${text}</div>
+                </div>`;
+
+            let stepsHtml, warningHtml = '', saveBtnHtml = '';
+
+            if (!cfg?.saveFn) {
+                stepsHtml =
+                    step(1, `Click <strong>Add New Account</strong> below to open ${escapeHtml(cfg?.name ?? 'the launcher')}`) +
+                    step(2, 'Sign in — Baddel saves your account automatically');
+            } else if (platform === 'riot') {
+                stepsHtml =
+                    step(1, 'Click <strong>Add New Account</strong> — Riot Client will open') +
+                    step(2, 'Sign in to the Riot account you want to save') +
+                    step(3, 'Fully close Riot Client from the system tray (right-click → Quit)') +
+                    step(4, 'Return here and click <strong>Save Current</strong>');
+                warningHtml = `<div class="acc-onboard-warning">Riot Client <strong>must be fully closed</strong> from the system tray before saving — leaving it running will cause the save to fail.</div>`;
+            } else {
+                stepsHtml =
+                    step(1, `Click <strong>Add New Account</strong> — ${escapeHtml(cfg.name)} will open`) +
+                    step(2, 'Sign in to the account you want to save') +
+                    step(3, 'Return here and click <strong>Save Current</strong>');
+            }
+
+            if (cfg?.saveFn) {
+                saveBtnHtml = `
+                    <button class="acc-onboard-btn-secondary" onclick="handleSaveAccount('${platform}')">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                        Already logged in? Save Current
+                    </button>`;
+            }
+
+            const onboardWrap   = document.getElementById('accountsOnboardWrap');
+            const listSectionEl = document.getElementById('accountsListSection');
+            if (listSectionEl) listSectionEl.style.display = 'none';
+            if (onboardWrap) {
+                onboardWrap.style.display = 'flex';
+                onboardWrap.innerHTML = `
+                    <div class="acc-onboard-card" style="border:1px solid ${accent}33;box-shadow:0 0 48px -18px ${accent}88;">
+                        <div class="acc-onboard-top">
+                            <div class="acc-onboard-logo">${logoHtml}</div>
+                            <div>
+                                <h2 class="acc-onboard-title">No ${escapeHtml(cfg?.name ?? platform)} accounts saved yet</h2>
+                                <p class="acc-onboard-sub">Save the account currently signed in to ${escapeHtml(cfg?.name ?? 'the launcher')}, or add a new one to get started.</p>
+                            </div>
+                        </div>
+                        <div class="acc-onboard-steps">${stepsHtml}</div>
+                        ${warningHtml}
+                        <div class="acc-onboard-actions">
+                            <button class="acc-onboard-btn-primary" style="background:${accent};color:${numColor};" onclick="addNewAccount('${platform}')">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                                Add New Account
+                            </button>
+                            ${saveBtnHtml}
+                        </div>
+                    </div>
+                `;
+            }
             return;
         }
+
+        const onboardWrapFull   = document.getElementById('accountsOnboardWrap');
+        const listSectionFull   = document.getElementById('accountsListSection');
+        if (onboardWrapFull) onboardWrapFull.style.display = 'none';
+        if (listSectionFull) listSectionFull.style.display = '';
 
         // رندر الـ account cards
         grid.innerHTML = '';

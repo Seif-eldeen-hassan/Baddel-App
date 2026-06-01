@@ -5764,10 +5764,19 @@ img.invert-on-dark {
     font-size: 0.78rem; color: rgba(255,255,255,0.35); margin: 0 0 20px;
 }
 .update-notes-primary-btn {
-    background: #5865f2; border: none; border-radius: 10px; color: #fff;
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    box-shadow: 0 0 24px rgba(34, 197, 94, 0.28);
+    border: none; border-radius: 10px; color: #fff;
     font-size: 0.9rem; font-weight: 600; padding: 11px 32px;
-    cursor: pointer; transition: background 0.15s, transform 0.1s;
+    cursor: pointer; transition: background 0.2s, box-shadow 0.2s, transform 0.1s;
     display: block; width: 100%;
+    outline-offset: 3px;
 }
-.update-notes-primary-btn:hover { background: #4752c4; }
+.update-notes-primary-btn:hover {
+    background: linear-gradient(135deg, #34d399, #22c55e);
+    box-shadow: 0 0 32px rgba(34, 197, 94, 0.38);
+}
+.update-notes-primary-btn:focus-visible {
+    outline: 2px solid #22c55e;
+}
 .update-notes-primary-btn:active { transform: scale(0.98); }

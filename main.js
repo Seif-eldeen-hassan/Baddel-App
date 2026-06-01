@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
 const os = require('os');
-const { exec } = require('child_process');
+const { exec, spawn } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
 const { BrowserView, WebContentsView } = require('electron');
@@ -93,6 +93,30 @@ function getUpdateNotesForVersion(version) {
                 }
             ],
             footer: 'Thanks for using Baddel.'
+        },
+        '1.1.3': {
+            version: '1.1.3',
+            title: 'Baddel just got better',
+            subtitle: "Here's what changed in this update.",
+            items: [
+                {
+                    title: 'Smoother Riot launches',
+                    description: "Riot games now open without Baddel showing a fake launch error."
+                },
+                {
+                    title: 'EA games open the right way',
+                    description: "EA games now use the game's real launch path when available, instead of relying on a Windows link that may not work on every PC."
+                },
+                {
+                    title: 'Startup setting is more accurate',
+                    description: 'The startup toggle now better matches your real Windows startup setting.'
+                },
+                {
+                    title: 'Account Switcher is easier to understand',
+                    description: 'Adding a new account now gives clearer steps, so players know when to sign in and when to save the account.'
+                }
+            ],
+            footer: 'Thanks for using Baddel. More improvements are coming.'
         }
     };
 
@@ -128,14 +152,25 @@ function getPendingUpdateNotesPayload() {
     const currentVersion = app.getVersion();
     const pendingVersion = String(state.pendingVersion || '');
 
-    if (!pendingVersion) return null;
-    if (pendingVersion !== String(currentVersion)) return null;
+    console.log(`[UpdateNotes] getPendingUpdateNotesPayload: currentVersion=${currentVersion}, pendingVersion=${pendingVersion || '(none)'}`);
+
+    if (!pendingVersion) {
+        console.log('[UpdateNotes] skip: no pendingVersion stored');
+        return null;
+    }
+    if (pendingVersion !== String(currentVersion)) {
+        console.log(`[UpdateNotes] skip: pendingVersion (${pendingVersion}) !== currentVersion (${currentVersion})`);
+        return null;
+    }
 
     const shownVersions = Array.isArray(state.shownVersions)
         ? state.shownVersions.map(String)
         : [];
 
-    if (shownVersions.includes(pendingVersion)) return null;
+    if (shownVersions.includes(pendingVersion)) {
+        console.log(`[UpdateNotes] skip: ${pendingVersion} already shown`);
+        return null;
+    }
 
     return getUpdateNotesForVersion(pendingVersion);
 }
@@ -257,6 +292,9 @@ function setupAutoUpdater() {
             _updState.status      = 'downloaded';
             _updState.downloaded  = true;
             _updState.downloading = false;
+            _updState.version     = info.version;
+            // Persist immediately so the version survives a restart before the user clicks "Restart now".
+            markUpdateNotesPending(info.version);
             if (mainWindow) mainWindow.webContents.send('update-ready', info.version);
             _sendUpdateStatus({ status: 'downloaded', version: info.version });
         });
@@ -392,9 +430,14 @@ ipcMain.on('restart-and-update', () => {
         }
     } catch {}
 
-    const targetVersion = _updState.version || autoUpdater?.currentVersion?.version;
+    // Use the version saved by update-downloaded as first fallback; never fall back to
+    // autoUpdater.currentVersion (the OLD running version) — that would poison pendingVersion.
+    const savedState    = readUpdateNotesState();
+    const targetVersion = _updState.version || savedState.pendingVersion || null;
     if (targetVersion) {
         markUpdateNotesPending(targetVersion);
+    } else {
+        console.warn('[UpdateNotes] restart-and-update: no target version found — update notes will not show');
     }
 
     setTimeout(() => {
@@ -905,6 +948,96 @@ function _uwpTitleMatchesGame(title, gameName) {
 
     const hits = gameTokens.filter(w => titleTokens.has(w)).length;
     return hits >= Math.min(2, gameTokens.length);
+}
+
+function _parseLaunchCommand(raw) {
+    const s = String(raw || '').trim();
+    if (!s || s.includes('://') || /^shell:/i.test(s)) {
+        return { exePath: null, parsedArgs: [] };
+    }
+    // Form 1: "quoted path\to\exe.exe" [args...]
+    const quotedMatch = s.match(/^"([^"]+\.exe)"\s*(.*)/i);
+    if (quotedMatch) {
+        const rest = quotedMatch[2].trim();
+        return { exePath: quotedMatch[1].trim(), parsedArgs: rest ? rest.split(/\s+/) : [] };
+    }
+    // Form 2: unquoted path\to\exe.exe [args...] (exe portion has no spaces)
+    const unquotedMatch = s.match(/^(\S+\.exe)\s*(.*)/i);
+    if (unquotedMatch) {
+        const rest = unquotedMatch[2].trim();
+        return { exePath: unquotedMatch[1].trim(), parsedArgs: rest ? rest.split(/\s+/) : [] };
+    }
+    return { exePath: null, parsedArgs: [] };
+}
+
+function _extractAppsFolderLaunchTarget(command, trusted = null) {
+    const candidates = [
+        trusted?.appUserModelId ? `shell:AppsFolder\\${trusted.appUserModelId}` : null,
+        trusted?.aumid          ? `shell:AppsFolder\\${trusted.aumid}`          : null,
+        trusted?.launchUri      || null,
+        command                 || '',
+        trusted?.command        || '',
+        trusted?.launchCommand  || '',
+    ].filter(Boolean);
+
+    for (const raw of candidates) {
+        let s = String(raw || '').trim().replace(/^"+|"+$/g, '');
+
+        // Old DB format: explorer.exe shell:AppsFolder\PackageFamilyName!App
+        const oldMatch = s.match(/^(?:"?explorer(?:\.exe)?"?\s+)?(shell:AppsFolder\\.+)$/i);
+        if (oldMatch) return oldMatch[1].trim();
+
+        // New preferred format: shell:AppsFolder\PackageFamilyName!App
+        if (/^shell:AppsFolder\\.+/i.test(s)) return s;
+
+        // Raw AUMID: PackageFamilyName!App
+        if (/^[A-Za-z0-9_.-]+_[A-Za-z0-9]+!/.test(s)) return `shell:AppsFolder\\${s}`;
+    }
+
+    // If only PackageFamilyName exists, append !App
+    const pfn = trusted?.packageFamilyName || trusted?.launcherGameId;
+    if (pfn && /^[A-Za-z0-9_.-]+_[A-Za-z0-9]+$/.test(String(pfn))) {
+        return `shell:AppsFolder\\${pfn}!App`;
+    }
+
+    return null;
+}
+
+function _launchAppsFolderTarget(target) {
+    return new Promise((resolve) => {
+        if (!target || !/^shell:AppsFolder\\/i.test(target)) {
+            return resolve({ ok: false, error: new Error('Invalid AppsFolder target') });
+        }
+
+        console.log('[Launch][Xbox] explorer.exe', target);
+
+        const child = spawn('explorer.exe', [target], {
+            shell:       false,
+            windowsHide: false,
+            detached:    true,
+            stdio:       'ignore',
+        });
+
+        let settled = false;
+
+        child.once('spawn', () => {
+            settled = true;
+            try { child.unref?.(); } catch {}
+            resolve({ ok: true, pid: child.pid });
+        });
+
+        child.once('error', (err) => {
+            if (settled) return;
+            settled = true;
+            resolve({ ok: false, error: err });
+        });
+
+        setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve({ ok: true, pid: child.pid, assumed: true });
+        }, 1200);
+    });
 }
 
 function _isXboxOrStoreGame(game, gameId, command, gamePath) {
@@ -2587,7 +2720,8 @@ ipcMain.handle('launch-game', async (_, command, gameId, gamePath, gameName, opt
     if (typeof command !== 'string' || !command.trim()) {
         return { status: 'error', code: 'INVALID_COMMAND', message: 'Invalid launch command.' };
     }
-    const cleanCmd = String(command || '').replace(/"/g, '').trim();
+    const _cmdParsed = _parseLaunchCommand(command);
+    const cleanCmd = _cmdParsed.exePath || String(command || '').replace(/"/g, '').trim();
     const ext      = path.extname(cleanCmd).toLowerCase();
 
     // ── Diagnostics snapshot ─────────────────────────────────────────────────
@@ -2675,6 +2809,61 @@ ipcMain.handle('launch-game', async (_, command, gameId, gamePath, gameName, opt
 
     try {
         let launchSuccess = false;
+
+        // ── Branch Xbox/UWP: shell:AppsFolder\PackageFamilyName!App ─────────
+        const appsFolderTarget = _extractAppsFolderLaunchTarget(cleanCmd, trusted);
+
+        if (appsFolderTarget) {
+            console.log('[Launch] Branch Xbox/UWP — AppsFolder:', appsFolderTarget);
+
+            const result = await _launchAppsFolderTarget(appsFolderTarget);
+
+            if (!result.ok) {
+                return launchError(
+                    'XBOX_APPSFOLDER_LAUNCH_FAILED',
+                    result.error?.message || 'Failed to launch Xbox / Microsoft Store app.'
+                );
+            }
+
+            startGameTracking(
+                gameId,
+                command,
+                trusted?.path || gamePath,
+                gameName,
+                'medium',
+                true
+            );
+
+            analytics.logGameLaunched('xbox').catch(() => {});
+
+            return {
+                status: 'success',
+                method: 'xbox-appsfolder',
+                target: appsFolderTarget,
+            };
+        }
+
+        // ── EA exe fallback: eadesktop://mobilehome/default is the EA App homepage ──
+        // Old DB records may have this generic URL instead of a real game launch command.
+        if (/^eadesktop:\/\/mobilehome/i.test(cleanCmd) &&
+            trusted?.executablePath &&
+            fsSync.existsSync(trusted.executablePath)) {
+            console.log('[Launch] EA mobilehome fallback → using executablePath:', trusted.executablePath);
+            const eaExe = trusted.executablePath;
+            const eaCwd = trusted.launchCwd || path.dirname(eaExe);
+            let eaResult;
+            try {
+                eaResult = await safeLauncher.launchExecutable(eaExe, [], { cwd: eaCwd });
+            } catch (err) {
+                eaResult = { ok: false, error: err };
+            }
+            if (!eaResult.ok) {
+                return launchError('SPAWN_ERROR', eaResult.error?.message || 'EA executable launch failed');
+            }
+            startGameTracking(gameId, command, trusted.path || gamePath, gameName, 'high', true);
+            analytics.logGameLaunched('ea').catch(() => {});
+            return { status: 'success', method: 'ea-exe-fallback' };
+        }
 
         // ── Branch A/B: protocol URLs (steam://, com.epicgames.launcher://, etc.) ──
         if (cleanCmd.includes('://')) {
@@ -2788,7 +2977,7 @@ ipcMain.handle('launch-game', async (_, command, gameId, gamePath, gameName, opt
         } else if (ext === '.exe') {
             console.log('[Launch] Branch D — .exe spawn:', cleanCmd);
             if (!diag.existsCommand) return launchError('PATH_NOT_FOUND', `Executable not found: ${cleanCmd}`);
-            const spawnArgs = (trusted?.launchArgs?.length) ? trusted.launchArgs : [];
+            const spawnArgs = (trusted?.launchArgs?.length) ? trusted.launchArgs : (_cmdParsed.parsedArgs || []);
             let spawnCwd;
             try {
                 const s = diag.launchCwd ? fsSync.statSync(diag.launchCwd) : null;
@@ -4126,17 +4315,19 @@ function getStartupExePath() {
     return process.env.PORTABLE_EXECUTABLE_FILE || process.execPath;
 }
 
+// Returns the exact identity used for both setLoginItemSettings and getLoginItemSettings.
+// On Windows, path+args together identify the registry entry — both calls must use the same values.
+function getStartupLoginItemOptions() {
+    return { path: getStartupExePath(), args: ['--hidden', '--startup'] };
+}
+
 function applyStartupSetting(enabled, reason = 'unknown') {
     if (!app.isPackaged) return false;
 
-    const exePath = getStartupExePath();
-    app.setLoginItemSettings({
-        openAtLogin: !!enabled,
-        path: exePath,
-        args: ['--hidden', '--startup'],
-    });
+    const opts = getStartupLoginItemOptions();
+    app.setLoginItemSettings({ openAtLogin: !!enabled, ...opts });
 
-    console.log(`[Startup] openAtLogin=${!!enabled} reason=${reason} path=${exePath}`);
+    console.log(`[Startup] openAtLogin=${!!enabled} reason=${reason} path=${opts.path}`);
     return true;
 }
 
@@ -4194,9 +4385,9 @@ function setupWindowsIntegration() {
         });
     }
 
-    // Log current Windows login-item state for diagnostics
+    // Log current Windows login-item state for diagnostics (must use same options as set)
     try {
-        console.log('[Startup] loginItemSettings:', app.getLoginItemSettings());
+        console.log('[Startup] loginItemSettings:', app.getLoginItemSettings(getStartupLoginItemOptions()));
     } catch {}
 }
 
@@ -4205,35 +4396,78 @@ ipcMain.handle('get-startup-enabled', () => {
     if (!app.isPackaged) return false;
 
     const prefs = readStartupPrefs();
-    // If the user has an explicit preference, return that — not the OS state which
-    // may transiently lag on a fresh install.
-    if (prefs.userSetStartupEnabled === true) {
-        return !!prefs.startupEnabled;
+    const opts  = getStartupLoginItemOptions();
+
+    // OS state is the ground truth — query with same path/args used for set.
+    let osEnabled = null;
+    try { osEnabled = !!app.getLoginItemSettings(opts).openAtLogin; } catch {}
+
+    if (osEnabled !== null) {
+        const prefEnabled = prefs.userSetStartupEnabled === true ? !!prefs.startupEnabled : null;
+        return { enabled: osEnabled, osEnabled, prefEnabled,
+                 userSetStartupEnabled: prefs.userSetStartupEnabled === true,
+                 source: 'os', path: opts.path };
     }
 
-    // No explicit preference yet; fall back to actual Windows login-item state.
-    try {
-        return !!app.getLoginItemSettings().openAtLogin;
-    } catch {
-        return true; // default: enabled
+    // OS query unavailable — fall back to stored preference.
+    if (prefs.userSetStartupEnabled === true) {
+        return { enabled: !!prefs.startupEnabled, source: 'preference',
+                 osEnabled: null, userSetStartupEnabled: true, path: opts.path };
     }
+    return { enabled: true, source: 'default', osEnabled: null, userSetStartupEnabled: false, path: opts.path };
 });
 
 ipcMain.handle('set-startup-enabled', (_, enable) => {
-    if (!app.isPackaged) return { status: 'dev', enabled: false };
+    if (!app.isPackaged) return { status: 'dev', enabled: false, requestedEnabled: !!enable };
 
     const enabled = !!enable;
-    applyStartupSetting(enabled, 'user-toggle');
+    const opts    = getStartupLoginItemOptions();
+    console.log(`[Startup] set-startup-enabled: requested=${enabled} isPackaged=${app.isPackaged} path=${opts.path} args=${JSON.stringify(opts.args)}`);
+
+    try {
+        applyStartupSetting(enabled, 'user-toggle');
+    } catch (err) {
+        console.error('[Startup] setLoginItemSettings threw:', err?.message || err);
+        return { status: 'error', enabled: false, requestedEnabled: enabled, osEnabled: null, path: opts.path };
+    }
+
+    // Verify what the OS committed — must use the same path/args identity.
+    let osEnabled = null;
+    try {
+        osEnabled = !!app.getLoginItemSettings(opts).openAtLogin;
+        console.log(`[Startup] set-startup-enabled: osEnabled=${osEnabled} requested=${enabled}`);
+    } catch (err) {
+        console.warn('[Startup] could not verify via getLoginItemSettings:', err?.message);
+    }
+
+    const verifiedEnabled = osEnabled !== null ? osEnabled : enabled;
+    console.log(`[Startup] set-startup-enabled: verifiedEnabled=${verifiedEnabled}`);
 
     const prefs = readStartupPrefs();
+    if (verifiedEnabled !== enabled) {
+        console.warn(`[Startup] mismatch — requested=${enabled} verified=${verifiedEnabled}`);
+        writeStartupPrefs({
+            ...prefs,
+            startupEnabled: verifiedEnabled,
+            userSetStartupEnabled: true,
+            startupVerified: verifiedEnabled,
+            lastRequestedStartupEnabled: enabled,
+            lastStartupStatus: 'mismatch',
+            updatedAt: new Date().toISOString(),
+        });
+        return { status: 'mismatch', enabled: verifiedEnabled, requestedEnabled: enabled, osEnabled, path: opts.path };
+    }
+
     writeStartupPrefs({
         ...prefs,
-        startupEnabled: enabled,
+        startupEnabled: verifiedEnabled,
         userSetStartupEnabled: true,
+        startupVerified: verifiedEnabled,
+        lastRequestedStartupEnabled: enabled,
+        lastStartupStatus: 'success',
         updatedAt: new Date().toISOString(),
     });
-
-    return { status: 'success', enabled };
+    return { status: 'success', enabled: verifiedEnabled, requestedEnabled: enabled, osEnabled, path: opts.path };
 });
 
 

@@ -128,15 +128,30 @@ function launchExecutable(rawPath, args = [], options = {}) {
         return Promise.resolve({ ok: false, error: syncErr });
     }
     return new Promise(resolve => {
-        child.on('spawn', () =>
-            console.log(`[safeLauncher] spawn pid=${child.pid} exe=${path.basename(exePath)}`));
-        child.on('error', err => {
+        let settled = false;
+
+        child.once('spawn', () => {
+            console.log(`[safeLauncher] spawn pid=${child.pid} exe=${path.basename(exePath)}`);
+            settled = true;
+            try { child.unref?.(); } catch {}
+            resolve({ ok: true, pid: child.pid });
+        });
+
+        child.once('error', (err) => {
             console.error(`[safeLauncher] error exe=${path.basename(exePath)}:`, err.message);
+            if (settled) return;
+            settled = true;
             resolve({ ok: false, error: err });
         });
+
         child.on('exit', (code, signal) =>
             console.log(`[safeLauncher] exit pid=${child.pid} code=${code} signal=${signal}`));
-        setTimeout(() => resolve({ ok: true, pid: child.pid }), 500);
+
+        setTimeout(() => {
+            if (settled) return;
+            settled = true;
+            resolve({ ok: true, pid: child.pid, assumed: true });
+        }, 1200);
     });
 }
 

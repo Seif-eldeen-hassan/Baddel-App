@@ -484,7 +484,7 @@ test('main.js: isManualGame check and manual-shell-openpath exist in launch-game
     assert.match(slice, /manual-shell-openpath/, 'manual-shell-openpath method string present');
     assert.match(slice, /shell\.openPath\(manualLaunchPath\)/, 'shell.openPath(manualLaunchPath) called');
     // manual branch must appear before launchExecutable spawn — search wider window
-    const handlerBody = js.slice(idx, idx + 12000);
+    const handlerBody = js.slice(idx, idx + 16000);
     const manualIdx = handlerBody.indexOf('isManualGame');
     const spawnIdx  = handlerBody.indexOf('launchExecutable');
     assert.ok(spawnIdx > -1, 'launchExecutable found in handler');

@@ -524,6 +524,112 @@ function showAddAccountModal(platform, onConfirm) {
     }, 10);
 }
 
+function highlightSaveCurrentButton(platform) {
+    const cfg = PLATFORM_CONFIG[platform];
+    const accentColor = cfg?.accent || '#ffffff';
+    const saveBtns = document.querySelectorAll('.acc-btn.acc-btn-secondary');
+    saveBtns.forEach(btn => {
+        btn.style.setProperty('--pulse-color', accentColor + '66');
+        btn.classList.add('acc-btn-pulse');
+    });
+    setTimeout(() => {
+        document.querySelectorAll('.acc-btn-pulse').forEach(btn => {
+            btn.classList.remove('acc-btn-pulse');
+            btn.style.removeProperty('--pulse-color');
+        });
+    }, 10000);
+}
+
+window.dismissPostAddGuide = function(platform) {
+    const guideId = `post-add-guide-${platform}`;
+    const el = document.getElementById(guideId);
+    if (!el) return;
+    el.style.transition = 'opacity 0.2s ease, transform 0.2s ease';
+    el.style.opacity = '0';
+    el.style.transform = 'translateY(-6px)';
+    setTimeout(() => el.remove(), 220);
+    document.querySelectorAll('.acc-btn-pulse').forEach(btn => {
+        btn.classList.remove('acc-btn-pulse');
+        btn.style.removeProperty('--pulse-color');
+    });
+};
+
+function showPostAddAccountGuide(platform) {
+    const cfg = PLATFORM_CONFIG[platform];
+    if (!cfg || !cfg.saveFn) return; // Steam saves automatically — no guide needed
+
+    const guideId = `post-add-guide-${platform}`;
+    const existing = document.getElementById(guideId);
+    if (existing) existing.remove();
+
+    const steps = ADD_ACCOUNT_STEPS[platform];
+    const accent = steps?.accent || cfg.accent || '#ffffff';
+    const isLight = (function(hex) {
+        const h = hex.replace('#','');
+        if (h.length < 6) return false;
+        const r = parseInt(h.slice(0,2),16), g = parseInt(h.slice(2,4),16), b = parseInt(h.slice(4,6),16);
+        return (r*299 + g*587 + b*114) / 1000 > 128;
+    })(accent);
+    const btnTextColor = isLight ? '#000' : '#fff';
+
+    const riotSpecial = platform === 'riot';
+    const warningText = riotSpecial
+        ? 'Before saving: fully close Riot Client from the system tray (right-click tray icon → Quit).'
+        : null;
+
+    const stepList = riotSpecial
+        ? [
+            'Sign in to your new Riot account in the launcher',
+            'Fully quit Riot Client from the system tray',
+            'Return here and click "Save Current Account"'
+          ]
+        : [
+            `Sign in to your new ${escapeHtml(cfg.name)} account`,
+            'Return here and click "Save Current Account"'
+          ];
+
+    const stepsHtml = stepList.map((text, i) =>
+        `<div class="pag-step">
+            <div class="pag-step-num" style="background:${accent};color:${btnTextColor};">${i + 1}</div>
+            <span>${escapeHtml(text)}</span>
+        </div>`
+    ).join('');
+
+    const warningHtml = warningText
+        ? `<div class="pag-warning">${escapeHtml(warningText)}</div>`
+        : '';
+
+    const guide = document.createElement('div');
+    guide.id = guideId;
+    guide.className = 'post-add-guide';
+    guide.innerHTML = `
+        <div class="pag-header">
+            <span class="pag-title">${escapeHtml(cfg.name)} opened — now sign in</span>
+            <button class="pag-dismiss" onclick="window.dismissPostAddGuide('${platform}')" title="Dismiss">&times;</button>
+        </div>
+        <div class="pag-subtitle">Follow these steps, then save your account here:</div>
+        <div class="pag-steps">${stepsHtml}</div>
+        ${warningHtml}
+        <div class="pag-actions">
+            <button class="pag-btn-primary"
+                style="background:${accent};color:${btnTextColor};"
+                onclick="window.dismissPostAddGuide('${platform}');handleSaveAccount('${platform}');">
+                I'm logged in — Save Current Account
+            </button>
+            <button class="pag-btn-secondary" onclick="window.dismissPostAddGuide('${platform}')">
+                I'll do it later
+            </button>
+        </div>
+    `;
+
+    const listSection = document.querySelector('.accounts-list-section');
+    if (listSection) {
+        listSection.insertBefore(guide, listSection.firstChild);
+    }
+
+    highlightSaveCurrentButton(platform);
+}
+
 async function addNewAccount(platform) {
     if (isAccountProcessing) {
         showToast('Please wait for the current action to finish.', 'warning');
@@ -531,7 +637,7 @@ async function addNewAccount(platform) {
     }
 
     showAddAccountModal(platform, async () => {
-        if (isAccountProcessing) return; 
+        if (isAccountProcessing) return;
 
         isAccountProcessing = true;
 
@@ -548,6 +654,7 @@ async function addNewAccount(platform) {
 
         try {
             await cfg.addFn();
+            showPostAddAccountGuide(platform);
         } catch (err) {
             showToast(`Error: ${err}`, 'error');
         } finally {

@@ -3467,6 +3467,92 @@ function createGameCard(game, isRecent = false) {
     return card;
 }
 
+function _getRecentHeroCandidate(game) {
+    if (!game) return null;
+    return game.heroImage || game.defaultHero || game.heroUrl || game.hero || null;
+}
+
+function _getRecentPosterFallback(game) {
+    if (!game) return null;
+    return game.image || game.defaultImage || game.coverUrl || game.cover || null;
+}
+
+function _getRecentDisplayImage(game) {
+    return (
+        _getRecentHeroCandidate(game) ||
+        _getRecentPosterFallback(game) ||
+        'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
+    );
+}
+
+async function hydrateRecentHeroArtwork(game, imgEl) {
+    if (!game || !imgEl || !window.electronAPI?.getMetadata) return null;
+
+    const meta = await window.electronAPI.getMetadata(game.name, {
+        id:             game.id,
+        platform:       game.platform,
+        platforms:      game.platforms,
+        command:        game.command,
+        path:           game.executablePath || game.path || game.command,
+        executablePath: game.executablePath,
+        folderName:     game.folderName,
+        exeName:        game.exeName,
+        allIds:         game.allIds,
+        existingHero:   game.heroImage || game.defaultHero || game.heroUrl || null,
+        existingCover:  game.image || game.defaultImage || game.coverUrl || null,
+        source:         'jump-back-in',
+        preferHero:     true,
+    });
+
+    if (!meta) return null;
+
+    let hero  = meta.hero  || meta.heroImage  || meta.defaultHero  || meta.heroUrl  || null;
+    let logo  = meta.logo  || meta.defaultLogo || meta.logoUrl || null;
+    let cover = meta.cover || meta.image || meta.defaultImage || meta.coverUrl || null;
+
+    if (window.electronAPI.cacheAllAssets && (hero || logo || cover)) {
+        const localAssets = await window.electronAPI.cacheAllAssets(
+            { hero, logo, cover },
+            game.id
+        ).catch(() => null);
+
+        if (localAssets) {
+            hero  = localAssets.hero  || hero;
+            logo  = localAssets.logo  || logo;
+            cover = localAssets.cover || cover;
+        }
+    }
+
+    if (hero) {
+        game.heroImage  = hero;
+        game.defaultHero = hero;
+        game.heroUrl    = hero;
+        localStorage.setItem('hero_' + game.id, hero);
+
+        imgEl.src = safeImageUrl(hero);
+
+        if (typeof _patchGameInMemory === 'function') _patchGameInMemory(game);
+
+        if (window.electronAPI.saveMetadata) {
+            window.electronAPI.saveMetadata(game.id, {
+                hero,
+                heroImage: hero,
+                logo,
+                cover,
+                image: cover,
+            }, { source: 'jump-back-in', force: true }).catch(() => {});
+        }
+
+        return hero;
+    }
+
+    if (cover && !imgEl.src) {
+        imgEl.src = safeImageUrl(cover);
+    }
+
+    return null;
+}
+
 function createRecentCard(game, isFeatured = false) {
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
@@ -3477,14 +3563,7 @@ function createRecentCard(game, isFeatured = false) {
     const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
 
     // Cover image — hero artwork first for the cinematic 16:9 look
-    const transparentPixel = "data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=";
-    const displayImg =
-        game.heroImage    ||
-        game.defaultHero  ||
-        game.image        ||
-        game.defaultImage ||
-        game.coverUrl     ||
-        transparentPixel;
+    const displayImg = _getRecentDisplayImage(game);
 
     // Labels
     const lastPlayedLabel = formatLastPlayed(pData.lastPlayed);
@@ -3535,16 +3614,22 @@ function createRecentCard(game, isFeatured = false) {
     imgEl.addEventListener('load', () => imgEl.classList.add('img-loaded'), { once: true });
     if (imgEl.complete && imgEl.naturalWidth > 0) imgEl.classList.add('img-loaded');
 
-    // If a local hero or cover is already on disk, use it directly;
-    // otherwise run the metadata pipeline (which will also deliver hero art)
-    const localAsset = (game.heroImage   && game.heroImage.startsWith('file://'))   ? game.heroImage
-                     : (game.defaultHero && game.defaultHero.startsWith('file://')) ? game.defaultHero
-                     : (game.image       && game.image.startsWith('file://'))       ? game.image
-                     : null;
-    if (localAsset) {
-        imgEl.src = localAsset;
+    // Hero-first hydration: use cached hero if available, otherwise hydrate in background
+    const recentHero   = _getRecentHeroCandidate(game);
+    const recentPoster = _getRecentPosterFallback(game);
+
+    if (recentHero) {
+        imgEl.src = safeImageUrl(recentHero);
+        checkBackgroundAssets?.(game);
+    } else if (recentPoster) {
+        imgEl.src = safeImageUrl(recentPoster);
+        hydrateRecentHeroArtwork(game, imgEl).catch(err => {
+            console.warn('[JumpBackIn] hero hydration failed:', err);
+        });
     } else {
-        fetchMetadata(imgEl, game);
+        hydrateRecentHeroArtwork(game, imgEl).catch(err => {
+            console.warn('[JumpBackIn] hero hydration failed:', err);
+        });
     }
 
     // Hero update on hover (same as createGameCard)
@@ -6137,6 +6222,10 @@ function _shortName(name) {
 
 document.addEventListener('DOMContentLoaded', () => setTimeout(initSystemStats, 1000));
 document.addEventListener('DOMContentLoaded', () => setTimeout(checkAndShowUpdateNotes, 900));
+document.addEventListener('DOMContentLoaded', () => {
+    const startupToggleEl = document.getElementById('startupToggle');
+    if (startupToggleEl) startupToggleEl.addEventListener('change', () => toggleStartup(startupToggleEl));
+});
 
 // ============================================================
 // CONFIRM MODAL
@@ -6674,15 +6763,17 @@ async function openSettingsModal() {
     const modal  = document.getElementById('settingsModal');
     const toggle = document.getElementById('analyticsToggle');
 
-    // startup toggle
+    // startup toggle — also persist verified state for reliable toggle direction
     const startupToggle = document.getElementById('startupToggle');
     if (startupToggle && window.electronAPI?.getStartupEnabled) {
         try {
             const result = await window.electronAPI.getStartupEnabled();
-            // result may be boolean or { enabled: boolean }
-            startupToggle.checked = typeof result === 'object' ? !!result?.enabled : !!result;
+            const state = typeof result === 'object' ? !!result?.enabled : !!result;
+            startupToggle.checked = state;
+            startupToggle.dataset.currentState = String(state);
         } catch {
-            startupToggle.checked = true; // default on
+            startupToggle.checked = true;
+            startupToggle.dataset.currentState = 'true';
         }
     }
 
@@ -6738,16 +6829,45 @@ async function toggleAnalytics(checkbox) {
 }
 
 async function toggleStartup(checkbox) {
-    const enabled = checkbox.checked;
+    if (checkbox.dataset.saving === 'true') return;
+    // Compute the requested state as the inverse of the last verified state.
+    // Do NOT rely on checkbox.checked — it can be stale if a previous result
+    // set it back to false and the browser hasn't yet processed the next click.
+    const previous  = checkbox.dataset.currentState === 'true';
+    const requested = !previous;
+    const enabled   = requested; // kept for test compatibility
+    checkbox.dataset.saving = 'true';
+    checkbox.disabled = true;
+    checkbox.checked = requested; // optimistic update visible immediately
     try {
         if (window.electronAPI?.setStartupEnabled) {
-            await window.electronAPI.setStartupEnabled(enabled);
+            const result = await window.electronAPI.setStartupEnabled(enabled);
+            if (result && typeof result.enabled === 'boolean') {
+                checkbox.checked = result.enabled;
+            }
+            const verified = (result && typeof result.enabled === 'boolean') ? result.enabled : requested;
+            checkbox.dataset.currentState = String(verified);
+            if (result?.status === 'mismatch' || result?.status === 'error') {
+                showToast(
+                    requested
+                        ? 'Startup could not be enabled. Please check Windows Startup Apps and try again.'
+                        : 'Startup could not be disabled. Please check Windows Startup Apps.',
+                    'error'
+                );
+            } else if (verified) {
+                showToast('Baddel will launch at Windows startup.', 'success');
+            } else {
+                showToast('Startup launch disabled.', 'success');
+            }
         }
-        showToast(enabled ? 'Baddel will launch at Windows startup.' : 'Startup launch disabled.', 'success');
     } catch (err) {
         console.error('[Startup] toggle failed:', err);
         checkbox.checked = !enabled;
+        checkbox.dataset.currentState = String(!enabled);
         showToast('Error saving setting.', 'error');
+    } finally {
+        checkbox.disabled = false;
+        checkbox.dataset.saving = 'false';
     }
 }
 
@@ -6759,7 +6879,14 @@ async function checkAndShowUpdateNotes() {
     try {
         if (!window.electronAPI?.getPendingUpdateNotes) return;
         const result = await window.electronAPI.getPendingUpdateNotes();
+        console.log('[UpdateNotes] checkAndShowUpdateNotes:', result?.status, result?.notes?.version || 'none');
         if (result?.status === 'success' && result.notes && result.notes.version) {
+            const modal = document.getElementById('updateNotesModal');
+            if (!modal) {
+                console.warn('[UpdateNotes] modal element not ready, retrying in 500ms');
+                setTimeout(() => showUpdateNotesModal(result.notes), 500);
+                return;
+            }
             showUpdateNotesModal(result.notes);
         }
     } catch (err) {

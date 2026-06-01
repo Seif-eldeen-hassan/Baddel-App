@@ -85,7 +85,7 @@ test('main.js: getPendingUpdateNotesPayload function exists', () => {
 
 test('main.js: getPendingUpdateNotesPayload checks shownVersions', () => {
     const idx = MAIN_JS.indexOf('function getPendingUpdateNotesPayload()');
-    const block = MAIN_JS.slice(idx, idx + 600);
+    const block = MAIN_JS.slice(idx, idx + 1100);
     assert.ok(block.includes('shownVersions'), 'shownVersions guard missing');
 });
 
@@ -341,4 +341,144 @@ test('CSS: update-notes-modal z-index is >= 200000', () => {
     const match = block.match(/z-index:\s*(\d+)/);
     assert.ok(match, 'z-index not set on .update-notes-modal');
     assert.ok(parseInt(match[1], 10) >= 200000, `z-index ${match[1]} is less than 200000`);
+});
+
+// ── Reliability fixes ─────────────────────────────────────────────────────────
+
+test('main.js: update-downloaded handler stores info.version in _updState.version', () => {
+    const idx = MAIN_JS.indexOf("autoUpdater.on('update-downloaded'");
+    assert.ok(idx !== -1, 'update-downloaded handler not found');
+    const block = MAIN_JS.slice(idx, idx + 600);
+    assert.ok(
+        block.includes('_updState.version     = info.version') ||
+        block.includes('_updState.version = info.version'),
+        '_updState.version not set from info.version in update-downloaded'
+    );
+});
+
+test('main.js: update-downloaded handler calls markUpdateNotesPending(info.version)', () => {
+    const idx = MAIN_JS.indexOf("autoUpdater.on('update-downloaded'");
+    const block = MAIN_JS.slice(idx, idx + 600);
+    assert.ok(
+        block.includes('markUpdateNotesPending(info.version)'),
+        'markUpdateNotesPending(info.version) not called in update-downloaded'
+    );
+});
+
+test('main.js: restart-and-update uses savedState.pendingVersion as fallback (not currentVersion)', () => {
+    const idx = MAIN_JS.indexOf("'restart-and-update'");
+    assert.ok(idx !== -1, 'restart-and-update handler not found');
+    const block = MAIN_JS.slice(idx, idx + 2000);
+    assert.ok(
+        block.includes('savedState.pendingVersion') || block.includes('readUpdateNotesState()'),
+        'restart-and-update must read savedState.pendingVersion as fallback'
+    );
+    // targetVersion assignment must not fall back to autoUpdater.currentVersion (old version)
+    const targetLine = block.match(/const targetVersion\s*=.+/)?.[0] || '';
+    assert.ok(
+        !targetLine.includes('currentVersion'),
+        'targetVersion must not fall back to autoUpdater.currentVersion (that is the old running version)'
+    );
+});
+
+test('main.js: restart-and-update logs warning when no target version available', () => {
+    const idx = MAIN_JS.indexOf("'restart-and-update'");
+    const block = MAIN_JS.slice(idx, idx + 2000);
+    assert.ok(
+        block.includes('no target version found'),
+        'warning log missing for missing target version in restart-and-update'
+    );
+});
+
+test('main.js: getPendingUpdateNotesPayload logs currentVersion and pendingVersion', () => {
+    const idx = MAIN_JS.indexOf('function getPendingUpdateNotesPayload()');
+    const block = MAIN_JS.slice(idx, idx + 900);
+    assert.ok(block.includes('currentVersion='), 'currentVersion not logged in getPendingUpdateNotesPayload');
+    assert.ok(block.includes('pendingVersion='), 'pendingVersion not logged in getPendingUpdateNotesPayload');
+});
+
+test('main.js: getPendingUpdateNotesPayload logs skip reason when pendingVersion differs', () => {
+    const idx = MAIN_JS.indexOf('function getPendingUpdateNotesPayload()');
+    const block = MAIN_JS.slice(idx, idx + 900);
+    assert.ok(
+        block.includes('skip: pendingVersion'),
+        'skip reason not logged when pendingVersion !== currentVersion'
+    );
+});
+
+test('main.js: getPendingUpdateNotesPayload logs skip reason when already shown', () => {
+    const idx = MAIN_JS.indexOf('function getPendingUpdateNotesPayload()');
+    const block = MAIN_JS.slice(idx, idx + 1100);
+    assert.ok(
+        block.includes('already shown'),
+        'skip reason not logged when version already shown'
+    );
+});
+
+test('app.js: checkAndShowUpdateNotes logs result status and version', () => {
+    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = APP_JS.slice(idx, idx + 700);
+    assert.ok(block.includes('[UpdateNotes] checkAndShowUpdateNotes:'), 'result log not found in checkAndShowUpdateNotes');
+});
+
+test('app.js: checkAndShowUpdateNotes checks updateNotesModal element exists before showing', () => {
+    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = APP_JS.slice(idx, idx + 700);
+    assert.ok(block.includes('updateNotesModal'), 'updateNotesModal element check missing in checkAndShowUpdateNotes');
+});
+
+test('app.js: checkAndShowUpdateNotes retries with setTimeout if modal element not ready', () => {
+    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = APP_JS.slice(idx, idx + 700);
+    assert.ok(block.includes('not ready, retrying') || block.includes('retrying in'), 'retry log not found');
+    assert.ok(block.includes('setTimeout'), 'retry setTimeout not found in checkAndShowUpdateNotes');
+});
+
+test('app.js: checkAndShowUpdateNotes does NOT call markUpdateNotesShown', () => {
+    const fnStart = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const fnEnd   = APP_JS.indexOf('\nfunction showUpdateNotesModal', fnStart);
+    const block   = APP_JS.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 700);
+    assert.ok(!block.includes('markUpdateNotesShown'), 'markUpdateNotesShown must not be called in checkAndShowUpdateNotes — only in closeUpdateNotesModal');
+});
+
+// ─── v1.1.3 update notes ─────────────────────────────────────────────────────
+
+test('main.js: getUpdateNotesForVersion returns entry for v1.1.3', () => {
+    const fnStart = MAIN_JS.indexOf('function getUpdateNotesForVersion(');
+    const fn = MAIN_JS.slice(fnStart, fnStart + 2000);
+    assert.ok(fn.includes("'1.1.3'"), "notesByVersion must contain a '1.1.3' key");
+});
+
+test('main.js: v1.1.3 notes include Riot launch fix', () => {
+    const fnStart = MAIN_JS.indexOf("'1.1.3':");
+    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
+    assert.ok(block.includes('Riot'), 'v1.1.3 notes must mention Riot');
+    assert.ok(block.includes('launch'), 'v1.1.3 Riot note must mention launch');
+});
+
+test('main.js: v1.1.3 notes include EA launch fix', () => {
+    const fnStart = MAIN_JS.indexOf("'1.1.3':");
+    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
+    assert.ok(block.includes('EA'), 'v1.1.3 notes must mention EA');
+    assert.ok(block.includes('launch path') || block.includes('real launch'), 'v1.1.3 EA note must mention real launch path');
+});
+
+test('main.js: v1.1.3 notes include startup toggle fix', () => {
+    const fnStart = MAIN_JS.indexOf("'1.1.3':");
+    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
+    assert.ok(block.includes('startup') || block.includes('Startup'), 'v1.1.3 notes must mention startup');
+    assert.ok(block.includes('toggle') || block.includes('setting'), 'v1.1.3 startup note must mention toggle or setting');
+});
+
+test('main.js: v1.1.3 notes include Account Switcher improvement', () => {
+    const fnStart = MAIN_JS.indexOf("'1.1.3':");
+    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
+    assert.ok(block.includes('Account Switcher') || block.includes('account'), 'v1.1.3 notes must mention Account Switcher');
+});
+
+test('main.js: v1.1.3 notes have custom title and footer', () => {
+    const fnStart = MAIN_JS.indexOf("'1.1.3':");
+    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
+    assert.ok(block.includes('Baddel just got better'), "v1.1.3 must have title 'Baddel just got better'");
+    assert.ok(block.includes('More improvements are coming'), 'v1.1.3 must have custom footer');
 });

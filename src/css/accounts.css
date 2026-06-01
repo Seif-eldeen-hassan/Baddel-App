@@ -2296,3 +2296,296 @@
 .ag-list-view.hide-installed .ag-list-field-installed,
 .ag-list-view.hide-installed .ag-col-installed { display: none; }
 .ag-list-view.hide-title .ag-col-title-text { opacity: 0.3; }
+
+/* ── Post-Add Account Guide Card ─────────────────────────────────────────── */
+@keyframes pagSlideIn {
+    from { opacity: 0; transform: translateY(-10px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.post-add-guide {
+    animation: pagSlideIn 0.25s ease forwards;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: #1c1c1c;
+    padding: 16px 18px;
+    margin: 0 0 14px 0;
+}
+
+.pag-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 6px;
+}
+
+.pag-title {
+    font-size: 13px;
+    font-weight: 600;
+    color: #fff;
+    letter-spacing: 0.01em;
+}
+
+.pag-dismiss {
+    background: none;
+    border: none;
+    color: #777;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 0 0 8px;
+    transition: color 0.15s;
+}
+.pag-dismiss:hover { color: #bbb; }
+
+.pag-subtitle {
+    font-size: 11.5px;
+    color: #999;
+    margin-bottom: 12px;
+}
+
+.pag-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    margin-bottom: 12px;
+}
+
+.pag-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    font-size: 12px;
+    color: #ccc;
+    line-height: 1.4;
+}
+
+.pag-step-num {
+    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 10px;
+    font-weight: 700;
+    color: #000;
+    margin-top: 1px;
+}
+
+.pag-warning {
+    font-size: 11px;
+    color: #e8a000;
+    background: rgba(232,160,0,0.08);
+    border-left: 3px solid #e8a000;
+    border-radius: 0 4px 4px 0;
+    padding: 6px 8px;
+    margin-bottom: 12px;
+}
+
+.pag-actions {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+.pag-btn-primary {
+    flex: 1;
+    min-width: 0;
+    padding: 8px 12px;
+    border: none;
+    border-radius: 7px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.pag-btn-primary:hover { filter: brightness(1.12); transform: translateY(-1px); }
+.pag-btn-primary:active { transform: translateY(0); filter: brightness(0.95); }
+
+.pag-btn-secondary {
+    padding: 8px 12px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 7px;
+    background: transparent;
+    color: #999;
+    font-size: 12px;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.pag-btn-secondary:hover { color: #ccc; border-color: rgba(255,255,255,0.25); }
+
+/* ── Save Current button pulse ───────────────────────────────────────────── */
+@keyframes accBtnPulse {
+    0%   { box-shadow: 0 0 0 0 var(--pulse-color, rgba(255,255,255,0.4)); }
+    60%  { box-shadow: 0 0 0 6px transparent; }
+    100% { box-shadow: 0 0 0 0 transparent; }
+}
+
+.acc-btn-pulse {
+    animation: accBtnPulse 1.4s ease infinite;
+}
+
+/* ── Empty-state wrap — direct child of .accounts-page (column-flex) ────── */
+/* Sits outside .accounts-list-section so no parent padding interferes.     */
+.accounts-onboard-wrap {
+    flex: 1;
+    width: 100%;
+    min-height: clamp(360px, 52vh, 620px);
+    display: flex;
+    justify-content: center;
+    align-items: flex-start;
+    padding: 80px 48px 56px;
+    box-sizing: border-box;
+    background: #080808;
+}
+
+/* ── Onboarding card ─────────────────────────────────────────────────────── */
+.acc-onboard-card {
+    max-width: 860px;
+    width: 100%;
+    margin: 0 auto;
+    background: linear-gradient(160deg, #111214 0%, #0d0d0f 100%);
+    border-radius: 20px;
+    padding: 40px 44px;
+    display: flex;
+    flex-direction: column;
+    gap: 28px;
+}
+
+.acc-onboard-top {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+}
+
+.acc-onboard-logo {
+    width: 52px;
+    height: 52px;
+    border-radius: 14px;
+    background: rgba(255,255,255,0.05);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.acc-onboard-logo img {
+    width: 34px;
+    height: 34px;
+    object-fit: contain;
+}
+
+.acc-onboard-title {
+    font-size: 20px;
+    font-weight: 700;
+    color: #fff;
+    line-height: 1.2;
+    margin: 0 0 4px;
+}
+
+.acc-onboard-sub {
+    font-size: 13.5px;
+    color: #888;
+    margin: 0;
+    line-height: 1.5;
+}
+
+.acc-onboard-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.acc-onboard-step {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+}
+
+.acc-onboard-step-num {
+    flex-shrink: 0;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: 700;
+    margin-top: 2px;
+}
+
+.acc-onboard-step-text {
+    font-size: 14px;
+    color: #ccc;
+    line-height: 1.5;
+    padding-top: 4px;
+}
+
+.acc-onboard-step-text strong {
+    color: #fff;
+}
+
+.acc-onboard-warning {
+    font-size: 12.5px;
+    color: #e8a000;
+    background: rgba(232,160,0,0.07);
+    border-left: 3px solid #e8a000;
+    border-radius: 0 6px 6px 0;
+    padding: 9px 12px;
+    line-height: 1.5;
+}
+
+.acc-onboard-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    padding-top: 4px;
+}
+
+.acc-onboard-btn-primary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 22px;
+    border: none;
+    border-radius: 10px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: filter 0.15s, transform 0.1s;
+    white-space: nowrap;
+}
+.acc-onboard-btn-primary:hover  { filter: brightness(1.12); transform: translateY(-1px); }
+.acc-onboard-btn-primary:active { transform: translateY(0);  filter: brightness(0.92); }
+
+.acc-onboard-btn-secondary {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    padding: 11px 18px;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 10px;
+    background: transparent;
+    color: #aaa;
+    font-size: 13px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: color 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+.acc-onboard-btn-secondary:hover { color: #ddd; border-color: rgba(255,255,255,0.28); }
+
+@media (max-width: 640px) {
+    .acc-onboard-card { padding: 28px 22px; }
+    .acc-onboard-title { font-size: 17px; }
+    .acc-onboard-actions { flex-direction: column; }
+    .acc-onboard-btn-primary, .acc-onboard-btn-secondary { width: 100%; justify-content: center; }
+}
