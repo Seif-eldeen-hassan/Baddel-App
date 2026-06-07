@@ -8,6 +8,8 @@
 
 
 :root {
+    --sidebar-width: 280px;
+    --sidebar-collapsed-width: 72px;
     --bg-color: #000000;
     --surface-color: rgba(255, 255, 255, 0.05);
     --accent: #ffffff;
@@ -83,13 +85,16 @@ body {
 .main-layout { display: flex; height: 100vh; padding-top: 35px; }
 
 .sidebar {
-    width: 250px; 
+    width: var(--sidebar-width);
+    min-width: var(--sidebar-width);
+    max-width: var(--sidebar-width);
+    flex-shrink: 0;
     padding: 20px 12px;
-    display: flex; 
+    display: flex;
     flex-direction: column;
     transition: width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
     position: relative;
-    background: #000000; 
+    background: #000000;
     border-right: none;
     z-index: 100;
     /* will-change:width triggers full layout on every frame — removed */
@@ -117,12 +122,17 @@ body {
 }
 .sidebar-toggle:hover { transform: scale(1.1); background: #333; color: white; }
 
-.sidebar.collapsed { width: 78px; padding: 25px 10px; }
+.sidebar.collapsed {
+    width: var(--sidebar-collapsed-width);
+    min-width: var(--sidebar-collapsed-width);
+    max-width: var(--sidebar-collapsed-width);
+    padding: 25px 10px;
+}
 
 
 .sidebar-logo-area {
-    margin-top: 30px;
-    margin-bottom: 34px;
+    margin-top: 10px;
+    margin-bottom: 14px;
     padding: 0 12px;
     height: 48px;
     display: flex;
@@ -269,17 +279,26 @@ body {
 .nav-item:hover { background: rgba(255, 255, 255, 0.08); }
 
 .nav-item.active {
-    background: #ffffff !important; 
-    color: #000000 !important; 
+    background: rgba(255, 255, 255, 0.07) !important;
+    color: #ffffff !important;
     font-weight: 600;
-    /* Removed transform:scale — causes layout recalc on every nav click */
-    /* Removed box-shadow — triggers stacking context repaint */
+}
+
+.nav-item.active::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 50%;
+    transform: translateY(-50%);
+    width: 3px; height: 18px;
+    background: var(--accent);
+    border-radius: 0 3px 3px 0;
+    box-shadow: 0 0 8px var(--accent);
 }
 
 .nav-item.active .nav-icon,
 .nav-item.active .fav-heart,
 .nav-item.active .delete-btn {
-    color: #000000 !important;
+    color: #ffffff !important;
 }
 
 .nav-item.active .delete-btn:hover {
@@ -2275,6 +2294,44 @@ body.is-dragging .gc-drag-handle {
 }
 .help-btn:hover { color: white; background: rgba(255,255,255,0.05); }
 
+/* ── Update available badge (title bar) ── */
+.update-badge-btn {
+    height: 28px;
+    padding: 0 11px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-main);
+    font-size: 12px;
+    font-weight: 700;
+    line-height: 1;
+    white-space: nowrap;
+    color: #f4d7b4;
+    background: rgba(255, 132, 45, 0.12);
+    border: 1px solid rgba(255, 132, 45, 0.28);
+    box-shadow: 0 0 0 1px rgba(255,255,255,0.03) inset,
+                0 8px 24px rgba(255,132,45,0.10);
+    cursor: pointer;
+    pointer-events: auto;
+    -webkit-app-region: no-drag;
+    transition: background 0.2s, border-color 0.2s;
+}
+.update-badge-btn:hover {
+    background: rgba(255, 132, 45, 0.22);
+    border-color: rgba(255, 132, 45, 0.48);
+}
+.update-badge-btn::before {
+    content: "";
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #ff9f43;
+    box-shadow: 0 0 12px rgba(255,159,67,0.75);
+    flex: 0 0 auto;
+    animation: badgePulse 1.5s infinite;
+}
+
 .help-modal-box { width: 600px; max-height: 80vh; display: flex; flex-direction: column; }
 
 .help-content { display: none; overflow-y: auto; max-height: calc(80vh - 120px); }
@@ -2538,9 +2595,9 @@ img.invert-on-dark {
     transition: filter 0.25s ease-in-out; /* عشان القلبة تبقى ناعمة */
 }
 
-/* 2. Active state only: remove filter so icon color shows on white background */
+/* Active state on dark glass bg — keep icons white */
 .nav-item.active img.invert-on-dark {
-    filter: none !important;
+    filter: brightness(0) invert(1);
 }
 
 /* أضف هذه الأكواد في نهاية ملف dashboard.css أو في قسم المحتوى */
@@ -2752,10 +2809,8 @@ img.invert-on-dark {
 /* 1. منع السايد بار من إنه يطول برا الشاشة */
 .sidebar-scroll-content {
     flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    min-height: 0; /* دي التريكة السحرية اللي بتمنع الـ Overflow في الـ Flexbox */
-    padding-right: 5px; /* عشان السكرول مياكلش من الكلام */
+    overflow: hidden;
+    min-height: 0;
 }
 
 /* تجميل شريط السكرول الخاص بالسايد بار */
@@ -5780,3 +5835,1172 @@ img.invert-on-dark {
     outline: 2px solid #22c55e;
 }
 .update-notes-primary-btn:active { transform: scale(0.98); }
+
+/* ================================================================ */
+/* SIDEBAR v2 — Glass panels redesign                               */
+/* ================================================================ */
+
+/* Sidebar nav content — no scroll; content must fit without scrolling */
+.sidebar-scroll-content {
+    flex: 1;
+    min-height: 0;
+    overflow: hidden;
+}
+
+/* ── Status bar ── */
+.sidebar-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    margin-bottom: 14px;
+    font-size: 0.68rem;
+    color: rgba(255,255,255,0.35);
+    letter-spacing: 0.3px;
+    flex-grow: 0;   /* must not expand in the sidebar flex column */
+    flex-shrink: 0;
+}
+.sidebar.collapsed .sidebar-status { display: none; }
+
+.sidebar-status-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 6px var(--accent);
+    flex-shrink: 0;
+    animation: sbStatusPulse 3s ease-in-out infinite;
+}
+@keyframes sbStatusPulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.5; }
+}
+
+/* ── Section HUD label ── */
+.sidebar-section-label {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.18);
+    text-transform: uppercase;
+    padding: 0 14px;
+    margin: 8px 0 6px;
+}
+.sidebar.collapsed .sidebar-section-label { display: none; }
+
+/* ── Library badge on section header ── */
+.sidebar-nav-badge {
+    margin-left: auto;
+    font-size: 0.62rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.3);
+    background: rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 1px 7px;
+    letter-spacing: 0.3px;
+}
+.sidebar.collapsed .sidebar-nav-badge { display: none; }
+
+/* ── Glass panel base ── */
+.sidebar-panel {
+    margin: 10px 0 0;
+    border-radius: 10px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.06);
+    padding: 12px;
+    overflow: hidden;
+}
+.sidebar.collapsed .sidebar-panel { display: none !important; }
+
+.sidebar-panel-label {
+    font-size: 0.56rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.2);
+    text-transform: uppercase;
+    margin-bottom: 10px;
+}
+
+/* ── 01 Jump Back In card ── */
+.jump-back-card { padding: 10px; }
+
+.jb-inner {
+    border-radius: 8px;
+    height: 88px;
+    background: #1a1a1a;
+    background-size: cover;
+    background-position: center;
+    position: relative;
+    overflow: hidden;
+    cursor: pointer;
+}
+.jb-inner:hover .jb-overlay { background: rgba(0,0,0,0.55); }
+.jb-inner:hover .jb-play { opacity: 1; transform: scale(1); }
+
+.jb-overlay {
+    position: absolute; inset: 0;
+    background: linear-gradient(to top, rgba(0,0,0,0.82) 0%, rgba(0,0,0,0.3) 60%, transparent 100%);
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding: 8px 10px;
+    transition: background 0.15s;
+}
+
+.jb-info { flex: 1; min-width: 0; }
+
+.jb-platform {
+    font-size: 0.54rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin-bottom: 2px;
+}
+
+.jb-title {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #fff;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    line-height: 1.2;
+}
+
+.jb-meta {
+    font-size: 0.62rem;
+    color: rgba(255,255,255,0.5);
+    margin-top: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.jb-play {
+    flex-shrink: 0;
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    background: var(--accent);
+    border: none;
+    color: #000;
+    font-size: 0.65rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transform: scale(0.8);
+    transition: opacity 0.15s, transform 0.15s;
+    margin-left: 8px;
+}
+.jb-play:hover { background: #4ade80; }
+
+/* ── 02 Active Accounts card ── */
+.active-account-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+    font-size: 0.75rem;
+}
+.active-account-row:hover { background: rgba(255,255,255,0.06); }
+
+.acc-plat-dot {
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.acc-plat-name {
+    color: rgba(255,255,255,0.75);
+    font-weight: 500;
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.acc-plat-count {
+    font-size: 0.65rem;
+    color: rgba(255,255,255,0.3);
+    font-weight: 600;
+}
+
+.acc-status-dot {
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    box-shadow: 0 0 4px var(--accent);
+}
+
+/* ── 03 Library Pulse card ── */
+.sidebar-pulse-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.sidebar-metric {
+    background: rgba(255,255,255,0.04);
+    border-radius: 7px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.sidebar-metric-value {
+    font-size: 1.2rem;
+    font-weight: 800;
+    color: #fff;
+    line-height: 1;
+    font-family: var(--font-heading, sans-serif);
+}
+
+.sidebar-metric-label {
+    font-size: 0.55rem;
+    font-weight: 700;
+    letter-spacing: 1.5px;
+    color: rgba(255,255,255,0.3);
+    text-transform: uppercase;
+}
+
+/* ================================================================ */
+/* BADDEL SMART SIDEBAR — v3                                        */
+/* ================================================================ */
+
+/* Hide the compatibility layer — IDs exist for JS but never shown */
+.baddel-compat-layer {
+    display: none !important;
+    position: absolute;
+    left: -9999px;
+    width: 0;
+    height: 0;
+    overflow: hidden;
+}
+
+/* Status row with platform dots */
+.baddel-sidebar-status {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.baddel-plat-dots {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    flex-shrink: 0;
+}
+
+.baddel-plat-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+    opacity: 0.85;
+}
+.sidebar.collapsed .baddel-plat-dots { display: none; }
+
+/* Panel base — override any old display:none */
+.baddel-sidebar-panel {
+    display: block !important;
+    margin-top: 12px;
+}
+
+/* Jump Back In empty state */
+.jb-empty-msg {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+    padding: 12px 0;
+    letter-spacing: 0.3px;
+}
+
+/* Active accounts placeholder */
+.baddel-acc-placeholder {
+    font-size: 0.7rem;
+    color: rgba(255,255,255,0.25);
+    text-align: center;
+    padding: 10px 0;
+    letter-spacing: 0.3px;
+}
+
+/* Active account row */
+.baddel-acc-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 4px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+.baddel-acc-row:hover { background: rgba(255,255,255,0.06); }
+
+.baddel-acc-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+}
+
+.baddel-acc-name {
+    font-size: 0.74rem;
+    font-weight: 500;
+    color: rgba(255,255,255,0.75);
+    flex: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.baddel-acc-count {
+    font-size: 0.64rem;
+    color: rgba(255,255,255,0.3);
+    font-weight: 600;
+}
+
+.baddel-acc-live {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+    flex-shrink: 0;
+    box-shadow: 0 0 4px var(--accent);
+}
+
+/* Library Pulse — ensure 2x2 grid with 4 tiles */
+#sidebarLibraryPulse .sidebar-pulse-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+/* Collections panel */
+.baddel-sidebar-collections .add-coll-btn {
+    margin-top: 10px;
+    width: 100%;
+}
+
+/* Collection items inside sidebar panel */
+.baddel-sidebar-collections #collectionsList .nav-item {
+    height: 36px;
+    border-radius: 7px;
+    margin-bottom: 2px;
+    padding: 0 10px;
+    font-size: 0.8rem;
+}
+
+/* Sidebar nav badge — green accent when active */
+.nav-item.active .sidebar-nav-badge {
+    background: rgba(18, 206, 24, 0.15);
+    color: var(--accent);
+}
+
+/* Collapsed sidebar: hide panels entirely */
+.sidebar.collapsed .baddel-sidebar-panel { display: none !important; }
+
+/* ================================================================ */
+/* SIDEBAR POLISH — v4                                              */
+/* ================================================================ */
+
+/* 1. Sidebar width is controlled by --sidebar-width (280px) in :root.
+      The base .sidebar rule already uses the variable with min/max-width locks. */
+
+/* 2. Compact, premium nav items with correct font size */
+.nav-item {
+    height: 40px;
+    font-size: 0.82rem;
+    gap: 10px;
+    margin-bottom: 2px;
+}
+
+/* 3. Active accent bar — green glow only, no white bleed */
+.nav-item.active::before {
+    box-shadow: 0 0 5px rgba(18,206,24,0.5);
+}
+
+/* 4. Status dot — true brand green (#12CE18), not inherited white --accent */
+.sidebar-status-dot {
+    background: #12CE18;
+    box-shadow: 0 0 5px rgba(18,206,24,0.55);
+}
+
+/* 5. Nav count badge — slightly more readable, doesn't shrink */
+.sidebar-nav-badge {
+    color: rgba(255,255,255,0.5);
+    background: rgba(255,255,255,0.09);
+    flex-shrink: 0;
+}
+
+/* 6. Jump Back In — darker gradient so bright artwork doesn't bleed */
+.jb-overlay {
+    background: linear-gradient(
+        to top,
+        rgba(0,0,0,0.92) 0%,
+        rgba(0,0,0,0.62) 45%,
+        rgba(0,0,0,0.28) 100%
+    );
+}
+
+/* 7. Jump Back In play button — brand green */
+.jb-play { background: #12CE18; color: #000; }
+.jb-play:hover { background: #0fb316; }
+
+/* 8. Active account live indicator — brand green */
+.baddel-acc-live {
+    background: #12CE18;
+    box-shadow: 0 0 4px rgba(18,206,24,0.55);
+}
+
+/* 9. Empty Active Accounts panel — hidden entirely by JS adding this class */
+.baddel-sidebar-panel.baddel-hidden { display: none !important; }
+
+/* 10. Library Pulse metric value — slightly more compact */
+.sidebar-metric-value { font-size: 1.05rem; }
+
+/* 11. Collections list items — compact */
+.baddel-sidebar-collections #collectionsList .nav-item {
+    height: 34px;
+    font-size: 0.78rem;
+    margin-bottom: 1px;
+}
+
+/* ================================================================ */
+/* SIDEBAR HYBRID — section-based redesign                          */
+/* ================================================================ */
+
+/* ── Section headers (LIBRARY / ACCOUNTS / MANAGE) ── */
+.sb-section-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 14px;
+    height: 28px;
+    margin-top: 14px;
+    margin-bottom: 2px;
+    cursor: pointer;
+    user-select: none;
+}
+.sb-sec-static { cursor: default; }
+
+.sb-sec-label {
+    font-size: 0.58rem;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: rgba(255,255,255,0.22);
+    text-transform: uppercase;
+    flex: 1;
+}
+
+.sb-sec-chevron {
+    color: rgba(255,255,255,0.2);
+    transition: transform 0.18s ease;
+    flex-shrink: 0;
+}
+.sb-chevron-closed { transform: rotate(-90deg); }
+
+.sb-section-header:hover .sb-sec-label { color: rgba(255,255,255,0.38); }
+.sb-section-header:hover .sb-sec-chevron { color: rgba(255,255,255,0.35); }
+.sb-sec-static:hover .sb-sec-label,
+.sb-sec-static:hover .sb-sec-chevron { color: rgba(255,255,255,0.22); }
+
+.sidebar.collapsed .sb-section-header { display: none; }
+
+/* ── Section body ── */
+.sb-section-body {
+    margin-bottom: 2px;
+}
+/* Collapsed mode: show icon-only for EXPANDED sections; keep CLOSED sections hidden */
+.sidebar.collapsed .sb-section-body:not(.sb-sec-closed) { display: block; }
+.sidebar.collapsed .sb-section-body.sb-sec-closed { display: none !important; }
+
+/* ── Sub-items (indented nav items inside sections) ── */
+.nav-item.sb-sub-item {
+    height: 36px;
+    padding: 0 10px 0 12px;
+    font-size: 0.8rem;
+    margin-bottom: 1px;
+    border-radius: 8px;
+}
+.nav-item.sb-sub-item .nav-icon {
+    width: 18px;
+    height: 18px;
+}
+
+/* ── Platform count in accounts section ── */
+.sb-section-body .platform-count {
+    font-size: 0.64rem;
+    color: rgba(255,255,255,0.3);
+    font-weight: 700;
+    margin-left: auto;
+    background: rgba(255,255,255,0.06);
+    padding: 1px 6px;
+    border-radius: 20px;
+}
+.nav-item.platform-item.active .platform-count {
+    color: rgba(255,255,255,0.7);
+    background: rgba(255,255,255,0.12);
+}
+
+/* ── collectionsList items in LIBRARY section body ── */
+#sbBodyLibrary #collectionsList .nav-item {
+    height: 34px;
+    font-size: 0.78rem;
+    padding: 0 10px 0 12px;
+    border-radius: 7px;
+    margin-bottom: 1px;
+}
+
+/* ── Sidebar collection dot icon ── */
+.sb-coll-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.28);
+    flex-shrink: 0;
+}
+.nav-item.sb-coll-item.active .sb-coll-dot { background: #12CE18; }
+
+/* ── Context action button (bottom of sidebar) ── */
+.sb-ctx-btn {
+    flex-shrink: 0;
+    margin: 8px 0 0;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.5);
+    padding: 10px 12px;
+    border-radius: 9px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+}
+.sb-ctx-btn:hover {
+    border-color: rgba(255,255,255,0.25);
+    color: #fff;
+    background: rgba(255,255,255,0.05);
+}
+.sidebar.collapsed .sb-ctx-btn { display: none; }
+
+/* ================================================================ */
+/* Stable allGamesView header — prevent layout shift on mode switch */
+/* ================================================================ */
+
+#allGamesView .library-section { padding-top: 20px; }
+
+#allGamesView .library-header {
+    min-height: 44px;
+    align-items: center;
+    margin-bottom: 18px;
+    display: flex;
+    justify-content: space-between;
+    gap: 20px;
+}
+
+#agToolbarSticky { min-height: 72px; }
+
+/* Result count always occupies space so the row never jumps */
+.ag-result-count {
+    min-width: 72px;
+    display: inline-flex;
+    justify-content: flex-end;
+    white-space: nowrap;
+}
+
+/* ── Collections page ── */
+.collections-page { padding-bottom: 40px; }
+
+.collections-hero {
+    display: flex;
+    align-items: flex-end;
+    justify-content: space-between;
+    gap: 24px;
+    padding: 26px 28px;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 22px;
+    background:
+        radial-gradient(circle at 10% 0%, rgba(18,206,24,0.12), transparent 34%),
+        linear-gradient(135deg, rgba(255,255,255,0.055), rgba(255,255,255,0.025));
+    margin-bottom: 18px;
+}
+
+.collections-eyebrow {
+    color: #12ce18;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.18em;
+    margin: 0 0 8px;
+    text-transform: uppercase;
+}
+
+.collections-hero-title {
+    margin: 0;
+    font-size: 34px;
+    letter-spacing: -0.04em;
+    font-weight: 900;
+}
+
+.collections-hero-sub {
+    margin: 8px 0 0;
+    color: rgba(255,255,255,0.55);
+    max-width: 520px;
+    font-size: 0.88rem;
+    line-height: 1.5;
+}
+
+.collections-hero-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    flex-shrink: 0;
+}
+
+.collections-primary-btn,
+.collections-secondary-btn {
+    border-radius: 12px;
+    height: 40px;
+    padding: 0 18px;
+    font-weight: 800;
+    font-size: 0.82rem;
+    cursor: pointer;
+    border: 1px solid rgba(255,255,255,0.1);
+    white-space: nowrap;
+    transition: opacity 0.15s, transform 0.15s;
+}
+.collections-primary-btn:hover,
+.collections-secondary-btn:hover { opacity: 0.88; transform: translateY(-1px); }
+
+.collections-primary-btn {
+    background: #12ce18;
+    color: #061006;
+    border-color: transparent;
+}
+
+.collections-secondary-btn {
+    background: rgba(255,255,255,0.055);
+    color: rgba(255,255,255,0.85);
+}
+
+.collections-stats {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+    margin-bottom: 20px;
+}
+
+.collections-stat-card {
+    padding: 14px 18px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.075);
+    background: rgba(255,255,255,0.035);
+}
+
+.collections-stat-value {
+    font-size: 24px;
+    font-weight: 900;
+    color: #fff;
+    line-height: 1;
+}
+
+.collections-stat-label {
+    margin-top: 5px;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    color: rgba(255,255,255,0.38);
+    text-transform: uppercase;
+}
+
+.collections-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+    gap: 16px;
+}
+
+.collections-grid.is-empty {
+    display: grid;
+    grid-template-columns: 1fr;
+    place-items: center;
+    width: 100%;
+    min-height: calc(100vh - 360px);
+    padding: 24px 0 80px;
+}
+
+.collection-card {
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: transform 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+}
+.collection-card:hover {
+    transform: translateY(-2px);
+    border-color: rgba(18,206,24,0.35);
+    background: rgba(255,255,255,0.065);
+}
+
+.collection-card-cover {
+    height: 128px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    grid-template-rows: repeat(2, 1fr);
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 30% 20%, rgba(18,206,24,0.22), transparent 30%),
+        linear-gradient(135deg, rgba(255,255,255,0.08), rgba(255,255,255,0.02));
+}
+.collection-card-cover img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(0.82) saturate(0.95);
+}
+.collection-card-cover img:first-child:last-child {
+    grid-column: 1 / -1;
+    grid-row: 1 / -1;
+}
+.collection-card-cover img:nth-child(2):last-child {
+    grid-row: 1 / -1;
+}
+.collection-card-cover--single {
+    display: block;
+}
+.collection-card-cover--single img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: brightness(0.82) saturate(0.95);
+}
+
+.collection-cover-placeholder {
+    height: 128px;
+    display: grid;
+    place-items: center;
+    color: rgba(255,255,255,0.2);
+    background:
+        radial-gradient(circle at 50% 10%, rgba(18,206,24,0.18), transparent 40%),
+        rgba(255,255,255,0.03);
+}
+
+.collection-card-body { padding: 14px 16px 16px; }
+
+.collection-card-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 8px;
+}
+
+.collection-card h3 {
+    margin: 0;
+    color: #fff;
+    font-size: 15px;
+    font-weight: 900;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.collection-card p {
+    margin: 4px 0 0;
+    color: rgba(255,255,255,0.42);
+    font-size: 11.5px;
+}
+
+.collection-card-actions {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 12px;
+}
+
+.collection-card-actions button {
+    height: 30px;
+    padding: 0 11px;
+    border-radius: 9px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background: rgba(255,255,255,0.05);
+    color: rgba(255,255,255,0.75);
+    cursor: pointer;
+    font-size: 0.75rem;
+    font-weight: 600;
+    transition: background 0.12s;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.collection-card-actions button:hover { background: rgba(255,255,255,0.1); }
+
+.collection-more-wrap {
+    position: relative;
+    margin-left: auto;
+}
+
+.collection-more-btn {
+    min-width: 30px !important;
+    width: 30px;
+    padding: 0 !important;
+    letter-spacing: 0.06em;
+    font-size: 0.82rem !important;
+}
+
+.collection-card-menu {
+    position: absolute;
+    right: 0;
+    bottom: 36px;
+    min-width: 136px;
+    padding: 5px;
+    border-radius: 12px;
+    background: rgba(18,18,20,0.97);
+    border: 1px solid rgba(255,255,255,0.1);
+    box-shadow: 0 16px 40px rgba(0,0,0,0.5);
+    z-index: 40;
+}
+
+.collection-card-menu[hidden] { display: none !important; }
+
+.collection-card-menu button {
+    width: 100%;
+    height: 33px;
+    border: 0 !important;
+    border-radius: 8px !important;
+    background: transparent !important;
+    color: rgba(255,255,255,0.82) !important;
+    justify-content: flex-start !important;
+    padding: 0 10px !important;
+    font-size: 0.8rem !important;
+}
+.collection-card-menu button:hover { background: rgba(255,255,255,0.08) !important; }
+.collection-card-menu button.danger { color: #ff6b6b !important; }
+.collection-card-menu button.danger:hover { background: rgba(255,59,48,0.12) !important; }
+
+.collections-empty-state {
+    margin: 0 auto;
+    width: min(820px, calc(100% - 48px));
+    min-height: 420px;
+    display: grid;
+    place-items: center;
+    text-align: center;
+    border-radius: 24px;
+    border: 1px dashed rgba(255,255,255,0.11);
+    background:
+        radial-gradient(circle at 50% 0%, rgba(18,206,24,0.11), transparent 34%),
+        rgba(255,255,255,0.022);
+    padding: 48px 24px;
+}
+
+.collections-empty-inner { max-width: 540px; }
+
+.collections-empty-art {
+    width: 88px;
+    height: 88px;
+    margin: 0 auto 22px;
+    border-radius: 26px;
+    display: grid;
+    place-items: center;
+    background: rgba(18,206,24,0.08);
+    border: 1px solid rgba(18,206,24,0.18);
+    box-shadow: 0 0 50px rgba(18,206,24,0.07);
+}
+
+.collections-empty-state h2 {
+    margin: 0;
+    font-size: 26px;
+    font-weight: 900;
+    letter-spacing: -0.035em;
+}
+
+.collections-empty-state > .collections-empty-inner > p {
+    margin: 10px auto 0;
+    color: rgba(255,255,255,0.52);
+    line-height: 1.55;
+    font-size: 0.88rem;
+}
+
+.collections-empty-actions {
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+    margin-top: 24px;
+    flex-wrap: wrap;
+}
+
+.collections-suggestions {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    flex-wrap: wrap;
+    margin-top: 20px;
+}
+
+.collections-suggestions span {
+    padding: 6px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+    color: rgba(255,255,255,0.45);
+    font-size: 11.5px;
+    font-weight: 500;
+    cursor: default;
+}
+
+@media (max-width: 900px) {
+    .collections-hero {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+    .collections-stats {
+        grid-template-columns: 1fr;
+    }
+}
+
+/* ── All Games route-lock and layout-shift prevention ── */
+body.ag-route-pending #allGamesView {
+    overflow-anchor: none;
+}
+
+#allGamesView.ag-first-paint-lock {
+    overflow-anchor: none;
+}
+
+/* Legacy rule — kept for any remaining references */
+#allGamesView.ag-layout-loading {
+    overflow-anchor: none;
+}
+
+#allGamesGrid {
+    overflow-anchor: none;
+}
+
+.ag-route-skeleton {
+    min-height: calc(100vh - 180px);
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-sec, rgba(255,255,255,0.45));
+    box-sizing: border-box;
+}
+
+.ag-route-skeleton .acc-spinner {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+}
+
+/* Legacy stable loading panel */
+.ag-stable-loading-panel {
+    min-height: 520px;
+    width: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 12px;
+    color: var(--text-sec, rgba(255,255,255,0.45));
+}
+
+.ag-stable-loading-panel .acc-spinner {
+    width: 22px;
+    height: 22px;
+    flex: 0 0 auto;
+}
+
+
+/* ── Ready to Install mode — hide the Installed filter chip ── */
+body.ag-ready-mode .ag-installed-toggle { display: none !important; }
+
+/* ── Beta Feedback Banner ──────────────────────────────────────────────────── */
+@keyframes betaFeedbackIn {
+    from { opacity: 0; transform: translateY(14px) scale(0.985); }
+    to   { opacity: 1; transform: translateY(0)    scale(1);     }
+}
+
+.beta-feedback-banner {
+    position: fixed;
+    left: calc(var(--sidebar-width) + 12px);
+    right: 18px;
+    bottom: 18px;
+    min-height: 58px;
+    padding: 10px 12px 10px 14px;
+    border-radius: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    z-index: 99990;
+    color: rgba(255, 255, 255, 0.92);
+    background:
+        linear-gradient(135deg, rgba(18, 206, 24, 0.16), rgba(18, 18, 18, 0.88) 42%, rgba(0, 0, 0, 0.88)),
+        rgba(12, 12, 12, 0.92);
+    border: 1px solid rgba(18, 206, 24, 0.26);
+    box-shadow:
+        0 18px 45px rgba(0, 0, 0, 0.42),
+        0 0 0 1px rgba(255, 255, 255, 0.04) inset,
+        0 0 28px rgba(18, 206, 24, 0.09);
+    backdrop-filter: blur(18px);
+    -webkit-app-region: no-drag;
+    animation: betaFeedbackIn 220ms ease-out both;
+}
+
+.beta-feedback-banner[hidden] { display: none !important; }
+
+.beta-feedback-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-width: 0;
+    flex: 1;
+}
+
+.beta-feedback-pill {
+    height: 26px;
+    padding: 0 10px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    color: #091009;
+    background: linear-gradient(135deg, #12ce18, #78ff7d);
+    box-shadow: 0 0 18px rgba(18, 206, 24, 0.25);
+    flex: 0 0 auto;
+}
+
+.beta-feedback-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+
+.beta-feedback-copy strong {
+    font-size: 13px;
+    font-weight: 800;
+    line-height: 1.1;
+}
+
+.beta-feedback-copy span {
+    font-size: 12px;
+    line-height: 1.25;
+    color: rgba(255, 255, 255, 0.62);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.beta-feedback-cta {
+    height: 34px;
+    padding: 0 13px;
+    border-radius: 999px;
+    border: 1px solid rgba(18, 206, 24, 0.35);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: #071007;
+    background: linear-gradient(135deg, #12ce18, #70f774);
+    font-family: var(--font-main);
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    white-space: nowrap;
+    flex: 0 0 auto;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, filter 0.16s ease;
+    -webkit-app-region: no-drag;
+}
+
+.beta-feedback-cta:hover {
+    transform: translateY(-1px);
+    filter: brightness(1.05);
+    box-shadow: 0 10px 24px rgba(18, 206, 24, 0.22);
+}
+
+.beta-feedback-close {
+    width: 28px;
+    height: 28px;
+    border-radius: 999px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.62);
+    font-size: 16px;
+    line-height: 1;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    flex: 0 0 auto;
+    -webkit-app-region: no-drag;
+}
+
+.beta-feedback-close:hover {
+    color: #fff;
+    background: rgba(255, 255, 255, 0.10);
+}
+
+body.has-beta-feedback-banner #mainContentArea {
+    padding-bottom: 92px;
+}
+
+.sidebar.collapsed ~ * .beta-feedback-banner,
+body:has(.sidebar.collapsed) .beta-feedback-banner {
+    left: calc(var(--sidebar-collapsed-width) + 12px);
+}
+
+@media (max-width: 900px) {
+    .beta-feedback-banner {
+        left: 14px;
+        right: 14px;
+        bottom: 14px;
+        border-radius: 16px;
+    }
+
+    .beta-feedback-copy span {
+        white-space: normal;
+        display: -webkit-box;
+        -webkit-line-clamp: 2;
+        -webkit-box-orient: vertical;
+    }
+}
+
+@media (max-width: 640px) {
+    .beta-feedback-banner {
+        align-items: stretch;
+        flex-direction: column;
+        gap: 10px;
+        padding: 12px;
+    }
+
+    .beta-feedback-close {
+        position: absolute;
+        right: 10px;
+        top: 10px;
+    }
+
+    .beta-feedback-left {
+        padding-right: 34px;
+    }
+
+    .beta-feedback-cta {
+        width: 100%;
+        justify-content: center;
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .beta-feedback-banner:not([hidden]) { animation: none; }
+    .beta-feedback-cta { transition: none; }
+}

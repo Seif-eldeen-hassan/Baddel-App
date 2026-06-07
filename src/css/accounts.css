@@ -109,7 +109,7 @@
 }
 
 .platform-item.active .platform-count {
-    color: rgba(0, 0, 0, 0.4);
+    color: rgba(255, 255, 255, 0.5);
 }
 
 .sidebar.collapsed .platform-count { display: none; }
@@ -811,6 +811,7 @@
 
 #nav-epic.active    { background: #f0f0f0 !important; color: #000 !important; }
 #nav-epic.active .platform-icon { color: #000 !important; }
+#nav-epic.active img { filter: brightness(0) saturate(100%) !important; }
 
 #nav-ea.active      { background: #ff4545 !important; color: #fff !important; }
 #nav-ea.active .platform-icon { color: #fff !important; }
@@ -2588,4 +2589,91 @@
     .acc-onboard-title { font-size: 17px; }
     .acc-onboard-actions { flex-direction: column; }
     .acc-onboard-btn-primary, .acc-onboard-btn-secondary { width: 100%; justify-content: center; }
+}
+/* ============================================================ */
+/* ACCOUNT SHORTCUTS — Shortcut button, pill, capture modal     */
+/* ============================================================ */
+
+.acc-shortcut-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    height: 28px;
+    min-width: 28px;
+    padding: 0 6px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    background: transparent;
+    color: #555;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s, border-color 0.15s;
+    flex-shrink: 0;
+}
+.acc-shortcut-btn:hover {
+    color: #aaa;
+    background: rgba(255,255,255,0.06);
+    border-color: rgba(255,255,255,0.1);
+}
+.acc-shortcut-btn.has-shortcut {
+    color: #c8f0c8;
+    border-color: rgba(100,220,100,0.22);
+    background: rgba(40,200,60,0.08);
+}
+.acc-shortcut-btn.has-shortcut:hover {
+    background: rgba(40,200,60,0.14);
+    border-color: rgba(100,220,100,0.35);
+}
+
+.acc-shortcut-pill {
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.3px;
+    white-space: nowrap;
+    color: inherit;
+}
+
+/* Shortcut capture modal */
+.shortcut-capture-box {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 52px;
+    border-radius: 10px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.04);
+    color: #555;
+    font-family: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+    font-size: 15px;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    transition: border-color 0.2s, color 0.2s, background 0.2s;
+    cursor: default;
+    user-select: none;
+    text-align: center;
+    padding: 0 12px;
+}
+.shortcut-capture-box.is-valid {
+    border-color: rgba(18, 206, 24, 0.55);
+    background: rgba(18, 206, 24, 0.10);
+    color: #d9ffdc;
+}
+.shortcut-capture-box.is-invalid {
+    border-color: rgba(255, 76, 96, 0.65);
+    background: rgba(255, 76, 96, 0.08);
+    color: #ffd6dc;
+}
+
+.shortcut-error {
+    min-height: 18px;
+    font-size: 12px;
+    color: #ff5c6c;
+    text-align: center;
+    line-height: 1.4;
+}
+
+.shortcut-save-btn:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: grayscale(0.2);
 }

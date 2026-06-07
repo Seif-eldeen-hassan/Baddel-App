@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, session, protocol } = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, session, protocol, Notification, screen } = require('electron');
 let autoUpdater = null; // lazy-loaded inside setupAutoUpdater() — never required at module load
 const path = require('path');
 const fs = require('fs').promises;
@@ -14,7 +14,10 @@ const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
 const { generateMetadataCandidates } = require('./services/candidateGenerator');
-const { registerAccountHandlers } = require('./accountsHandler');
+const { registerAccountHandlers, switchAccountByPlatform } = require('./accountsHandler');
+const accountShortcuts = require('./services/accountShortcuts');
+const quickSwitcher = require('./services/quickSwitcher');
+const quickSwitcherSettings = require('./services/quickSwitcherSettings');
 const { registerPlatformSyncHandlers, steamConnector, epicConnector, registerPlatformSyncAssetDownloader, autoSyncOnStartup } = require('./platformSync');
 const analytics = require('./analytics');
 const psList = require('ps-list');
@@ -1550,6 +1553,7 @@ function createTray() {
     tray.setToolTip('Baddel Launcher');
     tray.setContextMenu(Menu.buildFromTemplate([
         { label: 'Open Baddel Launcher', click: () => mainWindow.show() },
+        { label: 'Quick Switch', click: () => quickSwitcher.toggleQuickSwitcherOverlay().catch(() => {}) },
         { type: 'separator' },
         { label: 'Exit', click: () => { isQuitting = true; app.quit(); } }
     ]));
@@ -4162,6 +4166,132 @@ ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
     registerAccountHandlers(ipcMain);
     registerPlatformSyncHandlers(ipcMain, () => mainWindow);
 
+    // ── Account Shortcuts IPC ──────────────────────────────────────────────
+    ipcMain.handle('account-shortcuts:list', async () => {
+        try { return await accountShortcuts.getAll(); }
+        catch (err) { return { status: 'error', message: err.message }; }
+    });
+    ipcMain.handle('account-shortcuts:set', async (_, params) => {
+        try { return await accountShortcuts.setShortcut(params); }
+        catch (err) { return { status: 'error', message: err.message }; }
+    });
+    ipcMain.handle('account-shortcuts:clear', async (_, params) => {
+        try { return await accountShortcuts.clearShortcut(params); }
+        catch (err) { return { status: 'error', message: err.message }; }
+    });
+    ipcMain.handle('account-shortcuts:validate', (_, accelerator) => {
+        return accountShortcuts.validateAccelerator(accelerator);
+    });
+
+    // Register global shortcuts — fires switchAccountByPlatform and shows a notification.
+    await accountShortcuts.registerAll(async (platform, accountId, accountName) => {
+        try {
+            new Notification({ title: 'Baddel', body: `Switching to ${accountName}…` }).show();
+        } catch {}
+        return switchAccountByPlatform(platform, accountId);
+    });
+
+    // ── Quick Switcher IPC ─────────────────────────────────────────────────
+    ipcMain.handle('quick-switcher:get-settings', async () => {
+        try { return await quickSwitcherSettings.load(); }
+        catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not load settings.'); }
+    });
+
+    ipcMain.handle('quick-switcher:set-settings', async (_, payload) => {
+        try {
+            if (payload && typeof payload !== 'object') throw new Error('Invalid payload.');
+            const saved = await quickSwitcherSettings.save(payload || {});
+            // Re-register hotkey if enabled state or accelerator changed.
+            if ('enabled' in payload || 'accelerator' in payload) {
+                await quickSwitcher.registerQuickSwitcherHotkey();
+            }
+            return { status: 'ok', settings: saved };
+        } catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not save settings.'); }
+    });
+
+    ipcMain.handle('quick-switcher:set-hotkey', async (_, accelerator) => {
+        try {
+            ipcValidation.assertString(accelerator, 'accelerator', 64);
+            // Validate via Phase 1 accountShortcuts validator.
+            const v = accountShortcuts.validateAccelerator(accelerator);
+            if (!v.valid) return { status: 'error', message: v.error };
+            const norm = v.normalized;
+
+            // Conflict with Phase 1 per-account shortcuts?
+            const allShortcuts = await accountShortcuts.getAll();
+            const conflict = allShortcuts?.shortcuts?.find(sc => sc.accelerator === norm);
+            if (conflict) {
+                return { status: 'error', message: `Conflicts with shortcut for ${conflict.accountName}.` };
+            }
+
+            // Try to register; if it fails, OS already has it.
+            quickSwitcher.unregisterQuickSwitcherHotkey();
+            const ok = await quickSwitcher.registerQuickSwitcherHotkey();
+            // registerQuickSwitcherHotkey reads settings; save first so it uses the new value.
+            await quickSwitcherSettings.save({ accelerator: norm });
+            const ok2 = await quickSwitcher.registerQuickSwitcherHotkey();
+            if (!ok2) {
+                // Restore previous hotkey.
+                await quickSwitcher.registerQuickSwitcherHotkey();
+                return { status: 'error', message: 'That shortcut is already in use by another application.' };
+            }
+            try { analytics.track('quick_switcher_hotkey_changed'); } catch {}
+            return { status: 'ok', accelerator: norm };
+        } catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not set hotkey.'); }
+    });
+
+    ipcMain.handle('quick-switcher:clear-hotkey', async () => {
+        try {
+            quickSwitcher.unregisterQuickSwitcherHotkey();
+            await quickSwitcherSettings.save({ accelerator: null });
+            return { status: 'ok' };
+        } catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not clear hotkey.'); }
+    });
+
+    ipcMain.handle('quick-switcher:validate-hotkey', (_, accelerator) => {
+        try {
+            ipcValidation.assertString(accelerator, 'accelerator', 64);
+            return accountShortcuts.validateAccelerator(accelerator);
+        } catch (err) { return { valid: false, error: err.message }; }
+    });
+
+    ipcMain.handle('quick-switcher:list-accounts', async () => {
+        try { return await quickSwitcher.getQuickSwitcherAccounts(); }
+        catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not load accounts.'); }
+    });
+
+    ipcMain.handle('quick-switcher:switch-account', async (_, payload) => {
+        try {
+            ipcValidation.assertString(payload?.platform, 'platform', 20);
+            ipcValidation.assertPlatform(payload?.platform, 'platform');
+            ipcValidation.assertString(payload?.accountId, 'accountId', 256);
+            try { analytics.track('quick_switcher_switch_attempt', { platform: payload.platform }); } catch {}
+            await switchAccountByPlatform(payload.platform, payload.accountId);
+            try { analytics.track('quick_switcher_switch_success', { platform: payload.platform }); } catch {}
+            return { status: 'ok' };
+        } catch (err) {
+            try { analytics.track('quick_switcher_switch_failed', { platform: payload?.platform }); } catch {}
+            return ipcValidation.sanitizeErrorForRenderer(err, 'Account switch failed.');
+        }
+    });
+
+    ipcMain.handle('quick-switcher:hide', () => {
+        quickSwitcher.hideQuickSwitcherOverlay();
+        return { status: 'ok' };
+    });
+
+    ipcMain.handle('quick-switcher:toggle', async () => {
+        try { await quickSwitcher.toggleQuickSwitcherOverlay(); return { status: 'ok' }; }
+        catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not toggle overlay.'); }
+    });
+
+    // Register the global hotkey and open the overlay on fire.
+    try {
+        await quickSwitcher.registerQuickSwitcherHotkey();
+        try { analytics.track('quick_switcher_opened'); } catch {}
+    } catch {}
+    quickSwitcher.createQuickSwitcherWindow();
+
     // ── Wire up background metadata pipeline dependencies ──────────────────
     // The local metadata resolver is kept for compatibility but is a no-op.
     // All non-Steam/Epic resolution now flows through MetadataResolutionManager
@@ -4495,6 +4625,9 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 app.on('before-quit', () => {
     isQuitting = true;
+    accountShortcuts.unregisterAll();
+    quickSwitcher.unregisterQuickSwitcherHotkey();
+    quickSwitcher.destroyQuickSwitcherWindow();
     // Save in-progress playtime sessions before exit
     for (const [gameId, tracker] of Object.entries(activeTrackers)) {
         clearInterval(tracker.intervalId);

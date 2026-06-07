@@ -2031,4 +2031,108 @@ function registerAccountHandlers(ipcMain) {
 
 
 
-module.exports = { registerAccountHandlers, clearEncryptionKeyCache, getEpicProfiles };
+// Maps a platform key to the correct internal switch function.
+// Used by the globalShortcut callback path in main.js so that account
+// shortcuts fired from tray/background reuse the same switch logic as the UI.
+async function switchAccountByPlatform(platform, accountId) {
+    switch (platform) {
+        case 'steam':    return switchSteam(accountId);
+        case 'epic':     return switchEpic(accountId);
+        case 'ea':       return switchEA(accountId);
+        case 'riot':     return switchRiotAccount(accountId);
+        case 'ubisoft':  return switchUbisoftAccount(accountId);
+        case 'discord':  return switchDiscordAccount(accountId);
+        case 'rockstar': return switchRockstarAccount(accountId);
+        default: throw new Error(`Unknown platform for shortcut switch: ${platform}`);
+    }
+}
+
+// ── Quick Switcher account list (safe — no passwords/tokens) ─────────────────
+
+const _QS_PLATFORM_LABELS = {
+    steam: 'Steam', epic: 'Epic Games', ea: 'EA App',
+    riot: 'Riot Games', ubisoft: 'Ubisoft Connect',
+    discord: 'Discord', rockstar: 'Rockstar',
+};
+
+async function getAllAccountsForQuickSwitcher() {
+    const groups = [];
+    const _add = (platform, accounts) => {
+        if (accounts.length > 0) {
+            groups.push({ platform, platformLabel: _QS_PLATFORM_LABELS[platform] || platform, accounts });
+        }
+    };
+
+    try {
+        const accs = await getSteamAccounts();
+        _add('steam', accs.map(a => ({
+            accountId:   a.username,
+            accountName: a.displayName || a.username,
+            isActive:    !!a.mostRecent,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getEpicProfiles();
+        const active = ((await safeReadFile(activeEpicProfilePath)) || '').trim();
+        _add('epic', profiles.map(p => ({
+            accountId:   p.id,
+            accountName: p.displayName || p.id,
+            isActive:    p.id === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getEAProfiles();
+        const active = ((await safeReadFile(activeEAProfilePath)) || '').trim();
+        _add('ea', profiles.map(p => ({
+            accountId:   p.id,
+            accountName: p.displayName || p.id,
+            isActive:    p.id === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getRiotProfiles();
+        const active = ((await safeReadFile(activeRiotProfilePath)) || '').trim();
+        _add('riot', profiles.map(p => ({
+            accountId:   p.id,
+            accountName: p.displayName || p.id,
+            isActive:    p.id === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getUbisoftProfiles();
+        const active = ((await safeReadFile(activeUbisoftProfilePath)) || '').trim();
+        _add('ubisoft', profiles.map(p => ({
+            accountId:   p.id,
+            accountName: p.displayName || p.id,
+            isActive:    p.id === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getDiscordProfiles();
+        const active = ((await safeReadFile(activeDiscordProfilePath)) || '').trim();
+        _add('discord', profiles.map(p => ({
+            accountId:   p.name,
+            accountName: p.discordUsername || p.name,
+            isActive:    p.name === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getRockstarProfiles();
+        const active = ((await safeReadFile(activeRockstarProfilePath)) || '').trim();
+        _add('rockstar', profiles.map(p => ({
+            accountId:   p.id,
+            accountName: p.displayName || p.id,
+            isActive:    p.id === active,
+        })));
+    } catch {}
+
+    return groups;
+}
+
+module.exports = { registerAccountHandlers, clearEncryptionKeyCache, getEpicProfiles, switchAccountByPlatform, getAllAccountsForQuickSwitcher };

@@ -37,15 +37,9 @@
                 </button>
             </div>
         </div>
-        <button class="help-btn" onclick="openSettingsModal()">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
-            Settings
-        </button>
         <!-- Update notification badge — hidden by default, shown when update found -->
-        <button id="updateBadgeBtn" class="help-btn update-badge-btn" onclick="openUpdateModal()" style="display:none; pointer-events:auto; color:#12ce18; border:1px solid rgba(18,206,24,0.3); background:rgba(18,206,24,0.08);">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+        <button id="updateBadgeBtn" class="update-badge-btn" onclick="openUpdateModal()" style="display:none;">
             <span id="updateBadgeLabel">Update Available</span>
-            <span id="updateBadgeDot" style="width:6px;height:6px;background:#12ce18;border-radius:50%;display:inline-block;margin-left:2px;animation:badgePulse 1.5s infinite;"></span>
         </button>
         <div class="drag-region" style="flex-grow: 1; height: 100%; -webkit-app-region: drag;"></div>
         <div class="window-controls">
@@ -67,99 +61,164 @@
                 <span id="toggleIcon">&#9664;</span>
             </button>
 
+            <!-- ── Brand header ── -->
             <div class="sidebar-logo-area" onclick="navigateToHome()" title="Go to Home">
                 <div class="brand-mark">
                     <img src="../assets/app_icon.png" class="main-sidebar-logo" alt="Baddel">
                 </div>
-
                 <div class="brand-lockup nav-text">
                     <span class="brand-name">BADDEL</span>
                     <span class="brand-line"></span>
                 </div>
             </div>
 
+            <!-- ── Hidden compat layer — IDs accounts.js writes to but doesn't show ── -->
+            <div class="baddel-compat-layer" aria-hidden="true">
+                <div id="sectionBtn-library" class="sidebar-section-btn"></div>
+                <div id="sectionBtn-accounts" class="sidebar-section-btn"></div>
+                <div id="subItems-library" class="sidebar-sub-items"></div>
+                <div id="subItems-accounts" class="sidebar-sub-items"></div>
+                <div id="bottomBtnIcon"></div><span id="bottomBtnText"></span>
+            </div>
+
+            <!-- ── Scrollable sidebar content ── -->
             <div class="sidebar-scroll-content">
-                <div class="sidebar-section-btn" id="sectionBtn-library" onclick="switchSidebarSection('library')">
+
+                <!-- ── Home ── -->
+                <div class="nav-item" id="nav-home" onclick="navigateToHome()">
                     <div class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path><polyline points="9 22 9 12 15 12 15 22"></polyline></svg>
                     </div>
-                    <span class="nav-text">Library</span>
-                    <span class="section-chevron">&#9660;</span>
+                    <span class="nav-text">Home</span>
                 </div>
 
-                <div class="sidebar-sub-items" id="subItems-library">
-                    <div class="nav-item" id="nav-all-games" onclick="navigateToAllGames()">
+                <!-- ── LIBRARY section ── -->
+                <div class="sb-section-header" id="sbSecLibrary" onclick="sbToggleSection('library')">
+                    <span class="sb-sec-label">LIBRARY</span>
+                    <svg class="sb-sec-chevron" id="sbChevronLibrary" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="sb-section-body" id="sbBodyLibrary">
+                    <div class="nav-item sb-sub-item" id="nav-all-games" onclick="navigateToAllGames()">
                         <div class="nav-icon">
-                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg>
                         </div>
                         <span class="nav-text">All Games</span>
-                        <span class="platform-count" id="allGamesCount">—</span>
+                        <span class="sidebar-nav-badge" id="allGamesCount">—</span>
                     </div>
-                    <div class="nav-item active" id="nav-installed" onclick="navigateToInstalled()">
+                    <div class="nav-item sb-sub-item" id="nav-installed" onclick="navigateToInstalled()">
                         <div class="nav-icon">
-                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"></rect><line x1="8" y1="21" x2="16" y2="21"></line><line x1="12" y1="17" x2="12" y2="21"></line></svg>
                         </div>
-                        <span class="nav-text">Installed Games</span>
+                        <span class="nav-text">Installed</span>
+                        <span class="sidebar-nav-badge" id="sbNavInstalled">—</span>
                     </div>
-                    <div class="nav-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
+                    <div class="nav-item sb-sub-item" id="nav-ready" onclick="navigateToReadyToInstall()">
+                        <div class="nav-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                        </div>
+                        <span class="nav-text">Ready to Install</span>
+                        <span class="sidebar-nav-badge" id="sbNavReady">—</span>
+                    </div>
+                    <div class="nav-item sb-sub-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
                         <div class="nav-icon fav-heart">
-                            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         </div>
                         <span class="nav-text">Favorites</span>
                     </div>
-
-                    <div class="sidebar-sub-header">COLLECTIONS</div>
-                    <div id="collectionsList"></div>
+                    <!-- Legacy compat: kept empty so renderSidebar() doesn't crash -->
+                    <div id="collectionsList" style="display:none"></div>
                 </div>
 
-                <div class="sidebar-section-btn" id="sectionBtn-accounts" onclick="switchSidebarSection('accounts')">
-                    <div class="nav-icon">
-                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                    </div>
-                    <span class="nav-text">Accounts</span>
-                    <span class="section-chevron">&#9660;</span>
+                <!-- ── COLLECTIONS section ── -->
+                <div class="sb-section-header" id="sbSecCollections" onclick="sbToggleSection('collections')">
+                    <span class="sb-sec-label">COLLECTIONS</span>
+                    <svg class="sb-sec-chevron" id="sbChevronCollections" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="sb-section-body" id="sbBodyCollections">
+                    <!-- Populated by renderSidebarCollectionsList() -->
                 </div>
 
-                <div class="sidebar-sub-items" id="subItems-accounts" style="display:none;">
-                    <div class="nav-item platform-item" id="nav-steam" onclick="selectAccountPlatform('steam')">
-                        <div class="nav-icon platform-icon steam-icon"><img src="../assets/Steam.png" alt="Steam" style="width: 20px; height: 20px; object-fit: contain;"></div>
-                        <span class="nav-text">Steam</span><span class="platform-count" id="steamCount">—</span>
+                <!-- ── ACCOUNTS section ── -->
+                <div class="sb-section-header" id="sbSecAccounts" onclick="sbToggleSection('accounts')">
+                    <span class="sb-sec-label">ACCOUNTS</span>
+                    <svg class="sb-sec-chevron sb-chevron-closed" id="sbChevronAccounts" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                </div>
+                <div class="sb-section-body" id="sbBodyAccounts" style="display:none">
+                    <div class="nav-item sb-sub-item platform-item" id="nav-steam" onclick="selectAccountPlatform('steam')">
+                        <div class="nav-icon platform-icon steam-icon">
+                            <img src="../assets/Steam.png" alt="Steam" style="width:16px;height:16px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">Steam</span>
+                        <span class="platform-count" id="steamCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-epic" onclick="selectAccountPlatform('epic')">
-                        <div class="nav-icon platform-icon epic-icon"><img src="../assets/epic.svg" class="invert-on-dark" alt="Epic" style="width: 20px; height: 20px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));"></div>
-                        <span class="nav-text">Epic Games</span><span class="platform-count" id="epicCount">—</span>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-epic" onclick="selectAccountPlatform('epic')">
+                        <div class="nav-icon platform-icon epic-icon">
+                            <img src="../assets/epic.svg" alt="Epic" style="width:16px;height:16px;object-fit:contain;filter:brightness(0) invert(1);">
+                        </div>
+                        <span class="nav-text">Epic Games</span>
+                        <span class="platform-count" id="epicCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
-                        <div class="nav-icon platform-icon ea-icon"><img src="../assets/ea.png" alt="EA" style="width: 23px; height: 23px; object-fit: contain;"></div>
-                        <span class="nav-text">EA App</span><span class="platform-count" id="eaCount">—</span>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
+                        <div class="nav-icon platform-icon ea-icon">
+                            <img src="../assets/ea.png" alt="EA" style="width:18px;height:18px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">EA App</span>
+                        <span class="platform-count" id="eaCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-riot" onclick="selectAccountPlatform('riot')">
-                        <div class="nav-icon platform-icon riot-icon"><img src="../assets/riot.png" alt="Riot" style="width: 25px; height: 25px; object-fit: contain;"></div>
-                        <span class="nav-text">Riot Games</span><span class="platform-count" id="riotCount">—</span>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-riot" onclick="selectAccountPlatform('riot')">
+                        <div class="nav-icon platform-icon riot-icon">
+                            <img src="../assets/riot.png" alt="Riot" style="width:18px;height:18px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">Riot Games</span>
+                        <span class="platform-count" id="riotCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-rockstar" onclick="selectAccountPlatform('rockstar')">
+                    <div class="nav-item sb-sub-item platform-item" id="nav-rockstar" onclick="selectAccountPlatform('rockstar')">
                         <div class="nav-icon platform-icon rockstar-icon">
-                            <img src="../assets/Rockstar_Games_Logo.svg.png" alt="Rockstar" style="width: 20px; height: 20px; object-fit: contain;">
+                            <img src="../assets/Rockstar_Games_Logo.svg.png" alt="Rockstar" style="width:16px;height:16px;object-fit:contain;">
                         </div>
-                        <span class="nav-text">Rockstar</span><span class="platform-count" id="rockstarCount">—</span>
+                        <span class="nav-text">Rockstar</span>
+                        <span class="platform-count" id="rockstarCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
-                        <div class="nav-icon platform-icon ubisoft-icon"><img src="../assets/Ubisoft_white.png" alt="Ubisoft" class="invert-on-dark" style="width: 20px; height: 20px; object-fit: contain;"></div>
-                        <span class="nav-text">Ubisoft</span><span class="platform-count" id="ubisoftCount">—</span>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
+                        <div class="nav-icon platform-icon ubisoft-icon">
+                            <img src="../assets/Ubisoft_white.png" alt="Ubisoft" style="width:16px;height:16px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">Ubisoft</span>
+                        <span class="platform-count" id="ubisoftCount">—</span>
                     </div>
-                    <div class="nav-item platform-item" id="nav-discord" onclick="selectAccountPlatform('discord')">
+                    <div class="nav-item sb-sub-item platform-item" id="nav-discord" onclick="selectAccountPlatform('discord')">
                         <div class="nav-icon platform-icon discord-icon">
-                            <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
+                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
                         </div>
-                        <span class="nav-text">Discord</span><span class="platform-count" id="discordCount">—</span>
+                        <span class="nav-text">Discord</span>
+                        <span class="platform-count" id="discordCount">—</span>
                     </div>
-                    
                 </div>
-            </div>
 
-            <button id="btn-new-coll" class="add-coll-btn" id="sidebarBottomBtn" onclick="handleSidebarBottomBtn()">
-                <div class="nav-icon" id="bottomBtnIcon">+</div>
-                <span class="nav-text" id="bottomBtnText">New Collection</span>
+                <!-- ── MANAGE section ── -->
+                <div class="sb-section-header sb-sec-static" id="sbSecManage">
+                    <span class="sb-sec-label">MANAGE</span>
+                </div>
+                <div class="nav-item sb-sub-item" id="nav-collections" onclick="sbGoManageCollections()">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                    </div>
+                    <span class="nav-text">Collections</span>
+                </div>
+                <div class="nav-item sb-sub-item" id="nav-settings" onclick="openSettingsModal()">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+                    </div>
+                    <span class="nav-text">Settings</span>
+                </div>
+
+
+            </div><!-- end sidebar-scroll-content -->
+
+            <!-- ── Context action button ── -->
+            <button class="sb-ctx-btn add-coll-btn" id="btn-new-coll" onclick="handleSidebarContextBtn()">
+                <svg class="sb-ctx-icon" id="sbCtxIcon" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>
+                <span class="nav-text" id="sbCtxBtnText">New Collection</span>
             </button>
         </aside>
 
@@ -503,13 +562,13 @@
             <div id="allGamesView" style="display:none;">
                 <section class="library-section" style="padding-top: 20px;">
                     <header class="library-header">
-                        <h2 class="section-title">All Games</h2>
+                        <h2 class="section-title" id="allGamesViewTitle">All Games</h2>
                         <div class="header-right">
                             <button class="add-game-btn" onclick="openPlatformsModal()" style="background: var(--accent); color: black; display: flex; align-items: center; gap: 6px;">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                                 Manage Accounts
                             </button>
-                            <button id="btn-sync-epic" class="icon-btn" onclick="syncEpicLibrary()" title="Sync Epic Library">
+                            <button id="btn-refresh-all-games" class="icon-btn" onclick="refreshAllGamesView()" title="Refresh">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg>
                             </button>
                         </div>
@@ -660,6 +719,15 @@
                         </div>
                         <div id="agListBody"></div>
                     </div>
+                </section>
+            </div>
+
+            <!-- ── Collections page ── -->
+            <div id="collectionsView" style="display:none;">
+                <section class="library-section collections-page" style="padding-top: 20px;">
+                    <div id="collectionsHeader"></div>
+                    <div id="collectionsStats"></div>
+                    <div id="collectionsGrid" class="collections-grid"></div>
                 </section>
             </div>
 
@@ -1549,6 +1617,49 @@
                 </label>
             </div>
 
+            <!-- Quick Switcher section -->
+            <div class="setting-item" style="flex-direction:column; align-items:flex-start; gap:14px; border-top:1px solid rgba(255,255,255,0.06); padding-top:18px;">
+                <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
+                    <div class="setting-info">
+                        <h3>Quick Switcher Overlay</h3>
+                        <p style="margin:5px 0 0; font-size:13px; color:#aaa;">
+                            Global overlay to switch accounts from anywhere — even when Baddel is in the tray.
+                        </p>
+                    </div>
+                    <label class="toggle-switch">
+                        <input type="checkbox" id="qsEnabledToggle" onchange="qsToggleEnabled(this)">
+                        <span class="slider"></span>
+                    </label>
+                </div>
+                <div style="width:100%; display:flex; flex-direction:column; gap:10px;" id="qsSettingsBody">
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:13px; color:#ccc;">Hotkey</span>
+                        <div style="display:flex; gap:8px; align-items:center;">
+                            <kbd id="qsHotkeyDisplay" style="font-family:'Consolas',monospace; font-size:11px; background:rgba(255,255,255,0.06); border:1px solid rgba(255,255,255,0.12); border-radius:5px; padding:3px 8px; color:#ccc; min-width:80px; text-align:center;">Ctrl + Alt + B</kbd>
+                            <button class="btn-cancel" style="font-size:0.77rem; padding:5px 12px;" onclick="qsChangeHotkey()">Change</button>
+                            <button class="btn-cancel" style="font-size:0.77rem; padding:5px 12px;" onclick="qsResetHotkey()">Reset</button>
+                        </div>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:13px; color:#ccc;">Position</span>
+                        <select id="qsPositionSelect" onchange="qsChangePosition(this)" style="background:#111; border:1px solid rgba(255,255,255,0.12); color:#ccc; border-radius:6px; padding:5px 10px; font-size:13px; cursor:pointer; outline:none;">
+                            <option value="right">Right (default)</option>
+                            <option value="center">Center</option>
+                            <option value="left">Left</option>
+                            <option value="top">Top</option>
+                            <option value="bottom">Bottom</option>
+                        </select>
+                    </div>
+                    <div style="display:flex; justify-content:space-between; align-items:center;">
+                        <span style="font-size:13px; color:#ccc;">Close after switching</span>
+                        <label class="toggle-switch">
+                            <input type="checkbox" id="qsCloseAfterSwitchToggle" onchange="qsToggleCloseAfter(this)">
+                            <span class="slider"></span>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
             <!-- Version & Update section -->
             <div class="setting-item" style="flex-direction:column; align-items:flex-start; gap:12px;">
                 <div style="display:flex; justify-content:space-between; align-items:center; width:100%;">
@@ -1937,5 +2048,31 @@
         
     </div>
 </div>
+
+<!-- ── Beta Feedback Banner ──────────────────────────────────────────────── -->
+<div id="betaFeedbackBanner" class="beta-feedback-banner" hidden>
+    <div class="beta-feedback-left">
+        <div class="beta-feedback-pill">BETA</div>
+        <div class="beta-feedback-copy">
+            <strong>Help shape Baddel</strong>
+            <span>Tell us what you think, what is missing, or what feature you want next.</span>
+        </div>
+    </div>
+    <button
+        type="button"
+        class="beta-feedback-cta"
+        onclick="openBetaFeedbackFromBanner()"
+    >
+        Share feedback
+        <span aria-hidden="true">→</span>
+    </button>
+    <button
+        type="button"
+        class="beta-feedback-close"
+        aria-label="Dismiss feedback banner"
+        onclick="dismissBetaFeedbackBanner()"
+    >&#x2715;</button>
+</div>
+
 </body>
 </html>

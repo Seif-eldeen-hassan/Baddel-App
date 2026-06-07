@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self' 'unsafe-inline'; script-src 'self'; img-src 'self' data: blob: file:;">
+    <title>Quick Switcher</title>
+    <link rel="stylesheet" href="css/quick-switcher.css">
+</head>
+<body>
+    <div class="quick-switcher-shell">
+        <section class="quick-switcher-panel" id="quickSwitcherApp">
+
+            <header class="quick-switcher-header">
+                <div class="quick-switcher-brand">
+                    <span class="quick-switcher-logo" aria-hidden="true">
+                        <img class="quick-switcher-logo-img" src="../assets/app_icon.png" alt="Baddel" draggable="false">
+                    </span>
+                    <div class="quick-switcher-brand-text">
+                        <span class="quick-switcher-title">Quick Switch</span>
+                        <span class="quick-switcher-subtitle">Switch accounts without opening Baddel</span>
+                    </div>
+                    <span class="qs-hotkey-hint" id="qsHotkeyHint">Ctrl + Alt + B</span>
+                </div>
+                <button class="quick-switcher-close" id="quickSwitcherClose" title="Close (Esc)" aria-label="Close">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <line x1="18" y1="6" x2="6" y2="18"/>
+                        <line x1="6" y1="6" x2="18" y2="18"/>
+                    </svg>
+                </button>
+            </header>
+
+            <div class="quick-switcher-search-wrap">
+                <svg class="qs-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <circle cx="11" cy="11" r="8"/>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"/>
+                </svg>
+                <input
+                    type="text"
+                    id="quickSwitcherSearch"
+                    class="quick-switcher-search"
+                    placeholder="Search accounts or platforms…"
+                    autocomplete="off"
+                    spellcheck="false"
+                    aria-label="Search accounts"
+                >
+            </div>
+
+            <div id="quickSwitcherList" class="quick-switcher-list">
+                <div class="qs-loading">
+                    <div class="qs-spinner"></div>
+                    <span>Loading accounts…</span>
+                </div>
+            </div>
+
+            <p id="quickSwitcherError" class="qs-error-bar" role="alert" aria-live="polite"></p>
+
+            <footer class="quick-switcher-footer">
+                <span class="qs-keycap">↑</span>
+                <span class="qs-keycap">↓</span>
+                <span class="qs-footer-label">Navigate</span>
+                <span class="qs-footer-sep" aria-hidden="true">·</span>
+                <span class="qs-keycap">↵</span>
+                <span class="qs-footer-label">Switch</span>
+                <span class="qs-footer-sep" aria-hidden="true">·</span>
+                <span class="qs-keycap">Esc</span>
+                <span class="qs-footer-label">Close</span>
+            </footer>
+
+        </section>
+    </div>
+    <script src="js/quick-switcher.js"></script>
+</body>
+</html>

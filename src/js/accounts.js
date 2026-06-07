@@ -53,16 +53,12 @@ function switchSidebarSection(section) {
 }
 
 /**
- * handleSidebarBottomBtn - الزرار الأسفل بيعمل حاجة مختلفة حسب الـ section
+ * handleSidebarBottomBtn — context action button, driven by active view not section toggle
  */
 function handleSidebarBottomBtn() {
-    if (currentSidebarSection === 'library') {
-        openCollectionModal(); // الدالة الموجودة في app.js
-    } else {
-        // Add new account للـ platform الحالي
-        if (currentAccountPlatform) {
-            addNewAccount(currentAccountPlatform);
-        }
+    // Delegates to the app.js version which is the authoritative implementation.
+    if (typeof handleSidebarContextBtn === 'function') {
+        handleSidebarContextBtn();
     }
 }
 
@@ -111,13 +107,12 @@ function showLibraryView() {
 }
 
 function showAccountsView(platform) {
-    // نخفي كل حاجة (بما فيها الـ Hero) قبل ما نعرض الأكاونت
-    if (typeof _hideAllViews === 'function') {
-        _hideAllViews();
-    }
-    
+    if (typeof _hideAllViews === 'function') _hideAllViews();
     document.getElementById('accountsView').style.display = 'block';
     renderAccountsView(platform);
+    // Update the context button now that accountsView is visible
+    if (typeof updateSbContextBtn === 'function') updateSbContextBtn();
+    if (typeof updateSidebarActiveState === 'function') updateSidebarActiveState();
 }
 
 // ============================================================
@@ -130,22 +125,20 @@ function showAccountsView(platform) {
 function selectAccountPlatform(platform) {
     currentAccountPlatform = platform;
     currentSidebarSection  = 'accounts';
+    // Clear collection filter so Favorites/collection rows don't stay active
+    if (typeof currentFilters !== 'undefined') currentFilters.collectionId = null;
 
-    // تحديث الـ active state في الـ sidebar
-    document.querySelectorAll('.platform-item').forEach(item => item.classList.remove('active'));
-    document.getElementById(`nav-${platform}`)?.classList.add('active');
-
-    // تأكد إن الـ accounts section مفتوح
+    // Expand accounts section, collapse library
     document.getElementById('subItems-accounts').style.display = 'block';
     document.getElementById('subItems-library').style.display  = 'none';
     document.getElementById(`sectionBtn-accounts`)?.classList.add('active');
     document.getElementById(`sectionBtn-library`)?.classList.remove('active');
 
-    // تحديث الـ bottom button
-    const btnText = document.getElementById('bottomBtnText');
-    if (btnText) btnText.textContent = 'Add Account';
-
     showAccountsView(platform);
+
+    // updateSidebarActiveState reads accountsView visibility, which showAccountsView sets.
+    if (typeof updateSidebarActiveState === 'function') updateSidebarActiveState();
+    if (typeof updateSbContextBtn === 'function') updateSbContextBtn();
 }
 
 // ============================================================
@@ -446,14 +439,18 @@ async function loadAccountsForPlatform(platform) {
         // رندر الـ account cards
         grid.innerHTML = '';
         const cfg = PLATFORM_CONFIG[platform];
+        const shortcutsMap = await _loadShortcutsMap();
 
         if (platform === 'steam' && steamAccounts.length > 0) {
             steamAccounts.forEach((acc, i) => {
-                grid.appendChild(createSteamAccountCard(acc, cfg, i));
+                const shortcut = shortcutsMap.get(`steam::${acc.username}`) || null;
+                grid.appendChild(createSteamAccountCard(acc, cfg, i, shortcut));
             });
         } else if (platform === 'discord' && profiles.length > 0) {
             profiles.forEach((profileObj, i) => {
-                grid.appendChild(createDiscordAccountCard(profileObj, cfg, i));
+                const pName = typeof profileObj === 'string' ? profileObj : (profileObj.name || profileObj.username || '');
+                const shortcut = shortcutsMap.get(`discord::${pName}`) || null;
+                grid.appendChild(createDiscordAccountCard(profileObj, cfg, i, shortcut));
             });
         } else {
             profiles.forEach((profile, i) => {
@@ -461,7 +458,8 @@ async function loadAccountsForPlatform(platform) {
                 const profileName = typeof profile === 'string'
                     ? profile
                     : (profile.name || profile.username || profile.displayName || String(profile.id || ''));
-                grid.appendChild(createAccountCard(profileName, platform, cfg, i));
+                const shortcut = shortcutsMap.get(`${platform}::${profileName}`) || null;
+                grid.appendChild(createAccountCard(profileName, platform, cfg, i, shortcut));
             });
         }
 
@@ -471,10 +469,265 @@ async function loadAccountsForPlatform(platform) {
     }
 }
 
+// ── Account Shortcut helpers ─────────────────────────────────────────────────
+
+async function _loadShortcutsMap() {
+    if (!window.electronAPI?.accountShortcuts?.list) return new Map();
+    try {
+        const list = await window.electronAPI.accountShortcuts.list();
+        if (!Array.isArray(list)) return new Map();
+        const map = new Map();
+        for (const s of list) map.set(`${s.platform}::${s.accountId}`, s);
+        return map;
+    } catch { return new Map(); }
+}
+
+function _shortcutBtnHtml(shortcut) {
+    const kbdIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`;
+    if (shortcut) {
+        return `<button class="acc-shortcut-btn has-shortcut" title="Shortcut: ${escapeHtml(shortcut.accelerator)} — Click to change" data-action="shortcut"><span class="acc-shortcut-pill">${escapeHtml(shortcut.accelerator)}</span></button>`;
+    }
+    return `<button class="acc-shortcut-btn" title="Set keyboard shortcut" data-action="shortcut">${kbdIcon}</button>`;
+}
+
+function _updateCardShortcutBtn(card, shortcut) {
+    const btn = card.querySelector('[data-action="shortcut"]');
+    if (!btn) return;
+    const kbdIcon = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="6" width="20" height="12" rx="2"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M8 14h8"/></svg>`;
+    if (shortcut) {
+        btn.className = 'acc-shortcut-btn has-shortcut';
+        btn.title = `Shortcut: ${shortcut.accelerator} — Click to change`;
+        btn.innerHTML = `<span class="acc-shortcut-pill">${escapeHtml(shortcut.accelerator)}</span>`;
+    } else {
+        btn.className = 'acc-shortcut-btn';
+        btn.title = 'Set keyboard shortcut';
+        btn.innerHTML = kbdIcon;
+    }
+}
+
+// Renderer-side validation for the shortcut capture modal.
+// Intentionally mirrors the main-process validation so the user gets instant
+// feedback — but the IPC handler in main.js is still the final authority.
+function validateShortcutCapture(accelerator) {
+    if (!accelerator || typeof accelerator !== 'string') {
+        return { valid: false, message: '', normalized: '' };
+    }
+    const MODIFIER_KEYS = new Set(['ctrl', 'control', 'shift', 'alt', 'meta', 'super', 'command']);
+    const BLOCKED = new Set([
+        'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z', 'Ctrl+S',
+        'Ctrl+P', 'Ctrl+F', 'Ctrl+R', 'Ctrl+W', 'Ctrl+T', 'Ctrl+N', 'Ctrl+Q',
+        'Alt+Tab', 'Ctrl+Alt+Delete', 'Meta+L', 'Super+L',
+    ]);
+    const REJECT_KEYS = new Set(['enter', 'escape', 'backspace', 'delete', 'tab']);
+
+    const parts = accelerator.split('+').map(p => p.trim()).filter(Boolean);
+    const mods = parts.filter(p => MODIFIER_KEYS.has(p.toLowerCase()));
+    const keys = parts.filter(p => !MODIFIER_KEYS.has(p.toLowerCase()));
+
+    if (keys.length === 0) {
+        return { valid: false, message: 'Include a non-modifier key, for example Ctrl + Alt + H.', normalized: '' };
+    }
+
+    const rawKey = keys[0];
+    if (REJECT_KEYS.has(rawKey.toLowerCase())) {
+        return { valid: false, message: `"${rawKey}" cannot be used as the shortcut key.`, normalized: '' };
+    }
+
+    // Normalise modifier display order: Ctrl → Shift → Alt → Super.
+    const MOD_ORDER = ['Ctrl', 'Shift', 'Alt', 'Super'];
+    const normMods = [...new Set(mods.map(m => {
+        const l = m.toLowerCase();
+        if (l === 'control' || l === 'commandorcontrol') return 'Ctrl';
+        if (l === 'meta' || l === 'command' || l === 'super') return 'Super';
+        return m.charAt(0).toUpperCase() + m.slice(1).toLowerCase();
+    }))];
+    normMods.sort((a, b) => {
+        const ai = MOD_ORDER.indexOf(a), bi = MOD_ORDER.indexOf(b);
+        return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    });
+
+    const normKey = rawKey.length === 1 ? rawKey.toUpperCase() : rawKey;
+    const ipc     = [...normMods, normKey].join('+');      // Ctrl+Alt+K  (sent to IPC)
+    const display = [...normMods, normKey].join(' + ');    // Ctrl + Alt + K (shown in UI)
+
+    if (BLOCKED.has(ipc)) {
+        return { valid: false, message: `${display} is reserved by the system. Try a different combination.`, normalized: display };
+    }
+
+    if (normMods.length < 2) {
+        const exKey = normKey.length === 1 ? normKey : 'H';
+        const example = [...normMods, 'Alt', exKey].join(' + ');
+        return {
+            valid: false,
+            message: `Use at least 2 modifier keys — for example ${example}.`,
+            normalized: display,
+        };
+    }
+
+    return { valid: true, message: '', normalized: display };
+}
+
+function openShortcutCaptureModal(platform, accountId, accountName, accent, existingShortcut) {
+    return new Promise((resolve) => {
+        // capturedRaw  = 'Ctrl+Alt+K'  (no spaces — passed to IPC)
+        // capturedValid, capturedMessage, capturedDisplay track live validation state.
+        let capturedRaw     = existingShortcut || null;
+        let capturedValid   = false;
+        let capturedMessage = '';
+        let capturedDisplay = '';
+
+        if (capturedRaw) {
+            const v = validateShortcutCapture(capturedRaw);
+            capturedValid   = v.valid;
+            capturedMessage = v.message;
+            capturedDisplay = v.normalized || capturedRaw;
+        }
+
+        const overlay = document.createElement('div');
+        overlay.style.cssText = 'position:fixed;top:0;left:0;width:100%;height:100%;background:rgba(0,0,0,0.82);z-index:99999;display:flex;align-items:center;justify-content:center;backdrop-filter:blur(5px);';
+
+        const box = document.createElement('div');
+        box.style.cssText = 'background:#1a1a1a;padding:28px 24px;border-radius:14px;width:360px;display:flex;flex-direction:column;gap:16px;border:1px solid #2e2e2e;box-shadow:0 16px 48px rgba(0,0,0,0.6);font-family:sans-serif;';
+
+        const title = document.createElement('div');
+        title.style.cssText = 'color:#fff;font-size:15px;font-weight:600;';
+        title.textContent = `Keyboard shortcut for "${accountName}"`;
+
+        const sub = document.createElement('div');
+        sub.style.cssText = 'color:#777;font-size:12px;margin-top:-8px;line-height:1.5;';
+        sub.textContent = 'Press a key combination while this window is open. Requires Ctrl, Shift, or Alt plus at least one other modifier.';
+
+        const captureBox = document.createElement('div');
+        captureBox.className = 'shortcut-capture-box';
+
+        const errorEl = document.createElement('div');
+        errorEl.className = 'shortcut-error';
+
+        const btnRow = document.createElement('div');
+        btnRow.style.cssText = 'display:flex;justify-content:flex-end;gap:10px;margin-top:4px;';
+
+        const clearBtn = document.createElement('button');
+        clearBtn.textContent = 'Clear shortcut';
+        clearBtn.style.cssText = 'padding:8px 14px;background:transparent;border:1px solid #444;border-radius:7px;color:#aaa;cursor:pointer;font-size:12px;';
+        clearBtn.style.display = existingShortcut ? '' : 'none';
+
+        const cancelBtn = document.createElement('button');
+        cancelBtn.textContent = 'Cancel';
+        cancelBtn.style.cssText = 'padding:8px 14px;background:transparent;border:1px solid #444;border-radius:7px;color:#ccc;cursor:pointer;font-size:13px;';
+
+        const saveBtn = document.createElement('button');
+        saveBtn.className = 'shortcut-save-btn';
+        saveBtn.textContent = 'Save';
+        saveBtn.style.cssText = `padding:8px 18px;background:${accent};border:none;border-radius:7px;cursor:pointer;font-weight:600;font-size:13px;transition:opacity 0.15s,filter 0.15s;`;
+        saveBtn.style.color = typeof isColorLight === 'function' && isColorLight(accent) ? '#000' : '#fff';
+
+        btnRow.append(clearBtn, cancelBtn, saveBtn);
+        box.append(title, sub, captureBox, errorEl, btnRow);
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        // Sync the entire modal UI to the current capture state.
+        function _refreshUI() {
+            if (!capturedRaw) {
+                captureBox.className = 'shortcut-capture-box';
+                captureBox.textContent = 'Press a shortcut like Ctrl + Alt + H';
+                errorEl.textContent = '';
+                saveBtn.disabled = true;
+            } else if (capturedValid) {
+                captureBox.className = 'shortcut-capture-box is-valid';
+                captureBox.textContent = capturedDisplay;
+                errorEl.textContent = '';
+                saveBtn.disabled = false;
+            } else {
+                captureBox.className = 'shortcut-capture-box is-invalid';
+                captureBox.textContent = capturedDisplay || capturedRaw;
+                errorEl.textContent = capturedMessage;
+                saveBtn.disabled = true;
+            }
+        }
+
+        _refreshUI();
+
+        const onKeyDown = (e) => {
+            const pureMods = ['Control', 'Shift', 'Alt', 'Meta', 'Super', 'AltGraph'];
+            if (pureMods.includes(e.key)) return;
+            e.preventDefault();
+            e.stopPropagation();
+
+            if (e.key === 'Escape') { cleanup(); resolve('cancel'); return; }
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                capturedRaw     = null;
+                capturedValid   = false;
+                capturedMessage = '';
+                capturedDisplay = '';
+                _refreshUI();
+                return;
+            }
+
+            const mods = [];
+            if (e.ctrlKey)  mods.push('Ctrl');
+            if (e.shiftKey) mods.push('Shift');
+            if (e.altKey)   mods.push('Alt');
+            if (e.metaKey)  mods.push('Super');
+
+            let key = e.key;
+            if (key === ' ') key = 'Space';
+            if (key.length === 1) key = key.toUpperCase();
+
+            capturedRaw = [...mods, key].join('+');
+            const v = validateShortcutCapture(capturedRaw);
+            capturedValid   = v.valid;
+            capturedMessage = v.message;
+            capturedDisplay = v.normalized || capturedRaw;
+            _refreshUI();
+        };
+        document.addEventListener('keydown', onKeyDown, true);
+
+        const cleanup = () => {
+            document.removeEventListener('keydown', onKeyDown, true);
+            if (document.body.contains(overlay)) document.body.removeChild(overlay);
+        };
+
+        clearBtn.onclick = async () => {
+            try { await window.electronAPI.accountShortcuts.clear({ platform, accountId }); } catch {}
+            cleanup();
+            resolve(null);
+        };
+
+        cancelBtn.onclick = () => { cleanup(); resolve('cancel'); };
+
+        saveBtn.onclick = async () => {
+            if (!capturedRaw || !capturedValid) {
+                errorEl.textContent = capturedMessage || 'Press a valid key combination first.';
+                return;
+            }
+            saveBtn.disabled = true;
+            saveBtn.textContent = 'Saving…';
+            try {
+                const result = await window.electronAPI.accountShortcuts.set({ platform, accountId, accountName, accelerator: capturedRaw });
+                if (result?.status === 'error') {
+                    errorEl.textContent = result.message;
+                    capturedValid = false;
+                    _refreshUI();
+                    saveBtn.textContent = 'Save';
+                    return;
+                }
+                cleanup();
+                resolve(capturedRaw);
+            } catch (err) {
+                errorEl.textContent = err.message || 'Failed to save shortcut.';
+                capturedValid = false;
+                _refreshUI();
+                saveBtn.textContent = 'Save';
+            }
+        };
+    });
+}
+
 /**
  * createAccountCard - بيعمل card للـ account العادي (Epic, EA, Riot, Ubisoft)
  */
-function createAccountCard(profileName, platform, cfg, index = 0) {
+function createAccountCard(profileName, platform, cfg, index = 0, shortcut = null) {
     // تأمين: لو جاء object بدل string نسحب منه الاسم
     if (typeof profileName === 'object' && profileName !== null) {
         profileName = profileName.name || profileName.username || profileName.displayName || String(profileName.id || '');
@@ -511,6 +764,7 @@ function createAccountCard(profileName, platform, cfg, index = 0) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                 Switch
             </button>
+            ${_shortcutBtnHtml(shortcut)}
             <button class="acc-rename-btn" title="Rename Account" data-action="rename">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
             </button>
@@ -525,6 +779,19 @@ function createAccountCard(profileName, platform, cfg, index = 0) {
     card.querySelector('[data-action="switch"]').addEventListener('click', function() {
         handleSwitchAccount(platform, profileName, this);
     });
+    card.querySelector('[data-action="shortcut"]').addEventListener('click', async () => {
+        const current = shortcut;
+        const result = await openShortcutCaptureModal(platform, profileName, profileName, cfg.accent, current?.accelerator || null);
+        if (result === 'cancel') return;
+        const newMap = await _loadShortcutsMap();
+        const updated = newMap.get(`${platform}::${profileName}`) || null;
+        shortcut = updated;
+        _updateCardShortcutBtn(card, updated);
+        if (typeof showToast === 'function') {
+            if (result === null) showToast('Shortcut cleared', 'success');
+            else showToast(`Shortcut set: ${result}`, 'success');
+        }
+    });
     card.querySelector('[data-action="rename"]').addEventListener('click', () => handleRenameAccount(platform, profileName));
     card.querySelector('[data-action="delete"]').addEventListener('click', () => handleDeleteAccount(platform, profileName));
     return card;
@@ -536,7 +803,7 @@ function createAccountCard(profileName, platform, cfg, index = 0) {
 /**
  * createDiscordAccountCard - card مخصص لديسكورد لعرض الصورة واليوزرنيم
  */
-function createDiscordAccountCard(profile, cfg, index = 0) {
+function createDiscordAccountCard(profile, cfg, index = 0, shortcut = null) {
     // تأمين: نتأكد إن profile object وعنده name
     if (typeof profile === 'string') {
         profile = { name: profile, username: profile };
@@ -579,6 +846,7 @@ function createDiscordAccountCard(profile, cfg, index = 0) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                 Switch
             </button>
+            ${_shortcutBtnHtml(shortcut)}
             <button class="acc-rename-btn" title="Rename Account" data-action="rename">
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4L18.5 2.5z"></path></svg>
             </button>
@@ -597,6 +865,18 @@ function createDiscordAccountCard(profile, cfg, index = 0) {
     card.querySelector('[data-action="switch"]').addEventListener('click', function() {
         handleSwitchAccount('discord', profileName, this);
     });
+    card.querySelector('[data-action="shortcut"]').addEventListener('click', async () => {
+        const result = await openShortcutCaptureModal('discord', profileName, profileName, cfg.accent, shortcut?.accelerator || null);
+        if (result === 'cancel') return;
+        const newMap = await _loadShortcutsMap();
+        const updated = newMap.get(`discord::${profileName}`) || null;
+        shortcut = updated;
+        _updateCardShortcutBtn(card, updated);
+        if (typeof showToast === 'function') {
+            if (result === null) showToast('Shortcut cleared', 'success');
+            else showToast(`Shortcut set: ${result}`, 'success');
+        }
+    });
     card.querySelector('[data-action="rename"]').addEventListener('click', () => handleRenameAccount('discord', profileName));
     card.querySelector('[data-action="delete"]').addEventListener('click', () => handleDeleteAccount('discord', profileName));
     return card;
@@ -605,7 +885,7 @@ function createDiscordAccountCard(profile, cfg, index = 0) {
 // ============================================================
 // 4. كارت ستيم
 // ============================================================
-function createSteamAccountCard(acc, cfg, index = 0) {
+function createSteamAccountCard(acc, cfg, index = 0, shortcut = null) {
     const card = document.createElement('div');
     card.className = 'account-card';
     card.setAttribute('data-profile', acc.username);
@@ -638,6 +918,7 @@ function createSteamAccountCard(acc, cfg, index = 0) {
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"></polyline><path d="M3 11V9a4 4 0 0 1 4-4h14"></path><polyline points="7 23 3 19 7 15"></polyline><path d="M21 13v2a4 4 0 0 1-4 4H3"></path></svg>
                 Switch
             </button>
+            ${_shortcutBtnHtml(shortcut)}
         </div>
     `;
     card.querySelector('[data-action="pin"]').addEventListener('click', function() {
@@ -645,6 +926,18 @@ function createSteamAccountCard(acc, cfg, index = 0) {
     });
     card.querySelector('[data-action="switch"]').addEventListener('click', function() {
         handleSwitchAccount('steam', acc.username, this);
+    });
+    card.querySelector('[data-action="shortcut"]').addEventListener('click', async () => {
+        const result = await openShortcutCaptureModal('steam', acc.username, acc.displayName || acc.username, cfg.accent, shortcut?.accelerator || null);
+        if (result === 'cancel') return;
+        const newMap = await _loadShortcutsMap();
+        const updated = newMap.get(`steam::${acc.username}`) || null;
+        shortcut = updated;
+        _updateCardShortcutBtn(card, updated);
+        if (typeof showToast === 'function') {
+            if (result === null) showToast('Shortcut cleared', 'success');
+            else showToast(`Shortcut set: ${result}`, 'success');
+        }
     });
     loadSteamAvatar(acc.steamId, `avatar-${acc.steamId}`, acc.displayName || acc.username);
     return card;
@@ -1587,25 +1880,29 @@ window.syncEpicLibrary = async function() {
 
 /**
  * Refresh All Games view from existing cached/local data only.
- * Does NOT trigger any platform sync. Preserves current filters/search/sort/view.
+ * Does NOT trigger any platform sync. Preserves agReadyOnly, filters, search, sort, and view mode.
  */
 window.refreshAllGamesView = async function() {
     const btn = document.getElementById('btn-refresh-all-games');
     if (btn) { btn.disabled = true; btn.style.opacity = '0.5'; }
 
-    // Preserve scroll position
-    const grid = document.getElementById('allGamesGrid');
-    const scrollTop = grid ? grid.scrollTop : 0;
+    const main = document.getElementById('mainContentArea');
+    const scrollTop = main ? main.scrollTop : 0;
 
     try {
-        if (typeof renderAllGamesView === 'function') {
-            await renderAllGamesView();
+        if (Array.isArray(window._allGamesCache) && window._allGamesCache.length > 0) {
+            if (typeof _agRenderAccountFilterOptions === 'function') {
+                _agRenderAccountFilterOptions(window._allGamesCache);
+            }
+            if (typeof _applyAgFilters === 'function') {
+                _applyAgFilters({ resetScroll: false });
+            }
+            if (main && scrollTop) {
+                requestAnimationFrame(() => { main.scrollTop = scrollTop; });
+            }
+        } else if (typeof renderAllGamesView === 'function') {
+            await renderAllGamesView({ suppressInitialLoading: true });
         }
-        // Re-apply filters without clearing search/sort
-        if (typeof filterAllGames === 'function') filterAllGames();
-        // Restore scroll
-        if (grid) grid.scrollTop = scrollTop;
-        if (typeof showToast === 'function') showToast('Library refreshed', 'success');
     } catch (err) {
         if (typeof showToast === 'function') showToast('Refresh failed: ' + err.message, 'error');
     } finally {
@@ -2552,45 +2849,85 @@ window._agIsUserLibraryGame   = _agIsUserLibraryGame;
 window._agGetUserLibraryGames = _agGetUserLibraryGames;
 
 async function navigateToAllGames(opts = {}) {
-    // تحديث الـ sidebar active state
+    // ── 1. Mode flags (synchronous) ──────────────────────────────────────────────
+    if (!opts._keepReadyMode) {
+        window.agReadyOnly = false;
+        const t = document.getElementById('allGamesViewTitle');
+        if (t) t.textContent = 'All Games';
+    }
+    document.body.classList.toggle('ag-ready-mode', !!window.agReadyOnly);
+
+    // Set sidebar active state and page title BEFORE first paint.
     document.querySelectorAll('.nav-item').forEach(i => i.classList.remove('active'));
-    document.getElementById('nav-all-games')?.classList.add('active');
-
-    // إخفاء الـ views التانية
-    if (typeof _hideAllViews === 'function') _hideAllViews();
-    document.getElementById('allGamesView').style.display = 'block';
-
-    // ── FIX: Restore filter state if returning from Game Details ──
-    if (opts.restoreState) {
-        const s = opts.restoreState;
-        // Restore _agState silently (no re-render yet)
-        window._agState.platform = s.platform || 'all';
-        window._agState.account  = s.account  || 'all';
-        window._agState.sort     = s.sort     || 'title_asc';
-        window._agState.search   = s.search   || '';
-
-        // Restore UI controls
-        document.querySelectorAll('.ag-pill').forEach(p => p.classList.remove('active'));
-        const activePill = document.querySelector(`.ag-pill[data-platform="${s.platform}"]`);
-        if (activePill) activePill.classList.add('active');
-
-        // Restore custom sort dropdown label
-        const sortLabels = { title_asc: 'A → Z', title_desc: 'Z → A', playtime_desc: 'Most Played', multi_first: 'Multi-Platform First' };
-        const sortLabelEl = document.getElementById('agSortLabel');
-        if (sortLabelEl) sortLabelEl.textContent = sortLabels[s.sort] || 'A → Z';
-        document.querySelectorAll('.ag-sort-item').forEach(i => i.classList.toggle('active', i.dataset.value === (s.sort || 'title_asc')));
-
-        const searchEl = document.getElementById('allGamesSearch');
-        if (searchEl) searchEl.value = s.search || '';
-
-        const accountText = document.getElementById('selectedAgAccountText');
-        if (accountText) accountText.innerText = s.accountLabel || 'All Accounts';
+    if (window.agReadyOnly) {
+        document.getElementById('nav-ready')?.classList.add('active');
+        const titleEl = document.getElementById('allGamesViewTitle');
+        if (titleEl) titleEl.textContent = 'Ready to Install';
+    } else {
+        document.getElementById('nav-all-games')?.classList.add('active');
+    }
+    // ── 2. Reset scroll and stale route state synchronously ─────────────────────
+    // Set currentView early so getSidebarActionContext reads the right value
+    // when the button-sync runs below (before any awaits).
+    if (typeof currentView !== 'undefined') currentView = 'all-games';
+    // Clear collection filter so Favorites/custom-collection rows don't stay active.
+    if (!opts.restoreState && typeof currentFilters !== 'undefined') {
+        currentFilters.collectionId = null;
+    }
+    {
+        const _main = document.getElementById('mainContentArea');
+        if (_main && !opts.restoreState?.scrollTop) {
+            _main.style.scrollBehavior = 'auto';
+            _main.scrollTop = 0;
+        }
     }
 
-    // ── Account gate: if no Steam/Epic account is linked, always show onboarding ──
-    // This must come BEFORE inspecting the cache so that removing all accounts
-    // while the cache is still populated correctly resets to the empty state.
-    {
+    // ── 3. Hide other views (_agExitEmptyPageMode is called inside) ───────────────
+    if (typeof _hideAllViews === 'function') _hideAllViews();
+
+    // ── 4. Show allGamesView ─────────────────────────────────────────────────────
+    const view = document.getElementById('allGamesView');
+    if (view) view.style.display = 'block';
+
+    // Sync button label now that the view is actually visible in the DOM.
+    if (typeof syncSidebarActionButton === 'function') syncSidebarActionButton();
+    requestAnimationFrame(() => {
+        if (typeof syncSidebarActionButton === 'function') syncSidebarActionButton();
+    });
+
+    // ── 5. Install route skeleton synchronously (no stale cards visible) ─────────
+    // Must run AFTER _hideAllViews (which calls _agExitEmptyPageMode and resets grid
+    // styles) and AFTER display='block' so the skeleton is immediately visible.
+    _agBeginAllGamesRoute(opts);
+
+    try {
+        // ── 6. Restore filter UI state (synchronous) ─────────────────────────────
+        if (opts.restoreState) {
+            const s = opts.restoreState;
+            window._agState.platform = s.platform || 'all';
+            window._agState.account  = s.account  || 'all';
+            window._agState.sort     = s.sort     || 'title_asc';
+            window._agState.search   = s.search   || '';
+
+            document.querySelectorAll('.ag-pill').forEach(p => p.classList.remove('active'));
+            const activePill = document.querySelector(`.ag-pill[data-platform="${s.platform}"]`);
+            if (activePill) activePill.classList.add('active');
+
+            const sortLabels = { title_asc: 'A → Z', title_desc: 'Z → A', playtime_desc: 'Most Played', multi_first: 'Multi-Platform First' };
+            const sortLabelEl = document.getElementById('agSortLabel');
+            if (sortLabelEl) sortLabelEl.textContent = sortLabels[s.sort] || 'A → Z';
+            document.querySelectorAll('.ag-sort-item').forEach(i => i.classList.toggle('active', i.dataset.value === (s.sort || 'title_asc')));
+
+            const searchEl = document.getElementById('allGamesSearch');
+            if (searchEl) searchEl.value = s.search || '';
+
+            const accountText = document.getElementById('selectedAgAccountText');
+            if (accountText) accountText.innerText = s.accountLabel || 'All Accounts';
+        }
+
+        // ── 7. Account gate (first await) ─────────────────────────────────────────
+        // Must come BEFORE inspecting the cache so removing all accounts while the
+        // cache is populated correctly resets to the empty/onboarding state.
         const _syncSt = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
         const _hasLinked = _syncSt?.steam === true || _syncSt?.epic === true;
         if (!_hasLinked) {
@@ -2601,46 +2938,50 @@ async function navigateToAllGames(opts = {}) {
             _agSetToolbarVisible(false);
             _agRenderEmptyOnboarding();
             _agRenderAccountFilterOptions([]);
-            return;
+            return; // finally → _agEndAllGamesRoute()
         }
-    }
 
-    // Sanitize: evict any installed-only records that may have leaked in via
-    // _patchGameInMemory or _gdRefreshGameFromDbAfterMutation before we inspect
-    // or render the cache.
-    if (Array.isArray(window._allGamesCache)) {
-        window._allGamesCache = _agGetUserLibraryGames(window._allGamesCache);
-    }
-    if (Array.isArray(window._allGamesRawCache)) {
-        window._allGamesRawCache = _agGetUserLibraryGames(window._allGamesRawCache);
-    }
+        // ── 8. Sanitize cache ─────────────────────────────────────────────────────
+        if (Array.isArray(window._allGamesCache)) {
+            window._allGamesCache = _agGetUserLibraryGames(window._allGamesCache);
+        }
+        if (Array.isArray(window._allGamesRawCache)) {
+            window._allGamesRawCache = _agGetUserLibraryGames(window._allGamesRawCache);
+        }
 
-    // ── FIX: If cache already exists, skip full rebuild — just re-filter ──
-    // But only skip if the cache contains actual user-library games, not just
-    // auto-scanned installed-only records (e.g. Xbox / MS Store games).
-    if (window._allGamesCache && window._allGamesCache.length > 0) {
-        const libraryCache = _agGetUserLibraryGames(window._allGamesCache);
-        if (libraryCache.length > 0) {
-            window._allGamesCache = libraryCache;
-            _agRenderAccountFilterOptions(window._allGamesCache);
-            _applyAgFilters();
+        // ── 9. Cache fast path ────────────────────────────────────────────────────
+        if (window._allGamesCache && window._allGamesCache.length > 0) {
+            const libraryCache = _agGetUserLibraryGames(window._allGamesCache);
+            if (libraryCache.length > 0) {
+                window._allGamesCache = libraryCache;
+                _agRenderAccountFilterOptions(window._allGamesCache);
+                // resetScroll=false because scrollTop was already set to 0 in step 2;
+                // for back-navigation we'll restore the saved position after render.
+                _applyAgFilters({ resetScroll: !opts.restoreState?.scrollTop });
 
-            // Restore scroll position after paint
-            if (opts.restoreState?.scrollTop) {
-                requestAnimationFrame(() => {
-                    const el = document.getElementById('mainContentArea');
-                    if (el) el.scrollTop = opts.restoreState.scrollTop;
-                });
+                if (opts.restoreState?.scrollTop) {
+                    // Double-rAF: ensure _vsRender has completed its first pass
+                    requestAnimationFrame(() => requestAnimationFrame(() => {
+                        const el = document.getElementById('mainContentArea');
+                        if (el) el.scrollTop = opts.restoreState.scrollTop;
+                        if (typeof window._vsRender === 'function') window._vsRender(false);
+                    }));
+                }
+                return; // finally → _agEndAllGamesRoute()
             }
-            return;
+            // Cache only had installed-only games — treat as empty for onboarding.
+            if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames-existing-cache')) return;
         }
-        // Cache only had installed-only games — treat as empty for onboarding purposes.
-        if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames-existing-cache')) return;
+
+        if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames')) return;
+
+        // ── 10. Full rebuild ──────────────────────────────────────────────────────
+        // suppressInitialLoading: keep our route skeleton until real data is ready.
+        await renderAllGamesView({ stableLayout: true, suppressInitialLoading: true });
+
+    } finally {
+        _agEndAllGamesRoute();
     }
-
-    if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames')) return;
-
-    await renderAllGamesView();
 }
 
 // ── All Games: toolbar visibility helper ─────────────────────────────────────
@@ -2694,6 +3035,90 @@ function _agExitEmptyPageMode() {
         grid.style.position      = '';
     }
     if (list) list.style.display = '';
+}
+
+// ── Layout-lock helpers — prevent the grid collapsing to zero during nav ─────
+
+function _agLockAllGamesLayout() {
+    const view = document.getElementById('allGamesView');
+    const grid = document.getElementById('allGamesGrid');
+    const main = document.getElementById('mainContentArea');
+    if (!grid) return;
+    if (view) view.classList.add('ag-layout-loading');
+    const available = (main ? main.clientHeight : window.innerHeight) - 180;
+    grid.style.minHeight = Math.max(520, available) + 'px';
+}
+
+function _agUnlockAllGamesLayout() {
+    requestAnimationFrame(() => {
+        const view = document.getElementById('allGamesView');
+        const grid = document.getElementById('allGamesGrid');
+        if (view) view.classList.remove('ag-layout-loading');
+        if (grid && !grid.classList.contains('ag-empty-mode')) {
+            grid.style.minHeight = '';
+        }
+    });
+}
+
+function _agStableLibraryLoadingHTML() {
+    return '<div class="ag-stable-loading-panel"><div class="acc-spinner"></div><span>Loading library…</span></div>';
+}
+
+function _agRouteSkeletonHTML() {
+    return '<div class="ag-route-skeleton"><div class="acc-spinner"></div><span>Loading library…</span></div>';
+}
+
+// Synchronous first-paint helper — call AFTER view.style.display='block' and AFTER _hideAllViews.
+// Clears stale virtual-scroll row DOM (without touching cardCache) and installs a stable skeleton.
+function _agBeginAllGamesRoute(opts) {
+    const main   = document.getElementById('mainContentArea');
+    const view   = document.getElementById('allGamesView');
+    const grid   = document.getElementById('allGamesGrid');
+    const list   = document.getElementById('allGamesList');
+
+    // Disable smooth scrolling temporarily so the synchronous reset is instant
+    if (main) {
+        main._agSavedScrollBehavior = main.style.scrollBehavior;
+        main.style.scrollBehavior = 'auto';
+    }
+
+    // Remove currently-mounted virtual-scroll row nodes — do NOT wipe cardCache
+    _vs.cardPool.forEach(row => row.remove());
+    _vs.cardPool.clear();
+    _vs.renderedStart = -1;
+    _vs.renderedEnd   = -1;
+    _vs.cols          = 0;
+    _vs._gridTopDirty = true;
+
+    if (list) list.style.display = 'none';
+
+    // Install a stable skeleton — same height as the viewport so nothing collapses
+    if (grid) {
+        grid.classList.remove('ag-empty-mode');
+        grid.style.position  = 'relative';
+        grid.style.height    = '';
+        grid.style.minHeight = 'calc(100vh - 180px)';
+        grid.style.display   = 'block';
+        grid.innerHTML       = _agRouteSkeletonHTML();
+    }
+
+    document.body.classList.add('ag-route-pending');
+    if (view) view.classList.add('ag-first-paint-lock');
+}
+
+// Tear down route lock — safe to call multiple times.
+function _agEndAllGamesRoute() {
+    document.body.classList.remove('ag-route-pending');
+    const view = document.getElementById('allGamesView');
+    if (view) view.classList.remove('ag-first-paint-lock');
+    // Restore scroll behavior after the current paint cycle
+    requestAnimationFrame(() => {
+        const main = document.getElementById('mainContentArea');
+        if (main && main._agSavedScrollBehavior !== undefined) {
+            main.style.scrollBehavior = main._agSavedScrollBehavior;
+            delete main._agSavedScrollBehavior;
+        }
+    });
 }
 
 function _agSetEmptyPageMode(enabled) {
@@ -2831,7 +3256,7 @@ async function _agMaybeRenderEmptyOnboarding(reason = '') {
     return false;
 }
 
-window.renderAllGamesView = async function() {
+window.renderAllGamesView = async function(options = {}) {
     // Guard: prevent concurrent renders — if a render is already in progress
     // (e.g. from a library-updated event while user is navigating), skip the duplicate.
     if (window._allGamesRendering) return;
@@ -2866,7 +3291,13 @@ window.renderAllGamesView = async function() {
     // Restore grid to normal card-layout mode (in case we're coming from empty state)
     _agResetAllGamesGridMode();
 
-    grid.innerHTML = `<div class="accounts-loading" style="padding:40px 0;"><div class="acc-spinner"></div><span>Loading library...</span></div>`;
+    // If the caller already installed a route skeleton, don't replace it with
+    // another loading row — the skeleton is stable and avoids a double-flash.
+    if (!options.suppressInitialLoading) {
+        grid.innerHTML = options.stableLayout
+            ? _agStableLibraryLoadingHTML()
+            : `<div class="accounts-loading" style="padding:40px 0;"><div class="acc-spinner"></div><span>Loading library...</span></div>`;
+    }
 
     try {
         let rawGames = [];
@@ -3983,11 +4414,19 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
     const grid = document.getElementById('allGamesGrid');
     if (!grid) return;
 
+    // Capture current rendered height before resetting so we can hold a floor
+    // and prevent the grid collapsing to zero during the innerHTML swap.
+    const previousHeight = grid.offsetHeight || parseFloat(grid.style.minHeight) || 0;
+
     // Reset grid to normal state (clear old virtual DOM)
     // Also removes ag-empty-mode if we're coming from the empty onboarding state
     _agResetAllGamesGridMode();
+
+    // Restore a height floor so the page does not jump while content is swapped
+    if (previousHeight > 0) grid.style.minHeight = previousHeight + 'px';
+
     grid.innerHTML = '';
-    grid.style.position = '';
+    grid.style.position = 'relative';
     grid.style.height = '';
     _vs.cardPool.clear();
     _vs.cols = 0;
@@ -4002,13 +4441,19 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
 
     if (!games || games.length === 0) {
         if (window._agNoLinkedAccounts) return;
-        grid.innerHTML = `<div class="accounts-empty" style="padding:40px 0;width:100%;"><p>No games found.</p></div>`;
+        grid.style.minHeight = '';
+        const emptyMsg = window.agReadyOnly
+            ? '<p>No ready-to-install games found.</p><p style="margin-top:8px;color:#666;font-size:0.85rem;">All your synced games are already installed, or connect Steam or Epic accounts to discover more.</p>'
+            : '<p>No games found.</p>';
+        grid.innerHTML = `<div class="accounts-empty" style="padding:40px 0;width:100%;">${emptyMsg}</div>`;
         _updateAgCount(0);
         return;
     }
 
     _updateAgCount(games.length);
     _vsInit(games, resetScroll);
+    // Release layout lock after virtual scroll initialises first batch
+    _agUnlockAllGamesLayout();
 }
 
 function _updateAgCount(n) {
@@ -4215,6 +4660,11 @@ function _applyAgFilters(options = {}) {
         pool = pool.filter(g => _agIsInstalled(g));
     }
 
+    // 3b. ready-to-install filter — exclude anything already installed locally
+    if (window.agReadyOnly) {
+        pool = pool.filter(g => !_agIsInstalled(g));
+    }
+
     // 4. search
     if (search.trim()) {
         pool = pool.filter(g => (g.title || '').toLowerCase().includes(search));
@@ -4229,6 +4679,15 @@ function _applyAgFilters(options = {}) {
         pool.sort((a, b) => (b.playtime || 0) - (a.playtime || 0));
     } else if (sort === 'multi_first') {
         pool.sort((a, b) => b.platforms.length - a.platforms.length || a.title.localeCompare(b.title));
+    }
+
+    // When showing Ready to Install, persist the exact rendered list as the
+    // canonical count so the sidebar badge always matches the page.
+    if (window.agReadyOnly && !window._agState?.search?.trim()) {
+        window._readyToInstallRenderedGames = pool;
+        try { updateSmartSidebarCounts(); } catch (_) {}
+    } else if (!window.agReadyOnly) {
+        window._readyToInstallRenderedGames = null;
     }
 
     _renderAllGamesViewModeAware(pool, resetScroll);

@@ -69,12 +69,13 @@ test('dashboard.html: Community item is not rendered inside the sidebar', () => 
     assert.doesNotMatch(sidebar, /openCommunityModal/, 'sidebar must not call openCommunityModal');
 });
 
-test('dashboard.html: New Collection button is still in the sidebar', () => {
+test('dashboard.html: Context action button is still in the sidebar', () => {
     const sidebarStart = HTML.indexOf('<aside class="sidebar"');
     const sidebarEnd   = HTML.indexOf('</aside>', sidebarStart);
     const sidebar      = HTML.slice(sidebarStart, sidebarEnd);
-    assert.match(sidebar, /add-coll-btn/, 'New Collection button must still exist in sidebar');
-    assert.match(sidebar, /handleSidebarBottomBtn/, 'New Collection handler must still be wired');
+    assert.match(sidebar, /add-coll-btn/, 'Context action button must still exist in sidebar');
+    // handleSidebarContextBtn is now the single owner of the button click logic
+    assert.match(sidebar, /handleSidebarContextBtn/, 'Context button must call handleSidebarContextBtn');
 });
 
 // ─── 4. Help & Feedback dropdown ────────────────────────────────────────────

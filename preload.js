@@ -275,4 +275,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
     resolveCreatorPageAssets: (pagePack, gameKey)   => ipcRenderer.invoke('resolve-creator-page-assets', pagePack, gameKey),
     exportCreatorPage:      (defaultName, pageJson) => ipcRenderer.invoke('export-creator-page-pack', defaultName, pageJson),
     importCreatorPage:      ()                      => ipcRenderer.invoke('import-creator-page-pack'),
+
+    // ---- Account Shortcuts ----
+    accountShortcuts: {
+        list:     ()       => ipcRenderer.invoke('account-shortcuts:list'),
+        set:      (params) => ipcRenderer.invoke('account-shortcuts:set', params),
+        clear:    (params) => ipcRenderer.invoke('account-shortcuts:clear', params),
+        validate: (accel)  => ipcRenderer.invoke('account-shortcuts:validate', accel),
+    },
+
+    // ---- Quick Switcher ----
+    quickSwitcher: {
+        getSettings:    ()        => ipcRenderer.invoke('quick-switcher:get-settings'),
+        setSettings:    (payload) => ipcRenderer.invoke('quick-switcher:set-settings', payload),
+        setHotkey:      (accel)   => ipcRenderer.invoke('quick-switcher:set-hotkey', accel),
+        clearHotkey:    ()        => ipcRenderer.invoke('quick-switcher:clear-hotkey'),
+        validateHotkey: (accel)   => ipcRenderer.invoke('quick-switcher:validate-hotkey', accel),
+        listAccounts:   ()        => ipcRenderer.invoke('quick-switcher:list-accounts'),
+        switchAccount:  (payload) => ipcRenderer.invoke('quick-switcher:switch-account', payload),
+        hide:           ()        => ipcRenderer.invoke('quick-switcher:hide'),
+        toggle:         ()        => ipcRenderer.invoke('quick-switcher:toggle'),
+        onShow: (cb) => ipcRenderer.on('qs:show', (_, data) => cb(data)),
+    },
 });

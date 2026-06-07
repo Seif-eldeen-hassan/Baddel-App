@@ -552,44 +552,48 @@ setTimeout(() => {
 }, 3 * 60 * 1000);
 
 function _hideAllViews() {
-    const libView = document.getElementById('libraryView');
+    const libView  = document.getElementById('libraryView');
     const instView = document.getElementById('installedGamesView');
-    const accView = document.getElementById('accountsView');
-    const heroSec = document.getElementById('heroSection');
-    const gdView = document.getElementById('gameDetailsView');
-    const allGmsView = document.getElementById('allGamesView');
+    const accView  = document.getElementById('accountsView');
+    const heroSec  = document.getElementById('heroSection');
+    const gdView   = document.getElementById('gameDetailsView');
+    const allGmsView  = document.getElementById('allGamesView');
+    const collView = document.getElementById('collectionsView');
 
     // Stop any playing trailer/video before hiding Game Details
     if (gdView && gdView.style.display !== 'none') {
         if (typeof window._gdStopMediaOnNavAway === 'function') window._gdStopMediaOnNavAway();
     }
 
-    if (libView) libView.style.display = 'none';
+    if (libView)  libView.style.display  = 'none';
     if (instView) instView.style.display = 'none';
-    if (accView) accView.style.display = 'none';
-    if (heroSec) heroSec.style.display = 'none';
-    if (gdView) gdView.style.display = 'none';
+    if (accView)  accView.style.display  = 'none';
+    if (heroSec)  heroSec.style.display  = 'none';
+    if (gdView)   gdView.style.display   = 'none';
+    if (collView) collView.style.display = 'none';
     if (typeof _agExitEmptyPageMode === 'function') _agExitEmptyPageMode();
     if (allGmsView) allGmsView.style.display = 'none';
 }
 
 function navigateToHome() {
+    window.agReadyOnly = false;
     if (currentView === 'installed') {
         _igSaveFilterState();
     }
 
     currentView = 'home';
     _hideAllViews();
-    
+
     document.getElementById('heroSection').style.display = 'flex';
     document.getElementById('libraryView').style.display = 'block';
-    
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
 
     currentFilters.collectionId = null;
     currentFilters.platform = 'all';
     currentFilters.search = '';
     currentHeroGameId = null;
+    updateSidebarActiveState();
+    syncSidebarActionButton();
+    requestAnimationFrame(() => { syncSidebarActionButton(); });
 
     renderRecentlyPlayed();
     renderExploreCarousel();
@@ -602,13 +606,15 @@ function navigateToHome() {
 }
 
 function navigateToInstalled() {
+    window.agReadyOnly = false;
     currentView = 'installed';
+    currentFilters.collectionId = null;
     _hideAllViews();
 
     document.getElementById('installedGamesView').style.display = 'block';
-
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    document.getElementById('nav-installed')?.classList.add('active');
+    updateSidebarActiveState();
+    syncSidebarActionButton();
+    requestAnimationFrame(() => { syncSidebarActionButton(); });
 
     // رجّع آخر فلتر Installed محفوظ
     _igRestoreFilterState();
@@ -1535,6 +1541,8 @@ async function _buildSyncedSuggestions() {
     console.log(`  deduped-final: ${_suggAllGames.length} (fresh=${freshCount} stale-cache=${staleCount})`);
     console.groupEnd();
     window._suggAllGames = _suggAllGames; // keep roulette install pool in sync
+    window.__platformLibraryReady = true;
+    try { updateSmartSidebarCounts(); } catch (_) {}
 }
 
 // ── Shape for the install picker ──────────────────────────────────────────────
@@ -2839,6 +2847,7 @@ function selectSort(value, text) {
 }
 
 function filterByCollection(collId) {
+    window.agReadyOnly = false;
     currentView = 'collection';
     _hideAllViews();
 
@@ -2858,15 +2867,9 @@ function filterByCollection(collId) {
     const igPlatformTxt = document.getElementById('igSelectedPlatformText');
     if (igPlatformTxt) igPlatformTxt.innerText = 'All Platforms';
 
-    // FIX: immediately reflect active state in sidebar so the click is visibly registered,
-    // even before applyFilters() re-runs updateSidebarActiveState().
-    document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
-    if (collId === 'fav_system_default') {
-        document.getElementById('nav-fav')?.classList.add('active');
-    } else {
-        const collEl = document.querySelector(`#collectionsList .nav-item[data-id="${collId}"]`);
-        if (collEl) collEl.classList.add('active');
-    }
+    // Reflect active state immediately (before applyFilters re-renders).
+    updateSidebarActiveState();
+    if (typeof updateSbContextBtn === 'function') updateSbContextBtn();
 
     applyFilters();
 }
@@ -4144,56 +4147,696 @@ function checkBackgroundAssets(game) {
 // 8. SIDEBAR & COLLECTIONS
 // ============================================================
 function renderSidebar() {
+    // Populate the COLLECTIONS section (up to SB_COLL_MAX inline, then "View all")
+    try { renderSidebarCollectionsList(); } catch (_) {}
+
+    // Legacy compat div stays empty
     const l = document.getElementById('collectionsList');
-    if (!l) return;
-    l.innerHTML = '';
+    if (l) l.innerHTML = '';
 
-    const customCollections = allCollections.filter(c => c.id !== 'fav_system_default');
+    updateSidebarActiveState();
+    updateSidebarCards();
+}
 
-    const favItem = document.getElementById('nav-fav');
-    if (favItem) {
-        if (currentFilters.collectionId === 'fav_system_default') favItem.classList.add('active');
-        else favItem.classList.remove('active');
+// ── Sidebar card helpers ──────────────────────────────────────────────────────
+
+function renderSidebarJumpBackIn() {
+    const card    = document.getElementById('sidebarJumpBack');
+    const content = document.getElementById('sidebarJumpBackContent');
+    if (!card || !content) return;
+
+    let recent = [];
+    try { recent = getRecentGames(); } catch (_) {}
+
+    if (!recent.length) {
+        content.innerHTML = '<div class="jb-empty-msg nav-text">No recent sessions</div>';
+        return;
     }
 
-    customCollections.forEach(c => {
-        const i = document.createElement('div');
-        i.className = `nav-item ${String(currentFilters.collectionId) === String(c.id) ? 'active' : ''}`;
+    const game  = recent[0];
+    const id    = String(game.id || game.gameId || '');
+    const title = game.title || game.name || 'Unknown Game';
+    const plat  = (game.platform || '').toUpperCase();
+    const img   = game.heroImage || game.heroUrl || game.poster || game.artwork || game.image || game.defaultImage || '';
 
-        const dotColor = c.image ? 'var(--accent)' : '#444';
-        i.innerHTML = `
-            <div class="nav-icon">
-                <div style="width:8px; height:8px; border-radius:50%; background:${dotColor}; box-shadow: 0 0 8px ${dotColor}"></div>
-            </div>
-            <span class="nav-text">${c.name}</span>
-            <span class="delete-btn" onclick="deleteColl(event,'${c.id}')">&#10005;</span>
-        `;
+    const pd       = (typeof playtimeData !== 'undefined') ? (playtimeData[id] || null) : null;
+    const mins     = pd ? (pd.totalMinutes || 0) : 0;
+    const hrs      = Math.floor(mins / 60);
+    const minsRem  = mins % 60;
+    const timeStr  = mins > 0 ? `${hrs}h ${minsRem}m` : '';
 
-        i.setAttribute('data-id', c.id);
-        i.onclick = () => filterByCollection(c.id);
-        l.appendChild(i);
+    let lastStr = '';
+    const ts = pd ? (pd.lastPlayed || 0) : 0;
+    if (ts > 0) {
+        const d = Math.floor((Date.now() - ts) / 86400000);
+        if      (d === 0) lastStr = 'Today';
+        else if (d === 1) lastStr = '1 day ago';
+        else if (d < 30)  lastStr = `${d} days ago`;
+        else              lastStr = `${Math.floor(d / 30)} months ago`;
+    }
+
+    const meta    = [lastStr, timeStr].filter(Boolean).join(' · ');
+    const bgStyle = img ? `background-image:url('${escapeHtml(img)}')` : '';
+    const safeId  = escapeHtml(id);
+
+    content.innerHTML =
+        `<div class="jb-inner" style="${bgStyle}" onclick="if(window.openGameDetails)window.openGameDetails('${safeId}')">` +
+          `<div class="jb-overlay">` +
+            `<div class="jb-info">` +
+              (plat ? `<div class="jb-platform">${escapeHtml(plat)}</div>` : '') +
+              `<div class="jb-title">${escapeHtml(title)}</div>` +
+              (meta ? `<div class="jb-meta">${escapeHtml(meta)}</div>` : '') +
+            `</div>` +
+            `<button class="jb-play" title="Play" onclick="event.stopPropagation();if(window.electronAPI?.launchGame)window.electronAPI.launchGame('${safeId}')">&#9654;</button>` +
+          `</div>` +
+        `</div>`;
+}
+
+function renderSidebarAccountSummary() {
+    const card    = document.getElementById('sidebarActiveAccounts');
+    const content = document.getElementById('sidebarAccountsContent');
+    if (!card || !content) return;
+
+    // Read safe count data already in the DOM — populated by accounts.js
+    const platforms = [
+        { key: 'steam',    countId: 'steamCount',    name: 'Steam',    color: '#66c0f4' },
+        { key: 'epic',     countId: 'epicCount',     name: 'Epic',     color: '#e0e0e0' },
+        { key: 'riot',     countId: 'riotCount',     name: 'Riot',     color: '#ff4655' },
+        { key: 'ea',       countId: 'eaCount',       name: 'EA',       color: '#ff6b35' },
+        { key: 'ubisoft',  countId: 'ubisoftCount',  name: 'Ubisoft',  color: '#00a8ff' },
+        { key: 'discord',  countId: 'discordCount',  name: 'Discord',  color: '#5865f2' },
+        { key: 'rockstar', countId: 'rockstarCount', name: 'Rockstar', color: '#fcaf17' },
+    ];
+
+    const active = platforms.filter(p => {
+        const el = document.getElementById(p.countId);
+        return parseInt(el?.textContent?.trim() || '0') > 0;
+    }).map(p => ({
+        ...p,
+        count: parseInt(document.getElementById(p.countId).textContent.trim()),
+    }));
+
+    if (!active.length) {
+        card.classList.add('baddel-hidden');   // hide entirely — empty state looks bad
+        return;
+    }
+
+    card.classList.remove('baddel-hidden');
+    content.innerHTML = active.map(p =>
+        `<div class="baddel-acc-row" onclick="selectAccountPlatform('${p.key}');switchSidebarSection('accounts');">` +
+          `<span class="baddel-acc-dot" style="background:${p.color};"></span>` +
+          `<span class="baddel-acc-name">${escapeHtml(p.name)}</span>` +
+          `<span class="baddel-acc-count">${p.count}</span>` +
+          `<span class="baddel-acc-live"></span>` +
+        `</div>`
+    ).join('');
+}
+
+function renderSidebarLibraryPulse() {
+    const totalEl   = document.getElementById('sbTotalGames');
+    const instEl    = document.getElementById('sbInstalledGames');
+    const readyEl   = document.getElementById('sbReadyGames');
+    const syncEl    = document.getElementById('sbNeedSync');
+
+    const games = Array.isArray(allGamesData) ? allGamesData : [];
+
+    // Total games
+    if (totalEl) totalEl.textContent = games.length > 0 ? games.length : '—';
+
+    // Installed — use the same predicate as the Installed Games filter (_agIsInstalled from accounts.js)
+    if (instEl) {
+        if (games.length > 0 && typeof _agIsInstalled === 'function') {
+            const installedCount = games.filter(g => {
+                try { return _agIsInstalled(g); } catch (_) { return false; }
+            }).length;
+            instEl.textContent = installedCount;
+        } else {
+            instEl.textContent = '—';
+        }
+    }
+
+    // Ready to install — show tile only when _suggAllGames has real data
+    const readyArr = Array.isArray(window._suggAllGames) ? window._suggAllGames : [];
+    const readyTile = readyEl?.closest('.sidebar-metric');
+    if (readyEl && readyTile) {
+        if (readyArr.length > 0) {
+            readyEl.textContent = readyArr.length;
+            readyTile.style.display = '';
+        } else {
+            readyTile.style.display = 'none';   // hide "—" placeholder tile
+        }
+    }
+
+    // Need Sync — always hidden until wired to a reliable sync-error API
+    const syncTile = syncEl?.closest('.sidebar-metric');
+    if (syncTile) syncTile.style.display = 'none';
+}
+
+async function navigateToReadyToInstall() {
+    // agReadyOnly is set BEFORE navigateToAllGames so it can apply correct
+    // title + nav active state before the first render (no two-pass flash).
+    window.agInstalledOnly = false;
+    window.agReadyOnly     = true;
+    await navigateToAllGames({ _keepReadyMode: true });
+    // Title and nav-ready active state are now set inside navigateToAllGames.
+}
+
+function updateSidebarPlatformDots() {
+    const container = document.getElementById('sbPlatformDots');
+    if (!container) return;
+    const platforms = [
+        { id: 'steamCount',    color: '#66c0f4' },
+        { id: 'epicCount',     color: '#e0e0e0' },
+        { id: 'riotCount',     color: '#ff4655' },
+        { id: 'eaCount',       color: '#ff6b35' },
+        { id: 'ubisoftCount',  color: '#00a8ff' },
+        { id: 'discordCount',  color: '#5865f2' },
+        { id: 'rockstarCount', color: '#fcaf17' },
+    ];
+    const active = platforms.filter(p => {
+        const el = document.getElementById(p.id);
+        return el && parseInt(el.textContent?.trim() || '0') > 0;
     });
+    container.innerHTML = active.map(p =>
+        `<span class="baddel-plat-dot" style="background:${p.color};" title="${p.id.replace('Count','')}"></span>`
+    ).join('');
+}
+
+function updateSmartSidebarCounts() {
+    // Installed count badge in nav
+    const navInst = document.getElementById('sbNavInstalled');
+    if (navInst && Array.isArray(allGamesData) && typeof _agIsInstalled === 'function') {
+        const n = allGamesData.filter(g => { try { return _agIsInstalled(g); } catch(_) { return false; } }).length;
+        navInst.textContent = n > 0 ? n : '—';
+    }
+    // Ready to Install — show real count, "…" while loading, "—" only on startup.
+    const navReady = document.getElementById('sbNavReady');
+    if (navReady) {
+        const count = getReadyToInstallCount();
+        if (count === null) {
+            // Data not ready — show loading indicator only if we've started loading
+            const loading = Array.isArray(window._allGamesCache) || window.__platformLibraryReady;
+            if (loading) navReady.textContent = '…';
+            // else leave "—" (initial state before any data arrives)
+        } else {
+            navReady.textContent = String(count);
+        }
+    }
+}
+
+// ── Ready to Install count — single source of truth ─────────────────────────
+// Priority: _suggAllGames first (pre-filtered to owned-not-installed), then
+// _allGamesCache filtered by !_agIsInstalled as a fallback.
+// Returns null when no data has loaded yet so the UI can show "…" instead of 0.
+function getReadyToInstallGamesForCounts() {
+    // 0. Canonical source: the exact list the Ready to Install page last rendered.
+    //    This guarantees the sidebar badge matches the page count pixel-for-pixel.
+    if (Array.isArray(window._readyToInstallRenderedGames)) {
+        return window._readyToInstallRenderedGames;
+    }
+
+    // 1. Best source: the synced suggestions pool is already filtered to
+    //    owned-but-not-installed games — use it directly when available.
+    if (Array.isArray(window._suggAllGames) && window._suggAllGames.length > 0) {
+        return window._suggAllGames;
+    }
+
+    // 2. Full all-games cache filtered by install status.
+    let source = [];
+    if (typeof _agGetUserLibraryGames === 'function' &&
+            Array.isArray(window._allGamesCache) && window._allGamesCache.length) {
+        source = _agGetUserLibraryGames(window._allGamesCache);
+    } else if (Array.isArray(window._allGamesCache) && window._allGamesCache.length) {
+        source = window._allGamesCache;
+    }
+
+    if (source.length > 0 && typeof _agIsInstalled === 'function') {
+        const ready = source.filter(g => { try { return !_agIsInstalled(g); } catch (_) { return false; } });
+        if (ready.length > 0) return ready;
+        // source existed but everything is installed — only return [] when we
+        // know the platform library is fully loaded, otherwise stay null.
+        if (window.__platformLibraryReady === true) return [];
+        return null;
+    }
+
+    // 3. Data not ready yet — caller should show loading state.
+    return null;
+}
+
+function getReadyToInstallCount() {
+    const games = getReadyToInstallGamesForCounts();
+    return games === null ? null : games.length;
+}
+
+// ── Sidebar action context — based on active view, not section toggle ─────────
+function getSidebarActionContext() {
+    const accountsVisible  = document.getElementById('accountsView')?.style.display !== 'none';
+    const installedVisible = document.getElementById('installedGamesView')?.style.display !== 'none';
+    const allGamesVisible  = document.getElementById('allGamesView')?.style.display !== 'none';
+    const isFavorites      = currentView === 'collection' && currentFilters.collectionId === 'fav_system_default';
+    // customCollVisible: installedGamesView is shown for collections too, so also require currentView
+    const customCollVisible = currentView === 'collection' && !!currentFilters.collectionId && !isFavorites;
+
+    if (accountsVisible && currentAccountPlatform)     return 'accounts';
+    // installed: DOM visible AND currentView confirms it (collection pages also show installedGamesView)
+    if ((installedVisible && currentView === 'installed') || currentView === 'installed') return 'installed';
+    if (isFavorites)                                   return 'favorites';
+    if (customCollVisible)                             return 'collection';
+    if (currentView === 'collections')                 return 'collections';
+    if ((allGamesVisible || currentView === 'all-games') && window.agReadyOnly) return 'ready';
+    if (allGamesVisible || currentView === 'all-games') return 'all-games';
+    if (currentView === 'home')                        return 'home';
+    return 'library';
+}
+
+function syncSidebarActionButton() {
+    const textEl = document.getElementById('sbCtxBtnText');
+    const btn    = document.getElementById('btn-new-coll');
+    const iconEl = document.getElementById('sbCtxIcon');
+    if (!textEl) return;
+
+    const ctx = getSidebarActionContext();
+
+    const _map = {
+        accounts:   { text: 'Add Account',            plus: true  },
+        installed:  { text: 'Add Game',                plus: true  },
+        collections:{ text: 'New Collection',          plus: true  },
+        collection: { text: 'Browse Installed Games',  plus: false },
+        favorites:  { text: 'Browse Installed Games',  plus: false },
+        'all-games':{ text: 'Link Accounts',           plus: true  },
+        ready:      { text: 'Link Accounts',           plus: true  },
+        home:       { text: 'Link Accounts',           plus: true  },
+        library:    { text: 'Link Accounts',           plus: true  },
+    };
+    const cfg = _map[ctx] || _map.library;
+    textEl.textContent = cfg.text;
+    if (iconEl) {
+        // swap between + (plus) and ↗ (arrow) SVGs based on context
+        iconEl.innerHTML = cfg.plus
+            ? '<line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line>'
+            : '<line x1="5" y1="12" x2="19" y2="12"></line><polyline points="12 5 19 12 12 19"></polyline>';
+    }
+    if (btn) {
+        btn.style.display = '';
+        btn.dataset.context = ctx;
+    }
+}
+
+window.syncSidebarActionButton = syncSidebarActionButton;
+
+// ── Collections page ─────────────────────────────────────────────────────────
+function navigateToCollections() {
+    window.agReadyOnly = false;
+    currentView = 'collections';
+    currentFilters.collectionId = null;
+    _hideAllViews();
+
+    const view = document.getElementById('collectionsView');
+    if (view) view.style.display = 'block';
+
     updateSidebarActiveState();
+    renderCollectionsView();
+    updateSbContextBtn();
+}
+
+function renderCollectionsView() {
+    const grid = document.getElementById('collectionsGrid');
+    if (!grid) return;
+
+    const custom = (allCollections || []).filter(c => c.id !== 'fav_system_default');
+
+    _renderCollectionsHeader(custom);
+    _renderCollectionsStats(custom);
+
+    if (!custom.length) {
+        grid.classList.add('is-empty');
+        grid.innerHTML = _collectionsEmptyStateHTML();
+        return;
+    }
+
+    grid.classList.remove('is-empty');
+    grid.innerHTML = custom.map(_renderCollectionCard).join('');
+}
+
+function _renderCollectionsHeader(custom) {
+    const el = document.getElementById('collectionsHeader');
+    if (!el) return;
+    el.innerHTML =
+        `<section class="collections-hero">` +
+          `<div class="collections-hero-text">` +
+            `<p class="collections-eyebrow">LIBRARY ORGANIZER</p>` +
+            `<h1 class="collections-hero-title">Collections</h1>` +
+            `<p class="collections-hero-sub">Group your games by mood, platform, genre, backlog, or anything you want.</p>` +
+          `</div>` +
+          `<div class="collections-hero-actions">` +
+            `<button class="collections-primary-btn" onclick="openCollectionModal()">+ New Collection</button>` +
+            `<button class="collections-secondary-btn" onclick="navigateToInstalled()">Browse Library</button>` +
+          `</div>` +
+        `</section>`;
+}
+
+function _renderCollectionsStats(custom) {
+    const el = document.getElementById('collectionsStats');
+    if (!el) return;
+    if (!custom.length) { el.innerHTML = ''; return; }
+
+    const totalGames = custom.reduce((sum, c) => sum + (Array.isArray(c.gameIds) ? c.gameIds.length : 0), 0);
+    const avg = custom.length > 0 ? Math.round(totalGames / custom.length) : 0;
+
+    el.innerHTML =
+        `<div class="collections-stats">` +
+          `<div class="collections-stat-card">` +
+            `<div class="collections-stat-value">${custom.length}</div>` +
+            `<div class="collections-stat-label">Collections</div>` +
+          `</div>` +
+          `<div class="collections-stat-card">` +
+            `<div class="collections-stat-value">${totalGames}</div>` +
+            `<div class="collections-stat-label">Organized Games</div>` +
+          `</div>` +
+          `<div class="collections-stat-card">` +
+            `<div class="collections-stat-value">${avg}</div>` +
+            `<div class="collections-stat-label">Avg. Per Collection</div>` +
+          `</div>` +
+        `</div>`;
+}
+
+function _collectionsEmptyStateHTML() {
+    return (
+        `<div class="collections-empty-state">` +
+          `<div class="collections-empty-inner">` +
+            `<div class="collections-empty-art">` +
+              `<svg width="38" height="38" viewBox="0 0 24 24" fill="none" stroke="rgba(18,206,24,0.75)" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
+                `<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>` +
+              `</svg>` +
+            `</div>` +
+            `<h2>Start organizing your game library</h2>` +
+            `<p>Create collections for genres, multiplayer nights, backlog, favorites, or anything you play often.</p>` +
+            `<div class="collections-empty-actions">` +
+              `<button class="collections-primary-btn" onclick="openCollectionModal()">Create Collection</button>` +
+              `<button class="collections-secondary-btn" onclick="navigateToInstalled()">Browse Games</button>` +
+            `</div>` +
+            `<div class="collections-suggestions">` +
+              `<span>Multiplayer</span>` +
+              `<span>Story Games</span>` +
+              `<span>Backlog</span>` +
+              `<span>Competitive</span>` +
+              `<span>Cozy Games</span>` +
+            `</div>` +
+          `</div>` +
+        `</div>`
+    );
+}
+
+function _getGameByCollectionGameId(gameId) {
+    const pools = [window._allGamesCache, window._allGamesRawCache, allGamesData, window._suggAllGames];
+    for (const pool of pools) {
+        if (!Array.isArray(pool)) continue;
+        const found = pool.find(g =>
+            String(g.id) === String(gameId) ||
+            String(g.gameId) === String(gameId) ||
+            String(g.appid) === String(gameId) ||
+            String(g.path) === String(gameId)
+        );
+        if (found) return found;
+    }
+    return null;
+}
+
+function _getGameCoverUrl(game) {
+    if (!game) return '';
+    return game.cover || game.coverUrl || game.image || game.hero || game.poster || game.icon || '';
+}
+
+function _renderCollectionCard(c) {
+    const count = Array.isArray(c.gameIds) ? c.gameIds.length : 0;
+    const safeId = escapeHtml(String(c.id));
+    const safeName = escapeHtml(c.name || 'Unnamed');
+    const gameLabel = count === 1 ? '1 game' : `${count} games`;
+
+    let coverHTML;
+    if (c.image) {
+        // Custom collection background takes priority over game collage
+        coverHTML =
+            `<div class="collection-card-cover collection-card-cover--single">` +
+              `<img src="${escapeHtml(c.image.replace(/\\/g, '/'))}" alt="" loading="lazy" onerror="this.parentElement.className='collection-cover-placeholder'">` +
+            `</div>`;
+    } else {
+        const covers = (Array.isArray(c.gameIds) ? c.gameIds.slice(0, 4) : [])
+            .map(id => _getGameCoverUrl(_getGameByCollectionGameId(id)))
+            .filter(Boolean);
+
+        if (covers.length > 0) {
+            const imgs = covers.map(url =>
+                `<img src="${escapeHtml(url)}" alt="" loading="lazy" onerror="this.style.display='none'">`
+            ).join('');
+            coverHTML = `<div class="collection-card-cover">${imgs}</div>`;
+        } else {
+            coverHTML =
+                `<div class="collection-cover-placeholder">` +
+                  `<svg width="30" height="30" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">` +
+                    `<path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/>` +
+                  `</svg>` +
+                `</div>`;
+        }
+    }
+
+    return (
+        `<article class="collection-card" onclick="filterByCollection('${safeId}')">` +
+          coverHTML +
+          `<div class="collection-card-body">` +
+            `<div class="collection-card-title-row">` +
+              `<div>` +
+                `<h3>${safeName}</h3>` +
+                `<p>${gameLabel}</p>` +
+              `</div>` +
+            `</div>` +
+            `<div class="collection-card-actions">` +
+              `<button onclick="event.stopPropagation();filterByCollection('${safeId}')">Open</button>` +
+              `<button onclick="event.stopPropagation();openAddGamesToCollection('${safeId}')">Add Games</button>` +
+              `<div class="collection-more-wrap" onclick="event.stopPropagation()">` +
+                `<button class="collection-more-btn" onclick="toggleCollectionCardMenu(event,'${safeId}')" title="More options">···</button>` +
+                `<div class="collection-card-menu" id="collection-menu-${safeId}" hidden>` +
+                  `<button type="button" onclick="event.stopPropagation();openRenameCollectionModal('${safeId}')">Rename</button>` +
+                  `<button class="danger" onclick="event.stopPropagation();deleteColl(event,'${safeId}')">Delete</button>` +
+                `</div>` +
+              `</div>` +
+            `</div>` +
+          `</div>` +
+        `</article>`
+    );
+}
+
+function openAddGamesToCollection(collectionId) {
+    window.activeAddToCollectionId = collectionId;
+    navigateToInstalled();
+}
+
+function toggleCollectionCardMenu(event, collectionId) {
+    event.stopPropagation();
+    document.querySelectorAll('.collection-card-menu').forEach(m => {
+        if (m.id !== `collection-menu-${collectionId}`) m.hidden = true;
+    });
+    const menu = document.getElementById(`collection-menu-${collectionId}`);
+    if (menu) menu.hidden = !menu.hidden;
+}
+
+if (!window._collMenuDismissRegistered) {
+    window._collMenuDismissRegistered = true;
+    document.addEventListener('click', () => {
+        document.querySelectorAll('.collection-card-menu').forEach(m => { m.hidden = true; });
+    });
+}
+
+async function renameCollection(collectionId) {
+    const coll = (allCollections || []).find(c => String(c.id) === String(collectionId));
+    if (!coll) return;
+    // Close menu before prompting so the dismiss listener doesn't interfere
+    document.querySelectorAll('.collection-card-menu').forEach(m => { m.hidden = true; });
+    const newName = prompt('Rename collection', coll.name || '');
+    if (newName === null) return;                          // user cancelled
+    const cleanName = newName.trim();
+    if (!cleanName) { showToast('Name cannot be empty.', 'warning'); return; }
+    if (cleanName === (coll.name || '').trim()) return;    // no change
+    try {
+        await window.electronAPI.updateCollection(collectionId, cleanName, undefined);
+        allCollections = await window.electronAPI.getCollections();
+        renderCollectionsView();
+        if (typeof renderSidebarCollectionsList === 'function') renderSidebarCollectionsList();
+        if (typeof updateSidebarActiveState === 'function') updateSidebarActiveState();
+        showToast('Collection renamed.', 'success');
+    } catch (e) {
+        showToast('Could not rename collection.', 'error');
+    }
+}
+
+window.renameCollection             = renameCollection;
+window.openRenameCollectionModal    = openCollectionSettings;
+window.toggleCollectionCardMenu     = toggleCollectionCardMenu;
+window.openAddGamesToCollection     = openAddGamesToCollection;
+
+// ── Sidebar COLLECTIONS section ──────────────────────────────────────────────
+const SB_COLL_MAX = 5;
+
+function renderSidebarCollectionsList() {
+    const body = document.getElementById('sbBodyCollections');
+    if (!body) return;
+
+    const custom = (allCollections || []).filter(c => c.id !== 'fav_system_default');
+    const visible = custom.slice(0, SB_COLL_MAX);
+    const moreCount = Math.max(0, custom.length - visible.length);
+
+    if (!visible.length) {
+        body.innerHTML =
+            `<div class="nav-item sb-sub-item sb-coll-empty">` +
+              `<div class="nav-icon"><div class="sb-coll-dot"></div></div>` +
+              `<span class="nav-text" style="color:rgba(255,255,255,0.22)">No collections</span>` +
+            `</div>`;
+        return;
+    }
+
+    let html = visible.map(c => {
+        const safeId   = escapeHtml(String(c.id));
+        const safeName = escapeHtml(c.name || 'Unnamed');
+        const count    = Array.isArray(c.gameIds) ? c.gameIds.length : 0;
+        return (
+            `<div class="nav-item sb-sub-item sb-coll-item" id="nav-coll-${safeId}" ` +
+                `data-collection-id="${safeId}" onclick="openSidebarCollection('${safeId}')">` +
+              `<div class="nav-icon"><div class="sb-coll-dot"></div></div>` +
+              `<span class="nav-text">${safeName}</span>` +
+              `<span class="sidebar-nav-badge">${count > 0 ? count : ''}</span>` +
+            `</div>`
+        );
+    }).join('');
+
+    if (moreCount > 0) {
+        html +=
+            `<div class="nav-item sb-sub-item sb-coll-more" onclick="navigateToCollections()">` +
+              `<div class="nav-icon"><div class="sb-coll-dot" style="opacity:0.4"></div></div>` +
+              `<span class="nav-text">View all</span>` +
+              `<span class="sidebar-nav-badge">${moreCount} more</span>` +
+            `</div>`;
+    }
+
+    body.innerHTML = html;
+}
+
+function openSidebarCollection(collectionId) {
+    currentAccountPlatform = null;
+    filterByCollection(collectionId);
+    if (typeof updateSidebarActiveState === 'function') updateSidebarActiveState();
+    if (typeof updateSbContextBtn === 'function') updateSbContextBtn();
+}
+
+function updateSidebarCards() {
+    try { updateSidebarPlatformDots();  } catch (e) { console.warn('[Sidebar] platDots failed', e); }
+    try { updateSmartSidebarCounts();   } catch (e) { console.warn('[Sidebar] counts failed', e); }
+    // Legacy panel functions no-op gracefully (panels removed from HTML)
+    try { renderSidebarJumpBackIn();    } catch (_) {}
+    try { renderSidebarAccountSummary();} catch (_) {}
+    try { renderSidebarLibraryPulse();  } catch (_) {}
+}
+
+// ── Sidebar section toggle ────────────────────────────────────────────────────
+
+window._sbSec = { library: true, collections: true, accounts: false };
+
+function sbToggleSection(sec) {
+    window._sbSec[sec] = !window._sbSec[sec];
+    _sbApplySectionState(sec);
+    // Section expand/collapse does NOT change the active page or button context.
+    // updateSbContextBtn reads DOM state (which view is visible), not _sbSec.
+    updateSbContextBtn();
+}
+
+function sbExpandSection(sec) {
+    if (window._sbSec[sec]) return;
+    window._sbSec[sec] = true;
+    _sbApplySectionState(sec);
+    updateSbContextBtn();
+}
+
+function _sbApplySectionState(sec) {
+    const cap     = sec.charAt(0).toUpperCase() + sec.slice(1);
+    const body    = document.getElementById(`sbBody${cap}`);
+    const chevron = document.getElementById(`sbChevron${cap}`);
+    const open    = !!window._sbSec[sec];
+    if (body) {
+        // Use class (not inline style) so CSS collapsed mode can distinguish
+        // between "section closed by user" vs "section open but collapsed sidebar".
+        body.classList.toggle('sb-sec-closed', !open);
+        body.style.display = open ? '' : 'none';
+    }
+    if (chevron) chevron.classList.toggle('sb-chevron-closed', !open);
+}
+
+function sbGoManageCollections() {
+    navigateToCollections();
+}
+
+function handleSidebarContextBtn() {
+    const ctx = getSidebarActionContext();
+    if (ctx === 'accounts') {
+        if (typeof addNewAccount === 'function' && currentAccountPlatform) {
+            addNewAccount(currentAccountPlatform);
+        } else if (typeof openPlatformsModal === 'function') {
+            openPlatformsModal();
+        }
+        return;
+    }
+    if (ctx === 'installed') {
+        if (typeof openAddGameModal === 'function') openAddGameModal();
+        return;
+    }
+    if (ctx === 'collections') {
+        if (typeof openCollectionModal === 'function') openCollectionModal();
+        return;
+    }
+    if (ctx === 'collection' || ctx === 'favorites') {
+        if (typeof navigateToInstalled === 'function') navigateToInstalled();
+        return;
+    }
+    // all-games / ready / home / library — open accounts linking modal
+    if (typeof openPlatformsModal === 'function') openPlatformsModal();
+}
+
+function updateSbContextBtn() {
+    syncSidebarActionButton();
+}
+
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+function clearSidebarActiveState() {
+    document.querySelectorAll('.nav-item.active, .platform-item.active, [data-collection-id].active')
+        .forEach(el => el.classList.remove('active'));
 }
 
 function updateSidebarActiveState() {
-    const h = document.getElementById('nav-home'); // Actually this got renamed or acts as logic
-    const inst = document.getElementById('nav-installed');
-    
-    if (currentView === 'home' && h) h.classList.add('active');
-    else if (h) h.classList.remove('active');
+    clearSidebarActiveState();
 
-    if (currentView === 'installed' && inst) inst.classList.add('active');
-    else if (inst) inst.classList.remove('active');
+    const accountsVisible  = document.getElementById('accountsView')?.style.display !== 'none';
+    const allGamesVisible  = document.getElementById('allGamesView')?.style.display !== 'none';
 
-    const f = document.getElementById('nav-fav');
-    if (currentFilters.collectionId === 'fav_system_default' && f) f.classList.add('active');
-    else if (f) f.classList.remove('active');
-
-    document.querySelectorAll('#collectionsList .nav-item').forEach(i => {
-        if (i.getAttribute('data-id') === String(currentFilters.collectionId)) i.classList.add('active');
-        else i.classList.remove('active');
-    });
+    // Only one branch wins — order from most-specific to most-general.
+    if (accountsVisible && currentAccountPlatform) {
+        // Platform/account page: only the matching platform row is active.
+        document.getElementById(`nav-${currentAccountPlatform}`)?.classList.add('active');
+    } else if (allGamesVisible && window.agReadyOnly) {
+        document.getElementById('nav-ready')?.classList.add('active');
+    } else if (allGamesVisible) {
+        document.getElementById('nav-all-games')?.classList.add('active');
+    } else if (currentView === 'installed') {
+        document.getElementById('nav-installed')?.classList.add('active');
+    } else if (currentView === 'collections') {
+        document.getElementById('nav-collections')?.classList.add('active');
+    } else if (currentView === 'collection' && currentFilters.collectionId === 'fav_system_default') {
+        document.getElementById('nav-fav')?.classList.add('active');
+    } else if (currentView === 'collection' && currentFilters.collectionId) {
+        const escaped = CSS.escape(currentFilters.collectionId);
+        document.querySelector(`[data-collection-id="${escaped}"]`)?.classList.add('active');
+    } else if (currentView === 'home') {
+        document.getElementById('nav-home')?.classList.add('active');
+    }
 }
 
 function toggleSidebar() {
@@ -4253,7 +4896,11 @@ async function saveCollection() {
     try {
         await window.electronAPI.createCollection(name, null);
         allCollections = await window.electronAPI.getCollections();
-        renderSidebar(); closeCollectionModal(); showToast('Collection Created!', 'success');
+        renderSidebar();
+        closeCollectionModal();
+        showToast('Collection Created!', 'success');
+        // If the user is on the Collections page, update it immediately
+        if (currentView === 'collections') renderCollectionsView();
     } catch (e) { showToast('Error', 'error'); }
 }
 
@@ -4268,6 +4915,7 @@ function deleteColl(e, id) {
             allCollections = await window.electronAPI.getCollections();
             if (currentFilters.collectionId === id) currentFilters.collectionId = null;
             renderSidebar();
+            if (currentView === 'collections') renderCollectionsView();
             if (currentView === 'collection') navigateToInstalled();
         }
     );
@@ -4797,6 +5445,7 @@ async function saveCollectionSettings() {
         if (coll) coll.name = newName;
         showToast('Settings saved!', 'success');
         renderSidebar();
+        if (currentView === 'collections') renderCollectionsView();
         applyFilters();
         closeCollectionSettings();
     } catch (e) {
@@ -4819,6 +5468,7 @@ async function changeCollectionImage() {
             const coll = allCollections.find(c => String(c.id) === String(currentEditingCollectionId));
             if (coll) coll.image = safePath;
             showToast('Custom image applied!', 'success');
+            if (currentView === 'collections') renderCollectionsView();
             applyFilters();
         }
     } catch (e) { console.error(e); }
@@ -4835,6 +5485,7 @@ async function resetCollectionImage() {
         const txt = document.getElementById('previewCollText');
         if (txt) txt.style.display = 'flex';
         showToast('Slideshow restored!', 'success');
+        if (currentView === 'collections') renderCollectionsView();
         applyFilters();
     } catch (e) { console.error(e); }
 }
@@ -6029,9 +6680,10 @@ function showToast(msgOrOpts, t) {
 function toggleDropdown(e) { if (e) e.stopPropagation(); document.getElementById('dropdownMenu').classList.toggle('active'); }
 
 // ============================================================
-// ALL GAMES VIEW - Installed Only Filter
+// ALL GAMES VIEW - Installed Only / Ready-to-Install filters
 // ============================================================
 window.agInstalledOnly = false;
+window.agReadyOnly     = false;
 
 function toggleAgInstalledFilter() {
     window.agInstalledOnly = !window.agInstalledOnly;
@@ -6413,6 +7065,7 @@ async function sendFeedback() {
             window.electronAPI.logFeedbackSent?.();
             document.getElementById('feedbackMessage').value = '';
             closeHelpModal();
+            hideBetaFeedbackBanner(true);
         } else {
             throw new Error('Failed to send');
         }
@@ -6425,6 +7078,56 @@ async function sendFeedback() {
         btn.style.opacity = '1';
     }
 }
+
+// ============================================================
+// BETA FEEDBACK BANNER
+// ============================================================
+
+const BETA_FEEDBACK_BANNER_KEY = 'baddel.betaFeedbackBanner.dismissed.v1';
+
+function shouldShowBetaFeedbackBanner() {
+    return localStorage.getItem(BETA_FEEDBACK_BANNER_KEY) !== '1';
+}
+
+function markBetaFeedbackBannerDismissed() {
+    localStorage.setItem(BETA_FEEDBACK_BANNER_KEY, '1');
+}
+
+function showBetaFeedbackBanner() {
+    const banner = document.getElementById('betaFeedbackBanner');
+    if (!banner) return;
+    if (!shouldShowBetaFeedbackBanner()) {
+        banner.hidden = true;
+        document.body.classList.remove('has-beta-feedback-banner');
+        return;
+    }
+    banner.hidden = false;
+    document.body.classList.add('has-beta-feedback-banner');
+}
+
+function hideBetaFeedbackBanner(persist = false) {
+    if (persist) markBetaFeedbackBannerDismissed();
+    const banner = document.getElementById('betaFeedbackBanner');
+    if (banner) banner.hidden = true;
+    document.body.classList.remove('has-beta-feedback-banner');
+}
+
+function dismissBetaFeedbackBanner() {
+    hideBetaFeedbackBanner(true);
+}
+
+function openBetaFeedbackFromBanner() {
+    if (typeof openHelpModal === 'function') {
+        openHelpModal('feedback');
+    } else if (typeof handleHelpDropdownAction === 'function') {
+        handleHelpDropdownAction(null, 'bug');
+    }
+}
+
+window.dismissBetaFeedbackBanner  = dismissBetaFeedbackBanner;
+window.openBetaFeedbackFromBanner  = openBetaFeedbackFromBanner;
+
+document.addEventListener('DOMContentLoaded', () => { showBetaFeedbackBanner(); });
 
 // ============================================================
 // UPDATE SYSTEM
@@ -6799,11 +7502,180 @@ async function openSettingsModal() {
     else if (_updateState.status === 'error')    _setSettingsUpdateRow('settingsUpdateError');
     else                                          _setSettingsUpdateRow(null);
 
+    // Quick Switcher settings
+    _qsLoadSettings().catch(() => {});
+
     modal.classList.add('active');
 }
 
 function closeSettingsModal() {
     document.getElementById('settingsModal').classList.remove('active');
+}
+
+// ── Quick Switcher settings ──────────────────────────────────────────────────
+
+async function _qsLoadSettings() {
+    if (!window.electronAPI?.quickSwitcher) return;
+    try {
+        const s = await window.electronAPI.quickSwitcher.getSettings();
+        const enabledToggle  = document.getElementById('qsEnabledToggle');
+        const hotkeyDisplay  = document.getElementById('qsHotkeyDisplay');
+        const posSelect      = document.getElementById('qsPositionSelect');
+        const closeToggle    = document.getElementById('qsCloseAfterSwitchToggle');
+        if (enabledToggle) enabledToggle.checked = !!s.enabled;
+        if (hotkeyDisplay) hotkeyDisplay.textContent = s.accelerator ? s.accelerator.replace(/\+/g, ' + ') : 'None';
+        if (posSelect) posSelect.value = s.position || 'right';
+        if (closeToggle) closeToggle.checked = !!s.closeAfterSwitch;
+    } catch {}
+}
+
+async function qsToggleEnabled(checkbox) {
+    if (!window.electronAPI?.quickSwitcher) return;
+    const prev = !checkbox.checked;
+    try {
+        await window.electronAPI.quickSwitcher.setSettings({ enabled: checkbox.checked });
+    } catch { checkbox.checked = prev; }
+}
+
+async function qsChangePosition(select) {
+    if (!window.electronAPI?.quickSwitcher) return;
+    try { await window.electronAPI.quickSwitcher.setSettings({ position: select.value }); } catch {}
+}
+
+async function qsToggleCloseAfter(checkbox) {
+    if (!window.electronAPI?.quickSwitcher) return;
+    const prev = !checkbox.checked;
+    try {
+        await window.electronAPI.quickSwitcher.setSettings({ closeAfterSwitch: checkbox.checked });
+    } catch { checkbox.checked = prev; }
+}
+
+async function qsChangeHotkey() {
+    const result = await _openQSHotkeyModal();
+    if (result) {
+        const d = document.getElementById('qsHotkeyDisplay');
+        if (d) d.textContent = result.replace(/\+/g, ' + ');
+        showToast('Quick Switcher hotkey updated', 'success');
+    }
+}
+
+async function qsResetHotkey() {
+    if (!window.electronAPI?.quickSwitcher) return;
+    try {
+        const result = await window.electronAPI.quickSwitcher.setHotkey('Ctrl+Alt+B');
+        if (result?.status === 'error') { showToast(result.message || 'Could not reset hotkey', 'error'); return; }
+        await window.electronAPI.quickSwitcher.setSettings({ accelerator: 'Ctrl+Alt+B' });
+        const d = document.getElementById('qsHotkeyDisplay');
+        if (d) d.textContent = 'Ctrl + Alt + B';
+        showToast('Quick Switcher hotkey reset to default', 'success');
+    } catch {}
+}
+
+function _openQSHotkeyModal() {
+    return new Promise((resolve) => {
+        let capturedRaw = null, capturedValid = false, capturedMessage = '', capturedDisplay = '';
+
+        const overlay = document.createElement('div');
+        overlay.className = 'modal-overlay active';
+        overlay.style.cssText = 'z-index:9999; display:flex; align-items:center; justify-content:center;';
+
+        const box = document.createElement('div');
+        box.className = 'modal-content';
+        box.style.cssText = 'max-width:400px; padding:28px 24px;';
+        box.innerHTML = `
+            <h3 style="margin:0 0 8px; font-size:1.05rem; color:#e8e8e8;">Change Quick Switcher Hotkey</h3>
+            <p style="margin:0 0 18px; font-size:0.83rem; color:#888;">Press a new key combination (2+ modifier keys).</p>
+            <div id="_qsCapBox" class="shortcut-capture-box">Press a shortcut like Ctrl + Alt + B</div>
+            <p id="_qsCapErr" class="shortcut-error" style="min-height:18px; margin:8px 0 0;"></p>
+            <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
+                <button id="_qsCapCancel" class="btn-cancel">Cancel</button>
+                <button id="_qsCapSave" class="shortcut-save-btn btn-primary" disabled>Save</button>
+            </div>
+        `;
+        overlay.appendChild(box);
+        document.body.appendChild(overlay);
+
+        const capBox = box.querySelector('#_qsCapBox');
+        const errEl  = box.querySelector('#_qsCapErr');
+        const saveBtn = box.querySelector('#_qsCapSave');
+        const cancelBtn = box.querySelector('#_qsCapCancel');
+
+        function refreshUI() {
+            if (!capturedRaw) {
+                capBox.className = 'shortcut-capture-box';
+                capBox.textContent = 'Press a shortcut like Ctrl + Alt + B';
+                errEl.textContent = '';
+                saveBtn.disabled = true;
+            } else if (capturedValid) {
+                capBox.className = 'shortcut-capture-box is-valid';
+                capBox.textContent = capturedDisplay;
+                errEl.textContent = '';
+                saveBtn.disabled = false;
+            } else {
+                capBox.className = 'shortcut-capture-box is-invalid';
+                capBox.textContent = capturedDisplay || capturedRaw;
+                errEl.textContent = capturedMessage;
+                saveBtn.disabled = true;
+            }
+        }
+
+        function onKeyDown(e) {
+            if (e.key === 'Escape') { cleanup(); resolve(null); return; }
+            if (e.key === 'Backspace' || e.key === 'Delete') {
+                capturedRaw = null; capturedValid = false; capturedMessage = ''; capturedDisplay = '';
+                refreshUI(); return;
+            }
+            if (['Control','Shift','Alt','Meta','Super'].includes(e.key)) return;
+            e.preventDefault();
+            const parts = [];
+            if (e.ctrlKey)  parts.push('Ctrl');
+            if (e.shiftKey) parts.push('Shift');
+            if (e.altKey)   parts.push('Alt');
+            if (e.metaKey)  parts.push('Super');
+            const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
+            parts.push(k);
+            capturedRaw = parts.join('+');
+            // Use renderer-side validator from accounts.js if loaded, else basic check.
+            const v = typeof validateShortcutCapture === 'function'
+                ? validateShortcutCapture(capturedRaw)
+                : _qsBasicValidate(capturedRaw);
+            capturedValid = v.valid;
+            capturedMessage = v.message || '';
+            capturedDisplay = v.normalized || parts.slice(0, -1).join(' + ') + ' + ' + k;
+            refreshUI();
+        }
+
+        document.addEventListener('keydown', onKeyDown);
+
+        function cleanup() {
+            document.removeEventListener('keydown', onKeyDown);
+            overlay.remove();
+        }
+
+        cancelBtn.onclick = () => { cleanup(); resolve(null); };
+        overlay.addEventListener('click', e => { if (e.target === overlay) { cleanup(); resolve(null); } });
+
+        saveBtn.onclick = async () => {
+            if (!capturedRaw || !capturedValid) return;
+            try {
+                const result = await window.electronAPI.quickSwitcher.setHotkey(capturedRaw);
+                if (result?.status === 'error') { errEl.textContent = result.message || 'Could not register hotkey.'; return; }
+                await window.electronAPI.quickSwitcher.setSettings({ accelerator: capturedRaw });
+                cleanup();
+                resolve(capturedRaw);
+            } catch { errEl.textContent = 'Failed to save hotkey.'; }
+        };
+    });
+}
+
+function _qsBasicValidate(accel) {
+    const parts = (accel || '').split('+');
+    const MODS = new Set(['Ctrl','Shift','Alt','Super','Meta']);
+    const mods = parts.filter(p => MODS.has(p));
+    const keys = parts.filter(p => !MODS.has(p));
+    if (keys.length === 0) return { valid: false, message: 'Include a non-modifier key.', normalized: '' };
+    if (mods.length < 2)  return { valid: false, message: 'Use at least 2 modifier keys — e.g. Ctrl + Alt + B.', normalized: '' };
+    return { valid: true, message: '', normalized: parts.join(' + ') };
 }
 
 async function toggleAnalytics(checkbox) {

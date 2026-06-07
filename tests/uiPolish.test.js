@@ -9,7 +9,8 @@ const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8'
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
 const ACC_JS  = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),    'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),    'utf8');
-const CSS     = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
+const CSS         = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
+const ACCOUNTS_CSS = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),  'utf8');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'),               'utf8');
 const SYNC_JS = fs.readFileSync(path.join(ROOT, 'platformSync.js'),       'utf8');
 
@@ -439,7 +440,7 @@ test('accounts.js: _applyAgFilters shows onboarding when cache empty and _agNoLi
 
 test('accounts.js: navigateToAllGames calls _agMaybeRenderEmptyOnboarding before renderAllGamesView', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
     assert.match(fn, /_agMaybeRenderEmptyOnboarding/, '_agMaybeRenderEmptyOnboarding called in navigateToAllGames');
     // Must appear before renderAllGamesView call
     const maybeIdx  = fn.indexOf('_agMaybeRenderEmptyOnboarding');
@@ -449,7 +450,7 @@ test('accounts.js: navigateToAllGames calls _agMaybeRenderEmptyOnboarding before
 
 test('accounts.js: renderAllGamesView calls _agMaybeRenderEmptyOnboarding after building cache', () => {
     const fnStart = ACC_JS.indexOf('window.renderAllGamesView = async function');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
     assert.match(fn, /_agMaybeRenderEmptyOnboarding/, '_agMaybeRenderEmptyOnboarding called in renderAllGamesView');
     // Must appear after _allGamesCache is set
     const cacheIdx  = fn.indexOf('window._allGamesCache = await');
@@ -577,7 +578,7 @@ test('accounts.js: _agGetUserLibraryGames filters using _agIsUserLibraryGame', (
 
 test('accounts.js: navigateToAllGames uses _agGetUserLibraryGames before skipping rebuild', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
     assert.match(fn, /_agGetUserLibraryGames\(window\._allGamesCache\)/, 'must call _agGetUserLibraryGames on existing cache');
     // The early-return must only fire if libraryCache.length > 0
     const checkIdx  = fn.indexOf('_agGetUserLibraryGames(window._allGamesCache)');
@@ -587,7 +588,7 @@ test('accounts.js: navigateToAllGames uses _agGetUserLibraryGames before skippin
 
 test('accounts.js: navigateToAllGames checks platformSyncStatus BEFORE using cache (no-account gate)', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 5500);
     // Must call platformSyncStatus
     assert.match(fn, /platformSyncStatus/, 'must call platformSyncStatus');
     // Must clear caches and show onboarding when no accounts linked
@@ -602,13 +603,13 @@ test('accounts.js: navigateToAllGames checks platformSyncStatus BEFORE using cac
 
 test('accounts.js: renderAllGamesView stores raw cache in _allGamesRawCache', () => {
     const fnStart = ACC_JS.indexOf('window.renderAllGamesView = async function');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 6500);
     assert.match(fn, /window\._allGamesRawCache/, '_allGamesRawCache must be set in renderAllGamesView');
 });
 
 test('accounts.js: renderAllGamesView assigns filtered cache to _allGamesCache', () => {
     const fnStart = ACC_JS.indexOf('window.renderAllGamesView = async function');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 6500);
     assert.match(fn, /_agGetUserLibraryGames\(_rawResolved\)/, 'must filter raw result with _agGetUserLibraryGames');
     assert.match(fn, /window\._allGamesCache\s*=\s*_agGetUserLibraryGames/, '_allGamesCache must be assigned from _agGetUserLibraryGames');
 });
@@ -942,7 +943,7 @@ test('accounts.js: onLibraryUpdated background refresh marks synced records', ()
 
 test('accounts.js: navigateToAllGames sanitizes _allGamesCache at start', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 4500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
     assert.match(fn, /_agGetUserLibraryGames\(window\._allGamesCache\)/, 'must sanitize _allGamesCache');
     assert.match(fn, /_agGetUserLibraryGames\(window\._allGamesRawCache\)/, 'must sanitize _allGamesRawCache');
     // Sanitize must come before the "if cache exists" early-return
@@ -989,4 +990,759 @@ test('game-details.js: _gdRefreshGameFromDbAfterMutation does not patch _allGame
     const belongsIdx = fn.indexOf('_gdBelongsInAllGames');
     const cacheIdx   = fn.indexOf('_allGamesCache', belongsIdx);
     assert.ok(cacheIdx > belongsIdx, '_allGamesCache patch must come after _gdBelongsInAllGames check');
+});
+
+// ── All Games route-lock and layout-shift prevention ──────────────────────────
+
+test('accounts.js: _agRouteSkeletonHTML is defined and returns ag-route-skeleton HTML', () => {
+    assert.match(ACC_JS, /function _agRouteSkeletonHTML\(\)/,
+        '_agRouteSkeletonHTML must be defined');
+    const fnStart = ACC_JS.indexOf('function _agRouteSkeletonHTML');
+    const fn = ACC_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /ag-route-skeleton/, 'must return ag-route-skeleton HTML');
+});
+
+test('accounts.js: _agBeginAllGamesRoute is defined and clears cardPool without touching cardCache', () => {
+    assert.match(ACC_JS, /function _agBeginAllGamesRoute\(/,
+        '_agBeginAllGamesRoute must be defined');
+    const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
+    assert.match(fn, /cardPool\.forEach/, 'must iterate cardPool to remove row nodes');
+    assert.match(fn, /cardPool\.clear\(\)/, 'must clear cardPool');
+    assert.doesNotMatch(fn, /cardCache\.clear\(\)/, 'must NOT clear cardCache');
+});
+
+test('accounts.js: _agBeginAllGamesRoute installs route-lock classes', () => {
+    const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
+    assert.match(fn, /ag-route-pending/, 'must add ag-route-pending to body');
+    assert.match(fn, /ag-first-paint-lock/, 'must add ag-first-paint-lock to allGamesView');
+});
+
+test('accounts.js: _agBeginAllGamesRoute sets grid minHeight to stable viewport height', () => {
+    const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
+    assert.match(fn, /minHeight\s*=\s*['"]calc\(100vh/, 'must set minHeight to calc(100vh...) to prevent collapse');
+});
+
+test('accounts.js: _agBeginAllGamesRoute writes route skeleton into grid', () => {
+    const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
+    assert.match(fn, /_agRouteSkeletonHTML\(\)/, 'must use _agRouteSkeletonHTML() as grid content');
+});
+
+test('accounts.js: _agEndAllGamesRoute is defined, removes route-lock classes, uses requestAnimationFrame', () => {
+    assert.match(ACC_JS, /function _agEndAllGamesRoute\(\)/,
+        '_agEndAllGamesRoute must be defined');
+    const fnStart = ACC_JS.indexOf('function _agEndAllGamesRoute');
+    const fn = ACC_JS.slice(fnStart, fnStart + 500);
+    assert.match(fn, /ag-route-pending/, 'must remove ag-route-pending from body');
+    assert.match(fn, /ag-first-paint-lock/, 'must remove ag-first-paint-lock from view');
+    assert.match(fn, /requestAnimationFrame/, 'must use requestAnimationFrame to restore scrollBehavior');
+});
+
+test('accounts.js: _agLockAllGamesLayout is defined', () => {
+    assert.match(ACC_JS, /function _agLockAllGamesLayout\(\)/,
+        '_agLockAllGamesLayout must be defined');
+});
+
+test('accounts.js: _agUnlockAllGamesLayout is defined and uses requestAnimationFrame', () => {
+    assert.match(ACC_JS, /function _agUnlockAllGamesLayout\(\)/,
+        '_agUnlockAllGamesLayout must be defined');
+    const fnStart = ACC_JS.indexOf('function _agUnlockAllGamesLayout');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /requestAnimationFrame/, 'must use requestAnimationFrame to release lock');
+});
+
+test('accounts.js: _agStableLibraryLoadingHTML is defined', () => {
+    assert.match(ACC_JS, /function _agStableLibraryLoadingHTML\(\)/,
+        '_agStableLibraryLoadingHTML must be defined');
+    const fnStart = ACC_JS.indexOf('function _agStableLibraryLoadingHTML');
+    const fn = ACC_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /ag-stable-loading-panel/, 'must return ag-stable-loading-panel HTML');
+});
+
+test('accounts.js: navigateToAllGames resets scrollTop before _hideAllViews (before first paint)', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    const scrollIdx = fn.indexOf('scrollTop = 0');
+    const hideIdx   = fn.indexOf('_hideAllViews');
+    assert.ok(scrollIdx > -1, 'scrollTop = 0 must appear in navigateToAllGames');
+    assert.ok(hideIdx   > -1, '_hideAllViews must appear in navigateToAllGames');
+    assert.ok(scrollIdx < hideIdx, 'scrollTop reset must precede _hideAllViews call');
+});
+
+test('accounts.js: navigateToAllGames calls _agBeginAllGamesRoute before renderAllGamesView (full path)', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    const beginIdx  = fn.indexOf('_agBeginAllGamesRoute');
+    const renderIdx = fn.lastIndexOf('renderAllGamesView');
+    assert.ok(beginIdx  > -1, '_agBeginAllGamesRoute must appear in navigateToAllGames');
+    assert.ok(renderIdx > -1, 'renderAllGamesView must appear in navigateToAllGames');
+    assert.ok(beginIdx  < renderIdx, '_agBeginAllGamesRoute must precede renderAllGamesView call');
+});
+
+test('accounts.js: navigateToAllGames calls _agBeginAllGamesRoute before _applyAgFilters (cache path)', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    const beginIdx  = fn.indexOf('_agBeginAllGamesRoute');
+    const filterIdx = fn.indexOf('_applyAgFilters');
+    assert.ok(beginIdx  > -1, '_agBeginAllGamesRoute must appear in navigateToAllGames');
+    assert.ok(filterIdx > -1, '_applyAgFilters must appear in navigateToAllGames');
+    assert.ok(beginIdx  < filterIdx, '_agBeginAllGamesRoute must precede _applyAgFilters call');
+});
+
+test('accounts.js: navigateToAllGames calls _agBeginAllGamesRoute after allGamesView display=block', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    const displayIdx = fn.indexOf("style.display = 'block'");
+    const beginIdx   = fn.indexOf('_agBeginAllGamesRoute');
+    assert.ok(displayIdx > -1, "display='block' must appear before _agBeginAllGamesRoute");
+    assert.ok(beginIdx   > displayIdx, '_agBeginAllGamesRoute must come after view display=block');
+});
+
+test('accounts.js: navigateToAllGames wraps async body in try/finally calling _agEndAllGamesRoute', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    assert.match(fn, /\bfinally\b/, 'navigateToAllGames must use try/finally');
+    assert.match(fn, /_agEndAllGamesRoute\(\)/, 'finally block must call _agEndAllGamesRoute');
+});
+
+test('accounts.js: navigateToAllGames cache path uses resetScroll controlled by restoreState', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
+    assert.match(fn, /resetScroll.*restoreState|restoreState.*resetScroll/,
+        'cache path must pass resetScroll based on restoreState');
+});
+
+test('accounts.js: renderAllGamesView accepts an options parameter', () => {
+    assert.match(ACC_JS, /renderAllGamesView = async function\s*\(\s*options\s*=/,
+        'renderAllGamesView must accept options = {} parameter');
+});
+
+test('accounts.js: renderAllGamesView handles suppressInitialLoading option', () => {
+    const fnStart = ACC_JS.indexOf('window.renderAllGamesView = async function');
+    const fn = ACC_JS.slice(fnStart, fnStart + 5500);
+    assert.match(fn, /suppressInitialLoading/, 'renderAllGamesView must check options.suppressInitialLoading');
+    assert.match(fn, /options\.stableLayout/, 'must still branch on options.stableLayout');
+    assert.match(fn, /_agStableLibraryLoadingHTML\(\)/, 'must call _agStableLibraryLoadingHTML when stableLayout');
+});
+
+test('accounts.js: _renderAllGamesGrid preserves previous height before clearing innerHTML', () => {
+    const fnStart = ACC_JS.indexOf('function _renderAllGamesGrid');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const heightCapture = fn.indexOf('previousHeight');
+    const resetMode     = fn.indexOf('_agResetAllGamesGridMode');
+    const clear         = fn.indexOf('grid.innerHTML');
+    assert.ok(heightCapture > -1, 'must capture previousHeight');
+    assert.ok(heightCapture < resetMode, 'previousHeight must be captured before _agResetAllGamesGridMode');
+    assert.ok(resetMode < clear,         '_agResetAllGamesGridMode must run before innerHTML clear');
+});
+
+test('accounts.js: _renderAllGamesGrid calls _agUnlockAllGamesLayout after _vsInit', () => {
+    const fnStart = ACC_JS.indexOf('function _renderAllGamesGrid');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const vsInitIdx  = fn.indexOf('_vsInit(');
+    const unlockIdx  = fn.indexOf('_agUnlockAllGamesLayout');
+    assert.ok(vsInitIdx  > -1, '_vsInit must be called');
+    assert.ok(unlockIdx  > -1, '_agUnlockAllGamesLayout must be called in _renderAllGamesGrid');
+    assert.ok(vsInitIdx  < unlockIdx, '_agUnlockAllGamesLayout must come after _vsInit');
+});
+
+test('dashboard.css: route-lock and layout-shift-prevention rules exist', () => {
+    assert.match(CSS, /ag-route-pending/, 'CSS must contain ag-route-pending rule');
+    assert.match(CSS, /ag-first-paint-lock/, 'CSS must contain ag-first-paint-lock rule');
+    assert.match(CSS, /ag-route-skeleton/, 'CSS must contain ag-route-skeleton rule');
+    assert.match(CSS, /ag-layout-loading/, 'CSS must contain ag-layout-loading rule');
+    assert.match(CSS, /ag-stable-loading-panel/, 'CSS must contain ag-stable-loading-panel rule');
+    assert.match(CSS, /overflow-anchor:\s*none/, 'CSS must set overflow-anchor: none');
+    assert.match(CSS, /calc\(100vh\s*-\s*180px\)/, 'ag-route-skeleton must use calc(100vh - 180px) min-height');
+});
+
+// ── Sidebar active-state single-source-of-truth ───────────────────────────────
+
+test('app.js: clearSidebarActiveState is defined and clears nav-item, platform-item, and collection rows', () => {
+    assert.match(APP_JS, /function clearSidebarActiveState\(\)/,
+        'clearSidebarActiveState must be defined');
+    const fnStart = APP_JS.indexOf('function clearSidebarActiveState');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /\.nav-item\.active/, 'must target .nav-item.active');
+    assert.match(fn, /\.platform-item\.active/, 'must target .platform-item.active');
+    assert.match(fn, /\[data-collection-id\]\.active/, 'must target [data-collection-id].active');
+});
+
+test('app.js: updateSidebarActiveState calls clearSidebarActiveState first', () => {
+    const fnStart = APP_JS.indexOf('function updateSidebarActiveState');
+    const fn = APP_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /clearSidebarActiveState\(\)/, 'must call clearSidebarActiveState() at the start');
+});
+
+test('app.js: updateSidebarActiveState uses else-if chain (not independent ifs)', () => {
+    const fnStart = APP_JS.indexOf('function updateSidebarActiveState');
+    const fn = APP_JS.slice(fnStart, fnStart + 900);
+    assert.match(fn, /\} else if/, 'must use else-if so only one branch can win');
+    // Must NOT have nav-ready or nav-all-games activations outside the else-if chain
+    const platformIdx = fn.indexOf('currentAccountPlatform');
+    const readyIdx    = fn.indexOf('nav-ready');
+    assert.ok(platformIdx > -1, 'must reference currentAccountPlatform');
+    assert.ok(readyIdx    > -1, 'must activate nav-ready');
+    assert.ok(platformIdx < readyIdx, 'platform check must come before nav-ready in else-if order');
+});
+
+test('app.js: updateSidebarActiveState uses DOM visibility for accounts branch', () => {
+    const fnStart = APP_JS.indexOf('function updateSidebarActiveState');
+    const fn = APP_JS.slice(fnStart, fnStart + 500);
+    assert.match(fn, /accountsVisible/, 'must check accountsVisible via DOM');
+    assert.match(fn, /accountsView.*display|display.*accountsView/, 'must check accountsView display style');
+});
+
+test('app.js: updateSidebarActiveState uses DOM visibility for allGames branch', () => {
+    const fnStart = APP_JS.indexOf('function updateSidebarActiveState');
+    const fn = APP_JS.slice(fnStart, fnStart + 500);
+    assert.match(fn, /allGamesVisible/, 'must check allGamesVisible via DOM');
+});
+
+test('app.js: navigateToHome calls updateSidebarActiveState instead of manual nav clearing', () => {
+    const fnStart = APP_JS.indexOf('function navigateToHome');
+    const fn = APP_JS.slice(fnStart, fnStart + 600);
+    assert.match(fn, /updateSidebarActiveState\(\)/, 'navigateToHome must call updateSidebarActiveState');
+});
+
+test('app.js: navigateToInstalled calls updateSidebarActiveState and sets collectionId null', () => {
+    const fnStart = APP_JS.indexOf('function navigateToInstalled');
+    const fn = APP_JS.slice(fnStart, fnStart + 600);
+    assert.match(fn, /updateSidebarActiveState\(\)/, 'navigateToInstalled must call updateSidebarActiveState');
+    assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
+});
+
+test('app.js: navigateToCollections calls updateSidebarActiveState and sets collectionId null', () => {
+    const fnStart = APP_JS.indexOf('function navigateToCollections');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /updateSidebarActiveState\(\)/, 'navigateToCollections must call updateSidebarActiveState');
+    assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
+});
+
+test('app.js: filterByCollection calls updateSidebarActiveState instead of manual nav activation', () => {
+    const fnStart = APP_JS.indexOf('function filterByCollection');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /updateSidebarActiveState\(\)/, 'filterByCollection must call updateSidebarActiveState');
+    // Must not manually add active to individual nav items
+    assert.doesNotMatch(fn, /classList\.add\('active'\)/, 'must not manually add active — let updateSidebarActiveState do it');
+});
+
+test('accounts.js: selectAccountPlatform calls updateSidebarActiveState instead of manually activating nav', () => {
+    const fnStart = ACC_JS.indexOf('function selectAccountPlatform');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /updateSidebarActiveState\(\)/, 'must call updateSidebarActiveState');
+    // Must not directly add active to a specific nav-platform element
+    assert.doesNotMatch(fn, /getElementById.*nav-.*classList\.add\('active'\)/,
+        'must not manually activate nav-platform element');
+});
+
+test('accounts.js: selectAccountPlatform clears currentFilters.collectionId', () => {
+    const fnStart = ACC_JS.indexOf('function selectAccountPlatform');
+    const fn = ACC_JS.slice(fnStart, fnStart + 600);
+    assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
+});
+
+test('accounts.js: navigateToAllGames clears currentFilters.collectionId for normal navigation', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
+    assert.match(fn, /!opts\.restoreState/, 'must guard by !opts.restoreState');
+});
+
+// ── Sidebar context button correctness ────────────────────────────────────────
+
+test('app.js: getSidebarActionContext returns installed when installedGamesView visible and currentView=installed', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    assert.match(fn, /installedVisible/, 'must check installedVisible');
+    assert.match(fn, /'installed'/, "must return 'installed'");
+    assert.match(fn, /currentView === 'installed'/, "must guard with currentView === 'installed'");
+});
+
+test('app.js: getSidebarActionContext returns collection for custom collection view', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    assert.match(fn, /customCollVisible/, 'must check customCollVisible');
+    assert.match(fn, /'collection'/, "must return 'collection'");
+    assert.match(fn, /currentView === 'collection'/, "must guard with currentView === 'collection'");
+});
+
+test('app.js: handleSidebarContextBtn on installed calls openAddGameModal', () => {
+    const fnStart = APP_JS.indexOf('function handleSidebarContextBtn');
+    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+    const installedIdx = fn.indexOf("ctx === 'installed'");
+    const modalIdx     = fn.indexOf('openAddGameModal');
+    assert.ok(installedIdx > -1, "must check ctx === 'installed'");
+    assert.ok(modalIdx     > -1, 'must call openAddGameModal');
+    assert.ok(installedIdx < modalIdx, 'openAddGameModal must be inside the installed branch');
+});
+
+test('app.js: handleSidebarContextBtn on collection calls navigateToInstalled', () => {
+    const fnStart = APP_JS.indexOf('function handleSidebarContextBtn');
+    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+    const collIdx = fn.indexOf("ctx === 'collection'");
+    const navIdx  = fn.indexOf('navigateToInstalled');
+    assert.ok(collIdx > -1, "must check ctx === 'collection'");
+    assert.ok(navIdx  > -1, 'must call navigateToInstalled');
+    assert.ok(collIdx < navIdx, 'navigateToInstalled must be inside the collection branch');
+});
+
+test('app.js: handleSidebarContextBtn does NOT call openPlatformsModal for installed context', () => {
+    const fnStart = APP_JS.indexOf('function handleSidebarContextBtn');
+    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+    // openPlatformsModal must only appear in the library/fallback branch, not the installed branch
+    const installedBlock = fn.slice(fn.indexOf("ctx === 'installed'"), fn.indexOf("ctx === 'collections'"));
+    assert.doesNotMatch(installedBlock, /openPlatformsModal/, 'installed branch must not call openPlatformsModal');
+});
+
+test('app.js: updateSbContextBtn delegates to syncSidebarActionButton (Browse Installed Games for collection)', () => {
+    // updateSbContextBtn now delegates; the label lives in syncSidebarActionButton
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1600);
+    assert.match(fn, /Browse Installed Games/, 'must show Browse Installed Games text for collection/favorites context');
+    assert.match(fn, /collection:/, "map must have 'collection' key");
+});
+
+test('app.js: updateSbContextBtn delegates to syncSidebarActionButton (Add Game for installed)', () => {
+    // updateSbContextBtn now delegates; the label lives in syncSidebarActionButton
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1600);
+    assert.match(fn, /installed:/, "map must have 'installed' key");
+    const installedIdx = fn.indexOf('installed:');
+    const addGameIdx   = fn.indexOf('Add Game', installedIdx);
+    assert.ok(addGameIdx > installedIdx && addGameIdx < installedIdx + 80,
+        'Add Game text must follow the installed key');
+});
+
+// ── Issue 1: Collection from Manage keeps correct context button ──────────────
+
+test('app.js: filterByCollection calls updateSbContextBtn after updateSidebarActiveState', () => {
+    const fnStart = APP_JS.indexOf('function filterByCollection');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /updateSbContextBtn/, 'filterByCollection must call updateSbContextBtn');
+    const activeIdx = fn.indexOf('updateSidebarActiveState');
+    const ctxIdx    = fn.indexOf('updateSbContextBtn');
+    assert.ok(activeIdx > -1, 'must call updateSidebarActiveState');
+    assert.ok(ctxIdx > -1, 'must call updateSbContextBtn');
+    assert.ok(ctxIdx > activeIdx, 'updateSbContextBtn must come after updateSidebarActiveState');
+});
+
+test('app.js: openSidebarCollection clears currentAccountPlatform before calling filterByCollection', () => {
+    const fnStart = APP_JS.indexOf('function openSidebarCollection');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /currentAccountPlatform\s*=\s*null/, 'must set currentAccountPlatform to null');
+    const clearIdx  = fn.indexOf('currentAccountPlatform');
+    const filterIdx = fn.indexOf('filterByCollection');
+    assert.ok(clearIdx < filterIdx, 'currentAccountPlatform must be cleared before filterByCollection');
+});
+
+test('app.js: getSidebarActionContext checks collection (custom) before collections (manage page)', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    const collectionIdx  = fn.indexOf("return 'collection'");
+    const collectionsIdx = fn.indexOf("return 'collections'");
+    assert.ok(collectionIdx  > -1, "must return 'collection' for custom collection view");
+    assert.ok(collectionsIdx > -1, "must return 'collections' for collections manage page");
+    assert.ok(collectionIdx < collectionsIdx, "collection detail must be checked before collections manage");
+});
+
+// ── Issue 2: All Games / Ready button should say Link Accounts ────────────────
+
+test('app.js: syncSidebarActionButton shows Link Accounts for all-games and not for installed', () => {
+    // Link Accounts label lives in syncSidebarActionButton map
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1600);
+    assert.match(fn, /Link Accounts/, 'must contain Link Accounts text');
+    // installed key must map to Add Game, not Link Accounts
+    const installedIdx = fn.indexOf("installed:");
+    const installedBlock = fn.slice(installedIdx, installedIdx + 80);
+    assert.doesNotMatch(installedBlock, /Link Accounts/, 'installed entry must not say Link Accounts');
+    assert.match(installedBlock, /Add Game/, 'installed entry must say Add Game');
+});
+
+test('app.js: getSidebarActionContext returns all-games when allGamesView visible and not readyOnly', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    assert.match(fn, /allGamesVisible/, 'must track allGamesVisible');
+    assert.match(fn, /'all-games'/, "must return 'all-games'");
+    assert.match(fn, /'ready'/, "must return 'ready'");
+    // ready must be checked before all-games (agReadyOnly guard)
+    const readyIdx    = fn.indexOf("return 'ready'");
+    const allGamesIdx = fn.indexOf("return 'all-games'");
+    assert.ok(readyIdx < allGamesIdx, "'ready' must be checked before 'all-games'");
+});
+
+// ── Issue 3: Refresh button uses local cache only ─────────────────────────────
+
+test('dashboard.html: btn-refresh-all-games calls refreshAllGamesView not syncEpicLibrary', () => {
+    assert.match(HTML, /id="btn-refresh-all-games"/, 'must have btn-refresh-all-games button');
+    assert.match(HTML, /onclick="refreshAllGamesView\(\)"/, 'must call refreshAllGamesView');
+    // Must not call syncEpicLibrary from the refresh button
+    const btnIdx = HTML.indexOf('btn-refresh-all-games');
+    const btnBlock = HTML.slice(btnIdx, btnIdx + 200);
+    assert.doesNotMatch(btnBlock, /syncEpicLibrary/, 'refresh button must not call syncEpicLibrary');
+});
+
+test('dashboard.html: btn-refresh-all-games has Refresh title (not Sync)', () => {
+    const btnIdx = HTML.indexOf('btn-refresh-all-games');
+    const btnBlock = HTML.slice(btnIdx, btnIdx + 200);
+    assert.match(btnBlock, /title="Refresh"/, 'refresh button title must be Refresh');
+});
+
+test('accounts.js: refreshAllGamesView uses local cache without calling platformSync', () => {
+    const fnStart = ACC_JS.indexOf('window.refreshAllGamesView');
+    const fn = ACC_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /btn-refresh-all-games/, 'must reference the refresh button id');
+    // Must not call platformSyncSync or syncEpicLibrary
+    assert.doesNotMatch(fn, /platformSyncSync/, 'must not trigger platform sync');
+    assert.doesNotMatch(fn, /syncEpicLibrary/, 'must not call syncEpicLibrary');
+    // Must use existing cache
+    assert.match(fn, /_allGamesCache/, 'must read from _allGamesCache');
+});
+
+// ── Issue 4: Installed filter chip hidden in Ready to Install mode ────────────
+
+test('accounts.js: navigateToAllGames toggles ag-ready-mode class on body', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 600);
+    assert.match(fn, /ag-ready-mode/, 'must toggle ag-ready-mode class on body');
+    assert.match(fn, /classList\.toggle\('ag-ready-mode'/, 'must use classList.toggle for ag-ready-mode');
+});
+
+test('css: body.ag-ready-mode hides the ag-installed-toggle chip', () => {
+    assert.match(CSS, /ag-ready-mode/, 'dashboard.css must have ag-ready-mode rule');
+    assert.match(CSS, /\.ag-installed-toggle/, 'must target .ag-installed-toggle');
+    const ruleIdx  = CSS.indexOf('ag-ready-mode');
+    const ruleBlock = CSS.slice(ruleIdx, ruleIdx + 150);
+    assert.match(ruleBlock, /display:\s*none/, 'ag-ready-mode rule must hide the element');
+});
+
+// ── Epic Games icon visibility when active ────────────────────────────────────
+
+test('accounts.css: active Epic item overrides img filter to black (not white)', () => {
+    const ruleIdx = ACCOUNTS_CSS.indexOf('#nav-epic.active img');
+    assert.ok(ruleIdx > -1, '#nav-epic.active img rule must exist in accounts.css');
+    const block = ACCOUNTS_CSS.slice(ruleIdx, ruleIdx + 120);
+    assert.match(block, /brightness\(0\)/, 'must use brightness(0) to make icon black');
+    assert.doesNotMatch(block, /invert\(1\)/, 'must NOT invert to white — active background is light');
+});
+
+test('accounts.css: active Epic icon rule does not affect other platform active icons', () => {
+    // The rule must be scoped to #nav-epic only
+    assert.doesNotMatch(ACCOUNTS_CSS, /#nav-steam\.active img\s*\{[^}]*invert\(0\)/, 'steam active img must not be forced black');
+    // No blanket rule making ALL platform active icons invert
+    assert.doesNotMatch(ACCOUNTS_CSS, /\.platform-item\.active img\s*\{/, 'must not have a blanket rule for all platform-item active imgs');
+});
+
+// ── Top bar Settings button removal ──────────────────────────────────────────
+
+test('dashboard.html: top title bar has no Settings button', () => {
+    const titleBarEnd = HTML.indexOf('</div>', HTML.indexOf('class="title-bar"'));
+    // Grab everything up to the window-controls div as the title-bar content
+    const titleBar = HTML.slice(HTML.indexOf('class="title-bar"'), HTML.indexOf('class="window-controls"'));
+    // Must not contain a button with the text "Settings" (gear icon button)
+    assert.doesNotMatch(titleBar, /onclick="openSettingsModal\(\)".*Settings|Settings.*onclick="openSettingsModal\(\)"/, 'top bar must not have a Settings button');
+    // Must not have the gear SVG (circle cx="12" cy="12" r="3" is the gear center)
+    assert.doesNotMatch(titleBar, /class="help-btn"[^>]*>[\s\S]*?Settings/, 'help-btn with Settings text must be gone from title bar');
+});
+
+test('dashboard.html: sidebar Manage Settings item still exists', () => {
+    const sidebarEl = HTML.indexOf('id="nav-settings"');
+    assert.ok(sidebarEl > -1, 'sidebar #nav-settings must still exist');
+    const block = HTML.slice(sidebarEl, sidebarEl + 200);
+    assert.match(block, /openSettingsModal\(\)/, 'sidebar Settings item must still call openSettingsModal');
+    assert.match(block, /Settings/, 'sidebar Settings item must still show Settings text');
+});
+
+test('dashboard.html: update badge element still exists with correct id', () => {
+    assert.match(HTML, /id="updateBadgeBtn"/, 'updateBadgeBtn must exist');
+    assert.match(HTML, /id="updateBadgeLabel"/, 'updateBadgeLabel span must exist');
+    const btnIdx = HTML.indexOf('id="updateBadgeBtn"');
+    const block  = HTML.slice(btnIdx - 20, btnIdx + 200);
+    assert.match(block, /onclick="openUpdateModal\(\)"/, 'badge must still call openUpdateModal');
+});
+
+test('app.js: _setUpdateBadge shows badge with label when called with true', () => {
+    const fnStart = APP_JS.indexOf('function _setUpdateBadge');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /updateBadgeBtn/, 'must reference updateBadgeBtn');
+    assert.match(fn, /show\s*\?\s*['"]flex['"]/, 'must set display flex when showing');
+    assert.match(fn, /lbl.*label|label.*lbl/, 'must update label text');
+});
+
+test('app.js: _setUpdateBadge hides badge when called with false', () => {
+    const fnStart = APP_JS.indexOf('function _setUpdateBadge');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /['"]none['"]/, "must set display none when hiding");
+});
+
+test('css: .update-badge-btn has amber/orange styling', () => {
+    const ruleIdx = CSS.indexOf('.update-badge-btn');
+    assert.ok(ruleIdx > -1, '.update-badge-btn rule must exist in dashboard.css');
+    const block = CSS.slice(ruleIdx, ruleIdx + 1200);
+    assert.match(block, /border-radius:\s*999px/, 'must use pill border-radius');
+    assert.match(block, /rgba\(255,\s*132,\s*45/, 'must use the amber/orange color');
+    assert.match(block, /::before/, 'must have ::before pseudo-element for the dot');
+    assert.match(block, /badgePulse/, 'dot must use badgePulse animation');
+});
+
+// ── Beta Feedback Banner ──────────────────────────────────────────────────────
+
+test('dashboard.html: betaFeedbackBanner element exists with correct ids and actions', () => {
+    assert.match(HTML, /id="betaFeedbackBanner"/, 'betaFeedbackBanner element must exist');
+    assert.match(HTML, /onclick="openBetaFeedbackFromBanner\(\)"/, 'CTA must call openBetaFeedbackFromBanner');
+    assert.match(HTML, /onclick="dismissBetaFeedbackBanner\(\)"/, 'close button must call dismissBetaFeedbackBanner');
+    // Must start hidden
+    const bannerIdx = HTML.indexOf('id="betaFeedbackBanner"');
+    const tag = HTML.slice(bannerIdx - 5, bannerIdx + 60);
+    assert.match(tag, /hidden/, 'banner must have hidden attribute by default');
+});
+
+test('app.js: BETA_FEEDBACK_BANNER_KEY constant defined', () => {
+    assert.match(APP_JS, /BETA_FEEDBACK_BANNER_KEY/, 'constant must exist');
+    assert.match(APP_JS, /baddel\.betaFeedbackBanner\.dismissed\.v1/, 'must use the correct localStorage key');
+});
+
+test('app.js: shouldShowBetaFeedbackBanner reads localStorage', () => {
+    const fnStart = APP_JS.indexOf('function shouldShowBetaFeedbackBanner');
+    const fn = APP_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /localStorage\.getItem/, 'must read from localStorage');
+    assert.match(fn, /BETA_FEEDBACK_BANNER_KEY/, 'must use the key constant');
+});
+
+test('app.js: markBetaFeedbackBannerDismissed writes to localStorage', () => {
+    const fnStart = APP_JS.indexOf('function markBetaFeedbackBannerDismissed');
+    const fn = APP_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /localStorage\.setItem/, 'must write to localStorage');
+    assert.match(fn, /BETA_FEEDBACK_BANNER_KEY/, 'must use the key constant');
+});
+
+test('app.js: showBetaFeedbackBanner shows/hides based on shouldShowBetaFeedbackBanner', () => {
+    const fnStart = APP_JS.indexOf('function showBetaFeedbackBanner');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /shouldShowBetaFeedbackBanner/, 'must call shouldShowBetaFeedbackBanner');
+    assert.match(fn, /has-beta-feedback-banner/, 'must toggle has-beta-feedback-banner class on body');
+    assert.match(fn, /banner\.hidden\s*=\s*false/, 'must unhide banner when showing');
+});
+
+test('app.js: hideBetaFeedbackBanner removes class and hides element', () => {
+    const fnStart = APP_JS.indexOf('function hideBetaFeedbackBanner');
+    const fn = APP_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /markBetaFeedbackBannerDismissed/, 'must call markBetaFeedbackBannerDismissed when persist=true');
+    assert.match(fn, /banner\.hidden\s*=\s*true/, 'must set banner.hidden = true');
+    assert.match(fn, /has-beta-feedback-banner/, 'must remove has-beta-feedback-banner from body');
+});
+
+test('app.js: openBetaFeedbackFromBanner calls openHelpModal with feedback tab', () => {
+    const fnStart = APP_JS.indexOf('function openBetaFeedbackFromBanner');
+    const fn = APP_JS.slice(fnStart, fnStart + 300);
+    assert.match(fn, /openHelpModal\(['"]feedback['"]\)/, "must call openHelpModal('feedback')");
+    assert.match(fn, /handleHelpDropdownAction/, 'must fall back to handleHelpDropdownAction');
+});
+
+test('app.js: dismissBetaFeedbackBanner delegates to hideBetaFeedbackBanner(true)', () => {
+    const fnStart = APP_JS.indexOf('function dismissBetaFeedbackBanner');
+    const fn = APP_JS.slice(fnStart, fnStart + 150);
+    assert.match(fn, /hideBetaFeedbackBanner\(true\)/, 'must call hideBetaFeedbackBanner(true)');
+});
+
+test('app.js: window globals exposed for banner', () => {
+    assert.match(APP_JS, /window\.dismissBetaFeedbackBanner\s*=\s*dismissBetaFeedbackBanner/, 'must expose dismissBetaFeedbackBanner on window');
+    assert.match(APP_JS, /window\.openBetaFeedbackFromBanner\s*=\s*openBetaFeedbackFromBanner/, 'must expose openBetaFeedbackFromBanner on window');
+});
+
+test('app.js: sendFeedback success branch calls hideBetaFeedbackBanner(true)', () => {
+    const fnStart = APP_JS.indexOf('async function sendFeedback');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    const successIdx = fn.indexOf('response.ok');
+    const hideIdx    = fn.indexOf('hideBetaFeedbackBanner(true)');
+    assert.ok(successIdx > -1, 'sendFeedback must check response.ok');
+    assert.ok(hideIdx > -1, 'sendFeedback must call hideBetaFeedbackBanner(true)');
+    assert.ok(hideIdx > successIdx, 'hideBetaFeedbackBanner call must be inside the success branch');
+});
+
+test('app.js: DOMContentLoaded handler calls showBetaFeedbackBanner', () => {
+    assert.match(APP_JS, /DOMContentLoaded.*showBetaFeedbackBanner|showBetaFeedbackBanner.*DOMContentLoaded/, 'showBetaFeedbackBanner must be wired to DOMContentLoaded');
+});
+
+test('css: .beta-feedback-banner has correct structure', () => {
+    const ruleIdx = CSS.indexOf('.beta-feedback-banner');
+    assert.ok(ruleIdx > -1, '.beta-feedback-banner rule must exist in dashboard.css');
+    const block = CSS.slice(ruleIdx, ruleIdx + 3500);
+    assert.match(block, /position:\s*fixed/, 'must be position fixed');
+    assert.match(block, /z-index:\s*99990/, 'must have high z-index');
+    assert.match(block, /\.beta-feedback-banner\[hidden\]/, 'must have [hidden] rule');
+    assert.match(block, /body\.has-beta-feedback-banner\s+#mainContentArea/, 'must add padding when banner visible');
+    assert.match(block, /\.beta-feedback-cta/, 'must have CTA button styles');
+    assert.match(block, /\.beta-feedback-close/, 'must have close button styles');
+    assert.match(block, /betaFeedbackIn/, 'must include entrance animation');
+    assert.match(block, /max-width:\s*900px|max-width:\s*640px/, 'must have responsive media queries');
+});
+
+// ── Sidebar action button label correctness ───────────────────────────────────
+
+test('app.js: syncSidebarActionButton function exists and is exposed on window', () => {
+    assert.match(APP_JS, /function syncSidebarActionButton\s*\(/, 'syncSidebarActionButton must be defined');
+    assert.match(APP_JS, /window\.syncSidebarActionButton\s*=\s*syncSidebarActionButton/, 'must be exposed on window');
+});
+
+test('app.js: syncSidebarActionButton maps all-games context to Link Accounts', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /all-games.*Link Accounts|Link Accounts.*all-games/, 'all-games must map to Link Accounts');
+    assert.match(fn, /ready.*Link Accounts|Link Accounts.*ready/, 'ready must map to Link Accounts');
+    assert.match(fn, /home.*Link Accounts|Link Accounts.*home/, 'home must map to Link Accounts');
+});
+
+test('app.js: syncSidebarActionButton maps installed to Add Game', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /installed.*Add Game|Add Game.*installed/, 'installed must map to Add Game');
+});
+
+test('app.js: syncSidebarActionButton maps collections to New Collection', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /collections.*New Collection|New Collection.*collections/, 'collections must map to New Collection');
+});
+
+test('app.js: syncSidebarActionButton maps collection and favorites to Browse Installed Games', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /Browse Installed Games/, 'must have Browse Installed Games label');
+    const collIdx = fn.indexOf("collection:");
+    const favIdx  = fn.indexOf("favorites:");
+    assert.ok(collIdx > -1, 'must have collection key in map');
+    assert.ok(favIdx  > -1, 'must have favorites key in map');
+});
+
+test('app.js: syncSidebarActionButton sets data-context on the button', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1600);
+    assert.match(fn, /dataset\.context\s*=\s*ctx/, 'must set btn.dataset.context = ctx');
+});
+
+test('app.js: updateSbContextBtn delegates to syncSidebarActionButton', () => {
+    const fnStart = APP_JS.indexOf('function updateSbContextBtn');
+    const fn = APP_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /syncSidebarActionButton\(\)/, 'updateSbContextBtn must call syncSidebarActionButton');
+    assert.doesNotMatch(fn, /textContent/, 'updateSbContextBtn must not set textContent directly');
+});
+
+test('app.js: handleSidebarContextBtn handles favorites context by navigating to installed', () => {
+    const fnStart = APP_JS.indexOf('function handleSidebarContextBtn');
+    const fn = APP_JS.slice(fnStart, fnStart + 1400);
+    const favIdx = fn.indexOf("'favorites'");
+    const navIdx = fn.indexOf('navigateToInstalled', favIdx > -1 ? favIdx : 0);
+    assert.ok(favIdx > -1, "must check ctx === 'favorites'");
+    assert.ok(navIdx > -1, 'must call navigateToInstalled for favorites');
+});
+
+test('app.js: navigateToHome calls syncSidebarActionButton after updateSidebarActiveState', () => {
+    const fnStart = APP_JS.indexOf('function navigateToHome');
+    const fn = APP_JS.slice(fnStart, fnStart + 800);
+    assert.match(fn, /syncSidebarActionButton\(\)/, 'navigateToHome must call syncSidebarActionButton');
+    const activeIdx = fn.indexOf('updateSidebarActiveState');
+    const syncIdx   = fn.indexOf('syncSidebarActionButton');
+    assert.ok(syncIdx > activeIdx, 'syncSidebarActionButton must come after updateSidebarActiveState');
+});
+
+test('app.js: navigateToInstalled calls syncSidebarActionButton after updateSidebarActiveState', () => {
+    const fnStart = APP_JS.indexOf('function navigateToInstalled');
+    const fn = APP_JS.slice(fnStart, fnStart + 600);
+    assert.match(fn, /syncSidebarActionButton\(\)/, 'navigateToInstalled must call syncSidebarActionButton');
+    const activeIdx = fn.indexOf('updateSidebarActiveState');
+    const syncIdx   = fn.indexOf('syncSidebarActionButton');
+    assert.ok(syncIdx > activeIdx, 'syncSidebarActionButton must come after updateSidebarActiveState');
+});
+
+test('accounts.js: navigateToAllGames calls syncSidebarActionButton after view is shown', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2300);
+    assert.match(fn, /syncSidebarActionButton/, 'navigateToAllGames must call syncSidebarActionButton');
+    // The call must come AFTER display = 'block'
+    const showIdx = fn.indexOf("view.style.display = 'block'");
+    const syncIdx = fn.indexOf('syncSidebarActionButton', showIdx > -1 ? showIdx : 0);
+    assert.ok(showIdx > -1, 'navigateToAllGames must set view display block');
+    assert.ok(syncIdx > showIdx, 'syncSidebarActionButton must be called after view is shown');
+});
+
+test('app.js: getSidebarActionContext returns home for home view', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    assert.match(fn, /currentView === 'home'/, "must handle home view");
+    assert.match(fn, /return 'home'/, "must return 'home'");
+});
+
+// ── Sidebar context button label correctness ──────────────────────────────────
+
+test('app.js: syncSidebarActionButton maps all-games to "Link Accounts"', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    assert.match(fn, /'all-games'/, 'all-games key in label map');
+    // Extract the text value for all-games entry
+    const allGamesIdx = fn.indexOf("'all-games'");
+    const snippet = fn.slice(allGamesIdx, allGamesIdx + 80);
+    assert.match(snippet, /Link Accounts/, 'all-games must map to Link Accounts');
+});
+
+test('app.js: syncSidebarActionButton maps ready to "Link Accounts"', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    // key is unquoted: ready: { text: 'Link Accounts', ... }
+    const readyIdx = fn.indexOf('ready:');
+    assert.ok(readyIdx > -1, 'ready key in label map');
+    const snippet = fn.slice(readyIdx, readyIdx + 80);
+    assert.match(snippet, /Link Accounts/, 'ready must map to Link Accounts');
+});
+
+test('app.js: syncSidebarActionButton maps installed to "Add Game", not "Link Accounts"', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    // key is unquoted: installed: { text: 'Add Game', ... }
+    const installedIdx = fn.indexOf('installed:');
+    assert.ok(installedIdx > -1, 'installed key in label map');
+    const snippet = fn.slice(installedIdx, installedIdx + 80);
+    assert.match(snippet, /Add Game/, 'installed must map to Add Game');
+    assert.doesNotMatch(snippet, /Link Accounts/, 'installed must not say Link Accounts');
+});
+
+test('app.js: syncSidebarActionButton default fallback is "Link Accounts"', () => {
+    const fnStart = APP_JS.indexOf('function syncSidebarActionButton');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    // fallback via _map.library — key is unquoted: library: { text: 'Link Accounts', ... }
+    const libIdx = fn.indexOf('library:');
+    assert.ok(libIdx > -1, 'library key in label map');
+    const snippet = fn.slice(libIdx, libIdx + 80);
+    assert.match(snippet, /Link Accounts/, 'library fallback must be Link Accounts');
+});
+
+test('accounts.js: navigateToAllGames sets currentView to all-games before syncing button', () => {
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
+    assert.match(fn, /currentView\s*=\s*'all-games'/, "must set currentView = 'all-games'");
+    // Must appear before the first syncSidebarActionButton call
+    const cvIdx   = fn.indexOf("currentView = 'all-games'");
+    const syncIdx = fn.indexOf('syncSidebarActionButton');
+    assert.ok(cvIdx > -1,  'currentView assignment present');
+    assert.ok(syncIdx > -1, 'syncSidebarActionButton call present');
+    assert.ok(cvIdx < syncIdx, 'currentView must be set before syncSidebarActionButton');
+});
+
+test('app.js: getSidebarActionContext handles all-games when currentView is all-games', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    assert.match(fn, /currentView === 'all-games'/, "handles all-games view via currentView");
+});
+
+test('app.js: getSidebarActionContext installed branch requires BOTH installedVisible and currentView', () => {
+    const fnStart = APP_JS.indexOf('function getSidebarActionContext');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    // The installed branch should depend on currentView === 'installed' so navigating
+    // away from installed (which changes currentView) stops returning 'installed'.
+    const installedReturn = fn.slice(fn.indexOf("return 'installed'") - 150, fn.indexOf("return 'installed'") + 20);
+    assert.match(installedReturn, /currentView/, "installed return must check currentView");
 });
