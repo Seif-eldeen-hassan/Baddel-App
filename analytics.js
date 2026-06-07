@@ -316,6 +316,7 @@ async function _send(eventName, properties = {}, isEssential = false, alsoSendTo
 async function grantConsent() {
     _consentGiven = true;
     await _saveConsent(true);
+    await updateUninstallTelemetryConsent(true);
 
     await _send('opted_in', {}, false, true);
 }
@@ -323,6 +324,7 @@ async function grantConsent() {
 async function revokeConsent() {
     _consentGiven = false;
     await _saveConsent(false);
+    await updateUninstallTelemetryConsent(false);
 }
 
 async function _saveConsent(value) {
@@ -531,6 +533,96 @@ function _osVersion() {
 }
 
 // ============================================================
+// UNINSTALL TELEMETRY
+// ============================================================
+
+// Writes userData/uninstall-telemetry.json so the NSIS uninstaller can read
+// installId and consent state without Node.js at uninstall time.
+async function writeUninstallTelemetryConfig() {
+    if (!_dataDir || !_installationId) return;
+    try {
+        const config = {
+            installId:    _installationId,
+            consentGiven: _consentGiven,
+            appVersion:   APP_VERSION,
+            updatedAt:    new Date().toISOString(),
+        };
+        await fs.writeFile(
+            path.join(path.dirname(_dataDir), 'uninstall-telemetry.json'),
+            JSON.stringify(config),
+            'utf8'
+        );
+    } catch (err) {
+        console.warn('[Analytics] writeUninstallTelemetryConfig failed (non-fatal):', err.message);
+    }
+}
+
+// Keeps consent in uninstall-telemetry.json in sync when the user grants or
+// revokes consent.  Always writes the full record so the file never lacks
+// installId even if called before writeUninstallTelemetryConfig resolves.
+async function updateUninstallTelemetryConsent(consent) {
+    if (!_dataDir || !_installationId) return;
+    try {
+        const config = {
+            installId:    _installationId,
+            consentGiven: consent,
+            appVersion:   APP_VERSION,
+            updatedAt:    new Date().toISOString(),
+        };
+        await fs.writeFile(
+            path.join(path.dirname(_dataDir), 'uninstall-telemetry.json'),
+            JSON.stringify(config),
+            'utf8'
+        );
+    } catch (err) {
+        console.warn('[Analytics] updateUninstallTelemetryConsent failed (non-fatal):', err.message);
+    }
+}
+
+// ============================================================
+// HEARTBEAT
+// ============================================================
+
+let _heartbeatInterval = null; // stored so startHeartbeat() is idempotent
+
+// Sends app_heartbeat at most once per 24 hours when consent is given.
+// Persists last-sent timestamp in userData/analytics-heartbeat.json.
+async function logHeartbeat() {
+    if (!_consentGiven || !_dataDir) return;
+    try {
+        const heartbeatFile = path.join(path.dirname(_dataDir), 'analytics-heartbeat.json');
+        let lastSent = 0;
+        try {
+            const data = JSON.parse(await fs.readFile(heartbeatFile, 'utf8'));
+            lastSent = data.lastSent || 0;
+        } catch {
+            // no prior record — send immediately
+        }
+        if (Date.now() - lastSent < 24 * 60 * 60 * 1000) return;
+        await _send('app_heartbeat', { app_version: APP_VERSION }, false);
+        await fs.writeFile(heartbeatFile, JSON.stringify({ lastSent: Date.now() }), 'utf8');
+    } catch (err) {
+        console.warn('[Analytics] logHeartbeat failed (non-fatal):', err.message);
+    }
+}
+
+// Fires logHeartbeat once at startup and every hour for long-running sessions.
+// Idempotent — safe to call multiple times; only one interval is ever active.
+function startHeartbeat() {
+    if (_heartbeatInterval) return;
+    logHeartbeat().catch(() => {});
+    _heartbeatInterval = setInterval(() => logHeartbeat().catch(() => {}), 60 * 60 * 1000);
+}
+
+// Clears the heartbeat interval (call from app before-quit).
+function stopHeartbeat() {
+    if (_heartbeatInterval) {
+        clearInterval(_heartbeatInterval);
+        _heartbeatInterval = null;
+    }
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 module.exports = {
@@ -572,4 +664,12 @@ module.exports = {
     logSyncCompleted,
     logSyncFailed,
     logAutoSyncStarted,
+
+    // Uninstall telemetry
+    writeUninstallTelemetryConfig,
+    updateUninstallTelemetryConsent,
+
+    // Heartbeat
+    startHeartbeat,
+    stopHeartbeat,
 };

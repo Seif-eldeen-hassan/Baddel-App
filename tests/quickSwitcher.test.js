@@ -727,3 +727,34 @@ test('quick-switcher.js: _platformHeaderHtml adds data-platform to header div', 
     const fnSrc = src.slice(src.indexOf('function _platformHeaderHtml'), src.indexOf('function _platformHeaderHtml') + 700);
     assert.ok(fnSrc.includes('data-platform='), 'data-platform on platform header div');
 });
+
+// ── Regression: shortcut map was always empty (getAll() returns array, not {shortcuts:[]} ──
+
+test('quickSwitcher service: getQuickSwitcherAccounts iterates shortcuts array directly (no .shortcuts access)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    const fnSrc = src.slice(src.indexOf('async function getQuickSwitcherAccounts'), src.indexOf('async function getQuickSwitcherAccounts') + 600);
+    // Must iterate the result of getAll() directly — not access .shortcuts on it
+    assert.ok(!fnSrc.includes('shortcuts.shortcuts'), 'must not access .shortcuts on result (was the bug)');
+    assert.ok(!fnSrc.includes('shortcutsData?.shortcuts'), 'old buggy guard must not be present');
+    assert.ok(!fnSrc.includes('shortcutsData.shortcuts'), 'old buggy guard must not be present');
+    // Must use for..of on the array directly
+    assert.match(fnSrc, /for\s*\(const\s+sc\s+of\s+shortcuts\)/);
+});
+
+test('quickSwitcher service: shortcut map is built from all elements, not gated on an object property', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    const fnSrc = src.slice(src.indexOf('async function getQuickSwitcherAccounts'), src.indexOf('async function getQuickSwitcherAccounts') + 600);
+    // The shortcutMap.set() call must be reachable regardless of a conditional guard
+    assert.match(fnSrc, /shortcutMap\.set\(/);
+    // There must be no if-guard around the for loop that would hide it
+    assert.ok(!fnSrc.match(/if\s*\(\s*(shortcuts|shortcutsData)/), 'no if-gate on the shortcuts loop');
+});
+
+test('accountShortcuts.js: getAll() returns an array (no wrapper object)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'accountShortcuts.js'), 'utf8');
+    const fnSrc = src.slice(src.indexOf('async function getAll'), src.indexOf('async function getAll') + 400);
+    // getAll must return an array — either [] literal or parsed array
+    assert.match(fnSrc, /return\s+(\[\]|shortcuts|data|parsed)/);
+    // It must NOT return an object like { shortcuts: [...] }
+    assert.ok(!fnSrc.includes('return {'), 'getAll must not return a wrapper object');
+});

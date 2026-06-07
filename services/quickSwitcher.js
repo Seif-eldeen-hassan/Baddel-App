@@ -137,12 +137,10 @@ function destroyQuickSwitcherWindow() {
 async function getQuickSwitcherAccounts() {
     // Lazy require to avoid circular dependency at module load time.
     const { getAllAccountsForQuickSwitcher } = require('../accountsHandler');
-    const shortcutsData = await accountShortcuts.getAll();
+    const shortcuts = await accountShortcuts.getAll();
     const shortcutMap = new Map();
-    if (shortcutsData?.shortcuts) {
-        for (const sc of shortcutsData.shortcuts) {
-            shortcutMap.set(`${sc.platform}::${sc.accountId}`, sc.accelerator);
-        }
+    for (const sc of shortcuts) {
+        shortcutMap.set(`${sc.platform}::${sc.accountId}`, sc.accelerator);
     }
 
     const groups = await getAllAccountsForQuickSwitcher();

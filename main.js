@@ -789,61 +789,12 @@ function _riotExeMatchesProduct(exeName, product) {
 }
 const _launchInFlight = new Set();
 const activeTrackers = {};
-function _cleanGameMatchText(value) {
-    return String(value || '')
-        .toLowerCase()
-        .replace(/\.exe$/i, '')
-        .replace(/[^a-z0-9]/g, '');
-}
-
-function _isTechnicalExeSuffix(suffix) {
-    const s = String(suffix || '').toLowerCase();
-
-    if (!s) return true;
-
-    return /^(win64|win32|x64|x86|shipping|win64shipping|win32shipping|dx11|dx12|vulkan|game|launcher|client|retail|final|release)+$/.test(s);
-}
-
-function _isVersionLikeSuffix(suffix) {
-    const s = String(suffix || '').toLowerCase();
-
-    if (!s) return false;
-
-    // يمنع: littlenightmares + ii
-    // يمنع: game + 2 / 3 / 2024
-    return /^(\d+|i|ii|iii|iv|v|vi|vii|viii|ix|x)$/.test(s);
-}
-
-function _safeFuzzyGameNameMatch(gameName, processName) {
-    const cleanGame = _cleanGameMatchText(gameName);
-    const cleanProc = _cleanGameMatchText(processName);
-
-    if (!cleanGame || cleanProc.length < 3) return false;
-
-    // Exact match is always OK
-    if (cleanGame === cleanProc) return true;
-
-    // Process may be game name + technical suffix:
-    // acmiragewin64shipping -> acmirage is OK
-    if (cleanProc.startsWith(cleanGame)) {
-        const suffix = cleanProc.slice(cleanGame.length);
-
-        // littlenightmaresii must NOT match littlenightmares
-        if (_isVersionLikeSuffix(suffix)) return false;
-
-        return _isTechnicalExeSuffix(suffix);
-    }
-
-    // Game may contain process name only if process name is reasonably specific.
-    // Avoid tiny/generic substring matches.
-    if (cleanGame.startsWith(cleanProc) && cleanProc.length >= 8) {
-        const suffix = cleanGame.slice(cleanProc.length);
-        if (_isVersionLikeSuffix(suffix)) return false;
-        return true;
-    }
-
-    return false;
-}
+const {
+    _cleanGameMatchText,
+    _isTechnicalExeSuffix,
+    _isVersionLikeSuffix,
+    _safeFuzzyGameNameMatch,
+} = require('./services/playtimeShared');
 
 async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = false) {
     try {
@@ -1824,6 +1775,8 @@ app.whenReady().then(async () => {
     // the Windows startup window where network services may not be ready yet.
     // For normal launches, runAfterStartupGrace returns fn() so await still works.
     await runAfterStartupGrace('analytics.init', () => analytics.init(), 30000);
+    analytics.writeUninstallTelemetryConfig().catch(() => {});
+    analytics.startHeartbeat();
 
     setupWindowsIntegration();
     runAfterStartupGrace('refreshDriveCache', () => refreshDriveCache(), 20000);
@@ -4625,6 +4578,7 @@ app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(
 
 app.on('before-quit', () => {
     isQuitting = true;
+    analytics.stopHeartbeat();
     accountShortcuts.unregisterAll();
     quickSwitcher.unregisterQuickSwitcherHotkey();
     quickSwitcher.destroyQuickSwitcherWindow();
