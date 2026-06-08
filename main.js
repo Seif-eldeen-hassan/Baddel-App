@@ -327,6 +327,7 @@ function setupAutoUpdater() {
 }
 
 // ---- Image/cache handlers (moved to handlers/imageHandlers.js) ----
+const IMAGE_CACHE_PRUNE_GRACE_MS = 24 * 60 * 60 * 1000;
 require('./handlers/imageHandlers').register(ipcMain, {
     app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
     getSavedGames, getMainWindow: () => mainWindow,
@@ -363,7 +364,6 @@ let isQuitting = false;
 
 const driveCache = { data: null, lastFetched: 0 };
 const DRIVE_CACHE_TTL = 60_000;
-const IMAGE_CACHE_PRUNE_GRACE_MS = 24 * 60 * 60 * 1000;
 
 function _safeImageCacheId(value) {
     return String(value ?? '').trim().replace(/[^a-zA-Z0-9_\-]/g, '_');
