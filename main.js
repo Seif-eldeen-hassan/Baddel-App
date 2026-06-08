@@ -14,6 +14,7 @@ const {
     removeGame, renameGame, unhideAllGames, getHiddenGames,
     restoreSpecificGames, deleteGamePermanently, reorderLibrary,
     updateGameMetadata, saveFullMetadata, loadFullMetadata,
+    updatePlaytime, setTimeTrackingEnabled, getTimeTrackingEnabled,
 } = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
@@ -1900,43 +1901,12 @@ app.whenReady().then(async () => {
         loadFullMetadata,
         getMainWindow: () => mainWindow,
     });
-    ipcMain.handle('update-playtime', (_, id, mins) => require('./gameScanner').updatePlaytime(id, mins));
-
-    ipcMain.handle('set-time-tracking-enabled', async (_, gameId, enabled) => {
-        try {
-            const gs = require('./gameScanner');
-            if (typeof gs.setTimeTrackingEnabled !== 'function') {
-                console.error('[Playtime] setTimeTrackingEnabled missing from gameScanner exports');
-                return { status: 'error', error: 'Time tracking API unavailable' };
-            }
-            const result = await gs.setTimeTrackingEnabled(String(gameId), !!enabled);
-            if (!enabled) {
-                const gid = String(gameId);
-                if (activeTrackers[gid]) {
-                    const tracker = activeTrackers[gid];
-                    if (tracker.intervalId) clearInterval(tracker.intervalId);
-                    delete activeTrackers[gid];
-                    console.log(`[Playtime] tracking disabled mid-session for game: ${gid}`);
-                }
-            }
-            return result;
-        } catch (err) {
-            console.error('[Playtime] set-time-tracking-enabled error:', err.message);
-            return { status: 'error', error: err.message };
-        }
-    });
-
-    ipcMain.handle('get-time-tracking-enabled', (_, gameId) => {
-        try {
-            const gs = require('./gameScanner');
-            if (typeof gs.getTimeTrackingEnabled !== 'function') {
-                console.error('[Playtime] getTimeTrackingEnabled missing from gameScanner exports');
-                return { status: 'error', error: 'Time tracking API unavailable' };
-            }
-            return gs.getTimeTrackingEnabled(String(gameId));
-        } catch (err) {
-            return { status: 'error', error: err.message };
-        }
+    // ── Playtime IPC (moved to handlers/playtimeHandlers.js) ─────────────────
+    require('./handlers/playtimeHandlers').register(ipcMain, {
+        updatePlaytime,
+        setTimeTrackingEnabled,
+        getTimeTrackingEnabled,
+        activeTrackers,
     });
 
     // ---- Riot Client manual path selection (legacy, kept for backward compat) ----

@@ -1733,7 +1733,7 @@ test('game-details: _gdRenderTimeTrackingToggle and _gdToggleTimeTracking are de
 });
 
 test('main.js: set-time-tracking-enabled and get-time-tracking-enabled IPC handlers exist', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers/playtimeHandlers.js'), 'utf8');
     assert.match(js, /'set-time-tracking-enabled'/);
     assert.match(js, /'get-time-tracking-enabled'/);
     assert.match(js, /setTimeTrackingEnabled/);
@@ -1924,7 +1924,7 @@ test('game-details: _gdToggleTimeTracking shows error toast on failure', () => {
 });
 
 test('main.js: set-time-tracking-enabled has defensive fallback for missing export', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers/playtimeHandlers.js'), 'utf8');
     assert.match(js, /Time tracking API unavailable/, 'must return safe error when export missing');
     assert.match(js, /setTimeTrackingEnabled missing from gameScanner/, 'must log when export missing');
 });
