@@ -269,3 +269,142 @@ test('COLD_START_GRACE_MS is 2000 ms', () => {
 test('ACCOUNT_SWITCH_GRACE_MS is 6000 ms', () => {
     assert.match(MAIN_JS, /const\s+ACCOUNT_SWITCH_GRACE_MS\s*=\s*6000/);
 });
+
+// ─── 6. startGameTracking — internal contract ─────────────────────────────────
+
+const sgtStart = MAIN_JS.indexOf('function startGameTracking(');
+assert.ok(sgtStart !== -1, 'startGameTracking must exist in main.js');
+// 1600 chars covers the 37-line function body on Windows CRLF line endings.
+const SGT_SRC = MAIN_JS.slice(sgtStart, sgtStart + 1600);
+
+test('startGameTracking: duplicate-entry guard is the first statement — prevents creating two trackers for the same game', () => {
+    const guardIdx  = SGT_SRC.indexOf('if (activeTrackers[gameId]) return');
+    const createIdx = SGT_SRC.indexOf('activeTrackers[gameId] = {');
+    assert.ok(guardIdx  !== -1, 'duplicate-entry guard must exist');
+    assert.ok(createIdx !== -1, 'tracker object creation must exist');
+    assert.ok(guardIdx < createIdx, 'duplicate-entry guard must appear before tracker creation');
+});
+
+test('startGameTracking: timeTrackingEnabled === false permission gate appears before tracker creation', () => {
+    const gateIdx   = SGT_SRC.indexOf('game.timeTrackingEnabled === false');
+    const createIdx = SGT_SRC.indexOf('activeTrackers[gameId] = {');
+    assert.ok(gateIdx   !== -1, 'timeTrackingEnabled === false gate must exist');
+    assert.ok(gateIdx < createIdx, 'permission gate must precede tracker object creation');
+});
+
+test("startGameTracking: initial tracker state field is 'launching'", () => {
+    assert.match(SGT_SRC, /state:\s*'launching'/);
+});
+
+test('startGameTracking: userLaunched parameter is stored as a field on the tracker object', () => {
+    const createIdx = SGT_SRC.indexOf('activeTrackers[gameId] = {');
+    const closeIdx  = SGT_SRC.indexOf('};', createIdx);
+    assert.ok(createIdx !== -1, 'tracker object literal must exist');
+    assert.ok(closeIdx  !== -1, 'tracker object literal closing };  must exist');
+    const objectLiteral = SGT_SRC.slice(createIdx, closeIdx + 2);
+    assert.match(objectLiteral, /userLaunched[,\s]/);
+});
+
+test('startGameTracking: intervalId is assigned from the setInterval return value', () => {
+    assert.match(SGT_SRC, /activeTrackers\[gameId\]\.intervalId\s*=\s*setInterval\(/);
+});
+
+test('startGameTracking: setInterval uses TRACK_INTERVAL_MS as its delay argument', () => {
+    const intervalIdx = SGT_SRC.indexOf('setInterval(');
+    assert.ok(intervalIdx !== -1, 'setInterval must exist in startGameTracking');
+    const intervalBlock = SGT_SRC.slice(intervalIdx, intervalIdx + 200);
+    assert.match(intervalBlock, /TRACK_INTERVAL_MS/);
+});
+
+test('startGameTracking: setInterval callback invokes _tickTracker with all four arguments (gameId, command, gamePath, gameName)', () => {
+    assert.match(SGT_SRC, /_tickTracker\(gameId,\s*command,\s*gamePath,\s*gameName\)/);
+});
+
+// ─── 7. launch-game — startGameTracking call sites ───────────────────────────
+
+test('launch-game: manual branch calls startGameTracking after shell.openPath succeeds (openErr guard first)', () => {
+    // shell.openPath returns a non-empty string on error.  startGameTracking must
+    // appear AFTER the openErr early-return so it only fires on success.
+    const openPathIdx = LAUNCH_SRC.indexOf('shell.openPath(manualLaunchPath)');
+    assert.ok(openPathIdx !== -1, 'shell.openPath(manualLaunchPath) must exist in handler');
+    // 1200 chars covers the large diagnostics-return block plus the startGameTracking
+    // call ~18 lines after the openPath call on Windows CRLF line endings.
+    const afterOpen = LAUNCH_SRC.slice(openPathIdx, openPathIdx + 1200);
+    const openErrIdx  = afterOpen.indexOf('if (openErr)');
+    const trackingIdx = afterOpen.indexOf('startGameTracking(');
+    assert.ok(openErrIdx  !== -1, 'openErr guard must exist after shell.openPath');
+    assert.ok(trackingIdx !== -1, 'startGameTracking must be called in the manual branch');
+    assert.ok(openErrIdx < trackingIdx, 'openErr early-return must precede startGameTracking');
+});
+
+test('launch-game: EA exe fallback branch calls startGameTracking after successful spawn (failure guard first)', () => {
+    const eaIdx = LAUNCH_SRC.indexOf('eadesktop://mobilehome');
+    assert.ok(eaIdx !== -1, 'EA exe fallback branch must exist in handler');
+    // 1000 chars covers the ~15-line EA block on Windows CRLF line endings.
+    const eaBlock = LAUNCH_SRC.slice(eaIdx, eaIdx + 1000);
+    const failGuardIdx = eaBlock.indexOf('!eaResult.ok');
+    const trackingIdx  = eaBlock.indexOf('startGameTracking(');
+    assert.ok(failGuardIdx !== -1, '!eaResult.ok failure guard must exist');
+    assert.ok(trackingIdx  !== -1, 'startGameTracking must be called in EA fallback');
+    assert.ok(failGuardIdx < trackingIdx, 'failure guard must precede startGameTracking');
+});
+
+test('launch-game: protocol/lnk/exe success path calls startGameTracking inside the if (launchSuccess) block', () => {
+    const launchSuccessIdx = LAUNCH_SRC.indexOf('if (launchSuccess)');
+    assert.ok(launchSuccessIdx !== -1, 'if (launchSuccess) block must exist');
+    const successBlock = LAUNCH_SRC.slice(launchSuccessIdx, launchSuccessIdx + 200);
+    assert.match(successBlock, /startGameTracking\(/);
+});
+
+test('launch-game: .exe branch sets launchSuccess = true after safeLauncher.launchExecutable so tracking fires via the shared success path', () => {
+    const exeIdx = LAUNCH_SRC.indexOf("ext === '.exe'");
+    assert.ok(exeIdx !== -1, ".exe branch must exist in handler");
+    // 1200 chars covers the spawnArgs + spawnCwd setup plus the launchSuccess flag
+    // ~20 lines into the block on Windows CRLF line endings.
+    const exeBlock       = LAUNCH_SRC.slice(exeIdx, exeIdx + 1200);
+    const spawnIdx       = exeBlock.indexOf('safeLauncher.launchExecutable(');
+    const successFlagIdx = exeBlock.indexOf('launchSuccess = true');
+    assert.ok(spawnIdx       !== -1, 'safeLauncher.launchExecutable must exist in .exe block');
+    assert.ok(successFlagIdx !== -1, 'launchSuccess = true must be set inside .exe block');
+    assert.ok(spawnIdx < successFlagIdx, 'safeLauncher.launchExecutable must precede launchSuccess = true');
+});
+
+test('launch-game: Xbox/UWP branch calls startGameTracking only after _launchAppsFolderTarget succeeds (failure guard first)', () => {
+    const xboxIdx = LAUNCH_SRC.indexOf('_launchAppsFolderTarget(');
+    assert.ok(xboxIdx !== -1, '_launchAppsFolderTarget must exist in handler');
+    const xboxBlock    = LAUNCH_SRC.slice(xboxIdx, xboxIdx + 700);
+    const failGuardIdx = xboxBlock.indexOf('XBOX_APPSFOLDER_LAUNCH_FAILED');
+    const trackingIdx  = xboxBlock.indexOf('startGameTracking(');
+    assert.ok(failGuardIdx !== -1, 'XBOX_APPSFOLDER_LAUNCH_FAILED error code must exist');
+    assert.ok(trackingIdx  !== -1, 'startGameTracking must be called in Xbox/UWP branch');
+    assert.ok(failGuardIdx < trackingIdx, 'failure error code must precede startGameTracking call');
+});
+
+// ─── 8. _endTrackerSession — cleanup contract ─────────────────────────────────
+
+const endTrackerStart = MAIN_JS.indexOf('function _endTrackerSession(');
+assert.ok(endTrackerStart !== -1, '_endTrackerSession must exist in main.js');
+// 800 chars covers the 20-line function body on Windows CRLF line endings.
+const END_TRACKER_SRC = MAIN_JS.slice(endTrackerStart, endTrackerStart + 800);
+
+test('_endTrackerSession: calls clearInterval(tracker.intervalId) to stop the tick loop', () => {
+    assert.match(END_TRACKER_SRC, /clearInterval\(tracker\.intervalId\)/);
+});
+
+test('_endTrackerSession: deletes activeTrackers[gameId] and does so after clearInterval', () => {
+    assert.match(END_TRACKER_SRC, /delete activeTrackers\[gameId\]/);
+    const clearIdx  = END_TRACKER_SRC.indexOf('clearInterval(tracker.intervalId)');
+    const deleteIdx = END_TRACKER_SRC.indexOf('delete activeTrackers[gameId]');
+    assert.ok(clearIdx < deleteIdx, 'clearInterval must precede delete activeTrackers[gameId]');
+});
+
+// ─── 9. startGlobalWatcher — co-location guard ───────────────────────────────
+
+test('startGlobalWatcher calls startGameTracking — guards against the watcher being split from the tracking engine', () => {
+    const gwStart = MAIN_JS.indexOf('function startGlobalWatcher()');
+    assert.ok(gwStart !== -1, 'startGlobalWatcher must exist in main.js');
+    // startGameTracking is called ~84 lines into the watcher body.
+    // 5500 chars comfortably covers that distance on Windows CRLF line endings.
+    const gwSrc = MAIN_JS.slice(gwStart, gwStart + 5500);
+    assert.match(gwSrc, /startGameTracking\(/);
+});
