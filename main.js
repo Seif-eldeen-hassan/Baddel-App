@@ -9,7 +9,7 @@ const util = require('util');
 const execAsync = util.promisify(exec);
 const { BrowserView, WebContentsView } = require('electron');
 
-const { scanAllGames, addManualGame, getSavedGames } = require('./gameScanner');
+const { scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage } = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
@@ -319,17 +319,12 @@ function setupAutoUpdater() {
     }
 }
 
-// Synchronous IPC so preload can expose the image-cache URL before any renderer
-// script runs — avoids the timing gap of an async invoke.
-ipcMain.on('get-image-cache-dir-url-sync', (event) => {
-    try {
-        const dir = path.join(app.getPath('userData'), 'image_cache');
-        const imageWebpCache = require('./services/imageWebpCache');
-        event.returnValue = imageWebpCache.filePathToFileUrl(dir) + '/';
-    } catch (err) {
-        console.warn('[Main] get-image-cache-dir-url-sync failed:', err && err.message);
-        event.returnValue = '';
-    }
+// ---- Image/cache handlers (moved to handlers/imageHandlers.js) ----
+require('./handlers/imageHandlers').register(ipcMain, {
+    app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
+    getSavedGames, getMainWindow: () => mainWindow,
+    _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
+    IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, resetGameImage,
 });
 
 // ── IPC: start download — handle (invoke) so renderer gets immediate feedback ──
@@ -1785,98 +1780,6 @@ app.whenReady().then(async () => {
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
 
-    // ---- Image Caching ----
-    ipcMain.handle('cache-image', async (_, url, gameId, type) => {
-        try {
-            ipcValidation.assertString(url,    'url',    2048);
-            ipcValidation.assertSafeId(gameId, 'gameId');
-            ipcValidation.assertString(type,   'type',   32);
-        } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        if (!url || url.startsWith('assets/')) return url;
-        // For file:// URLs, verify the file still exists on disk (handles cache wipes)
-        if (url.startsWith('file://')) {
-            try {
-                const p = fileURLToPath(url);
-                const st = await fs.stat(p);
-                if (st.size > 0) return url; // File exists and is valid
-            } catch { /* File gone — fall through to re-download */ }
-        }
-        try {
-            const baseName = imageWebpCache.cacheBaseName(type, gameId);
-            const localPath = await imageWebpCache.downloadToCacheAsWebp(CACHE_DIR, baseName, url);
-            return localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
-        } catch (err) {
-            console.error(`[Cache] Failed for ${gameId} (${type}):`, err.message);
-            return url;
-        }
-    });
-
-    ipcMain.handle('cache-all-assets', async (_, assets, gameId) => {
-        const results = {};
-        await Promise.all(Object.entries(assets).map(async ([type, url]) => {
-            if (!url) return;
-            try {
-                const baseName = imageWebpCache.cacheBaseName(type, gameId);
-                const localPath = await imageWebpCache.downloadToCacheAsWebp(CACHE_DIR, baseName, url);
-                results[type] = localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
-            } catch (e) {
-                console.warn(`[cache-all-assets] ${type} for ${gameId}:`, e.message);
-                results[type] = url;
-            }
-        }));
-        return results;
-    });
-
-    // Prune image_cache of files that don't belong to installed or synced Ready-to-Install games.
-    // Called once at startup (with a delay) and exposed for manual maintenance.
-    ipcMain.handle('prune-image-cache', async () => {
-        try {
-            const fsSync    = require('fs');
-            const protectedIds = new Set();
-            for (const g of (gameScanner.getSavedGames?.() || [])) _collectImageCacheIdsFromGame(g, protectedIds);
-            for (const id of _readReadyToInstallProtectedImageIds(app.getPath('userData'))) protectedIds.add(id);
-
-            const files = fsSync.readdirSync(CACHE_DIR);
-            let pruned = 0;
-            let protectedCount = 0;
-            let freshSkipped = 0;
-            const now = Date.now();
-            for (const file of files) {
-                const m = /^(?:cover|hero|logo)_(.+?)\.(?:webp|jpg|png|gif)$/.exec(file);
-                if (!m) continue;
-                const gameId = m[1];
-                if (protectedIds.has(gameId) || protectedIds.has(String(gameId).toLowerCase())) {
-                    protectedCount++;
-                    continue;
-                }
-
-                const abs = path.join(CACHE_DIR, file);
-                try {
-                    const st = fsSync.statSync(abs);
-                    const ageMs = now - Math.max(st.mtimeMs || 0, st.ctimeMs || 0);
-                    if (ageMs >= 0 && ageMs < IMAGE_CACHE_PRUNE_GRACE_MS) {
-                        freshSkipped++;
-                        continue;
-                    }
-                } catch {
-                    // If stat fails, try to unlink below; locked files are skipped there.
-                }
-
-                try {
-                    fsSync.unlinkSync(abs);
-                    pruned++;
-                } catch { /* skip locked */ }
-            }
-            if (pruned) {
-                console.log(`[ImageCachePrune] Removed ${pruned} truly orphaned file(s); protected=${protectedCount}; freshSkipped=${freshSkipped}`);
-            }
-            return { pruned, protected: protectedCount, freshSkipped };
-        } catch (e) {
-            console.warn('[ImageCachePrune] error:', e.message);
-            return { pruned: 0, error: e.message };
-        }
-    });
-
     // ---- Games Library ----
     // ── FIX: guard against concurrent background scans ──────────────────────
     // get-installed-games is called by BOTH app.js (initSystem) and accounts.js
@@ -2070,15 +1973,6 @@ app.whenReady().then(async () => {
         } catch (err) {
             return { status: 'error', error: err.message };
         }
-    });
-
-    // ---- Images ----
-    ipcMain.handle('select-game-image', async () => {
-        const result = await dialog.showOpenDialog(mainWindow, {
-            properties: ['openFile'],
-            filters: [{ name: 'Images', extensions: ['jpg', 'png', 'jpeg', 'webp'] }]
-        });
-        return result.canceled ? null : result.filePaths[0];
     });
 
     // ---- Riot Client manual path selection (legacy, kept for backward compat) ----
@@ -2304,107 +2198,6 @@ app.whenReady().then(async () => {
         if (result.canceled || !result.filePaths.length) return null;
         return JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
     });
-
-    // True if a file:// image still exists on disk (invalidates stale localStorage / JSON after cache wipe)
-    ipcMain.handle('probe-local-image', async (_, fileUrl) => {
-        try {
-            if (!fileUrl || !String(fileUrl).startsWith('file://')) return false;
-            const p = fileURLToPath(fileUrl);
-            const st = await fs.stat(p);
-            return st.size > 0;
-        } catch {
-            return false;
-        }
-    });
-
-    ipcMain.handle('get-image-cache-dir-url', () => {
-        const dir = path.join(app.getPath('userData'), 'image_cache');
-        return require('./services/imageWebpCache').filePathToFileUrl(dir) + '/';
-    });
-
-    // Check if a game has a cached image on disk (used as fast fallback after reinstall)
-    ipcMain.handle('get-cached-image', (_, gameId, type = 'cover') => {
-    try {
-        const fsSync = require('fs');
-        const imageCache = require('./services/imageWebpCache');
-
-        const cacheDir = path.join(app.getPath('userData'), 'image_cache');
-
-        if (!fsSync.existsSync(cacheDir)) {
-            console.warn('[CoverDebug:Main] get-cached-image MISS cacheDir missing', {
-                gameId: String(gameId),
-                type,
-                cacheDir,
-            });
-            return null;
-        }
-
-        const files = fsSync.readdirSync(cacheDir);
-        const prefix = imageCache.cacheBaseName(type, gameId);
-        const matches = files.filter((f) => f.startsWith(prefix));
-        const found = matches[0] || null;
-
-        console.log('[CoverDebug:Main] get-cached-image lookup', {
-            gameId: String(gameId),
-            type,
-            prefix,
-            cacheDir,
-            totalFiles: files.length,
-            matches: matches.slice(0, 8),
-            found,
-            sampleFiles: files.slice(0, 20),
-        });
-
-        if (!found) return null;
-
-        const abs = path.join(cacheDir, found);
-
-        try {
-            const size = fsSync.statSync(abs).size;
-
-            if (size < 512) {
-                console.warn('[CoverDebug:Main] get-cached-image REJECT tiny file', {
-                    gameId: String(gameId),
-                    type,
-                    found,
-                    size,
-                });
-                return null;
-            }
-        } catch (err) {
-            console.warn('[CoverDebug:Main] get-cached-image stat ERROR', {
-                gameId: String(gameId),
-                type,
-                found,
-                error: err?.message || String(err),
-            });
-            return null;
-        }
-
-        const fileUrl = imageCache.filePathToFileUrl(abs);
-
-        console.log('[CoverDebug:Main] get-cached-image HIT', {
-            gameId: String(gameId),
-            type,
-            found,
-            fileUrl,
-        });
-
-        return fileUrl;
-    } catch (err) {
-        console.warn('[CoverDebug:Main] get-cached-image ERROR', {
-            gameId: String(gameId),
-            type,
-            error: err?.message || String(err),
-        });
-        return null;
-    }
-});
-
-    ipcMain.handle('update-game-image', (_, id, imgPath, type) =>
-        require('./gameScanner').updateGameImage(id, imgPath, type));
-    ipcMain.handle('reset-game-image', (_, id, type) =>
-        require('./gameScanner').resetGameImage(id, type));
 
     // ---- Game Launch ----
 ipcMain.handle('launch-game', async (_, command, gameId, gamePath, gameName, options = {}) => {

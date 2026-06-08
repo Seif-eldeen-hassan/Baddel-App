@@ -109,9 +109,31 @@ test('preload: YouTube WebContentsView IPC methods removed (webview replaces the
 
 // ── main.js guard ────────────────────────────────────────────────────────────
 
-test('main.js: registers get-image-cache-dir-url-sync synchronous IPC handler', () => {
-    assert.match(mainJs, /ipcMain\.on\s*\(\s*['"]get-image-cache-dir-url-sync['"]/,
-        'main.js must register the synchronous IPC handler used by preload');
+const imageHandlersJs = fs.readFileSync(path.join(ROOT, 'handlers', 'imageHandlers.js'), 'utf8');
+
+test('imageHandlers.js: registers get-image-cache-dir-url-sync synchronous IPC handler', () => {
+    assert.match(imageHandlersJs, /ipcMain\.on\s*\(\s*['"]get-image-cache-dir-url-sync['"]/,
+        'imageHandlers.js must register the synchronous IPC handler used by preload');
+});
+
+test('imageHandlers.js: no root-relative require for services/imageWebpCache (wrong path from handlers/)', () => {
+    assert.doesNotMatch(imageHandlersJs, /require\s*\(\s*['"]\.\/services\/imageWebpCache['"]\s*\)/,
+        "imageHandlers.js must not require('./services/imageWebpCache') — path is wrong from handlers/ subdirectory; use the imageWebpCache dep instead");
+});
+
+test('imageHandlers.js: no root-relative require for gameScanner (wrong path from handlers/)', () => {
+    assert.doesNotMatch(imageHandlersJs, /require\s*\(\s*['"]\.\/gameScanner['"]\s*\)/,
+        "imageHandlers.js must not require('./gameScanner') — path is wrong from handlers/ subdirectory; use updateGameImage/resetGameImage deps instead");
+});
+
+test('imageHandlers.js: update-game-image uses updateGameImage dep, not inline require', () => {
+    assert.match(imageHandlersJs, /updateGameImage\s*\(/,
+        'update-game-image handler must call the updateGameImage dep passed from main.js');
+});
+
+test('imageHandlers.js: reset-game-image uses resetGameImage dep, not inline require', () => {
+    assert.match(imageHandlersJs, /resetGameImage\s*\(/,
+        'reset-game-image handler must call the resetGameImage dep passed from main.js');
 });
 
 test('main.js: YouTube WebContentsView IPC handlers removed (replaced by webview tag)', () => {
