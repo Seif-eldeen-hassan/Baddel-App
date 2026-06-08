@@ -11,8 +11,9 @@ const ACC_JS  = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),    'utf8'
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),    'utf8');
 const CSS         = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
 const ACCOUNTS_CSS = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),  'utf8');
-const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'),               'utf8');
-const SYNC_JS = fs.readFileSync(path.join(ROOT, 'platformSync.js'),       'utf8');
+const MAIN_JS             = fs.readFileSync(path.join(ROOT, 'main.js'),               'utf8');
+const SYNC_JS             = fs.readFileSync(path.join(ROOT, 'platformSync.js'),       'utf8');
+const GAME_LIBRARY_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers/gameLibraryHandlers.js'), 'utf8');
 
 // ── Task D — Platform filter normalization ────────────────────────────────────
 
@@ -696,8 +697,8 @@ test('preload.js: onGameDeletedPermanently is exposed via contextBridge', () => 
 });
 
 test('main.js: delete-game-permanently sends game-deleted-permanently event on success', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('delete-game-permanently'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 600);
+    const handlerIdx = GAME_LIBRARY_HANDLERS_JS.indexOf("ipcMain.handle('delete-game-permanently'");
+    const handler = GAME_LIBRARY_HANDLERS_JS.slice(handlerIdx, handlerIdx + 600);
     assert.match(handler, /game-deleted-permanently/, 'must send game-deleted-permanently');
     assert.match(handler, /\.send\('game-deleted-permanently'.*\{\s*id\s*\}/, 'must include id in payload');
 });

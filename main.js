@@ -9,7 +9,11 @@ const util = require('util');
 const execAsync = util.promisify(exec);
 const { BrowserView, WebContentsView } = require('electron');
 
-const { scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage } = require('./gameScanner');
+const {
+    scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage,
+    removeGame, renameGame, unhideAllGames, getHiddenGames,
+    restoreSpecificGames, deleteGamePermanently, reorderLibrary,
+} = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
@@ -1869,49 +1873,22 @@ app.whenReady().then(async () => {
         return result;
     });
 
-    ipcMain.handle('remove-game', async (_, id) => {
-        try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        const games = await getSavedGames();
-        const game = games.find(g => g.id === id);
-        const platform = _detectPlatform(game?.command);
-        const result = await require('./gameScanner').removeGame(id);
-        analytics.logGameRemoved(platform).catch(() => {});
-        return result;
-    });
-    ipcMain.handle('rename-game', (_, id, name) => {
-        try {
-            ipcValidation.assertSafeId(id, 'id');
-            ipcValidation.assertString(name, 'name', 256);
-        } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        return require('./gameScanner').renameGame(id, name);
-    });
-    ipcMain.handle('scan-all-games', async () => {
-        const games = await require('./gameScanner').scanAllGames();
-        const platforms = [...new Set(games.map(g => g.platform).filter(Boolean))];
-        analytics.logLibraryScanned(games.length, platforms).catch(() => {});
-        return games;
-    });
-    ipcMain.handle('unhide-all-games', () => require('./gameScanner').unhideAllGames());
-    ipcMain.handle('get-hidden-games', () => require('./gameScanner').getHiddenGames());
-    ipcMain.handle('restore-specific-games', async (_, ids) => {
-        const result = await require('./gameScanner').restoreSpecificGames(ids);
-        if (result.status === 'success') analytics.logGameRestored(ids.length).catch(() => {});
-        return result;
-    });
-    ipcMain.handle('delete-game-permanently', async (_, id) => {
-        try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        const result = await require('./gameScanner').deleteGamePermanently(id);
-        if (result.status === 'success') {
-            analytics.logGameDeletedForever().catch(() => {});
-            if (mainWindow && !mainWindow.isDestroyed()) {
-                mainWindow.webContents.send('game-deleted-permanently', { id });
-            }
-        }
-        return result;
-    });
-    ipcMain.handle('reorder-library', (_, ids) => {
-        try { ipcValidation.assertArrayOfStrings(ids, 'ids'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        return require('./gameScanner').reorderLibrary(ids);
+    // ── Game Library IPC (moved to handlers/gameLibraryHandlers.js) ──────────
+    require('./handlers/gameLibraryHandlers').register(ipcMain, {
+        ipcValidation,
+        getSavedGames,
+        scanAllGames,
+        removeGame,
+        renameGame,
+        unhideAllGames,
+        getHiddenGames,
+        restoreSpecificGames,
+        deleteGamePermanently,
+        reorderLibrary,
+        getDynamicGameExes,
+        _detectPlatform,
+        analytics,
+        getMainWindow: () => mainWindow,
     });
     ipcMain.handle('save-game-metadata', async (_, id, meta, opts) => {
         try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
@@ -3529,19 +3506,6 @@ ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
     // ---- Collections (moved to handlers/collectionHandlers.js) ----
     require('./handlers/collectionHandlers').register(ipcMain, { colHandler, analytics });
 
-    // ── Lightweight single-game read (no scan, no background work) ────────────
-    // Used by game-details.js instead of get-installed-games so that opening a
-    // game details page never triggers a background scan or library-updated flood.
-    ipcMain.handle('get-game-by-id', async (_, gameId) => {
-        try {
-            const stored = getSavedGames();
-            return stored.find(g => String(g.id) === String(gameId)) || null;
-        } catch (err) {
-            console.warn('[get-game-by-id] error:', err.message);
-            return null;
-        }
-    });
-
     // ── Baddel Server IPC (moved to handlers/baddelApiHandlers.js) ───────────
     require('./handlers/baddelApiHandlers').register(ipcMain, { baddelApi });
 
@@ -4382,8 +4346,6 @@ ipcMain.handle('check-for-updates', async () => {
         console.warn('[AutoUpdater] Manual check failed:', err.message);
     }
 });
-
-ipcMain.handle('get-dynamic-game-exes', (_, gameId, gamePath) => getDynamicGameExes(gameId, gamePath));
 
 // YouTube trailers are now rendered via <webview> tag in the renderer.
 // The will-attach-webview + web-contents-created handlers above enforce security.
