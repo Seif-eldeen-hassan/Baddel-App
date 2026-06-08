@@ -3481,13 +3481,11 @@ ipcMain.handle('get-game-metadata', async (_, originalGameName, hints = {}) => {
     }
 });
 
-ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
-    try {
-        const appId = payload.appId || _extractSteamAppId(payload.gameName || '', payload);
-        return await _enqueueAchievementFetch(() => _fetchAchievementsForApp({ ...payload, appId }));
-    } catch (err) {
-        return { status: 'error', message: err?.message || 'Failed to load achievements' };
-    }
+// ── Achievement IPC (moved to handlers/achievementHandlers.js) ───────────
+require('./handlers/achievementHandlers').register(ipcMain, {
+    _extractSteamAppId,
+    _enqueueAchievementFetch,
+    _fetchAchievementsForApp,
 });
 
     // ---- Collections (moved to handlers/collectionHandlers.js) ----
