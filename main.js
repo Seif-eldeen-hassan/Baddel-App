@@ -15,6 +15,7 @@ const {
     restoreSpecificGames, deleteGamePermanently, reorderLibrary,
     updateGameMetadata, saveFullMetadata, loadFullMetadata,
     updatePlaytime, setTimeTrackingEnabled, getTimeTrackingEnabled,
+    refetchMissingImages, runBackgroundMetadataPipeline,
 } = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
@@ -1680,62 +1681,17 @@ app.whenReady().then(async () => {
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
 
-    // ---- Games Library ----
-    // ── FIX: guard against concurrent background scans ──────────────────────
-    // get-installed-games is called by BOTH app.js (initSystem) and accounts.js
-    // (renderAllGamesView) during startup.  Without a guard, each call launches
-    // an independent scanAllGames() in the background → two 'library-updated'
-    // events arrive at the renderer → EnrichQueue drains twice on the same games
-    // → duplicate lookupGameServer calls, 429 rate-limit storms, and skeleton hangs.
-    let _backgroundScanInProgress = false;
-
-    ipcMain.handle('get-installed-games', async () => {
-        const stored = getSavedGames();
-
-        // Helper: notify renderer when a single game's images are ready
-        const notifyGameImageUpdated = (game) => {
-            if (mainWindow) mainWindow.webContents.send('game-image-updated', game);
-        };
-
-        if (stored.length === 0) {
-            // Fresh install / wiped DB — scan first, then refetch missing images
-            console.log('[Startup] Fresh install detected — running full scan + background metadata pipeline.');
-            const games = await scanAllGames();
-            // Fire image refetch in background; renderer gets live updates via 'game-image-updated'
-            require('./gameScanner').refetchMissingImages(notifyGameImageUpdated).catch(() => {});
-            // ── Run background metadata pipeline for non-Steam/Epic games ──────────
-            // Fires after scan so the DB is fully populated before we read it.
-            require('./gameScanner').runBackgroundMetadataPipeline(games).catch(err =>
-                console.warn('[BackgroundMetaPipeline] Fresh-install pipeline error:', err.message)
-            );
-            return games;
-        }
-
-        // Return stored immediately, sync in background.
-        // Only ONE background scan may run at a time — if a scan is already in
-        // progress (e.g. from a concurrent initSystem + renderAllGamesView call),
-        // skip launching a second one.  The first scan will still fire
-        // 'library-updated' when it completes, so no update is lost.
-        if (!_backgroundScanInProgress) {
-            _backgroundScanInProgress = true;
-            scanAllGames()
-                .then(updated => {
-                    _backgroundScanInProgress = false;
-                    if (mainWindow) mainWindow.webContents.send('library-updated', updated);
-                    // After scan, re-fetch images for any game still missing a cover
-                    require('./gameScanner').refetchMissingImages(notifyGameImageUpdated).catch(() => {});
-                    // ── Run background metadata pipeline for non-Steam/Epic games ──
-                    // Deferred 2 s so the library-updated render cycle settles first.
-                    setTimeout(() => {
-                        require('./gameScanner').runBackgroundMetadataPipeline(updated).catch(err =>
-                            console.warn('[BackgroundMetaPipeline] Background scan pipeline error:', err.message)
-                        );
-                    }, 2000);
-                })
-                .catch(() => { _backgroundScanInProgress = false; });
-        }
-
-        return stored;
+    // ── Installed Games IPC (moved to handlers/installedGamesHandlers.js) ────
+    // installedGamesState is declared here (inside whenReady) so its lifetime
+    // matches the app session and it is passed by reference into the handler.
+    const installedGamesState = { backgroundScanInProgress: false };
+    require('./handlers/installedGamesHandlers').register(ipcMain, {
+        getSavedGames,
+        scanAllGames,
+        refetchMissingImages,
+        runBackgroundMetadataPipeline,
+        getMainWindow: () => mainWindow,
+        installedGamesState,
     });
 
     // ── Game Library IPC (moved to handlers/gameLibraryHandlers.js) ──────────

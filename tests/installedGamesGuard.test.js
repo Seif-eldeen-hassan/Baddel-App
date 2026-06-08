@@ -1,8 +1,8 @@
 'use strict';
 // Safety tests for get-installed-games.
 // These tests lock in the behavioral contracts of the handler — especially the
-// _backgroundScanInProgress guard — so that future extraction cannot silently
-// break the concurrent-scan protection or background pipeline ordering.
+// installedGamesState.backgroundScanInProgress guard — so that the extraction
+// cannot silently break the concurrent-scan protection or background pipeline ordering.
 // All tests are source-level: no Electron process is started.
 
 const test   = require('node:test');
@@ -12,64 +12,67 @@ const path   = require('node:path');
 
 const ROOT    = path.resolve(__dirname, '..');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+const INSTALLED_GAMES_HANDLERS_JS = fs.readFileSync(
+    path.join(ROOT, 'handlers', 'installedGamesHandlers.js'), 'utf8'
+);
 
-const handlerStart = MAIN_JS.indexOf("ipcMain.handle('get-installed-games'");
-assert.ok(handlerStart !== -1, "get-installed-games handler must exist in main.js");
+const handlerStart = INSTALLED_GAMES_HANDLERS_JS.indexOf("ipcMain.handle('get-installed-games'");
+assert.ok(handlerStart !== -1, "get-installed-games handler must exist in handlers/installedGamesHandlers.js");
 
-// Slice enough source to cover the full handler body (~48 lines).
-// Use 4 000 chars to stay safe on Windows CRLF line endings.
-const HANDLER_SRC = MAIN_JS.slice(handlerStart, handlerStart + 4000);
+// Slice enough source to cover the full handler body.
+// 4 000 chars stays safe on Windows CRLF line endings.
+const HANDLER_SRC = INSTALLED_GAMES_HANDLERS_JS.slice(handlerStart, handlerStart + 4000);
 
-// ─── 1. Guard declaration ─────────────────────────────────────────────────────
+// ─── 1. State object declaration in main.js ───────────────────────────────────
 
-test('_backgroundScanInProgress is declared before get-installed-games handler', () => {
-    const guardIdx = MAIN_JS.indexOf('let _backgroundScanInProgress');
-    assert.ok(guardIdx !== -1, 'guard variable must be declared in main.js');
-    assert.ok(
-        guardIdx < handlerStart,
-        '_backgroundScanInProgress must be declared before the handler so the handler closes over it'
-    );
+test('installedGamesState is declared in main.js with backgroundScanInProgress: false', () => {
+    assert.match(MAIN_JS, /const installedGamesState\s*=\s*\{\s*backgroundScanInProgress:\s*false\s*\}/);
 });
 
-test('_backgroundScanInProgress is initialised to false', () => {
-    const guardIdx  = MAIN_JS.indexOf('let _backgroundScanInProgress');
-    const guardLine = MAIN_JS.slice(guardIdx, guardIdx + 60);
-    assert.match(guardLine, /_backgroundScanInProgress\s*=\s*false/);
+test('installedGamesState is passed to installedGamesHandlers register call in main.js', () => {
+    const registerIdx = MAIN_JS.indexOf("require('./handlers/installedGamesHandlers').register");
+    assert.ok(registerIdx !== -1, 'installedGamesHandlers register call must exist in main.js');
+    const registerBlock = MAIN_JS.slice(registerIdx, registerIdx + 400);
+    assert.match(registerBlock, /installedGamesState/);
 });
 
 // ─── 2. Concurrent-scan guard ─────────────────────────────────────────────────
 
-test('get-installed-games checks !_backgroundScanInProgress before launching background scan', () => {
-    assert.match(HANDLER_SRC, /!\s*_backgroundScanInProgress/);
+test('get-installed-games checks !installedGamesState.backgroundScanInProgress before launching background scan', () => {
+    assert.match(HANDLER_SRC, /!\s*installedGamesState\.backgroundScanInProgress/);
 });
 
-test('get-installed-games sets _backgroundScanInProgress = true before scan starts', () => {
-    assert.match(HANDLER_SRC, /_backgroundScanInProgress\s*=\s*true/);
+test('get-installed-games sets installedGamesState.backgroundScanInProgress = true before scan starts', () => {
+    assert.match(HANDLER_SRC, /installedGamesState\.backgroundScanInProgress\s*=\s*true/);
 });
 
-test('_backgroundScanInProgress is set synchronously before scanAllGames is invoked (no await in between)', () => {
+test('installedGamesState.backgroundScanInProgress is set synchronously before scanAllGames is invoked (no await in between)', () => {
     // This is the critical atomicity invariant: the guard must be raised
     // synchronously (before any microtask boundary) so that a concurrent
     // IPC call arriving on the same turn sees the flag already set.
-    const setIdx      = HANDLER_SRC.indexOf('_backgroundScanInProgress = true');
+    const setAnchor   = 'installedGamesState.backgroundScanInProgress = true';
+    const setIdx      = HANDLER_SRC.indexOf(setAnchor);
     const scanCallIdx = HANDLER_SRC.indexOf('scanAllGames()', setIdx);
-    assert.ok(setIdx !== -1, '_backgroundScanInProgress must be set to true');
+    assert.ok(setIdx !== -1, 'backgroundScanInProgress must be set to true');
     assert.ok(scanCallIdx !== -1, 'scanAllGames() must follow the guard set');
     assert.ok(setIdx < scanCallIdx, 'guard must be set before scanAllGames is called');
-    const between = HANDLER_SRC.slice(setIdx + '_backgroundScanInProgress = true'.length, scanCallIdx);
+    const between = HANDLER_SRC.slice(setIdx + setAnchor.length, scanCallIdx);
     assert.ok(!/\bawait\b/.test(between), 'no await may appear between the guard set and the scanAllGames call');
 });
 
-test('_backgroundScanInProgress is reset to false in both success and failure paths', () => {
+test('installedGamesState.backgroundScanInProgress is reset to false in both success and failure paths', () => {
     // There must be exactly two resets: one in .then() (success) and one in .catch() (failure).
-    const resets = HANDLER_SRC.match(/_backgroundScanInProgress\s*=\s*false/g);
+    const resets = HANDLER_SRC.match(/installedGamesState\.backgroundScanInProgress\s*=\s*false/g);
     assert.ok(resets && resets.length >= 2, 'guard must be reset in both .then() and .catch() so future calls are not permanently blocked');
 });
 
-test('get-installed-games resets _backgroundScanInProgress to false after scan failure (.catch path)', () => {
+test('get-installed-games resets installedGamesState.backgroundScanInProgress to false after scan failure (.catch path)', () => {
     // Failure path: if scanAllGames() rejects, the guard must be cleared so
     // the next call to get-installed-games can attempt a background scan again.
-    assert.match(HANDLER_SRC, /\.catch\(\s*\(\s*\)\s*=>\s*\{\s*_backgroundScanInProgress\s*=\s*false/);
+    assert.match(
+        HANDLER_SRC,
+        /\.catch\(\s*\(\s*\)\s*=>\s*\{\s*installedGamesState\.backgroundScanInProgress\s*=\s*false/
+    );
 });
 
 // ─── 3. Fresh-install (empty DB) path ────────────────────────────────────────
@@ -105,7 +108,7 @@ test('get-installed-games returns stored games immediately in normal path', () =
 });
 
 test('return stored appears after the guard check, not inside the fresh-install branch', () => {
-    const guardCheckIdx   = HANDLER_SRC.indexOf('!_backgroundScanInProgress');
+    const guardCheckIdx   = HANDLER_SRC.indexOf('!installedGamesState.backgroundScanInProgress');
     const returnStoredIdx = HANDLER_SRC.lastIndexOf('return stored');
     assert.ok(guardCheckIdx !== -1, 'guard check must be present');
     assert.ok(returnStoredIdx !== -1, 'return stored must be present');
@@ -133,8 +136,8 @@ test('runBackgroundMetadataPipeline in normal path is wrapped in setTimeout defe
     // runBackgroundMetadataPipeline appears AFTER the setTimeout anchor.
     assert.match(HANDLER_SRC, /setTimeout/);
     assert.match(HANDLER_SRC, /2000/);
-    const setTimeoutIdx     = HANDLER_SRC.indexOf('setTimeout');
-    const pipelineAfterIdx  = HANDLER_SRC.indexOf('runBackgroundMetadataPipeline', setTimeoutIdx);
+    const setTimeoutIdx    = HANDLER_SRC.indexOf('setTimeout');
+    const pipelineAfterIdx = HANDLER_SRC.indexOf('runBackgroundMetadataPipeline', setTimeoutIdx);
     assert.ok(
         pipelineAfterIdx !== -1,
         'runBackgroundMetadataPipeline must appear inside the setTimeout callback (after its opening)'
