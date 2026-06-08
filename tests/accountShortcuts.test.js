@@ -5,12 +5,13 @@ const fs     = require('node:fs');
 const path   = require('node:path');
 
 const ROOT        = path.resolve(__dirname, '..');
-const SERVICE_JS  = fs.readFileSync(path.join(ROOT, 'services/accountShortcuts.js'), 'utf8');
-const MAIN_JS     = fs.readFileSync(path.join(ROOT, 'main.js'),                     'utf8');
-const PRELOAD_JS  = fs.readFileSync(path.join(ROOT, 'preload.js'),                  'utf8');
-const ACC_JS      = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),          'utf8');
-const ACC_CSS     = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),        'utf8');
-const HANDLER_JS  = fs.readFileSync(path.join(ROOT, 'accountsHandler.js'),          'utf8');
+const SERVICE_JS  = fs.readFileSync(path.join(ROOT, 'services/accountShortcuts.js'),         'utf8');
+const MAIN_JS     = fs.readFileSync(path.join(ROOT, 'main.js'),                             'utf8');
+const PRELOAD_JS  = fs.readFileSync(path.join(ROOT, 'preload.js'),                          'utf8');
+const ACC_JS      = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                  'utf8');
+const ACC_CSS     = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),                'utf8');
+const HANDLER_JS  = fs.readFileSync(path.join(ROOT, 'accountsHandler.js'),                  'utf8');
+const ACCOUNT_SHORTCUT_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'accountShortcutHandlers.js'), 'utf8');
 
 // ── Load pure functions (no Electron at require-time if we mock the module) ─
 
@@ -168,22 +169,22 @@ test('accountsHandler.switchAccountByPlatform covers all 7 platforms', () => {
     assert.match(fn, /rockstar/);
 });
 
-// ── 6. main.js IPC handlers registered ──────────────────────────────────────
+// ── 6. accountShortcutHandlers.js IPC handlers registered ───────────────────
 
 test('main.js registers account-shortcuts:list IPC handler', () => {
-    assert.match(MAIN_JS, /account-shortcuts:list/);
+    assert.match(ACCOUNT_SHORTCUT_HANDLERS_JS, /account-shortcuts:list/);
 });
 
 test('main.js registers account-shortcuts:set IPC handler', () => {
-    assert.match(MAIN_JS, /account-shortcuts:set/);
+    assert.match(ACCOUNT_SHORTCUT_HANDLERS_JS, /account-shortcuts:set/);
 });
 
 test('main.js registers account-shortcuts:clear IPC handler', () => {
-    assert.match(MAIN_JS, /account-shortcuts:clear/);
+    assert.match(ACCOUNT_SHORTCUT_HANDLERS_JS, /account-shortcuts:clear/);
 });
 
 test('main.js registers account-shortcuts:validate IPC handler', () => {
-    assert.match(MAIN_JS, /account-shortcuts:validate/);
+    assert.match(ACCOUNT_SHORTCUT_HANDLERS_JS, /account-shortcuts:validate/);
 });
 
 test('main.js calls accountShortcuts.registerAll on startup', () => {
@@ -517,9 +518,9 @@ test('main-process accountShortcuts.setShortcut validates before registering', (
 });
 
 test('main-process IPC set handler wraps setShortcut and returns error', () => {
-    const block = MAIN_JS.slice(
-        MAIN_JS.indexOf("'account-shortcuts:set'"),
-        MAIN_JS.indexOf("'account-shortcuts:set'") + 200
+    const block = ACCOUNT_SHORTCUT_HANDLERS_JS.slice(
+        ACCOUNT_SHORTCUT_HANDLERS_JS.indexOf("'account-shortcuts:set'"),
+        ACCOUNT_SHORTCUT_HANDLERS_JS.indexOf("'account-shortcuts:set'") + 200
     );
     assert.match(block, /setShortcut/);
     assert.match(block, /status.*error|error.*status/);

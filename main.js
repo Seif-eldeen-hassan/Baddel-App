@@ -3633,22 +3633,8 @@ ipcMain.handle('get-game-achievements', async (_, payload = {}) => {
     registerAccountHandlers(ipcMain);
     registerPlatformSyncHandlers(ipcMain, () => mainWindow);
 
-    // ── Account Shortcuts IPC ──────────────────────────────────────────────
-    ipcMain.handle('account-shortcuts:list', async () => {
-        try { return await accountShortcuts.getAll(); }
-        catch (err) { return { status: 'error', message: err.message }; }
-    });
-    ipcMain.handle('account-shortcuts:set', async (_, params) => {
-        try { return await accountShortcuts.setShortcut(params); }
-        catch (err) { return { status: 'error', message: err.message }; }
-    });
-    ipcMain.handle('account-shortcuts:clear', async (_, params) => {
-        try { return await accountShortcuts.clearShortcut(params); }
-        catch (err) { return { status: 'error', message: err.message }; }
-    });
-    ipcMain.handle('account-shortcuts:validate', (_, accelerator) => {
-        return accountShortcuts.validateAccelerator(accelerator);
-    });
+    // ── Account Shortcuts IPC (moved to handlers/accountShortcutHandlers.js) ──
+    require('./handlers/accountShortcutHandlers').register(ipcMain, { accountShortcuts });
 
     // Register global shortcuts — fires switchAccountByPlatform and shows a notification.
     await accountShortcuts.registerAll(async (platform, accountId, accountName) => {
