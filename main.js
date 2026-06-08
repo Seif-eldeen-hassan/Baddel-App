@@ -1803,43 +1803,11 @@ app.whenReady().then(async () => {
         activeTrackers,
     });
 
-    // ---- Riot Client manual path selection (legacy, kept for backward compat) ----
-    ipcMain.handle('select-riot-client-manually', async () => {
-        const result = await dialog.showOpenDialog(mainWindow, {
-            title:       'Locate RiotClientServices.exe',
-            properties:  ['openFile'],
-            filters:     [{ name: 'RiotClientServices.exe', extensions: ['exe'] }],
-        });
-        if (result.canceled || !result.filePaths.length) return { success: false, canceled: true };
-        const selected = result.filePaths[0];
-        try {
-            const riotPathResolver = require('./services/riotPathResolver');
-            const valid = await riotPathResolver.saveManualRiotClientPath(selected);
-            return { success: true, path: valid, platform: 'riot' };
-        } catch (err) {
-            return { success: false, message: err.message, code: err.code };
-        }
-    });
-
-    // ---- Generic launcher manual path selection (all platforms) ----
-    ipcMain.handle('select-launcher-manually', async (_, platform) => {
-        const launcherPathResolver = require('./services/launcherPathResolver');
-        const info = launcherPathResolver.getPlatformInfo(platform);
-        if (!info) return { success: false, code: 'UNSUPPORTED_PLATFORM', message: `Unknown platform: ${platform}` };
-
-        const result = await dialog.showOpenDialog(mainWindow, {
-            title:      info.dialogTitle || `Locate ${info.name}`,
-            properties: ['openFile'],
-            filters:    [{ name: `${info.name} executable`, extensions: ['exe'] }],
-        });
-        if (result.canceled || !result.filePaths.length) return { success: false, canceled: true };
-        const selected = result.filePaths[0];
-        try {
-            const valid = await launcherPathResolver.saveManualLauncherPath(platform, selected);
-            return { success: true, path: valid, platform };
-        } catch (err) {
-            return { success: false, message: err.message, code: err.code };
-        }
+    require('./handlers/launcherPathHandlers').register(ipcMain, {
+        dialog,
+        getMainWindow:        () => mainWindow,
+        riotPathResolver:     require('./services/riotPathResolver'),
+        launcherPathResolver: require('./services/launcherPathResolver'),
     });
 
     require('./handlers/creatorPageHandlers').register(ipcMain, {
