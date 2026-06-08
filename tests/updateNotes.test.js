@@ -9,6 +9,7 @@ const PRELOAD_JS = fs.readFileSync(path.join(__dirname, '..', 'preload.js'),    
 const APP_JS     = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
 const HTML       = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard.html'), 'utf8');
 const CSS        = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'dashboard.css'), 'utf8');
+const UPDATE_NOTES_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'updateNotesHandlers.js'), 'utf8');
 
 // ── main.js ──────────────────────────────────────────────────────────────────
 
@@ -112,27 +113,27 @@ test('main.js: restart-and-update calls markUpdateNotesPending before quitAndIns
 
 test("main.js: get-pending-update-notes IPC handler exists", () => {
     assert.ok(
-        MAIN_JS.includes("'get-pending-update-notes'"),
+        UPDATE_NOTES_HANDLERS_JS.includes("'get-pending-update-notes'"),
         "get-pending-update-notes handler not found"
     );
 });
 
 test("main.js: get-pending-update-notes calls getPendingUpdateNotesPayload", () => {
-    const idx = MAIN_JS.indexOf("'get-pending-update-notes'");
-    const block = MAIN_JS.slice(idx, idx + 300);
+    const idx = UPDATE_NOTES_HANDLERS_JS.indexOf("'get-pending-update-notes'");
+    const block = UPDATE_NOTES_HANDLERS_JS.slice(idx, idx + 300);
     assert.ok(block.includes('getPendingUpdateNotesPayload'), 'getPendingUpdateNotesPayload not called in handler');
 });
 
 test("main.js: mark-update-notes-shown IPC handler exists", () => {
     assert.ok(
-        MAIN_JS.includes("'mark-update-notes-shown'"),
+        UPDATE_NOTES_HANDLERS_JS.includes("'mark-update-notes-shown'"),
         "mark-update-notes-shown handler not found"
     );
 });
 
 test("main.js: mark-update-notes-shown calls markUpdateNotesShown", () => {
-    const idx = MAIN_JS.indexOf("'mark-update-notes-shown'");
-    const block = MAIN_JS.slice(idx, idx + 300);
+    const idx = UPDATE_NOTES_HANDLERS_JS.indexOf("'mark-update-notes-shown'");
+    const block = UPDATE_NOTES_HANDLERS_JS.slice(idx, idx + 300);
     assert.ok(block.includes('markUpdateNotesShown'), 'markUpdateNotesShown not called in handler');
 });
 

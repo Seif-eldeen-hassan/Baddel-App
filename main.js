@@ -3867,25 +3867,8 @@ app.on('before-quit', () => {
 // ---- External-link handlers (open-external-url, open-community-url — moved to handlers/externalLinkHandlers.js) ----
 require('./handlers/externalLinkHandlers').register(ipcMain, { shell, ipcValidation, safeLauncher });
 
-// ── Update notes IPC ─────────────────────────────────────────────────────────
-
-ipcMain.handle('get-pending-update-notes', () => {
-    try {
-        return { status: 'success', notes: getPendingUpdateNotesPayload() };
-    } catch (err) {
-        console.warn('[UpdateNotes] get failed:', err?.message || err);
-        return { status: 'error', message: err?.message || String(err), notes: null };
-    }
-});
-
-ipcMain.handle('mark-update-notes-shown', (_event, version) => {
-    try {
-        markUpdateNotesShown(version || app.getVersion());
-        return { status: 'success' };
-    } catch (err) {
-        return { status: 'error', message: err?.message || String(err) };
-    }
-});
+// ── Update notes IPC (moved to handlers/updateNotesHandlers.js) ──────────────
+require('./handlers/updateNotesHandlers').register(ipcMain, { getPendingUpdateNotesPayload, markUpdateNotesShown, app });
 
 // ── Reliable install opener with cold-start retry ────────────────────────────
 const _installInFlight = new Set();
