@@ -739,12 +739,12 @@ test('Creator rating editor active path uses one modal and internal steps', () =
 
 test('Page Pack IPC embeds and resolves local assets', () => {
     const preload = fs.readFileSync(path.join(ROOT, 'preload.js'), 'utf8');
-    const main = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const creatorHandlers = fs.readFileSync(path.join(ROOT, 'handlers', 'creatorPageHandlers.js'), 'utf8');
     assert.match(preload, /exportCreatorPagePack/);
     assert.match(preload, /resolveCreatorPageAssets/);
-    assert.match(main, /creatorEmbedAssets/);
-    assert.match(main, /asset:\/\//);
-    assert.match(main, /creator-page-assets/);
+    assert.match(creatorHandlers, /creatorEmbedAssets/);
+    assert.match(creatorHandlers, /asset:\/\//);
+    assert.match(creatorHandlers, /creator-page-assets/);
 });
 
 test('Creator Mode state normalizer controls normal edit and preview classes', () => {
