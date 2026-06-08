@@ -1,11 +1,11 @@
 'use strict';
-// Safety tests for get-game-metadata before extraction.
+// Safety tests for get-game-metadata.
 // Protects:
 //   _canonicalSteamEpicId — Steam/Epic ID extraction from hints
 //   _mapPlatformHint       — raw platform string → server platformHint value
 //   handler structure      — server-pending shape, forceMetadata logic,
 //                            MRM cooldown gate, mrm.resolve flags, error/fallback paths
-// All tests are source-level (reading main.js as text) or use local mirror functions.
+// All tests are source-level (reading handlers/gameMetadataHandlers.js) or use local mirrors.
 // No Electron process is started.
 
 const test   = require('node:test');
@@ -15,19 +15,28 @@ const path   = require('node:path');
 
 const ROOT    = path.resolve(__dirname, '..');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+const GAME_METADATA_HANDLERS_JS = fs.readFileSync(
+    path.join(ROOT, 'handlers', 'gameMetadataHandlers.js'), 'utf8'
+);
 
 // ── Production function anchors ───────────────────────────────────────────────
 
-const canonicalFnStart = MAIN_JS.indexOf('function _canonicalSteamEpicId(');
-const mapHintFnStart   = MAIN_JS.indexOf('function _mapPlatformHint(');
-const handlerStart     = MAIN_JS.indexOf("ipcMain.handle('get-game-metadata'");
+const canonicalFnStart = GAME_METADATA_HANDLERS_JS.indexOf('function _canonicalSteamEpicId(');
+const mapHintFnStart   = GAME_METADATA_HANDLERS_JS.indexOf('function _mapPlatformHint(');
+const handlerStart     = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
 
-assert.ok(canonicalFnStart !== -1, '_canonicalSteamEpicId must be defined in main.js');
-assert.ok(mapHintFnStart   !== -1, '_mapPlatformHint must be defined in main.js');
-assert.ok(handlerStart     !== -1, "get-game-metadata handler must exist in main.js");
+assert.ok(canonicalFnStart !== -1, '_canonicalSteamEpicId must be defined in handlers/gameMetadataHandlers.js');
+assert.ok(mapHintFnStart   !== -1, '_mapPlatformHint must be defined in handlers/gameMetadataHandlers.js');
+assert.ok(handlerStart     !== -1, "get-game-metadata handler must exist in handlers/gameMetadataHandlers.js");
 
-// 9 500 chars covers the full ~167-line handler body on Windows CRLF line endings.
-const HANDLER_SRC = MAIN_JS.slice(handlerStart, handlerStart + 9500);
+// Verify the register call is wired up in main.js
+assert.ok(
+    MAIN_JS.includes("require('./handlers/gameMetadataHandlers').register"),
+    'main.js must register gameMetadataHandlers'
+);
+
+// 9 500 chars covers the full handler body on Windows CRLF line endings.
+const HANDLER_SRC = GAME_METADATA_HANDLERS_JS.slice(handlerStart, handlerStart + 9500);
 
 // ── Local mirrors of private helpers ─────────────────────────────────────────
 // Pattern from metadataPipeline.test.js: replicate private helper logic locally
@@ -134,30 +143,30 @@ test('_canonicalSteamEpicId: empty platform returns null', () => {
 // Catch any divergence between the local mirror above and the production function.
 
 test('_canonicalSteamEpicId source: steam branch checks allIds.steam, appId, steamAppId', () => {
-    const src = MAIN_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
+    const src = GAME_METADATA_HANDLERS_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
     assert.match(src, /hints\.allIds\?\.steam/);
     assert.match(src, /hints\.appId/);
     assert.match(src, /hints\.steamAppId/);
 });
 
 test('_canonicalSteamEpicId source: steam branch validates all-digit id via /^\\d+$/', () => {
-    const src = MAIN_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
+    const src = GAME_METADATA_HANDLERS_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
     // In the source file the regex is the 7-char string /^\d+$/ with a literal backslash.
     assert.ok(src.includes('/^\\d+$/'), 'must use /^\\d+$/ to validate numeric steam id');
 });
 
 test('_canonicalSteamEpicId source: epic branch validates length >= 10', () => {
-    const src = MAIN_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
+    const src = GAME_METADATA_HANDLERS_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
     assert.match(src, /cleaned\.length\s*>=\s*10/);
 });
 
 test('_canonicalSteamEpicId source: epic branch validates alphanumeric+dash char class', () => {
-    const src = MAIN_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
+    const src = GAME_METADATA_HANDLERS_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
     assert.ok(src.includes('[a-z0-9-]'), 'must use [a-z0-9-] char class for epic namespace');
 });
 
 test('_canonicalSteamEpicId source: epic branch checks catalogNamespace and epicNamespace', () => {
-    const src = MAIN_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
+    const src = GAME_METADATA_HANDLERS_JS.slice(canonicalFnStart, canonicalFnStart + 1500);
     assert.match(src, /catalogNamespace/);
     assert.match(src, /epicNamespace/);
 });
@@ -225,7 +234,7 @@ test('_mapPlatformHint: null and empty string both return null', () => {
 
 test('_mapPlatformHint source: all eight platform mappings are present', () => {
     // 1 000 chars stays safe on Windows CRLF — the function body is ~14 lines
-    const src = MAIN_JS.slice(mapHintFnStart, mapHintFnStart + 1000);
+    const src = GAME_METADATA_HANDLERS_JS.slice(mapHintFnStart, mapHintFnStart + 1000);
     assert.match(src, /xbox game pass/);
     assert.match(src, /ea app/);
     assert.match(src, /ubisoft connect/);

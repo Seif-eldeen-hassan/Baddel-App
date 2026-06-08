@@ -13,7 +13,8 @@ const CSS         = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'u
 const ACCOUNTS_CSS = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),  'utf8');
 const MAIN_JS             = fs.readFileSync(path.join(ROOT, 'main.js'),               'utf8');
 const SYNC_JS             = fs.readFileSync(path.join(ROOT, 'platformSync.js'),       'utf8');
-const GAME_LIBRARY_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers/gameLibraryHandlers.js'), 'utf8');
+const GAME_LIBRARY_HANDLERS_JS   = fs.readFileSync(path.join(ROOT, 'handlers/gameLibraryHandlers.js'),   'utf8');
+const GAME_METADATA_HANDLERS_JS  = fs.readFileSync(path.join(ROOT, 'handlers/gameMetadataHandlers.js'),  'utf8');
 
 // ── Task D — Platform filter normalization ────────────────────────────────────
 
@@ -825,9 +826,9 @@ test('gameScanner.js: deleteGamePermanently calls metadataCacheStore.deleteEntry
     assert.match(fn, /metadataCacheStore\.deleteEntry\(gameId\)/, 'must call metadataCacheStore.deleteEntry');
 });
 
-test('main.js: get-game-metadata passes force/bypassTtl to mrm.resolve when hints.force is true', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-game-metadata'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 9000);
+test('gameMetadataHandlers.js: get-game-metadata passes force/bypassTtl to mrm.resolve when hints.force is true', () => {
+    const handlerIdx = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
+    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 9000);
     assert.match(handler, /forceMetadata/, 'must compute forceMetadata');
     assert.match(handler, /hints\.force\s*===\s*true/, 'must check hints.force');
     assert.match(handler, /force:\s*forceMetadata/, 'must pass force to mrm.resolve');
@@ -835,9 +836,9 @@ test('main.js: get-game-metadata passes force/bypassTtl to mrm.resolve when hint
     assert.match(handler, /!forceMetadata.*cooldown|cooldown.*!forceMetadata/s, 'cooldown check must be gated on !forceMetadata');
 });
 
-test('main.js: get-game-metadata bypasses cooldown when source is manual-add-readd', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-game-metadata'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 6000);
+test('gameMetadataHandlers.js: get-game-metadata bypasses cooldown when source is manual-add-readd', () => {
+    const handlerIdx = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
+    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 6000);
     assert.match(handler, /manual-add-readd/, 'must include manual-add-readd source in forceMetadata check');
 });
 
