@@ -307,7 +307,7 @@ test('preload.js: saveMetadata accepts opts parameter', () => {
 });
 
 test('main.js: save-game-metadata handler forwards opts to updateGameMetadata', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers/localMetadataHandlers.js'), 'utf8');
     const idx = src.indexOf("'save-game-metadata'");
     assert.ok(idx !== -1, 'save-game-metadata handler must exist');
     const snippet = src.slice(idx, idx + 150);

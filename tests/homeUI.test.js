@@ -2309,7 +2309,7 @@ test('app.js: onGameImageUpdated uses _patchGameInMemory and does not early-retu
 });
 
 test('main.js: save-game-metadata handler emits game-image-updated on success', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(ROOT, 'handlers/localMetadataHandlers.js'), 'utf8');
     const handlerIdx = src.indexOf("ipcMain.handle('save-game-metadata'");
     assert.ok(handlerIdx > -1, 'save-game-metadata handler found');
     const block = src.slice(handlerIdx, handlerIdx + 600);

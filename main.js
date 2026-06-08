@@ -13,6 +13,7 @@ const {
     scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage,
     removeGame, renameGame, unhideAllGames, getHiddenGames,
     restoreSpecificGames, deleteGamePermanently, reorderLibrary,
+    updateGameMetadata, saveFullMetadata, loadFullMetadata,
 } = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
@@ -1890,29 +1891,15 @@ app.whenReady().then(async () => {
         analytics,
         getMainWindow: () => mainWindow,
     });
-    ipcMain.handle('save-game-metadata', async (_, id, meta, opts) => {
-        try { ipcValidation.assertSafeId(id, 'id'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        const result = await require('./gameScanner').updateGameMetadata(id, meta, opts || {});
-        if (result?.status === 'success') {
-            try {
-                const game = require('./gameScanner').getSavedGames().find(g => String(g.id) === String(id));
-                if (game && mainWindow && !mainWindow.isDestroyed()) {
-                    mainWindow.webContents.send('game-image-updated', game);
-                }
-            } catch (_) {}
-        }
-        return result;
+    // ── Local Metadata IPC (moved to handlers/localMetadataHandlers.js) ─────
+    require('./handlers/localMetadataHandlers').register(ipcMain, {
+        ipcValidation,
+        getSavedGames,
+        updateGameMetadata,
+        saveFullMetadata,
+        loadFullMetadata,
+        getMainWindow: () => mainWindow,
     });
-    ipcMain.handle('save-full-metadata', (_, gameId, title, platform, meta) => {
-        try {
-            ipcValidation.assertSafeId(gameId, 'gameId');
-            if (platform) ipcValidation.assertString(platform, 'platform', 32);
-        } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        return require('./gameScanner').saveFullMetadata(gameId, title, platform, meta);
-    });
-    ipcMain.handle('load-full-metadata', (_, gameId) =>
-        require('./gameScanner').loadFullMetadata(gameId)
-    );
     ipcMain.handle('update-playtime', (_, id, mins) => require('./gameScanner').updatePlaytime(id, mins));
 
     ipcMain.handle('set-time-tracking-enabled', async (_, gameId, enabled) => {
