@@ -115,7 +115,6 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
                         return {
                             path: root,
 
-                            // مهم: متحطش (C:\) هنا عشان الـ UI بيضيفها
                             label: volumeName || (root.toUpperCase().startsWith('C:') ? 'Local Disk' : 'Drive'),
 
                             icon: iconSvg('#8e8e93', 'drive'),
@@ -163,7 +162,6 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
                 pushUnique(result, {
                     path: d.path,
 
-                    // مهم: متحطش path جوه label
                     label: String(d.label || '').replace(/\s*\([A-Z]:\\?\)\s*$/i, '') || 'Drive',
 
                     icon: d.icon || iconSvg('#8e8e93', 'drive'),
