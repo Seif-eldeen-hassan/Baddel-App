@@ -1547,12 +1547,10 @@ app.on('web-contents-created', (_event, contents) => {
     });
 });
 
-ipcMain.on('minimize-app', () => mainWindow?.minimize());
-ipcMain.on('maximize-app', () => {
-    if (!mainWindow) return;
-    mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+require('./handlers/windowHandlers').register(ipcMain, {
+    getMainWindow: () => mainWindow,
+    app,
 });
-ipcMain.on('close-app', () => mainWindow?.close());
 
 // ============================================================
 // IMAGE CACHE
@@ -4185,6 +4183,6 @@ ipcMain.handle('launcher:open-install-url', async (event, payload) => {
 // ---- Analytics handlers (consent, log events — moved to handlers/analyticsHandlers.js) ----
 require('./handlers/analyticsHandlers').register(ipcMain, { analytics, fs, app });
 
-ipcMain.handle('get-app-version', () => app.getVersion());
+// get-app-version moved to handlers/windowHandlers.js
 // YouTube trailers are now rendered via <webview> tag in the renderer.
 // The will-attach-webview + web-contents-created handlers above enforce security.
