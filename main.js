@@ -1988,9 +1988,6 @@ app.whenReady().then(async () => {
         analytics.logLibraryScanned(games.length, platforms).catch(() => {});
         return games;
     });
-    ipcMain.handle('analytics-log-hud-sensor', (_, isEnabled) => {
-        analytics.logHudSensorToggled(isEnabled).catch(() => {});
-    });
     ipcMain.handle('unhide-all-games', () => require('./gameScanner').unhideAllGames());
     ipcMain.handle('get-hidden-games', () => require('./gameScanner').getHiddenGames());
     ipcMain.handle('restore-specific-games', async (_, ids) => {
@@ -2306,14 +2303,6 @@ app.whenReady().then(async () => {
         });
         if (result.canceled || !result.filePaths.length) return null;
         return JSON.parse(await fs.readFile(result.filePaths[0], 'utf8'));
-    });
-
-    ipcMain.handle('analytics-log-image-changed', (_, type, isReset) => {
-        analytics.logGameImageChanged(type, isReset).catch(() => {});
-    });
-    
-    ipcMain.handle('analytics-log-feedback', () => {
-        analytics.logFeedbackSent().catch(() => {});
     });
 
     // True if a file:// image still exists on disk (invalidates stale localStorage / JSON after cache wipe)
@@ -4861,27 +4850,8 @@ ipcMain.handle('launcher:open-install-url', async (event, payload) => {
     }
 });
 
-// ---- Analytics Consent ----
-ipcMain.handle('analytics-grant-consent',  () => analytics.grantConsent());
-ipcMain.handle('analytics-revoke-consent', () => analytics.revokeConsent());
-ipcMain.handle('analytics-is-enabled',     () => analytics.isConsentGiven());
-
-// ---- Consent Shown Flag (disk-based — survives app restarts) ----
-const CONSENT_SHOWN_FILE = path.join(app.getPath('userData'), 'analytics_consent_shown.json');
-ipcMain.handle('get-consent-shown', async () => {
-    try {
-        await fs.access(CONSENT_SHOWN_FILE);
-        return true;
-    } catch {
-        return false;
-    }
-});
-ipcMain.handle('set-consent-shown', async () => {
-    await fs.writeFile(CONSENT_SHOWN_FILE, JSON.stringify({ shown: true }), 'utf8');
-});
-ipcMain.handle('analytics-log-game-spin',  (_, isCustom) => {
-        analytics.logGameSpinClicked(isCustom).catch(() => {});
-});
+// ---- Analytics handlers (consent, log events — moved to handlers/analyticsHandlers.js) ----
+require('./handlers/analyticsHandlers').register(ipcMain, { analytics, fs, app });
 
 ipcMain.handle('get-app-version', () => app.getVersion());
 ipcMain.handle('check-for-updates', async () => {
