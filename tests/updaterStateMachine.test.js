@@ -5,6 +5,7 @@ const fs     = require('node:fs');
 const path   = require('node:path');
 
 const MAIN_JS = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+const AUTO_UPDATE_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers/autoUpdateHandlers.js'), 'utf8');
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -12,9 +13,9 @@ const MAIN_JS = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
 // closing brace.  Handles string literals so brace-characters inside strings
 // are not counted.  Throws if the anchor is not found or has no matching brace,
 // preventing tests from silently passing on a missing or truncated block.
-function fnBody(anchor) {
-    const start = MAIN_JS.indexOf(anchor);
-    if (start === -1) throw new Error(`Anchor "${anchor}" not found in main.js`);
+function _extractFnBody(src, anchor, label) {
+    const start = src.indexOf(anchor);
+    if (start === -1) throw new Error(`Anchor "${anchor}" not found in ${label}`);
 
     let i = start;
     let depth = 0;
@@ -22,11 +23,11 @@ function fnBody(anchor) {
     let inString = false;
     let stringChar = '';
 
-    while (i < MAIN_JS.length) {
-        const ch = MAIN_JS[i];
+    while (i < src.length) {
+        const ch = src[i];
 
         if (inString) {
-            if (ch === '\\') { i += 2; continue; } // skip escaped character
+            if (ch === '\\') { i += 2; continue; }
             if (ch === stringChar) inString = false;
         } else if (ch === '"' || ch === "'" || ch === '`') {
             inString = true;
@@ -36,12 +37,20 @@ function fnBody(anchor) {
             foundOpen = true;
         } else if (ch === '}' && foundOpen) {
             depth--;
-            if (depth === 0) return MAIN_JS.slice(start, i + 1);
+            if (depth === 0) return src.slice(start, i + 1);
         }
         i++;
     }
 
-    throw new Error(`No matching closing brace for anchor "${anchor}"`);
+    throw new Error(`No matching closing brace for anchor "${anchor}" in ${label}`);
+}
+
+function fnBody(anchor) {
+    return _extractFnBody(MAIN_JS, anchor, 'main.js');
+}
+
+function fnBodyHandler(anchor) {
+    return _extractFnBody(AUTO_UPDATE_HANDLERS_JS, anchor, 'handlers/autoUpdateHandlers.js');
 }
 
 // ─── 1. _updState shape ───────────────────────────────────────────────────────
@@ -96,22 +105,22 @@ test('stall watchdog sets downloading to false', () => {
 // ─── 3. Prepare timeout — 60-second timeout ───────────────────────────────────
 
 test('prepare timeout is 60 seconds (60_000 ms)', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /60_000/);
 });
 
 test('prepare timeout only fires when status is "preparing"', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /status.*preparing|preparing.*status/s);
 });
 
 test('prepare timeout transitions status to "error"', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /status\s*=\s*'error'/);
 });
 
 test('prepare timeout sends "update-error" with "did not start" message', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /update-error/);
     assert.match(block, /did not start|not start/i);
 });
@@ -207,18 +216,18 @@ test('autoUpdater error event sets downloading to false', () => {
 // ─── 9. start-update-download IPC guard logic ────────────────────────────────
 
 test('start-update-download: if already downloaded, re-sends update-ready without re-downloading', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /_updState\.downloaded/);
     assert.match(block, /update-ready/);
 });
 
 test('start-update-download: if already downloading, returns current status immediately', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /_updState\.downloading/);
 });
 
 test('start-update-download: sets status to "preparing" before calling downloadUpdate', () => {
-    const block = fnBody("'start-update-download'");
+    const block = fnBodyHandler("'start-update-download'");
     assert.match(block, /status\s*=\s*'preparing'/);
     assert.match(block, /downloadUpdate/);
 });
@@ -226,6 +235,6 @@ test('start-update-download: sets status to "preparing" before calling downloadU
 // ─── 10. restart-and-update ───────────────────────────────────────────────────
 
 test('restart-and-update: calls autoUpdater.quitAndInstall', () => {
-    const block = fnBody("'restart-and-update'");
+    const block = fnBodyHandler("'restart-and-update'");
     assert.match(block, /quitAndInstall/);
 });

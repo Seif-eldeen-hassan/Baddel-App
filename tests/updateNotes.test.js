@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 
 const MAIN_JS    = fs.readFileSync(path.join(__dirname, '..', 'main.js'),             'utf8');
+const AUTO_UPDATE_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers/autoUpdateHandlers.js'), 'utf8');
 const PRELOAD_JS = fs.readFileSync(path.join(__dirname, '..', 'preload.js'),          'utf8');
 const APP_JS     = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
 const HTML       = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard.html'), 'utf8');
@@ -101,9 +102,9 @@ test('main.js: markUpdateNotesShown writes lastShownVersion', () => {
 });
 
 test('main.js: restart-and-update calls markUpdateNotesPending before quitAndInstall', () => {
-    const idx = MAIN_JS.indexOf("'restart-and-update'");
+    const idx = AUTO_UPDATE_HANDLERS_JS.indexOf("'restart-and-update'");
     assert.ok(idx !== -1, "restart-and-update handler not found");
-    const block = MAIN_JS.slice(idx, idx + 1800);
+    const block = AUTO_UPDATE_HANDLERS_JS.slice(idx, idx + 1800);
     const pendingIdx = block.indexOf('markUpdateNotesPending');
     const quitIdx    = block.indexOf('autoUpdater.quitAndInstall(');
     assert.ok(pendingIdx !== -1, 'markUpdateNotesPending not found in restart-and-update');
@@ -367,9 +368,9 @@ test('main.js: update-downloaded handler calls markUpdateNotesPending(info.versi
 });
 
 test('main.js: restart-and-update uses savedState.pendingVersion as fallback (not currentVersion)', () => {
-    const idx = MAIN_JS.indexOf("'restart-and-update'");
+    const idx = AUTO_UPDATE_HANDLERS_JS.indexOf("'restart-and-update'");
     assert.ok(idx !== -1, 'restart-and-update handler not found');
-    const block = MAIN_JS.slice(idx, idx + 2000);
+    const block = AUTO_UPDATE_HANDLERS_JS.slice(idx, idx + 2000);
     assert.ok(
         block.includes('savedState.pendingVersion') || block.includes('readUpdateNotesState()'),
         'restart-and-update must read savedState.pendingVersion as fallback'
@@ -383,8 +384,8 @@ test('main.js: restart-and-update uses savedState.pendingVersion as fallback (no
 });
 
 test('main.js: restart-and-update logs warning when no target version available', () => {
-    const idx = MAIN_JS.indexOf("'restart-and-update'");
-    const block = MAIN_JS.slice(idx, idx + 2000);
+    const idx = AUTO_UPDATE_HANDLERS_JS.indexOf("'restart-and-update'");
+    const block = AUTO_UPDATE_HANDLERS_JS.slice(idx, idx + 2000);
     assert.ok(
         block.includes('no target version found'),
         'warning log missing for missing target version in restart-and-update'
