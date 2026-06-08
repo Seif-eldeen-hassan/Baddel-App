@@ -9,30 +9,31 @@ const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'),            'utf8');
 const PRELOAD = fs.readFileSync(path.join(ROOT, 'preload.js'),         'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),      'utf8');
+const EXTERNAL_LINK_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'externalLinkHandlers.js'), 'utf8');
 
 // ─── 1. IPC handler — open-community-url ────────────────────────────────────
 
-test('main.js: open-community-url handler is defined', () => {
-    assert.match(MAIN_JS, /ipcMain\.handle\('open-community-url'/, 'handler must be registered');
+test('externalLinkHandlers.js: open-community-url handler is defined', () => {
+    assert.match(EXTERNAL_LINK_HANDLERS_JS, /ipcMain\.handle\('open-community-url'/, 'handler must be registered');
 });
 
-test('main.js: open-community-url rejects non-https URLs', () => {
-    const idx = MAIN_JS.indexOf("ipcMain.handle('open-community-url'");
-    const block = MAIN_JS.slice(idx, idx + 800);
+test('externalLinkHandlers.js: open-community-url rejects non-https URLs', () => {
+    const idx = EXTERNAL_LINK_HANDLERS_JS.indexOf("ipcMain.handle('open-community-url'");
+    const block = EXTERNAL_LINK_HANDLERS_JS.slice(idx, idx + 800);
     assert.match(block, /protocol.*!==.*'https:'|'https:'.*!==.*protocol/s, 'must reject non-https protocol');
     assert.match(block, /PROTOCOL_NOT_ALLOWED/, 'must throw PROTOCOL_NOT_ALLOWED code');
 });
 
-test('main.js: open-community-url rejects unknown domains', () => {
-    const idx = MAIN_JS.indexOf("ipcMain.handle('open-community-url'");
-    const block = MAIN_JS.slice(idx, idx + 800);
+test('externalLinkHandlers.js: open-community-url rejects unknown domains', () => {
+    const idx = EXTERNAL_LINK_HANDLERS_JS.indexOf("ipcMain.handle('open-community-url'");
+    const block = EXTERNAL_LINK_HANDLERS_JS.slice(idx, idx + 800);
     assert.match(block, /_COMMUNITY_ALLOWED_DOMAINS\.has\(host\)/, 'must check domain allowlist');
     assert.match(block, /DOMAIN_NOT_ALLOWED/, 'must throw DOMAIN_NOT_ALLOWED code');
 });
 
-test('main.js: _COMMUNITY_ALLOWED_DOMAINS contains all five platforms', () => {
-    const idx = MAIN_JS.indexOf('_COMMUNITY_ALLOWED_DOMAINS');
-    const block = MAIN_JS.slice(idx, idx + 500);
+test('externalLinkHandlers.js: _COMMUNITY_ALLOWED_DOMAINS contains all five platforms', () => {
+    const idx = EXTERNAL_LINK_HANDLERS_JS.indexOf('_COMMUNITY_ALLOWED_DOMAINS');
+    const block = EXTERNAL_LINK_HANDLERS_JS.slice(idx, idx + 500);
     assert.match(block, /discord\.gg/,     'must allow discord.gg');
     assert.match(block, /instagram\.com/,  'must allow instagram.com');
     assert.match(block, /x\.com/,          'must allow x.com');
@@ -40,15 +41,15 @@ test('main.js: _COMMUNITY_ALLOWED_DOMAINS contains all five platforms', () => {
     assert.match(block, /tiktok\.com/,     'must allow tiktok.com');
 });
 
-test('main.js: open-community-url calls shell.openExternal on valid URL', () => {
-    const idx = MAIN_JS.indexOf("ipcMain.handle('open-community-url'");
-    const block = MAIN_JS.slice(idx, idx + 1200);
+test('externalLinkHandlers.js: open-community-url calls shell.openExternal on valid URL', () => {
+    const idx = EXTERNAL_LINK_HANDLERS_JS.indexOf("ipcMain.handle('open-community-url'");
+    const block = EXTERNAL_LINK_HANDLERS_JS.slice(idx, idx + 1200);
     assert.match(block, /shell\.openExternal\(url\)/, 'must call shell.openExternal');
 });
 
-test('main.js: open-community-url returns { status: success }', () => {
-    const idx = MAIN_JS.indexOf("ipcMain.handle('open-community-url'");
-    const block = MAIN_JS.slice(idx, idx + 1200);
+test('externalLinkHandlers.js: open-community-url returns { status: success }', () => {
+    const idx = EXTERNAL_LINK_HANDLERS_JS.indexOf("ipcMain.handle('open-community-url'");
+    const block = EXTERNAL_LINK_HANDLERS_JS.slice(idx, idx + 1200);
     assert.match(block, /status:\s*'success'/, "must return { status: 'success' }");
 });
 
