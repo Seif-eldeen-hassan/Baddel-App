@@ -4,11 +4,12 @@ const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const path   = require('node:path');
 
-const ROOT    = path.resolve(__dirname, '..');
-const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'),    'utf8');
-const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
-const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
-const PRELOAD = fs.readFileSync(path.join(ROOT, 'preload.js'),  'utf8');
+const ROOT               = path.resolve(__dirname, '..');
+const MAIN_JS            = fs.readFileSync(path.join(ROOT, 'main.js'),    'utf8');
+const SYSTEM_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers/systemHandlers.js'), 'utf8');
+const APP_JS             = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+const PRELOAD            = fs.readFileSync(path.join(ROOT, 'preload.js'),  'utf8');
 
 // ─── 1. Startup preference helpers ──────────────────────────────────────────
 
@@ -69,30 +70,30 @@ test('main.js: setupWindowsIntegration writes defaultAppliedAt when applying def
 // ─── 3. IPC handlers ────────────────────────────────────────────────────────
 
 test('main.js: get-startup-enabled returns stored preference when userSetStartupEnabled is true', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 500);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('get-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 700);
     assert.match(handler, /userSetStartupEnabled/, 'must check userSetStartupEnabled');
     assert.match(handler, /prefs\.startupEnabled/, 'must return stored startupEnabled');
 });
 
 test('main.js: get-startup-enabled returns false in dev mode', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 200);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('get-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 200);
     assert.match(handler, /app\.isPackaged/, 'must guard with isPackaged');
     assert.match(handler, /return false/, 'must return false in dev');
 });
 
 test('main.js: set-startup-enabled calls applyStartupSetting and writes userSetStartupEnabled:true', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1700);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1700);
     assert.match(handler, /applyStartupSetting\(enabled/, 'must call applyStartupSetting');
     assert.match(handler, /userSetStartupEnabled:\s*true/, 'must write userSetStartupEnabled: true');
     assert.match(handler, /startupEnabled:\s*verifiedEnabled/, 'must write verified state, not raw requested enabled');
 });
 
 test('main.js: set-startup-enabled returns {status, enabled} object', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 2400);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 2400);
     assert.match(handler, /status:\s*'success'/, 'must return success status');
     assert.match(handler, /return \{ status/, 'must return object not bare boolean');
 });
@@ -231,8 +232,8 @@ test('app.js: openSettingsModal handles both boolean and object response from ge
 // ─── 11. OS-first startup state (new) ───────────────────────────────────────
 
 test('main.js: get-startup-enabled queries getLoginItemSettings before falling back to preference', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 800);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('get-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 800);
     const osQueryIdx   = handler.indexOf('getLoginItemSettings');
     const prefFallback = handler.indexOf('userSetStartupEnabled === true');
     assert.ok(osQueryIdx !== -1, 'getLoginItemSettings must be called');
@@ -241,16 +242,16 @@ test('main.js: get-startup-enabled queries getLoginItemSettings before falling b
 });
 
 test('main.js: get-startup-enabled returns structured object with enabled and osEnabled fields', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 800);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('get-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 800);
     assert.match(handler, /source:\s*'os'/, "must return source: 'os' when OS state available");
     assert.match(handler, /osEnabled/, 'must return osEnabled field');
     assert.match(handler, /enabled:\s*osEnabled/, 'enabled must reflect OS state');
 });
 
 test('main.js: set-startup-enabled verifies OS state after applying (calls getLoginItemSettings after applyStartupSetting)', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1500);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1500);
     const applyIdx  = handler.indexOf('applyStartupSetting');
     const verifyIdx = handler.indexOf('getLoginItemSettings');
     assert.ok(applyIdx !== -1,  'applyStartupSetting must be called');
@@ -259,8 +260,8 @@ test('main.js: set-startup-enabled verifies OS state after applying (calls getLo
 });
 
 test('main.js: set-startup-enabled returns verified OS state (enabled: verifiedEnabled)', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1500);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1500);
     assert.match(handler, /verifiedEnabled/, 'verifiedEnabled variable must be used');
     assert.match(handler, /enabled:\s*verifiedEnabled/, 'return value must use verifiedEnabled, not raw enabled');
 });
@@ -302,8 +303,8 @@ test('main.js: applyStartupSetting uses getStartupLoginItemOptions', () => {
 });
 
 test('main.js: get-startup-enabled passes options to getLoginItemSettings', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('get-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 800);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('get-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 800);
     assert.match(handler, /getStartupLoginItemOptions\(\)/, 'must call getStartupLoginItemOptions');
     const optsIdx  = handler.indexOf('getStartupLoginItemOptions');
     const queryIdx = handler.indexOf('getLoginItemSettings');
@@ -316,8 +317,8 @@ test('main.js: get-startup-enabled passes options to getLoginItemSettings', () =
 });
 
 test('main.js: set-startup-enabled passes options to getLoginItemSettings for verification', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1500);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1500);
     assert.match(handler, /getStartupLoginItemOptions\(\)/, 'must call getStartupLoginItemOptions');
     assert.ok(
         handler.includes('getLoginItemSettings(opts)') || handler.includes('getLoginItemSettings(options)'),
@@ -326,14 +327,14 @@ test('main.js: set-startup-enabled passes options to getLoginItemSettings for ve
 });
 
 test('main.js: set-startup-enabled can return status mismatch', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 2000);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 2000);
     assert.match(handler, /status:\s*'mismatch'/, "must be able to return status: 'mismatch'");
 });
 
 test('main.js: set-startup-enabled saves verifiedEnabled to startupEnabled in prefs', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1700);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1700);
     assert.match(handler, /startupEnabled:\s*verifiedEnabled/, 'must save verified state, not raw requested value');
     assert.ok(!handler.includes('startupEnabled: enabled,'), 'must not save unverified requested value');
 });
@@ -435,20 +436,20 @@ test('app.js: toggleStartup reverts dataset.currentState on IPC error', () => {
 });
 
 test('main.js: set-startup-enabled returns requestedEnabled in all non-dev responses', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 2400);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 2400);
     assert.match(handler, /requestedEnabled/, 'all response paths must include requestedEnabled');
 });
 
 test('main.js: set-startup-enabled returns osEnabled in response', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 2400);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 2400);
     assert.match(handler, /osEnabled/, 'response must include osEnabled for diagnostics');
 });
 
 test("main.js: set-startup-enabled returns status 'error' when applyStartupSetting throws", () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 2400);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 2400);
     assert.match(handler, /status:\s*'error'/, "must return status: 'error' when set throws");
     // applyStartupSetting must be in a try block
     const applyIdx = handler.indexOf('applyStartupSetting');
@@ -457,8 +458,8 @@ test("main.js: set-startup-enabled returns status 'error' when applyStartupSetti
 });
 
 test('main.js: set-startup-enabled logs isPackaged and path at entry', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('set-startup-enabled'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 600);
+    const handlerIdx = SYSTEM_HANDLERS_JS.indexOf("ipcMain.handle('set-startup-enabled'");
+    const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 600);
     assert.match(handler, /isPackaged/, 'must log app.isPackaged at entry');
     assert.match(handler, /opts\.path/, 'must log startup exe path');
 });
