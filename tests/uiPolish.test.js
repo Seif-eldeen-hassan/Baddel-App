@@ -841,9 +841,9 @@ test('main.js: get-game-metadata bypasses cooldown when source is manual-add-rea
     assert.match(handler, /manual-add-readd/, 'must include manual-add-readd source in forceMetadata check');
 });
 
-test('main.js: add-manual-game passes forceMetadata:true to gameScanner', () => {
-    const handlerIdx = MAIN_JS.indexOf("ipcMain.handle('add-manual-game'");
-    const handler = MAIN_JS.slice(handlerIdx, handlerIdx + 1500);
+test('gameLibraryHandlers.js: add-manual-game passes forceMetadata:true to gameScanner', () => {
+    const handlerIdx = GAME_LIBRARY_HANDLERS_JS.indexOf("ipcMain.handle('add-manual-game'");
+    const handler = GAME_LIBRARY_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1500);
     assert.match(handler, /forceMetadata:\s*true/, 'must pass forceMetadata:true');
 });
 

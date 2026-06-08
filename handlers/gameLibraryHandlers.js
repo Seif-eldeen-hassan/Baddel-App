@@ -12,14 +12,15 @@
 //   getDynamicGameExes,
 //   _detectPlatform,
 //   analytics,
+//   shell,           ← electron.shell  (for .lnk shortcut reading)
+//   path,
+//   addManualGame,   ← gameScanner.addManualGame
 //   getMainWindow,   ← () => mainWindow
 // }
 //
 // Intentionally NOT moved here:
 //   get-installed-games   — owns _backgroundScanInProgress local flag and triggers the
 //                           background metadata pipeline + refetchMissingImages side-effects
-//   add-manual-game       — resolves .lnk shortcuts (complex file selection) and passes
-//                           forceMetadata: true into addManualGame
 
 module.exports.register = function registerGameLibraryHandlers(ipcMain, deps) {
     const {
@@ -36,6 +37,9 @@ module.exports.register = function registerGameLibraryHandlers(ipcMain, deps) {
         getDynamicGameExes,
         _detectPlatform,
         analytics,
+        shell,
+        path,
+        addManualGame,
         getMainWindow,
     } = deps;
 
@@ -105,4 +109,36 @@ module.exports.register = function registerGameLibraryHandlers(ipcMain, deps) {
     });
 
     ipcMain.handle('get-dynamic-game-exes', (_, gameId, gamePath) => getDynamicGameExes(gameId, gamePath));
+
+    ipcMain.handle('add-manual-game', async (_, exePath, customName) => {
+        try { ipcValidation.assertPathLike(exePath, 'exePath'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
+        let lnkTarget    = null;
+        let metadataPath = exePath;
+        let shortcutArgs = '';
+        let shortcutCwd  = null;
+        if (exePath.toLowerCase().endsWith('.lnk')) {
+            try {
+                const details = shell.readShortcutLink(exePath);
+                if (details.target) {
+                    lnkTarget    = details.target;
+                    metadataPath = details.target;
+                }
+                shortcutArgs = details.args || '';
+                shortcutCwd  = details.cwd || details.workingDirectory ||
+                    (lnkTarget ? path.dirname(lnkTarget) : null);
+            } catch { /* ignore shortcut read errors */ }
+        }
+        const notifyGameImageUpdated = (game) => {
+            const mainWindow = getMainWindow();
+            if (mainWindow) mainWindow.webContents.send('game-image-updated', game);
+        };
+        const result = await addManualGame(
+            exePath, customName, notifyGameImageUpdated,
+            { lnkTarget, metadataPath, shortcutArgs, shortcutCwd, forceMetadata: true }
+        );
+        if (result.status === 'success') {
+            analytics.logGameAddedManual().catch(() => {});
+        }
+        return result;
+    });
 };

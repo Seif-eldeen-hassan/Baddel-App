@@ -1738,37 +1738,6 @@ app.whenReady().then(async () => {
         return stored;
     });
 
-    ipcMain.handle('add-manual-game', async (_, exePath, customName) => {
-        try { ipcValidation.assertPathLike(exePath, 'exePath'); } catch (e) { return ipcValidation.sanitizeErrorForRenderer(e); }
-        let lnkTarget    = null;
-        let metadataPath = exePath;
-        let shortcutArgs = '';
-        let shortcutCwd  = null;
-        if (exePath.toLowerCase().endsWith('.lnk')) {
-            try {
-                const details = shell.readShortcutLink(exePath);
-                if (details.target) {
-                    lnkTarget    = details.target;
-                    metadataPath = details.target;
-                }
-                shortcutArgs = details.args || '';
-                shortcutCwd  = details.cwd || details.workingDirectory ||
-                    (lnkTarget ? path.dirname(lnkTarget) : null);
-            } catch { /* ignore shortcut read errors */ }
-        }
-        const notifyGameImageUpdated = (game) => {
-            if (mainWindow) mainWindow.webContents.send('game-image-updated', game);
-        };
-        const result = await require('./gameScanner').addManualGame(
-            exePath, customName, notifyGameImageUpdated,
-            { lnkTarget, metadataPath, shortcutArgs, shortcutCwd, forceMetadata: true }
-        );
-        if (result.status === 'success') {
-            analytics.logGameAddedManual().catch(() => {});
-        }
-        return result;
-    });
-
     // ── Game Library IPC (moved to handlers/gameLibraryHandlers.js) ──────────
     require('./handlers/gameLibraryHandlers').register(ipcMain, {
         ipcValidation,
@@ -1784,6 +1753,9 @@ app.whenReady().then(async () => {
         getDynamicGameExes,
         _detectPlatform,
         analytics,
+        shell,
+        path,
+        addManualGame,
         getMainWindow: () => mainWindow,
     });
     // ── Local Metadata IPC (moved to handlers/localMetadataHandlers.js) ─────
