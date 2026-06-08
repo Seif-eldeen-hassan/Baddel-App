@@ -165,7 +165,7 @@ test('main.js: imports screen from electron', () => {
 });
 
 test('main.js: registers all quick-switcher IPC channels', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'quickSwitcherHandlers.js'), 'utf8');
     const channels = [
         'quick-switcher:get-settings', 'quick-switcher:set-settings',
         'quick-switcher:set-hotkey', 'quick-switcher:clear-hotkey',
@@ -191,14 +191,14 @@ test('main.js: before-quit unregisters QS hotkey and destroys window', () => {
 });
 
 test('main.js: switch-account IPC validates platform before calling switchAccountByPlatform', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'quickSwitcherHandlers.js'), 'utf8');
     const switchSrc = src.slice(src.indexOf("'quick-switcher:switch-account'"), src.indexOf("'quick-switcher:switch-account'") + 600);
     assert.ok(switchSrc.includes('assertPlatform'), 'assertPlatform called');
     assert.ok(switchSrc.includes('assertString'), 'assertString called for accountId');
 });
 
 test('main.js: switch-account IPC does not log accountId in analytics', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'quickSwitcherHandlers.js'), 'utf8');
     const switchSrc = src.slice(src.indexOf("'quick-switcher:switch-account'"), src.indexOf("'quick-switcher:switch-account'") + 800);
     // analytics.track call should not pass accountId or accountName
     assert.ok(!switchSrc.includes('accountId:'), 'no accountId in analytics');
@@ -206,7 +206,7 @@ test('main.js: switch-account IPC does not log accountId in analytics', () => {
 });
 
 test('main.js: set-hotkey checks conflict with Phase 1 shortcuts', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'quickSwitcherHandlers.js'), 'utf8');
     const hotkeySrc = src.slice(src.indexOf("'quick-switcher:set-hotkey'"), src.indexOf("'quick-switcher:set-hotkey'") + 900);
     assert.ok(hotkeySrc.includes('accountShortcuts.getAll()'), 'checks Phase 1 shortcuts');
     assert.ok(hotkeySrc.includes('Conflicts with'), 'returns conflict message');
