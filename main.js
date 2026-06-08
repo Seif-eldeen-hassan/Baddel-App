@@ -4070,7 +4070,7 @@ const STARTUP_PREF_FILE = path.join(app.getPath('userData'), 'startup-preference
 
 function readStartupPrefs() {
     try {
-        return JSON.parse(fs.readFileSync(STARTUP_PREF_FILE, 'utf8'));
+        return JSON.parse(fsSync.readFileSync(STARTUP_PREF_FILE, 'utf8'));
     } catch {
         return {};
     }
@@ -4078,7 +4078,7 @@ function readStartupPrefs() {
 
 function writeStartupPrefs(prefs) {
     try {
-        fs.writeFileSync(STARTUP_PREF_FILE, JSON.stringify(prefs, null, 2), 'utf8');
+        fsSync.writeFileSync(STARTUP_PREF_FILE, JSON.stringify(prefs, null, 2), 'utf8');
     } catch (err) {
         console.warn('[Startup] Failed to write startup preferences:', err?.message || err);
     }

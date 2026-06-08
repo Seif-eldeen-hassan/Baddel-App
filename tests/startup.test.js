@@ -22,6 +22,20 @@ test('main.js: readStartupPrefs / writeStartupPrefs exist', () => {
     assert.match(MAIN_JS, /function writeStartupPrefs\(prefs\)/, 'writeStartupPrefs must exist');
 });
 
+test('main.js: readStartupPrefs uses fsSync.readFileSync, not fs.readFileSync', () => {
+    const fnStart = MAIN_JS.indexOf('function readStartupPrefs()');
+    const fn = MAIN_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /fsSync\.readFileSync/, 'readStartupPrefs must use fsSync (sync fs), not promises API');
+    assert.ok(!fn.includes('fs.readFileSync'), 'readStartupPrefs must not call fs.readFileSync (fs is promises)');
+});
+
+test('main.js: writeStartupPrefs uses fsSync.writeFileSync, not fs.writeFileSync', () => {
+    const fnStart = MAIN_JS.indexOf('function writeStartupPrefs(');
+    const fn = MAIN_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /fsSync\.writeFileSync/, 'writeStartupPrefs must use fsSync (sync fs), not promises API');
+    assert.ok(!fn.includes('fs.writeFileSync'), 'writeStartupPrefs must not call fs.writeFileSync (fs is promises)');
+});
+
 test('main.js: applyStartupSetting uses --hidden and --startup args via getStartupLoginItemOptions', () => {
     const fnStart = MAIN_JS.indexOf('function applyStartupSetting(');
     const fn = MAIN_JS.slice(fnStart, fnStart + 500);
