@@ -476,7 +476,7 @@ test('manual game: outer-quoted command is stripped before openPath', async () =
 // ── main.js source: manual branch precedes safeLauncher spawn ────────────────
 
 test('main.js: isManualGame check and manual-shell-openpath exist in launch-game handler', () => {
-    const js = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'), 'utf8');
     const idx = js.indexOf("ipcMain.handle('launch-game'");
     assert.ok(idx > -1, 'launch-game handler found');
     const slice = js.slice(idx, idx + 5500);

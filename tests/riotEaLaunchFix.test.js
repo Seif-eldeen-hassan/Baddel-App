@@ -4,25 +4,26 @@ const assert = require('assert/strict');
 const fs     = require('fs');
 const path   = require('path');
 
-const MAIN_JS    = fs.readFileSync(path.join(__dirname, '..', 'main.js'),         'utf8');
-const SCANNER_JS = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),  'utf8');
+const MAIN_JS          = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                              'utf8');
+const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'), 'utf8');
+const SCANNER_JS       = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                   'utf8');
 
 // ── _parseLaunchCommand: helper existence ─────────────────────────────────────
 
-test('main.js: _parseLaunchCommand function is defined', () => {
-    assert.ok(MAIN_JS.includes('function _parseLaunchCommand(raw)'));
+test('handlers/launchHandlers.js: _parseLaunchCommand function is defined', () => {
+    assert.ok(LAUNCH_HANDLERS_JS.includes('function _parseLaunchCommand(raw)'));
 });
 
 // ── _parseLaunchCommand: quoted exe + args (Riot use-case) ────────────────────
 
 test('_parseLaunchCommand: quoted exe + args returns exePath and parsedArgs', () => {
     // Extract the function source and evaluate it in isolation
-    const fnStart = MAIN_JS.indexOf('function _parseLaunchCommand(raw)');
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('function _parseLaunchCommand(raw)');
     assert.ok(fnStart !== -1, '_parseLaunchCommand not found');
     // Grab up to the closing brace of the function
-    const block = MAIN_JS.slice(fnStart, fnStart + 1200);
-    const fnEnd  = block.lastIndexOf('\n}');
-    const fnSrc  = block.slice(0, fnEnd + 2);
+    const block = LAUNCH_HANDLERS_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd  = block.lastIndexOf('\n    }');
+    const fnSrc  = block.slice(0, fnEnd + 6);
     const fn = new Function(`return (${fnSrc})`)();
 
     const input = '"C:\\\\Riot Games\\\\Riot Client\\\\RiotClientServices.exe" --launch-product=valorant --launch-patchline=live';
@@ -34,10 +35,10 @@ test('_parseLaunchCommand: quoted exe + args returns exePath and parsedArgs', ()
 });
 
 test('_parseLaunchCommand: unquoted exe + args returns exePath and parsedArgs', () => {
-    const fnStart = MAIN_JS.indexOf('function _parseLaunchCommand(raw)');
-    const block   = MAIN_JS.slice(fnStart, fnStart + 1200);
-    const fnEnd   = block.lastIndexOf('\n}');
-    const fn = new Function(`return (${block.slice(0, fnEnd + 2)})`)();
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('function _parseLaunchCommand(raw)');
+    const block   = LAUNCH_HANDLERS_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd   = block.lastIndexOf('\n    }');
+    const fn = new Function(`return (${block.slice(0, fnEnd + 6)})`)();
 
     const input = 'C:\\\\Games\\\\game.exe --some-arg';
     const result = fn(input);
@@ -46,10 +47,10 @@ test('_parseLaunchCommand: unquoted exe + args returns exePath and parsedArgs', 
 });
 
 test('_parseLaunchCommand: plain exe no args returns exePath and empty parsedArgs', () => {
-    const fnStart = MAIN_JS.indexOf('function _parseLaunchCommand(raw)');
-    const block   = MAIN_JS.slice(fnStart, fnStart + 1200);
-    const fnEnd   = block.lastIndexOf('\n}');
-    const fn = new Function(`return (${block.slice(0, fnEnd + 2)})`)();
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('function _parseLaunchCommand(raw)');
+    const block   = LAUNCH_HANDLERS_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd   = block.lastIndexOf('\n    }');
+    const fn = new Function(`return (${block.slice(0, fnEnd + 6)})`)();
 
     const result = fn('C:\\\\Games\\\\game.exe');
     assert.ok(result.exePath.endsWith('game.exe'));
@@ -57,10 +58,10 @@ test('_parseLaunchCommand: plain exe no args returns exePath and empty parsedArg
 });
 
 test('_parseLaunchCommand: protocol URL returns null exePath (skipped)', () => {
-    const fnStart = MAIN_JS.indexOf('function _parseLaunchCommand(raw)');
-    const block   = MAIN_JS.slice(fnStart, fnStart + 1200);
-    const fnEnd   = block.lastIndexOf('\n}');
-    const fn = new Function(`return (${block.slice(0, fnEnd + 2)})`)();
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('function _parseLaunchCommand(raw)');
+    const block   = LAUNCH_HANDLERS_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd   = block.lastIndexOf('\n    }');
+    const fn = new Function(`return (${block.slice(0, fnEnd + 6)})`)();
 
     assert.equal(fn('steam://rungameid/123').exePath, null);
     assert.equal(fn('com.epicgames.launcher://apps/foo').exePath, null);
@@ -68,10 +69,10 @@ test('_parseLaunchCommand: protocol URL returns null exePath (skipped)', () => {
 });
 
 test('_parseLaunchCommand: shell: path returns null exePath (handled by Xbox branch)', () => {
-    const fnStart = MAIN_JS.indexOf('function _parseLaunchCommand(raw)');
-    const block   = MAIN_JS.slice(fnStart, fnStart + 1200);
-    const fnEnd   = block.lastIndexOf('\n}');
-    const fn = new Function(`return (${block.slice(0, fnEnd + 2)})`)();
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('function _parseLaunchCommand(raw)');
+    const block   = LAUNCH_HANDLERS_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd   = block.lastIndexOf('\n    }');
+    const fn = new Function(`return (${block.slice(0, fnEnd + 6)})`)();
 
     assert.equal(fn('shell:AppsFolder\\Microsoft.JigsawPuzzle_8wekyb3d8bbwe!App').exePath, null);
 });
@@ -79,17 +80,17 @@ test('_parseLaunchCommand: shell: path returns null exePath (handled by Xbox bra
 // ── main.js: _cmdParsed used in launch-game handler ───────────────────────────
 
 test('main.js: launch-game uses _parseLaunchCommand to compute cleanCmd', () => {
-    assert.ok(MAIN_JS.includes('_parseLaunchCommand(command)'), '_parseLaunchCommand not called in handler');
+    assert.ok(LAUNCH_HANDLERS_JS.includes('_parseLaunchCommand(command)'), '_parseLaunchCommand not called in handler');
     assert.ok(
-        MAIN_JS.includes('_cmdParsed.exePath ||'),
+        LAUNCH_HANDLERS_JS.includes('_cmdParsed.exePath ||'),
         '_cmdParsed.exePath fallback not used for cleanCmd'
     );
 });
 
 test('main.js: Branch D uses _cmdParsed.parsedArgs as arg fallback', () => {
-    const idx = MAIN_JS.indexOf('Branch D — .exe spawn:');
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch D — .exe spawn:');
     assert.ok(idx !== -1, 'Branch D not found');
-    const block = MAIN_JS.slice(idx, idx + 400);
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 400);
     assert.ok(
         block.includes('_cmdParsed.parsedArgs'),
         '_cmdParsed.parsedArgs not used in Branch D'
@@ -105,41 +106,41 @@ test('main.js: Branch D uses _cmdParsed.parsedArgs as arg fallback', () => {
 
 test('main.js: EA mobilehome fallback branch is defined', () => {
     assert.ok(
-        MAIN_JS.includes('EA mobilehome fallback') || MAIN_JS.includes('eadesktop://mobilehome'),
+        LAUNCH_HANDLERS_JS.includes('EA mobilehome fallback') || LAUNCH_HANDLERS_JS.includes('eadesktop://mobilehome'),
         'EA mobilehome fallback not found'
     );
 });
 
 test('main.js: EA mobilehome fallback checks trusted.executablePath', () => {
-    const idx = MAIN_JS.indexOf('eadesktop://mobilehome');
+    const idx = LAUNCH_HANDLERS_JS.indexOf('eadesktop://mobilehome');
     assert.ok(idx !== -1, 'eadesktop://mobilehome not found');
-    const block = MAIN_JS.slice(idx, idx + 600);
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 600);
     assert.ok(block.includes('trusted?.executablePath') || block.includes('trusted.executablePath'), 'executablePath check missing');
 });
 
 test('main.js: EA mobilehome fallback uses safeLauncher.launchExecutable', () => {
-    const idx = MAIN_JS.indexOf('EA mobilehome fallback');
+    const idx = LAUNCH_HANDLERS_JS.indexOf('EA mobilehome fallback');
     assert.ok(idx !== -1, 'EA mobilehome fallback comment not found');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes('launchExecutable'), 'launchExecutable not called in EA fallback');
 });
 
 test('main.js: EA mobilehome fallback returns status:success with method:ea-exe-fallback', () => {
-    const idx = MAIN_JS.indexOf('EA mobilehome fallback');
-    const block = MAIN_JS.slice(idx, idx + 900);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('EA mobilehome fallback');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 900);
     assert.ok(block.includes("status: 'success'"), "status: 'success' not returned");
     assert.ok(block.includes("method: 'ea-exe-fallback'"), "method: 'ea-exe-fallback' not returned");
 });
 
 test('main.js: EA mobilehome fallback does not use shell:true', () => {
-    const idx = MAIN_JS.indexOf('EA mobilehome fallback');
-    const block = MAIN_JS.slice(idx, idx + 900);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('EA mobilehome fallback');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 900);
     assert.ok(!block.includes('shell: true') && !block.includes('shell:true'), 'shell:true must not appear');
 });
 
 test('main.js: EA mobilehome fallback runs before the protocol:// branch', () => {
-    const eaIdx       = MAIN_JS.indexOf('eadesktop://mobilehome');
-    const protocolIdx = MAIN_JS.indexOf("cleanCmd.includes('://')");
+    const eaIdx       = LAUNCH_HANDLERS_JS.indexOf('eadesktop://mobilehome');
+    const protocolIdx = LAUNCH_HANDLERS_JS.indexOf("cleanCmd.includes('://')");
     assert.ok(eaIdx !== -1, 'EA mobilehome check not found');
     assert.ok(protocolIdx !== -1, 'protocol branch not found');
     assert.ok(eaIdx < protocolIdx, 'EA fallback must come before protocol:// branch');
@@ -194,8 +195,8 @@ test('gameScanner.js: EA scanner no longer hard-codes eadesktop://mobilehome/def
 
 test('main.js: steam:// command is not intercepted by EA fallback', () => {
     // The EA fallback regex must only match eadesktop://mobilehome, not steam://
-    const fnStart = MAIN_JS.indexOf('eadesktop://mobilehome');
-    const block   = MAIN_JS.slice(fnStart - 10, fnStart + 50);
+    const fnStart = LAUNCH_HANDLERS_JS.indexOf('eadesktop://mobilehome');
+    const block   = LAUNCH_HANDLERS_JS.slice(fnStart - 10, fnStart + 50);
     assert.ok(block.includes('eadesktop://mobilehome'), 'EA-specific check must reference mobilehome path');
     // steam:// does not match /^eadesktop:\/\/mobilehome/
     const regexStr = block.match(/\/\^eadesktop.+?\//i)?.[0] || '';

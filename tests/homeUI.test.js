@@ -1499,14 +1499,14 @@ test('install: _gdOpenInstallUrl passes forceRetryAfterOpen=true when didSwitchA
 });
 
 test('install: main handler reads forceRetryAfterOpen from payload', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
     const fnStart = js.indexOf("ipcMain.handle('launcher:open-install-url'");
     const fn = js.slice(fnStart, fnStart + 800);
     assert.match(fn, /forceRetryAfterOpen/);
 });
 
 test('install: main handler uses ACCOUNT_SWITCH_GRACE_MS when forceRetryAfterOpen=true', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
     assert.match(js, /ACCOUNT_SWITCH_GRACE_MS/);
     assert.match(js, /COLD_START_GRACE_MS/);
     // The handler must apply ACCOUNT_SWITCH_GRACE_MS when forceRetryAfterOpen is true
@@ -1561,7 +1561,7 @@ test('play: _debugPlayLaunchOptions helper exposed on window', () => {
 // ── Steam install — main handler improvements ─────────────────────────────────
 
 test('install: main launcher:open-install-url handler has Steam store fallback', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
     const fnStart = js.indexOf("ipcMain.handle('launcher:open-install-url'");
     const fn = js.slice(fnStart, fnStart + 7500);
     assert.match(fn, /steam:\/\/store\//);
@@ -1569,7 +1569,7 @@ test('install: main launcher:open-install-url handler has Steam store fallback',
 });
 
 test('install: main handler returns fallbackStoreUsed in result', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
     const fnStart = js.indexOf("ipcMain.handle('launcher:open-install-url'");
     const fn = js.slice(fnStart, fnStart + 5000);
     assert.match(fn, /fallbackStoreUsed/);
@@ -1775,7 +1775,7 @@ test('tracker: startGameTracking stores userLaunched flag on tracker object', ()
 });
 
 test('tracker: launch-game IPC passes userLaunched=true to startGameTracking', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
     const idx = js.indexOf("'launch-game'");
     const slice = js.slice(idx, idx + 10500);
     assert.match(slice, /userLaunched.*true|true.*userLaunched/);

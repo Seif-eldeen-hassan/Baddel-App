@@ -12,33 +12,34 @@ const path   = require('node:path');
 
 const ROOT    = path.resolve(__dirname, '..');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHandlers.js'), 'utf8');
 const SAFE_LAUNCHER_JS = fs.readFileSync(
     path.join(ROOT, 'services', 'safeLauncher.js'), 'utf8'
 );
 
 // ── Slice anchors ─────────────────────────────────────────────────────────────
 
-const launchHandlerStart = MAIN_JS.indexOf("ipcMain.handle('launch-game'");
-assert.ok(launchHandlerStart !== -1, "launch-game handler must exist in main.js");
+const launchHandlerStart = LAUNCH_HANDLERS_JS.indexOf("ipcMain.handle('launch-game'");
+assert.ok(launchHandlerStart !== -1, "launch-game handler must exist in handlers/launchHandlers.js");
 // 16 000 chars covers the full ~310-line handler on Windows CRLF line endings.
-const LAUNCH_SRC = MAIN_JS.slice(launchHandlerStart, launchHandlerStart + 16000);
+const LAUNCH_SRC = LAUNCH_HANDLERS_JS.slice(launchHandlerStart, launchHandlerStart + 16000);
 
-const installHandlerStart = MAIN_JS.indexOf("ipcMain.handle('launcher:open-install-url'");
-assert.ok(installHandlerStart !== -1, "launcher:open-install-url handler must exist in main.js");
+const installHandlerStart = LAUNCH_HANDLERS_JS.indexOf("ipcMain.handle('launcher:open-install-url'");
+assert.ok(installHandlerStart !== -1, "launcher:open-install-url handler must exist in handlers/launchHandlers.js");
 // 9 000 chars covers the ~163-line handler.
-const INSTALL_SRC = MAIN_JS.slice(installHandlerStart, installHandlerStart + 9000);
+const INSTALL_SRC = LAUNCH_HANDLERS_JS.slice(installHandlerStart, installHandlerStart + 9000);
 
-const protocolReliableStart = MAIN_JS.indexOf('async function _openProtocolUrlReliable(');
-assert.ok(protocolReliableStart !== -1, '_openProtocolUrlReliable must exist in main.js');
-const PROTOCOL_SRC = MAIN_JS.slice(protocolReliableStart, protocolReliableStart + 1200);
+const protocolReliableStart = LAUNCH_HANDLERS_JS.indexOf('async function _openProtocolUrlReliable(');
+assert.ok(protocolReliableStart !== -1, '_openProtocolUrlReliable must exist in handlers/launchHandlers.js');
+const PROTOCOL_SRC = LAUNCH_HANDLERS_JS.slice(protocolReliableStart, protocolReliableStart + 1200);
 
-const launcherRunningStart = MAIN_JS.indexOf('async function _launcherIsRunning(');
-assert.ok(launcherRunningStart !== -1, '_launcherIsRunning must exist in main.js');
-const LAUNCHER_RUNNING_SRC = MAIN_JS.slice(launcherRunningStart, launcherRunningStart + 400);
+const launcherRunningStart = LAUNCH_HANDLERS_JS.indexOf('async function _launcherIsRunning(');
+assert.ok(launcherRunningStart !== -1, '_launcherIsRunning must exist in handlers/launchHandlers.js');
+const LAUNCHER_RUNNING_SRC = LAUNCH_HANDLERS_JS.slice(launcherRunningStart, launcherRunningStart + 400);
 
-const regQueryStart = MAIN_JS.indexOf('async function _regQueryValue(');
-assert.ok(regQueryStart !== -1, '_regQueryValue must exist in main.js');
-const REG_QUERY_SRC = MAIN_JS.slice(regQueryStart, regQueryStart + 800);
+const regQueryStart = LAUNCH_HANDLERS_JS.indexOf('async function _regQueryValue(');
+assert.ok(regQueryStart !== -1, '_regQueryValue must exist in handlers/launchHandlers.js');
+const REG_QUERY_SRC = LAUNCH_HANDLERS_JS.slice(regQueryStart, regQueryStart + 800);
 
 // ─── 1. launch-game — in-flight guard ────────────────────────────────────────
 
@@ -263,11 +264,11 @@ test('_regQueryValue invokes reg.exe with the query subcommand and does not use 
 });
 
 test('COLD_START_GRACE_MS is 2000 ms', () => {
-    assert.match(MAIN_JS, /const\s+COLD_START_GRACE_MS\s*=\s*2000/);
+    assert.match(LAUNCH_HANDLERS_JS, /const\s+COLD_START_GRACE_MS\s*=\s*2000/);
 });
 
 test('ACCOUNT_SWITCH_GRACE_MS is 6000 ms', () => {
-    assert.match(MAIN_JS, /const\s+ACCOUNT_SWITCH_GRACE_MS\s*=\s*6000/);
+    assert.match(LAUNCH_HANDLERS_JS, /const\s+ACCOUNT_SWITCH_GRACE_MS\s*=\s*6000/);
 });
 
 // ─── 6. startGameTracking — internal contract ─────────────────────────────────
@@ -340,8 +341,8 @@ test('launch-game: manual branch calls startGameTracking after shell.openPath su
 test('launch-game: EA exe fallback branch calls startGameTracking after successful spawn (failure guard first)', () => {
     const eaIdx = LAUNCH_SRC.indexOf('eadesktop://mobilehome');
     assert.ok(eaIdx !== -1, 'EA exe fallback branch must exist in handler');
-    // 1000 chars covers the ~15-line EA block on Windows CRLF line endings.
-    const eaBlock = LAUNCH_SRC.slice(eaIdx, eaIdx + 1000);
+    // 1300 chars covers the ~15-line EA block including extra indent from register() wrapper.
+    const eaBlock = LAUNCH_SRC.slice(eaIdx, eaIdx + 1300);
     const failGuardIdx = eaBlock.indexOf('!eaResult.ok');
     const trackingIdx  = eaBlock.indexOf('startGameTracking(');
     assert.ok(failGuardIdx !== -1, '!eaResult.ok failure guard must exist');
@@ -359,9 +360,9 @@ test('launch-game: protocol/lnk/exe success path calls startGameTracking inside 
 test('launch-game: .exe branch sets launchSuccess = true after safeLauncher.launchExecutable so tracking fires via the shared success path', () => {
     const exeIdx = LAUNCH_SRC.indexOf("ext === '.exe'");
     assert.ok(exeIdx !== -1, ".exe branch must exist in handler");
-    // 1200 chars covers the spawnArgs + spawnCwd setup plus the launchSuccess flag
-    // ~20 lines into the block on Windows CRLF line endings.
-    const exeBlock       = LAUNCH_SRC.slice(exeIdx, exeIdx + 1200);
+    // 1500 chars covers the spawnArgs + spawnCwd setup plus the launchSuccess flag
+    // including extra indent from the register() wrapper.
+    const exeBlock       = LAUNCH_SRC.slice(exeIdx, exeIdx + 1500);
     const spawnIdx       = exeBlock.indexOf('safeLauncher.launchExecutable(');
     const successFlagIdx = exeBlock.indexOf('launchSuccess = true');
     assert.ok(spawnIdx       !== -1, 'safeLauncher.launchExecutable must exist in .exe block');

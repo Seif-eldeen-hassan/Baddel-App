@@ -4,10 +4,11 @@ const assert = require('assert/strict');
 const fs     = require('fs');
 const path   = require('path');
 
-const MAIN_JS      = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                    'utf8');
-const SCANNER_JS   = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),             'utf8');
-const LAUNCHER_JS  = fs.readFileSync(path.join(__dirname, '..', 'services', 'safeLauncher.js'), 'utf8');
-const PLAY_JS      = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'play-launcher.js'), 'utf8');
+const MAIN_JS            = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                              'utf8');
+const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'),       'utf8');
+const SCANNER_JS         = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                      'utf8');
+const LAUNCHER_JS        = fs.readFileSync(path.join(__dirname, '..', 'services', 'safeLauncher.js'),         'utf8');
+const PLAY_JS            = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'play-launcher.js'),       'utf8');
 
 // ── gameScanner.js Xbox record fields ─────────────────────────────────────────
 
@@ -51,14 +52,14 @@ test('gameScanner: Xbox records store launchCommand matching command', () => {
 
 test('main.js: _extractAppsFolderLaunchTarget function defined', () => {
     assert.ok(
-        MAIN_JS.includes('function _extractAppsFolderLaunchTarget('),
+        LAUNCH_HANDLERS_JS.includes('function _extractAppsFolderLaunchTarget('),
         '_extractAppsFolderLaunchTarget not defined'
     );
 });
 
 test('main.js: _extractAppsFolderLaunchTarget handles old explorer.exe format', () => {
-    const idx = MAIN_JS.indexOf('function _extractAppsFolderLaunchTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _extractAppsFolderLaunchTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(
         block.includes('explorer') && block.includes('shell:AppsFolder'),
         'Old explorer.exe format not handled'
@@ -66,45 +67,45 @@ test('main.js: _extractAppsFolderLaunchTarget handles old explorer.exe format', 
 });
 
 test('main.js: _extractAppsFolderLaunchTarget handles new shell:AppsFolder format', () => {
-    const idx = MAIN_JS.indexOf('function _extractAppsFolderLaunchTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _extractAppsFolderLaunchTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes('shell:AppsFolder'), 'shell:AppsFolder not handled');
 });
 
 test('main.js: _extractAppsFolderLaunchTarget handles raw AUMID (PackageFamilyName!App)', () => {
-    const idx = MAIN_JS.indexOf('function _extractAppsFolderLaunchTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _extractAppsFolderLaunchTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes('!App') || block.includes('AUMID') || block.includes('Raw AUMID'), 'Raw AUMID case not handled');
 });
 
 // ── main.js: _launchAppsFolderTarget ─────────────────────────────────────────
 
 test('main.js: _launchAppsFolderTarget function defined', () => {
-    assert.ok(MAIN_JS.includes('function _launchAppsFolderTarget('));
+    assert.ok(LAUNCH_HANDLERS_JS.includes('function _launchAppsFolderTarget('));
 });
 
 test('main.js: _launchAppsFolderTarget uses spawn with shell:false', () => {
-    const idx = MAIN_JS.indexOf('function _launchAppsFolderTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _launchAppsFolderTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes("spawn('explorer.exe'"), "spawn('explorer.exe') not found");
     assert.ok(block.includes('shell:       false') || block.includes("shell: false"), 'shell: false not set');
 });
 
 test('main.js: _launchAppsFolderTarget does not use shell:true', () => {
-    const idx = MAIN_JS.indexOf('function _launchAppsFolderTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _launchAppsFolderTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(!block.includes('shell: true') && !block.includes('shell:true'), 'shell: true must not be used');
 });
 
 test('main.js: _launchAppsFolderTarget resolves { ok: true } on spawn', () => {
-    const idx = MAIN_JS.indexOf('function _launchAppsFolderTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _launchAppsFolderTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes("ok: true"), "{ ok: true } not resolved on spawn");
 });
 
 test('main.js: _launchAppsFolderTarget resolves { ok: false } on error', () => {
-    const idx = MAIN_JS.indexOf('function _launchAppsFolderTarget(');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('function _launchAppsFolderTarget(');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes("ok: false"), "{ ok: false } not resolved on error");
 });
 
@@ -112,49 +113,49 @@ test('main.js: _launchAppsFolderTarget resolves { ok: false } on error', () => {
 
 test('main.js: Xbox/UWP branch present in launch-game', () => {
     assert.ok(
-        MAIN_JS.includes('Branch Xbox/UWP'),
+        LAUNCH_HANDLERS_JS.includes('Branch Xbox/UWP'),
         'Xbox/UWP branch log line not found in launch-game'
     );
 });
 
 test('main.js: Xbox/UWP branch calls _extractAppsFolderLaunchTarget', () => {
-    const idx = MAIN_JS.indexOf('Branch Xbox/UWP');
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
     assert.ok(idx !== -1, 'Branch Xbox/UWP not found');
     // Assignment is right after the comment line; scan comment + following block
-    const block = MAIN_JS.slice(idx, idx + 500);
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 500);
     assert.ok(block.includes('_extractAppsFolderLaunchTarget'), '_extractAppsFolderLaunchTarget not called');
 });
 
 test('main.js: Xbox/UWP branch calls _launchAppsFolderTarget', () => {
-    const idx = MAIN_JS.indexOf('Branch Xbox/UWP');
-    const block = MAIN_JS.slice(idx, idx + 600);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 600);
     assert.ok(block.includes('_launchAppsFolderTarget'), '_launchAppsFolderTarget not called in branch');
 });
 
 test('main.js: Xbox/UWP branch returns status:success with method:xbox-appsfolder', () => {
-    const idx = MAIN_JS.indexOf('Branch Xbox/UWP');
-    const block = MAIN_JS.slice(idx, idx + 1400);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 1400);
     assert.ok(block.includes("status: 'success'"), "status: 'success' not returned");
     assert.ok(block.includes("method: 'xbox-appsfolder'"), "method: 'xbox-appsfolder' not returned");
 });
 
 test('main.js: Xbox/UWP branch runs before protocol:// branch', () => {
-    const xboxIdx    = MAIN_JS.indexOf('Branch Xbox/UWP');
-    const protocolIdx = MAIN_JS.indexOf("cleanCmd.includes('://')");
+    const xboxIdx    = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
+    const protocolIdx = LAUNCH_HANDLERS_JS.indexOf("cleanCmd.includes('://')");
     assert.ok(xboxIdx !== -1,    'Xbox/UWP branch not found');
     assert.ok(protocolIdx !== -1, 'protocol branch not found');
     assert.ok(xboxIdx < protocolIdx, 'Xbox/UWP branch must come before protocol:// branch');
 });
 
 test('main.js: Xbox/UWP branch calls startGameTracking', () => {
-    const idx = MAIN_JS.indexOf('Branch Xbox/UWP');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(block.includes('startGameTracking'), 'startGameTracking not called in Xbox branch');
 });
 
 test('main.js: Xbox/UWP branch does not pass to safeLauncher.openProtocolUrl', () => {
-    const idx = MAIN_JS.indexOf('Branch Xbox/UWP');
-    const block = MAIN_JS.slice(idx, idx + 800);
+    const idx = LAUNCH_HANDLERS_JS.indexOf('Branch Xbox/UWP');
+    const block = LAUNCH_HANDLERS_JS.slice(idx, idx + 800);
     assert.ok(!block.includes('openProtocolUrl'), 'openProtocolUrl must not be called in Xbox branch');
 });
 
