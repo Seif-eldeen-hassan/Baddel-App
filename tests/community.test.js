@@ -9,6 +9,7 @@ const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'),            'utf8');
 const PRELOAD = fs.readFileSync(path.join(ROOT, 'preload.js'),         'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),      'utf8');
+const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const EXTERNAL_LINK_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'externalLinkHandlers.js'), 'utf8');
 
 // ─── 1. IPC handler — open-community-url ────────────────────────────────────
@@ -166,77 +167,77 @@ test('dashboard.html: community cards call openCommunityLink with correct URLs',
     assert.match(HTML, /openCommunityLink\('https:\/\/www\.tiktok\.com\/@baddel_official_'\)/, 'TikTok card must call openCommunityLink');
 });
 
-// ─── 6. app.js ───────────────────────────────────────────────────────────────
+// ─── 6. help-feedback.js ─────────────────────────────────────────────────────
 
-test('app.js: openHelpModal accepts optional tab parameter', () => {
-    const fnStart = APP_JS.indexOf('function openHelpModal(');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('help-feedback.js: openHelpModal accepts optional tab parameter', () => {
+    const fnStart = HELP_JS.indexOf('function openHelpModal(');
+    const fn = HELP_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /function openHelpModal\(tab\)/, 'openHelpModal must accept tab parameter');
     assert.match(fn, /if \(tab\)/, 'must conditionally switch tab');
 });
 
-test('app.js: toggleHelpDropdown is defined with e.preventDefault and stopPropagation', () => {
-    assert.match(APP_JS, /function toggleHelpDropdown\(e\)/, 'toggleHelpDropdown must be defined');
-    const fnStart = APP_JS.indexOf('function toggleHelpDropdown(e)');
-    const fn = APP_JS.slice(fnStart, fnStart + 350);
+test('help-feedback.js: toggleHelpDropdown is defined with e.preventDefault and stopPropagation', () => {
+    assert.match(HELP_JS, /function toggleHelpDropdown\(e\)/, 'toggleHelpDropdown must be defined');
+    const fnStart = HELP_JS.indexOf('function toggleHelpDropdown(e)');
+    const fn = HELP_JS.slice(fnStart, fnStart + 350);
     assert.match(fn, /helpDropdownMenu/, 'must reference helpDropdownMenu');
     assert.match(fn, /classList\.toggle\('active'/, 'must toggle active class');
     assert.match(fn, /e\.preventDefault\(\)/, 'must call e.preventDefault');
     assert.match(fn, /e\.stopPropagation\(\)/, 'must call e.stopPropagation');
 });
 
-test('app.js: closeHelpDropdown is defined', () => {
-    assert.match(APP_JS, /function closeHelpDropdown\(\)/, 'closeHelpDropdown must be defined');
-    const fnStart = APP_JS.indexOf('function closeHelpDropdown()');
-    const fn = APP_JS.slice(fnStart, fnStart + 150);
+test('help-feedback.js: closeHelpDropdown is defined', () => {
+    assert.match(HELP_JS, /function closeHelpDropdown\(\)/, 'closeHelpDropdown must be defined');
+    const fnStart = HELP_JS.indexOf('function closeHelpDropdown()');
+    const fn = HELP_JS.slice(fnStart, fnStart + 150);
     assert.match(fn, /classList\.remove\('active'\)/, 'must remove active class');
 });
 
-test('app.js: openCommunityModal is defined', () => {
-    assert.match(APP_JS, /function openCommunityModal\(\)/, 'openCommunityModal must be defined');
-    const fnStart = APP_JS.indexOf('function openCommunityModal()');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('help-feedback.js: openCommunityModal is defined', () => {
+    assert.match(HELP_JS, /function openCommunityModal\(\)/, 'openCommunityModal must be defined');
+    const fnStart = HELP_JS.indexOf('function openCommunityModal()');
+    const fn = HELP_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /communityModal/, 'must reference communityModal element');
     assert.match(fn, /classList\.add\('active'\)/, 'must add active class');
 });
 
-test('app.js: closeCommunityModal is defined', () => {
-    assert.match(APP_JS, /function closeCommunityModal\(\)/, 'closeCommunityModal must be defined');
-    const fnStart = APP_JS.indexOf('function closeCommunityModal()');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('help-feedback.js: closeCommunityModal is defined', () => {
+    assert.match(HELP_JS, /function closeCommunityModal\(\)/, 'closeCommunityModal must be defined');
+    const fnStart = HELP_JS.indexOf('function closeCommunityModal()');
+    const fn = HELP_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /classList\.remove\('active'\)/, 'must remove active class');
 });
 
-test('app.js: openCommunityLink calls openCommunityUrl', () => {
-    assert.match(APP_JS, /async function openCommunityLink\(url\)/, 'openCommunityLink must be defined');
-    const fnStart = APP_JS.indexOf('async function openCommunityLink(url)');
-    const fn = APP_JS.slice(fnStart, fnStart + 300);
+test('help-feedback.js: openCommunityLink calls openCommunityUrl', () => {
+    assert.match(HELP_JS, /async function openCommunityLink\(url\)/, 'openCommunityLink must be defined');
+    const fnStart = HELP_JS.indexOf('async function openCommunityLink(url)');
+    const fn = HELP_JS.slice(fnStart, fnStart + 300);
     assert.match(fn, /openCommunityUrl\(url\)/, 'must call openCommunityUrl with the url');
 });
 
-test('app.js: handleHelpDropdownAction is defined', () => {
-    assert.match(APP_JS, /function handleHelpDropdownAction\(e, action\)/, 'handleHelpDropdownAction must be defined');
+test('help-feedback.js: handleHelpDropdownAction is defined', () => {
+    assert.match(HELP_JS, /function handleHelpDropdownAction\(e, action\)/, 'handleHelpDropdownAction must be defined');
 });
 
-test('app.js: handleHelpDropdownAction calls preventDefault and stopPropagation', () => {
-    const fnStart = APP_JS.indexOf('function handleHelpDropdownAction(e, action)');
-    const fn = APP_JS.slice(fnStart, fnStart + 500);
+test('help-feedback.js: handleHelpDropdownAction calls preventDefault and stopPropagation', () => {
+    const fnStart = HELP_JS.indexOf('function handleHelpDropdownAction(e, action)');
+    const fn = HELP_JS.slice(fnStart, fnStart + 500);
     assert.match(fn, /e\.preventDefault\(\)/, 'must call e.preventDefault');
     assert.match(fn, /e\.stopPropagation\(\)/, 'must call e.stopPropagation');
     assert.match(fn, /stopImmediatePropagation/, 'must call stopImmediatePropagation');
 });
 
-test('app.js: handleHelpDropdownAction routes all three actions correctly', () => {
-    const fnStart = APP_JS.indexOf('function handleHelpDropdownAction(e, action)');
-    const fn = APP_JS.slice(fnStart, fnStart + 500);
+test('help-feedback.js: handleHelpDropdownAction routes all three actions correctly', () => {
+    const fnStart = HELP_JS.indexOf('function handleHelpDropdownAction(e, action)');
+    const fn = HELP_JS.slice(fnStart, fnStart + 500);
     assert.match(fn, /openHelpModal\('guide'\)/, 'must call openHelpModal(guide) for help action');
     assert.match(fn, /openHelpModal\('feedback'\)/, 'must call openHelpModal(feedback) for bug action');
     assert.match(fn, /openCommunityModal\(\)/, 'must call openCommunityModal() for community action');
     assert.match(fn, /closeHelpDropdown\(\)/, 'must close dropdown before routing');
 });
 
-test('app.js: handleHelpDropdownAction is exposed on window', () => {
-    assert.match(APP_JS, /window\.handleHelpDropdownAction\s*=\s*handleHelpDropdownAction/, 'must be on window');
+test('help-feedback.js: handleHelpDropdownAction is exposed on window', () => {
+    assert.match(HELP_JS, /window\.handleHelpDropdownAction\s*=\s*handleHelpDropdownAction/, 'must be on window');
 });
 
 // ─── 7. CSS — no-drag and pointer-events ─────────────────────────────────────

@@ -6,6 +6,7 @@ const path   = require('node:path');
 
 const ROOT    = path.resolve(__dirname, '..');
 const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8');
+const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
 const ACC_JS  = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),    'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),    'utf8');
@@ -1470,17 +1471,17 @@ test('dashboard.html: update badge element still exists with correct id', () => 
     assert.match(block, /onclick="openUpdateModal\(\)"/, 'badge must still call openUpdateModal');
 });
 
-test('app.js: _setUpdateBadge shows badge with label when called with true', () => {
-    const fnStart = APP_JS.indexOf('function _setUpdateBadge');
-    const fn = APP_JS.slice(fnStart, fnStart + 400);
+test('help-feedback.js: _setUpdateBadge shows badge with label when called with true', () => {
+    const fnStart = HELP_JS.indexOf('function _setUpdateBadge');
+    const fn = HELP_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /updateBadgeBtn/, 'must reference updateBadgeBtn');
     assert.match(fn, /show\s*\?\s*['"]flex['"]/, 'must set display flex when showing');
     assert.match(fn, /lbl.*label|label.*lbl/, 'must update label text');
 });
 
-test('app.js: _setUpdateBadge hides badge when called with false', () => {
-    const fnStart = APP_JS.indexOf('function _setUpdateBadge');
-    const fn = APP_JS.slice(fnStart, fnStart + 400);
+test('help-feedback.js: _setUpdateBadge hides badge when called with false', () => {
+    const fnStart = HELP_JS.indexOf('function _setUpdateBadge');
+    const fn = HELP_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /['"]none['"]/, "must set display none when hiding");
 });
 
@@ -1506,62 +1507,62 @@ test('dashboard.html: betaFeedbackBanner element exists with correct ids and act
     assert.match(tag, /hidden/, 'banner must have hidden attribute by default');
 });
 
-test('app.js: BETA_FEEDBACK_BANNER_KEY constant defined', () => {
-    assert.match(APP_JS, /BETA_FEEDBACK_BANNER_KEY/, 'constant must exist');
-    assert.match(APP_JS, /baddel\.betaFeedbackBanner\.dismissed\.v1/, 'must use the correct localStorage key');
+test('help-feedback.js: BETA_FEEDBACK_BANNER_KEY constant defined', () => {
+    assert.match(HELP_JS, /BETA_FEEDBACK_BANNER_KEY/, 'constant must exist');
+    assert.match(HELP_JS, /baddel\.betaFeedbackBanner\.dismissed\.v1/, 'must use the correct localStorage key');
 });
 
-test('app.js: shouldShowBetaFeedbackBanner reads localStorage', () => {
-    const fnStart = APP_JS.indexOf('function shouldShowBetaFeedbackBanner');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('help-feedback.js: shouldShowBetaFeedbackBanner reads localStorage', () => {
+    const fnStart = HELP_JS.indexOf('function shouldShowBetaFeedbackBanner');
+    const fn = HELP_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /localStorage\.getItem/, 'must read from localStorage');
     assert.match(fn, /BETA_FEEDBACK_BANNER_KEY/, 'must use the key constant');
 });
 
-test('app.js: markBetaFeedbackBannerDismissed writes to localStorage', () => {
-    const fnStart = APP_JS.indexOf('function markBetaFeedbackBannerDismissed');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('help-feedback.js: markBetaFeedbackBannerDismissed writes to localStorage', () => {
+    const fnStart = HELP_JS.indexOf('function markBetaFeedbackBannerDismissed');
+    const fn = HELP_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /localStorage\.setItem/, 'must write to localStorage');
     assert.match(fn, /BETA_FEEDBACK_BANNER_KEY/, 'must use the key constant');
 });
 
-test('app.js: showBetaFeedbackBanner shows/hides based on shouldShowBetaFeedbackBanner', () => {
-    const fnStart = APP_JS.indexOf('function showBetaFeedbackBanner');
-    const fn = APP_JS.slice(fnStart, fnStart + 400);
+test('help-feedback.js: showBetaFeedbackBanner shows/hides based on shouldShowBetaFeedbackBanner', () => {
+    const fnStart = HELP_JS.indexOf('function showBetaFeedbackBanner');
+    const fn = HELP_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /shouldShowBetaFeedbackBanner/, 'must call shouldShowBetaFeedbackBanner');
     assert.match(fn, /has-beta-feedback-banner/, 'must toggle has-beta-feedback-banner class on body');
     assert.match(fn, /banner\.hidden\s*=\s*false/, 'must unhide banner when showing');
 });
 
-test('app.js: hideBetaFeedbackBanner removes class and hides element', () => {
-    const fnStart = APP_JS.indexOf('function hideBetaFeedbackBanner');
-    const fn = APP_JS.slice(fnStart, fnStart + 400);
+test('help-feedback.js: hideBetaFeedbackBanner removes class and hides element', () => {
+    const fnStart = HELP_JS.indexOf('function hideBetaFeedbackBanner');
+    const fn = HELP_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /markBetaFeedbackBannerDismissed/, 'must call markBetaFeedbackBannerDismissed when persist=true');
     assert.match(fn, /banner\.hidden\s*=\s*true/, 'must set banner.hidden = true');
     assert.match(fn, /has-beta-feedback-banner/, 'must remove has-beta-feedback-banner from body');
 });
 
-test('app.js: openBetaFeedbackFromBanner calls openHelpModal with feedback tab', () => {
-    const fnStart = APP_JS.indexOf('function openBetaFeedbackFromBanner');
-    const fn = APP_JS.slice(fnStart, fnStart + 300);
+test('help-feedback.js: openBetaFeedbackFromBanner calls openHelpModal with feedback tab', () => {
+    const fnStart = HELP_JS.indexOf('function openBetaFeedbackFromBanner');
+    const fn = HELP_JS.slice(fnStart, fnStart + 300);
     assert.match(fn, /openHelpModal\(['"]feedback['"]\)/, "must call openHelpModal('feedback')");
     assert.match(fn, /handleHelpDropdownAction/, 'must fall back to handleHelpDropdownAction');
 });
 
-test('app.js: dismissBetaFeedbackBanner delegates to hideBetaFeedbackBanner(true)', () => {
-    const fnStart = APP_JS.indexOf('function dismissBetaFeedbackBanner');
-    const fn = APP_JS.slice(fnStart, fnStart + 150);
+test('help-feedback.js: dismissBetaFeedbackBanner delegates to hideBetaFeedbackBanner(true)', () => {
+    const fnStart = HELP_JS.indexOf('function dismissBetaFeedbackBanner');
+    const fn = HELP_JS.slice(fnStart, fnStart + 150);
     assert.match(fn, /hideBetaFeedbackBanner\(true\)/, 'must call hideBetaFeedbackBanner(true)');
 });
 
-test('app.js: window globals exposed for banner', () => {
-    assert.match(APP_JS, /window\.dismissBetaFeedbackBanner\s*=\s*dismissBetaFeedbackBanner/, 'must expose dismissBetaFeedbackBanner on window');
-    assert.match(APP_JS, /window\.openBetaFeedbackFromBanner\s*=\s*openBetaFeedbackFromBanner/, 'must expose openBetaFeedbackFromBanner on window');
+test('help-feedback.js: window globals exposed for banner', () => {
+    assert.match(HELP_JS, /window\.dismissBetaFeedbackBanner\s*=\s*dismissBetaFeedbackBanner/, 'must expose dismissBetaFeedbackBanner on window');
+    assert.match(HELP_JS, /window\.openBetaFeedbackFromBanner\s*=\s*openBetaFeedbackFromBanner/, 'must expose openBetaFeedbackFromBanner on window');
 });
 
-test('app.js: sendFeedback success branch calls hideBetaFeedbackBanner(true)', () => {
-    const fnStart = APP_JS.indexOf('async function sendFeedback');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+test('help-feedback.js: sendFeedback success branch calls hideBetaFeedbackBanner(true)', () => {
+    const fnStart = HELP_JS.indexOf('async function sendFeedback');
+    const fn = HELP_JS.slice(fnStart, fnStart + 1200);
     const successIdx = fn.indexOf('response.ok');
     const hideIdx    = fn.indexOf('hideBetaFeedbackBanner(true)');
     assert.ok(successIdx > -1, 'sendFeedback must check response.ok');
@@ -1569,8 +1570,8 @@ test('app.js: sendFeedback success branch calls hideBetaFeedbackBanner(true)', (
     assert.ok(hideIdx > successIdx, 'hideBetaFeedbackBanner call must be inside the success branch');
 });
 
-test('app.js: DOMContentLoaded handler calls showBetaFeedbackBanner', () => {
-    assert.match(APP_JS, /DOMContentLoaded.*showBetaFeedbackBanner|showBetaFeedbackBanner.*DOMContentLoaded/, 'showBetaFeedbackBanner must be wired to DOMContentLoaded');
+test('help-feedback.js: DOMContentLoaded handler calls showBetaFeedbackBanner', () => {
+    assert.match(HELP_JS, /DOMContentLoaded.*showBetaFeedbackBanner|showBetaFeedbackBanner.*DOMContentLoaded/, 'showBetaFeedbackBanner must be wired to DOMContentLoaded');
 });
 
 test('css: .beta-feedback-banner has correct structure', () => {

@@ -8,6 +8,7 @@ const MAIN_JS    = fs.readFileSync(path.join(__dirname, '..', 'main.js'),       
 const AUTO_UPDATE_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers/autoUpdateHandlers.js'), 'utf8');
 const PRELOAD_JS = fs.readFileSync(path.join(__dirname, '..', 'preload.js'),          'utf8');
 const APP_JS     = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+const HELP_JS    = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'help-feedback.js'), 'utf8');
 const HTML       = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard.html'), 'utf8');
 const CSS        = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'dashboard.css'), 'utf8');
 const UPDATE_NOTES_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'updateNotesHandlers.js'), 'utf8');
@@ -211,65 +212,62 @@ test('HTML: updateNotesModal Continue button calls closeUpdateNotesModal', () =>
     );
 });
 
-// ── app.js ────────────────────────────────────────────────────────────────────
+// ── help-feedback.js ─────────────────────────────────────────────────────────
 
-test('app.js: _pendingUpdateNotesVersion declared', () => {
-    assert.ok(APP_JS.includes('_pendingUpdateNotesVersion'), '_pendingUpdateNotesVersion not found');
+test('help-feedback.js: _pendingUpdateNotesVersion declared', () => {
+    assert.ok(HELP_JS.includes('_pendingUpdateNotesVersion'), '_pendingUpdateNotesVersion not found');
 });
 
-test('app.js: checkAndShowUpdateNotes function exists', () => {
-    assert.ok(APP_JS.includes('async function checkAndShowUpdateNotes()'));
+test('help-feedback.js: checkAndShowUpdateNotes function exists', () => {
+    assert.ok(HELP_JS.includes('async function checkAndShowUpdateNotes()'));
 });
 
-test('app.js: checkAndShowUpdateNotes calls getPendingUpdateNotes', () => {
-    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
-    const block = APP_JS.slice(idx, idx + 400);
+test('help-feedback.js: checkAndShowUpdateNotes calls getPendingUpdateNotes', () => {
+    const idx = HELP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = HELP_JS.slice(idx, idx + 400);
     assert.ok(block.includes('getPendingUpdateNotes'), 'getPendingUpdateNotes not called');
 });
 
-test('app.js: showUpdateNotesModal function exists', () => {
-    assert.ok(APP_JS.includes('function showUpdateNotesModal(notes)'));
+test('help-feedback.js: showUpdateNotesModal function exists', () => {
+    assert.ok(HELP_JS.includes('function showUpdateNotesModal(notes)'));
 });
 
-test('app.js: showUpdateNotesModal populates updateNotesList', () => {
-    const idx = APP_JS.indexOf('function showUpdateNotesModal(notes)');
-    const block = APP_JS.slice(idx, idx + 1200);
+test('help-feedback.js: showUpdateNotesModal populates updateNotesList', () => {
+    const idx = HELP_JS.indexOf('function showUpdateNotesModal(notes)');
+    const block = HELP_JS.slice(idx, idx + 1200);
     assert.ok(block.includes('updateNotesList'), 'updateNotesList not referenced');
     assert.ok(block.includes('update-notes-item'), 'update-notes-item class not used');
 });
 
-test('app.js: showUpdateNotesModal adds active class to modal', () => {
-    const idx = APP_JS.indexOf('function showUpdateNotesModal(notes)');
-    const block = APP_JS.slice(idx, idx + 1600);
+test('help-feedback.js: showUpdateNotesModal adds active class to modal', () => {
+    const idx = HELP_JS.indexOf('function showUpdateNotesModal(notes)');
+    const block = HELP_JS.slice(idx, idx + 1600);
     assert.ok(block.includes("classList.add('active')"), "modal not shown with active class");
 });
 
-test('app.js: closeUpdateNotesModal function exists', () => {
-    assert.ok(APP_JS.includes('async function closeUpdateNotesModal()'));
+test('help-feedback.js: closeUpdateNotesModal function exists', () => {
+    assert.ok(HELP_JS.includes('async function closeUpdateNotesModal()'));
 });
 
-test('app.js: closeUpdateNotesModal removes active class', () => {
-    const idx = APP_JS.indexOf('async function closeUpdateNotesModal()');
-    const block = APP_JS.slice(idx, idx + 500);
+test('help-feedback.js: closeUpdateNotesModal removes active class', () => {
+    const idx = HELP_JS.indexOf('async function closeUpdateNotesModal()');
+    const block = HELP_JS.slice(idx, idx + 500);
     assert.ok(block.includes("classList.remove('active')"), "active class not removed on close");
 });
 
-test('app.js: closeUpdateNotesModal calls markUpdateNotesShown', () => {
-    const idx = APP_JS.indexOf('async function closeUpdateNotesModal()');
-    const block = APP_JS.slice(idx, idx + 500);
+test('help-feedback.js: closeUpdateNotesModal calls markUpdateNotesShown', () => {
+    const idx = HELP_JS.indexOf('async function closeUpdateNotesModal()');
+    const block = HELP_JS.slice(idx, idx + 500);
     assert.ok(block.includes('markUpdateNotesShown'), 'markUpdateNotesShown not called on close');
 });
 
-test('app.js: window.closeUpdateNotesModal assigned', () => {
-    assert.ok(
-        APP_JS.includes('window.closeUpdateNotesModal = closeUpdateNotesModal'),
-        'window.closeUpdateNotesModal not assigned'
-    );
+test('help-feedback.js: window.closeUpdateNotesModal assigned', () => {
+    assert.match(HELP_JS, /window\.closeUpdateNotesModal\s*=\s*closeUpdateNotesModal/, 'window.closeUpdateNotesModal not assigned');
 });
 
-test('app.js: checkAndShowUpdateNotes called 900ms after DOMContentLoaded', () => {
+test('help-feedback.js: checkAndShowUpdateNotes called 900ms after DOMContentLoaded', () => {
     assert.ok(
-        APP_JS.includes('setTimeout(checkAndShowUpdateNotes, 900)'),
+        HELP_JS.includes('setTimeout(checkAndShowUpdateNotes, 900)'),
         'checkAndShowUpdateNotes not scheduled at 900ms'
     );
 });
@@ -417,29 +415,29 @@ test('main.js: getPendingUpdateNotesPayload logs skip reason when already shown'
     );
 });
 
-test('app.js: checkAndShowUpdateNotes logs result status and version', () => {
-    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
-    const block = APP_JS.slice(idx, idx + 700);
+test('help-feedback.js: checkAndShowUpdateNotes logs result status and version', () => {
+    const idx = HELP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = HELP_JS.slice(idx, idx + 700);
     assert.ok(block.includes('[UpdateNotes] checkAndShowUpdateNotes:'), 'result log not found in checkAndShowUpdateNotes');
 });
 
-test('app.js: checkAndShowUpdateNotes checks updateNotesModal element exists before showing', () => {
-    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
-    const block = APP_JS.slice(idx, idx + 700);
+test('help-feedback.js: checkAndShowUpdateNotes checks updateNotesModal element exists before showing', () => {
+    const idx = HELP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = HELP_JS.slice(idx, idx + 700);
     assert.ok(block.includes('updateNotesModal'), 'updateNotesModal element check missing in checkAndShowUpdateNotes');
 });
 
-test('app.js: checkAndShowUpdateNotes retries with setTimeout if modal element not ready', () => {
-    const idx = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
-    const block = APP_JS.slice(idx, idx + 700);
+test('help-feedback.js: checkAndShowUpdateNotes retries with setTimeout if modal element not ready', () => {
+    const idx = HELP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const block = HELP_JS.slice(idx, idx + 700);
     assert.ok(block.includes('not ready, retrying') || block.includes('retrying in'), 'retry log not found');
     assert.ok(block.includes('setTimeout'), 'retry setTimeout not found in checkAndShowUpdateNotes');
 });
 
-test('app.js: checkAndShowUpdateNotes does NOT call markUpdateNotesShown', () => {
-    const fnStart = APP_JS.indexOf('async function checkAndShowUpdateNotes()');
-    const fnEnd   = APP_JS.indexOf('\nfunction showUpdateNotesModal', fnStart);
-    const block   = APP_JS.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 700);
+test('help-feedback.js: checkAndShowUpdateNotes does NOT call markUpdateNotesShown', () => {
+    const fnStart = HELP_JS.indexOf('async function checkAndShowUpdateNotes()');
+    const fnEnd   = HELP_JS.indexOf('\nfunction showUpdateNotesModal', fnStart);
+    const block   = HELP_JS.slice(fnStart, fnEnd > fnStart ? fnEnd : fnStart + 700);
     assert.ok(!block.includes('markUpdateNotesShown'), 'markUpdateNotesShown must not be called in checkAndShowUpdateNotes — only in closeUpdateNotesModal');
 });
 
