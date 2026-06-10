@@ -158,7 +158,6 @@ function openBetaFeedbackFromBanner() {
 // UPDATE SYSTEM
 // ============================================================
 
-// الـ state الداخلي للـ update
 const _updateState = {
     status: 'idle',      // idle | found | preparing | downloading | ready | error
     newVersion: null,
@@ -306,12 +305,11 @@ async function settingsCheckForUpdate() {
     _setSettingsUpdateRow(null);
     try {
         await window.electronAPI.checkForUpdates?.();
-        // لو في state موجود فعلاً، اعرضه
         if (_updateState.status === 'found') _setSettingsUpdateRow('settingsUpdateAvailable');
         else if (_updateState.status === 'preparing' || _updateState.status === 'downloading') _setSettingsUpdateRow('settingsUpdateDownloading');
         else if (_updateState.status === 'ready') _setSettingsUpdateRow('settingsUpdateReady');
-        // لو مفيش حاجة، هيجي الـ onUpdateNotFound event هيتعامل معاه
-    } catch {
+    } 
+    catch {
         _setSettingsUpdateRow('settingsUpdateError');
     } finally {
         if (btn) { btn.textContent = 'Check for Updates'; btn.disabled = false; }
@@ -364,7 +362,6 @@ if (window.electronAPI.onUpdateStatus) {
     });
 }
 
-// لقي update جديدة
 if (window.electronAPI.onUpdateFound) {
     window.electronAPI.onUpdateFound((version) => {
         // Never overwrite an active download or ready state
@@ -377,21 +374,17 @@ if (window.electronAPI.onUpdateFound) {
         _updateState.newVersion = version;
         console.log('[UpdateUI] state:', oldStatus, '-> found (update-found) version:', version);
 
-        // badge في الـ title bar
         _setUpdateBadge(true, 'Update Available');
 
-        // الـ modal message
         const msg = document.getElementById('updateAvailableMsg');
         if (msg) msg.textContent = `Version ${version} is available. Download it now?`;
 
-        // الـ settings row
         const smsg = document.getElementById('settingsUpdateAvailableMsg');
         if (smsg) smsg.textContent = `Version ${version} is available`;
         _setSettingsUpdateRow('settingsUpdateAvailable');
     });
 }
 
-// مفيش update
 if (window.electronAPI.onUpdateNotFound) {
     window.electronAPI.onUpdateNotFound(() => {
         if (_updateState.status === 'idle') {
@@ -400,7 +393,6 @@ if (window.electronAPI.onUpdateNotFound) {
     });
 }
 
-// تقدم التحميل
 if (window.electronAPI.onUpdateProgress) {
     window.electronAPI.onUpdateProgress((progress) => {
         const oldStatus = _updateState.status;
@@ -442,7 +434,6 @@ if (window.electronAPI.onUpdateProgress) {
     });
 }
 
-// التحميل خلص
 if (window.electronAPI.onUpdateReady) {
     window.electronAPI.onUpdateReady((version) => {
         _updateState.status = 'ready';
@@ -462,7 +453,6 @@ if (window.electronAPI.onUpdateReady) {
         if (smsg) smsg.textContent = `Version ${version} ready. Restart to apply.`;
         _setSettingsUpdateRow('settingsUpdateReady');
 
-        // افتح الـ modal تلقائياً لو مش مفتوح
         const modal = document.getElementById('updateModal');
         if (modal && !modal.classList.contains('active')) {
             openUpdateModal();
@@ -470,7 +460,6 @@ if (window.electronAPI.onUpdateReady) {
     });
 }
 
-// خطأ
 if (window.electronAPI.onUpdateError) {
     window.electronAPI.onUpdateError((msg) => {
         const oldStatus = _updateState.status;
