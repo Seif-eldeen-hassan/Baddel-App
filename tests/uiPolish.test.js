@@ -8,7 +8,8 @@ const ROOT    = path.resolve(__dirname, '..');
 const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8');
 const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
-const ACC_JS  = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),    'utf8');
+const ACC_JS           = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                   'utf8');
+const DISPLAY_PREFS_JS = fs.readFileSync(path.join(ROOT, 'src/js/accounts/display-prefs.js'),     'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),    'utf8');
 const CSS         = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
 const ACCOUNTS_CSS = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),  'utf8');
@@ -161,8 +162,8 @@ test('Task C: media teardown guard checks gameDetailsView display before calling
 
 // ── Task E — Display toggles ──────────────────────────────────────────────────
 
-test('Task E: _igApplyDisplayPrefs function exists in accounts.js', () => {
-    assert.match(ACC_JS, /function _igApplyDisplayPrefs\s*\(/);
+test('Task E: _igApplyDisplayPrefs function exists in display-prefs.js', () => {
+    assert.match(DISPLAY_PREFS_JS, /function _igApplyDisplayPrefs\s*\(/);
 });
 
 test('Task E: patched applyFilters calls _igApplyDisplayPrefs after the original', () => {
@@ -171,7 +172,7 @@ test('Task E: patched applyFilters calls _igApplyDisplayPrefs after the original
         ACC_JS.indexOf('window.applyFilters') + 600
     );
     assert.match(patch, /_origApplyFilters/);
-    assert.match(patch, /_igApplyDisplayPrefs/);
+    assert.match(patch, /window\._igApplyDisplayPrefs/);
 });
 
 test('Task E: CSS contains ig-hide-title class', () => {
@@ -1762,57 +1763,55 @@ test('app.js: getSidebarActionContext installed branch requires BOTH installedVi
 // the dead code was actually deleted. Do not update them — delete them together
 // with the lines they guard.
 
-// ── accounts.js is the canonical owner ───────────────────────────────────────
+// ── display-prefs.js is the canonical owner (moved in Phase 2.10B) ───────────
 
-test('Phase 2.1: accounts.js assigns window.setAgField (canonical owner)', () => {
-    // accounts.js uses `window.setAgField = function(...)` — distinct from app.js which uses
-    // `window.setAgField = setAgField` (a named-function reference, not an inline expression).
-    assert.match(ACC_JS, /window\.setAgField\s*=\s*function\s*\(field/,
-        'accounts.js must assign window.setAgField as an inline function');
+test('Phase 2.1: display-prefs.js assigns window.setAgField (canonical owner)', () => {
+    assert.match(DISPLAY_PREFS_JS, /window\.setAgField\s*=\s*function\s*\(field/,
+        'display-prefs.js must assign window.setAgField as an inline function');
 });
 
-test('Phase 2.1: accounts.js assigns window.setIgField (canonical owner)', () => {
-    assert.match(ACC_JS, /window\.setIgField\s*=\s*function\s*\(field/,
-        'accounts.js must assign window.setIgField as an inline function');
+test('Phase 2.1: display-prefs.js assigns window.setIgField (canonical owner)', () => {
+    assert.match(DISPLAY_PREFS_JS, /window\.setIgField\s*=\s*function\s*\(field/,
+        'display-prefs.js must assign window.setIgField as an inline function');
 });
 
-test('Phase 2.1: accounts.js setAgField updates window._agDisplayPrefs.visibleFields[field]', () => {
-    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
-    assert.ok(fnStart !== -1, 'window.setAgField assignment not found in accounts.js');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setAgField updates window._agDisplayPrefs.visibleFields[field]', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setAgField = function(field');
+    assert.ok(fnStart !== -1, 'window.setAgField assignment not found in display-prefs.js');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /window\._agDisplayPrefs\.visibleFields\[field\]\s*=\s*visible/,
         'must assign visible to window._agDisplayPrefs.visibleFields[field]');
 });
 
-test('Phase 2.1: accounts.js setAgField calls _agSaveDisplayPrefs()', () => {
-    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setAgField calls _agSaveDisplayPrefs()', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setAgField = function(field');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /_agSaveDisplayPrefs\(\)/, 'must call _agSaveDisplayPrefs()');
 });
 
-test('Phase 2.1: accounts.js setAgField calls _agApplyDisplayPrefs()', () => {
-    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setAgField calls _agApplyDisplayPrefs()', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setAgField = function(field');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /_agApplyDisplayPrefs\(\)/, 'must call _agApplyDisplayPrefs()');
 });
 
-test('Phase 2.1: accounts.js setIgField updates window._igDisplayPrefs.visibleFields[field]', () => {
-    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
-    assert.ok(fnStart !== -1, 'window.setIgField assignment not found in accounts.js');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setIgField updates window._igDisplayPrefs.visibleFields[field]', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setIgField = function(field');
+    assert.ok(fnStart !== -1, 'window.setIgField assignment not found in display-prefs.js');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /window\._igDisplayPrefs\.visibleFields\[field\]\s*=\s*visible/,
         'must assign visible to window._igDisplayPrefs.visibleFields[field]');
 });
 
-test('Phase 2.1: accounts.js setIgField calls _igSaveDisplayPrefs()', () => {
-    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setIgField calls _igSaveDisplayPrefs()', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setIgField = function(field');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /_igSaveDisplayPrefs\(\)/, 'must call _igSaveDisplayPrefs()');
 });
 
-test('Phase 2.1: accounts.js setIgField calls _igApplyDisplayPrefs()', () => {
-    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+test('Phase 2.1: display-prefs.js setIgField calls _igApplyDisplayPrefs()', () => {
+    const fnStart = DISPLAY_PREFS_JS.indexOf('window.setIgField = function(field');
+    const fn = DISPLAY_PREFS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /_igApplyDisplayPrefs\(\)/, 'must call _igApplyDisplayPrefs()');
 });
 
