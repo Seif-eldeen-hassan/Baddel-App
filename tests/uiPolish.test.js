@@ -390,10 +390,11 @@ test('Task G: hide-platforms CSS hides agc-badges-strip', () => {
     assert.match(CSS, /#allGamesGrid\.hide-platforms .agc-badges-strip/);
 });
 
-// TEMP Phase 2.2: This assignment is dead at runtime — accounts.js overwrites it on load.
-// Delete this test (and the dead app.js code) after Phase 2.2 cleanup.
-test('Task G: setAgField exposed on window in app.js (TEMP — Phase 2.2 will delete this)', () => {
-    assert.match(APP_JS, /window\.setAgField\s*=\s*setAgField/);
+// Phase 2.2 complete: app.js dead field-pref infrastructure removed.
+// accounts.js is the sole runtime owner of window.setAgField/setIgField.
+test('Phase 2.2: app.js does NOT assign window.setAgField via named ref (dead code removed)', () => {
+    assert.doesNotMatch(APP_JS, /window\.setAgField\s*=\s*setAgField\b/,
+        'dead app.js assignment must be gone after Phase 2.2');
 });
 
 test('Task G: game-card-info is hidden in All Games grid (no duplicate title)', () => {
@@ -1814,22 +1815,36 @@ test('Phase 2.1: accounts.js setIgField calls _igApplyDisplayPrefs()', () => {
     assert.match(fn, /_igApplyDisplayPrefs\(\)/, 'must call _igApplyDisplayPrefs()');
 });
 
-// ── Temporary duplication: app.js dead assignments (TEMP Phase 2.2) ──────────
-// These lines in app.js are never invoked at runtime because accounts.js
-// overwrites them on page load. Delete both the tests and the dead source lines
-// in Phase 2.2.
+// ── Phase 2.2: confirm dead app.js symbols are gone ──────────────────────────
 
-test('Phase 2.1 TEMP Phase 2.2: app.js still assigns window.setAgField via named ref', () => {
-    // app.js uses `window.setAgField = setAgField` (named function reference, not inline)
-    // This is the dead assignment that Phase 2.2 will delete along with its supporting
-    // infrastructure (_AG_FIELD_CLASS_MAP, _applyFieldClass, _readFieldPrefs, etc.).
-    assert.match(APP_JS, /window\.setAgField\s*=\s*setAgField\b/,
-        'TEMP: app.js dead assignment still present — expected until Phase 2.2 cleanup');
+test('Phase 2.2: app.js does NOT contain function setAgField', () => {
+    assert.doesNotMatch(APP_JS, /function setAgField\s*\(/,
+        'app.js dead setAgField function must be removed');
 });
 
-test('Phase 2.1 TEMP Phase 2.2: app.js still assigns window.setIgField via named ref', () => {
-    assert.match(APP_JS, /window\.setIgField\s*=\s*setIgField\b/,
-        'TEMP: app.js dead assignment still present — expected until Phase 2.2 cleanup');
+test('Phase 2.2: app.js does NOT contain function setIgField', () => {
+    assert.doesNotMatch(APP_JS, /function setIgField\s*\(/,
+        'app.js dead setIgField function must be removed');
+});
+
+test('Phase 2.2: app.js does NOT contain window.setIgField named ref assignment', () => {
+    assert.doesNotMatch(APP_JS, /window\.setIgField\s*=\s*setIgField\b/,
+        'dead app.js assignment must be gone after Phase 2.2');
+});
+
+test('Phase 2.2: app.js does NOT contain _applyFieldClass', () => {
+    assert.doesNotMatch(APP_JS, /_applyFieldClass/,
+        '_applyFieldClass (dead helper) must be removed from app.js');
+});
+
+test('Phase 2.2: app.js does NOT contain _AG_FIELD_CLASS_MAP', () => {
+    assert.doesNotMatch(APP_JS, /_AG_FIELD_CLASS_MAP/,
+        '_AG_FIELD_CLASS_MAP (dead constant) must be removed from app.js');
+});
+
+test('Phase 2.2: app.js does NOT contain _IG_FIELD_CLASS_MAP', () => {
+    assert.doesNotMatch(APP_JS, /_IG_FIELD_CLASS_MAP/,
+        '_IG_FIELD_CLASS_MAP (dead constant) must be removed from app.js');
 });
 
 // ── HTML depends on these globals ─────────────────────────────────────────────
