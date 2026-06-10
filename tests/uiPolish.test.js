@@ -390,7 +390,9 @@ test('Task G: hide-platforms CSS hides agc-badges-strip', () => {
     assert.match(CSS, /#allGamesGrid\.hide-platforms .agc-badges-strip/);
 });
 
-test('Task G: setAgField function is exposed on window in app.js', () => {
+// TEMP Phase 2.2: This assignment is dead at runtime — accounts.js overwrites it on load.
+// Delete this test (and the dead app.js code) after Phase 2.2 cleanup.
+test('Task G: setAgField exposed on window in app.js (TEMP — Phase 2.2 will delete this)', () => {
     assert.match(APP_JS, /window\.setAgField\s*=\s*setAgField/);
 });
 
@@ -1747,4 +1749,111 @@ test('app.js: getSidebarActionContext installed branch requires BOTH installedVi
     // away from installed (which changes currentView) stops returning 'installed'.
     const installedReturn = fn.slice(fn.indexOf("return 'installed'") - 150, fn.indexOf("return 'installed'") + 20);
     assert.match(installedReturn, /currentView/, "installed return must check currentView");
+});
+
+// ── Phase 2.1 — setAgField / setIgField global ownership ─────────────────────
+//
+// These tests document the canonical runtime owner (accounts.js) and the
+// temporary duplication in app.js that Phase 2.2 will remove.
+//
+// "TEMP Phase 2.2" tests are sentinels: they MUST FAIL after cleanup to confirm
+// the dead code was actually deleted. Do not update them — delete them together
+// with the lines they guard.
+
+// ── accounts.js is the canonical owner ───────────────────────────────────────
+
+test('Phase 2.1: accounts.js assigns window.setAgField (canonical owner)', () => {
+    // accounts.js uses `window.setAgField = function(...)` — distinct from app.js which uses
+    // `window.setAgField = setAgField` (a named-function reference, not an inline expression).
+    assert.match(ACC_JS, /window\.setAgField\s*=\s*function\s*\(field/,
+        'accounts.js must assign window.setAgField as an inline function');
+});
+
+test('Phase 2.1: accounts.js assigns window.setIgField (canonical owner)', () => {
+    assert.match(ACC_JS, /window\.setIgField\s*=\s*function\s*\(field/,
+        'accounts.js must assign window.setIgField as an inline function');
+});
+
+test('Phase 2.1: accounts.js setAgField updates window._agDisplayPrefs.visibleFields[field]', () => {
+    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
+    assert.ok(fnStart !== -1, 'window.setAgField assignment not found in accounts.js');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /window\._agDisplayPrefs\.visibleFields\[field\]\s*=\s*visible/,
+        'must assign visible to window._agDisplayPrefs.visibleFields[field]');
+});
+
+test('Phase 2.1: accounts.js setAgField calls _agSaveDisplayPrefs()', () => {
+    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /_agSaveDisplayPrefs\(\)/, 'must call _agSaveDisplayPrefs()');
+});
+
+test('Phase 2.1: accounts.js setAgField calls _agApplyDisplayPrefs()', () => {
+    const fnStart = ACC_JS.indexOf('window.setAgField = function(field');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /_agApplyDisplayPrefs\(\)/, 'must call _agApplyDisplayPrefs()');
+});
+
+test('Phase 2.1: accounts.js setIgField updates window._igDisplayPrefs.visibleFields[field]', () => {
+    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
+    assert.ok(fnStart !== -1, 'window.setIgField assignment not found in accounts.js');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /window\._igDisplayPrefs\.visibleFields\[field\]\s*=\s*visible/,
+        'must assign visible to window._igDisplayPrefs.visibleFields[field]');
+});
+
+test('Phase 2.1: accounts.js setIgField calls _igSaveDisplayPrefs()', () => {
+    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /_igSaveDisplayPrefs\(\)/, 'must call _igSaveDisplayPrefs()');
+});
+
+test('Phase 2.1: accounts.js setIgField calls _igApplyDisplayPrefs()', () => {
+    const fnStart = ACC_JS.indexOf('window.setIgField = function(field');
+    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    assert.match(fn, /_igApplyDisplayPrefs\(\)/, 'must call _igApplyDisplayPrefs()');
+});
+
+// ── Temporary duplication: app.js dead assignments (TEMP Phase 2.2) ──────────
+// These lines in app.js are never invoked at runtime because accounts.js
+// overwrites them on page load. Delete both the tests and the dead source lines
+// in Phase 2.2.
+
+test('Phase 2.1 TEMP Phase 2.2: app.js still assigns window.setAgField via named ref', () => {
+    // app.js uses `window.setAgField = setAgField` (named function reference, not inline)
+    // This is the dead assignment that Phase 2.2 will delete along with its supporting
+    // infrastructure (_AG_FIELD_CLASS_MAP, _applyFieldClass, _readFieldPrefs, etc.).
+    assert.match(APP_JS, /window\.setAgField\s*=\s*setAgField\b/,
+        'TEMP: app.js dead assignment still present — expected until Phase 2.2 cleanup');
+});
+
+test('Phase 2.1 TEMP Phase 2.2: app.js still assigns window.setIgField via named ref', () => {
+    assert.match(APP_JS, /window\.setIgField\s*=\s*setIgField\b/,
+        'TEMP: app.js dead assignment still present — expected until Phase 2.2 cleanup');
+});
+
+// ── HTML depends on these globals ─────────────────────────────────────────────
+// dashboard.html inline onchange handlers call setAgField/setIgField directly.
+// These tests confirm the contract that must hold after Phase 2.2 (accounts.js
+// must still expose the same global names so the HTML handlers keep working).
+
+test('Phase 2.1: dashboard.html onchange handlers call setAgField()', () => {
+    assert.match(HTML, /onchange="setAgField\(/,
+        'dashboard.html must have onchange handlers invoking setAgField()');
+});
+
+test('Phase 2.1: dashboard.html onchange handlers call setIgField()', () => {
+    assert.match(HTML, /onchange="setIgField\(/,
+        'dashboard.html must have onchange handlers invoking setIgField()');
+});
+
+test('Phase 2.1: dashboard.html setAgField handlers pass field name and this.checked', () => {
+    // Verify the args pattern — callers pass (fieldName, this.checked)
+    assert.match(HTML, /onchange="setAgField\('[a-zA-Z]+',this\.checked\)"/,
+        'setAgField calls must pass (fieldName, this.checked)');
+});
+
+test('Phase 2.1: dashboard.html setIgField handlers pass field name and this.checked', () => {
+    assert.match(HTML, /onchange="setIgField\('[a-zA-Z]+',this\.checked\)"/,
+        'setIgField calls must pass (fieldName, this.checked)');
 });
