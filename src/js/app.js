@@ -4729,8 +4729,9 @@ function toggleSidebar() {
     s.classList.toggle('collapsed');
     i.innerHTML = s.classList.contains('collapsed') ? '&#9654;' : '&#9664;';
 
-    if (typeof _vsRender !== 'function' || typeof _vs === 'undefined') return;
-    if (_vs.items.length === 0) return;
+    const vs = window._vs;
+    if (!vs || typeof window._vsRender !== 'function') return;
+    if (vs.items.length === 0) return;
     // FIX: Skip _vsRender when in list mode — _vsRender forces grid.style.display='block'
     // which would snap All Games back to grid view when user collapses the sidebar.
     if (window._agDisplayPrefs && window._agDisplayPrefs.viewMode === 'list') return;
@@ -4740,7 +4741,7 @@ function toggleSidebar() {
     const DURATION = 270;
     const POLL_MS   = 48;
     const startTime = performance.now();
-    let lastCols = _vs.cols;
+    let lastCols = vs.cols;
 
     function poll() {
         const elapsed = performance.now() - startTime;
@@ -4750,14 +4751,14 @@ function toggleSidebar() {
         const m = _vsMeasure(grid);
         if (m.cols !== lastCols) {
             lastCols = m.cols;
-            _vs._gridTopDirty = true;
-            _vsRender(true);
-        } else if (_vs.rowH !== m.rowH) {
-            _vs.rowH = m.rowH;
-            const totalRows = Math.ceil(_vs.items.length / _vs.cols);
-            grid.style.height = (totalRows * _vs.rowH - _vs.gap) + 'px';
-            _vs.cardPool.forEach((rowEl, rowIdx) => {
-                rowEl.style.top = (rowIdx * _vs.rowH) + 'px';
+            vs._gridTopDirty = true;
+            window._vsRender(true);
+        } else if (vs.rowH !== m.rowH) {
+            vs.rowH = m.rowH;
+            const totalRows = Math.ceil(vs.items.length / vs.cols);
+            grid.style.height = (totalRows * vs.rowH - vs.gap) + 'px';
+            vs.cardPool.forEach((rowEl, rowIdx) => {
+                rowEl.style.top = (rowIdx * vs.rowH) + 'px';
             });
         }
 
@@ -4765,8 +4766,8 @@ function toggleSidebar() {
             setTimeout(() => requestAnimationFrame(poll), POLL_MS);
         } else {
             // Final pass after transition ends
-            _vs._gridTopDirty = true;
-            _vsRender(true);
+            vs._gridTopDirty = true;
+            window._vsRender(true);
         }
     }
 

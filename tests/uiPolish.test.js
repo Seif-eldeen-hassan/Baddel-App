@@ -1872,3 +1872,53 @@ test('Phase 2.1: dashboard.html setIgField handlers pass field name and this.che
     assert.match(HTML, /onchange="setIgField\('[a-zA-Z]+',this\.checked\)"/,
         'setIgField calls must pass (fieldName, this.checked)');
 });
+
+// ── Phase 2.3 — window._vs temporal-coupling guards ──────────────────────────
+
+test('Phase 2.3: app.js toggleSidebar captures window._vs as local vs before using it', () => {
+    const fnStart = APP_JS.indexOf('function toggleSidebar');
+    assert.ok(fnStart !== -1, 'toggleSidebar must exist in app.js');
+    const fn = APP_JS.slice(fnStart, fnStart + 1500);
+    assert.match(fn, /const vs\s*=\s*window\._vs/,
+        'toggleSidebar must capture window._vs into a local const vs');
+});
+
+test('Phase 2.3: app.js toggleSidebar guards vs before accessing its properties', () => {
+    const fnStart = APP_JS.indexOf('function toggleSidebar');
+    const fn = APP_JS.slice(fnStart, fnStart + 1500);
+    // Guard must appear before any vs.* property access
+    const guardIdx = fn.indexOf('if (!vs');
+    const propIdx  = fn.indexOf('vs.');
+    assert.ok(guardIdx !== -1, 'toggleSidebar must have !vs guard');
+    assert.ok(propIdx  !== -1, 'toggleSidebar must use vs.* properties');
+    assert.ok(guardIdx < propIdx, '!vs guard must precede first vs.* property access');
+});
+
+test('Phase 2.3: app.js toggleSidebar does NOT use bare _vs (only vs or window._vs)', () => {
+    const fnStart = APP_JS.indexOf('function toggleSidebar');
+    const fn = APP_JS.slice(fnStart, fnStart + 1500);
+    // bare _vs (not preceded by window. or const) must not appear
+    assert.doesNotMatch(fn, /[^w]\._vs\b|^_vs\b|\btypeof _vs\b/m,
+        'toggleSidebar must not reference bare _vs — use local vs or window._vs');
+});
+
+test('Phase 2.3: app.js cardCache instanceof guards use window._vs optional chain', () => {
+    // Every place that checks `window._vs.cardCache instanceof Map` must use ?.
+    // (Operations inside the guard are fine without ?. since the guard already ran.)
+    const guardMatches = [...APP_JS.matchAll(/window\._vs\??\.cardCache\s+instanceof/g)];
+    assert.ok(guardMatches.length > 0, 'app.js must have cardCache instanceof guards');
+    for (const m of guardMatches) {
+        assert.match(m[0], /window\._vs\?\.cardCache\s+instanceof/,
+            'cardCache instanceof guard must use window._vs?.cardCache');
+    }
+});
+
+test('Phase 2.3: app.js _coverQueued instanceof guards use window._vs optional chain', () => {
+    // Every place that checks `window._vs._coverQueued instanceof Set` must use ?.
+    const guardMatches = [...APP_JS.matchAll(/window\._vs\??\.\_coverQueued\s+instanceof/g)];
+    assert.ok(guardMatches.length > 0, 'app.js must have _coverQueued instanceof guards');
+    for (const m of guardMatches) {
+        assert.match(m[0], /window\._vs\?\._coverQueued\s+instanceof/,
+            '_coverQueued instanceof guard must use window._vs?._coverQueued');
+    }
+});
