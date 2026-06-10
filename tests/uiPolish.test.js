@@ -8,8 +8,9 @@ const ROOT    = path.resolve(__dirname, '..');
 const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8');
 const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
-const ACC_JS           = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                   'utf8');
-const DISPLAY_PREFS_JS = fs.readFileSync(path.join(ROOT, 'src/js/accounts/display-prefs.js'),     'utf8');
+const ACC_JS             = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                   'utf8');
+const DISPLAY_PREFS_JS   = fs.readFileSync(path.join(ROOT, 'src/js/accounts/display-prefs.js'),     'utf8');
+const PLATFORM_PANELS_JS = fs.readFileSync(path.join(ROOT, 'src/js/accounts/platform-panels.js'),   'utf8');
 const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),    'utf8');
 const CSS         = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
 const ACCOUNTS_CSS = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),  'utf8');
@@ -476,16 +477,16 @@ test('accounts.js: onLibraryUpdated clears empty mode when games arrive', () => 
 // ─── Steam Link Account fix ───────────────────────────────────────────────────
 
 test('accounts.js: linkNewPlatformAccount normalizes activePlatformView to lowercase', () => {
-    const fnStart = ACC_JS.indexOf('async function linkNewPlatformAccount');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /\.toLowerCase\(\)/, 'platform must be lowercased');
     assert.match(fn, /\['steam', 'epic'\]\.includes\(platform\)/, "platform validated against ['steam','epic']");
 });
 
 test('accounts.js: linkNewPlatformAccount catch block uses actual error message not hardcoded string', () => {
-    const fnStart = ACC_JS.indexOf('async function linkNewPlatformAccount');
-    const fn = ACC_JS.slice(fnStart, fnStart + 7000);
-    const catchStart = fn.lastIndexOf('} catch (err)');
+    const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
+    const catchStart = fn.indexOf('} catch (err)');
     const catchBlock = fn.slice(catchStart, catchStart + 300);
     assert.match(catchBlock, /err\?\.message/, 'catch block must use err.message');
     assert.doesNotMatch(catchBlock, /Failed to link account\./, 'must not show hardcoded "Failed to link account."');
@@ -493,8 +494,8 @@ test('accounts.js: linkNewPlatformAccount catch block uses actual error message 
 });
 
 test('accounts.js: linkNewPlatformAccount uses finally block for cleanup', () => {
-    const fnStart = ACC_JS.indexOf('async function linkNewPlatformAccount');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6500);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6500);
     assert.match(fn, /\} finally \{/, 'finally block must be present');
     const finallyStart = fn.lastIndexOf('} finally {');
     const finallyBlock = fn.slice(finallyStart, finallyStart + 80);
@@ -502,8 +503,8 @@ test('accounts.js: linkNewPlatformAccount uses finally block for cleanup', () =>
 });
 
 test('accounts.js: invalid activePlatformView shows error without calling platformSyncLink', () => {
-    const fnStart = ACC_JS.indexOf('async function linkNewPlatformAccount');
-    const fn = ACC_JS.slice(fnStart, fnStart + 400);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 400);
     // The guard must throw/return before the IPC call which appears later in the function
     const guardIdx = fn.indexOf("!['steam', 'epic'].includes(platform)");
     const ipcIdx   = fn.indexOf('platformSyncLink');
@@ -1238,8 +1239,8 @@ test('app.js: filterByCollection calls updateSidebarActiveState instead of manua
 });
 
 test('accounts.js: selectAccountPlatform calls updateSidebarActiveState instead of manually activating nav', () => {
-    const fnStart = ACC_JS.indexOf('function selectAccountPlatform');
-    const fn = ACC_JS.slice(fnStart, fnStart + 1200);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function selectAccountPlatform');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 1200);
     assert.match(fn, /updateSidebarActiveState\(\)/, 'must call updateSidebarActiveState');
     // Must not directly add active to a specific nav-platform element
     assert.doesNotMatch(fn, /getElementById.*nav-.*classList\.add\('active'\)/,
@@ -1247,8 +1248,8 @@ test('accounts.js: selectAccountPlatform calls updateSidebarActiveState instead 
 });
 
 test('accounts.js: selectAccountPlatform clears currentFilters.collectionId', () => {
-    const fnStart = ACC_JS.indexOf('function selectAccountPlatform');
-    const fn = ACC_JS.slice(fnStart, fnStart + 600);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function selectAccountPlatform');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
 });
 

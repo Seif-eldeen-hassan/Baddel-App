@@ -7,7 +7,8 @@ const path   = require('node:path');
 const ROOT         = path.resolve(__dirname, '..');
 const APP_JS       = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                          'utf8');
 const SHORTCUTS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/account-shortcuts.js'),        'utf8');
-const ACC_JS       = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                     'utf8');
+const ACC_JS             = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                     'utf8');
+const PLATFORM_PANELS_JS  = fs.readFileSync(path.join(ROOT, 'src/js/accounts/platform-panels.js'),    'utf8');
 const HTML         = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),                     'utf8');
 
 // ─── 1. Source presence — functions in account-shortcuts.js ──────────────────
@@ -163,12 +164,12 @@ test('account-shortcuts.js: switchPinnedAccount guards handleSwitchAccount with 
     assert.match(fn, /typeof handleSwitchAccount\s*===\s*['"]function['"]/, 'must guard with typeof check');
 });
 
-test('accounts.js: handleSwitchAccount is defined', () => {
-    assert.match(ACC_JS, /async function handleSwitchAccount\s*\(/, 'handleSwitchAccount must be in accounts.js');
+test('platform-panels.js: handleSwitchAccount is defined', () => {
+    assert.match(PLATFORM_PANELS_JS, /async function handleSwitchAccount\s*\(/, 'handleSwitchAccount must be in platform-panels.js');
 });
 
-test('accounts.js: handlePinAccount is exposed on window', () => {
-    assert.match(ACC_JS, /window\.handlePinAccount\s*=/, 'handlePinAccount must be on window in accounts.js');
+test('platform-panels.js: handlePinAccount is exposed on window', () => {
+    assert.match(PLATFORM_PANELS_JS, /window\.handlePinAccount\s*=/, 'handlePinAccount must be on window in platform-panels.js');
 });
 
 test('account-shortcuts.js: renderAccountShortcuts calls handlePinAccount for unpin', () => {

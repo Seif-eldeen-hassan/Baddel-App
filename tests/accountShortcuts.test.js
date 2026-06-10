@@ -8,7 +8,8 @@ const ROOT        = path.resolve(__dirname, '..');
 const SERVICE_JS  = fs.readFileSync(path.join(ROOT, 'services/accountShortcuts.js'),         'utf8');
 const MAIN_JS     = fs.readFileSync(path.join(ROOT, 'main.js'),                             'utf8');
 const PRELOAD_JS  = fs.readFileSync(path.join(ROOT, 'preload.js'),                          'utf8');
-const ACC_JS      = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                  'utf8');
+const ACC_JS            = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                  'utf8');
+const PLATFORM_PANELS_JS = fs.readFileSync(path.join(ROOT, 'src/js/accounts/platform-panels.js'), 'utf8');
 const ACC_CSS     = fs.readFileSync(path.join(ROOT, 'src/css/accounts.css'),                'utf8');
 const HANDLER_JS  = fs.readFileSync(path.join(ROOT, 'accountsHandler.js'),                  'utf8');
 const ACCOUNT_SHORTCUT_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'accountShortcutHandlers.js'), 'utf8');
@@ -253,90 +254,90 @@ test('preload.js uses account-shortcuts:list IPC channel', () => {
     assert.match(PRELOAD_JS, /account-shortcuts:list/);
 });
 
-// ── 8. Renderer: shortcut helpers in accounts.js ────────────────────────────
+// ── 8. Renderer: shortcut helpers in platform-panels.js ─────────────────────
 
-test('accounts.js defines _loadShortcutsMap', () => {
-    assert.match(ACC_JS, /function _loadShortcutsMap/);
+test('platform-panels.js defines _loadShortcutsMap', () => {
+    assert.match(PLATFORM_PANELS_JS, /function _loadShortcutsMap/);
 });
 
-test('accounts.js defines _shortcutBtnHtml', () => {
-    assert.match(ACC_JS, /function _shortcutBtnHtml/);
+test('platform-panels.js defines _shortcutBtnHtml', () => {
+    assert.match(PLATFORM_PANELS_JS, /function _shortcutBtnHtml/);
 });
 
-test('accounts.js defines _updateCardShortcutBtn', () => {
-    assert.match(ACC_JS, /function _updateCardShortcutBtn/);
+test('platform-panels.js defines _updateCardShortcutBtn', () => {
+    assert.match(PLATFORM_PANELS_JS, /function _updateCardShortcutBtn/);
 });
 
-test('accounts.js defines openShortcutCaptureModal', () => {
-    assert.match(ACC_JS, /function openShortcutCaptureModal/);
+test('platform-panels.js defines openShortcutCaptureModal', () => {
+    assert.match(PLATFORM_PANELS_JS, /function openShortcutCaptureModal/);
 });
 
-test('accounts.js openShortcutCaptureModal validates against API', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 10000);
+test('platform-panels.js openShortcutCaptureModal validates against API', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 10000);
     assert.match(fn, /accountShortcuts\.set/);
     assert.match(fn, /accountShortcuts\.clear/);
 });
 
-test('accounts.js createAccountCard accepts shortcut param', () => {
-    const fnStart = ACC_JS.indexOf('function createAccountCard');
-    const sig = ACC_JS.slice(fnStart, fnStart + 80);
+test('platform-panels.js createAccountCard accepts shortcut param', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function createAccountCard');
+    const sig = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 80);
     assert.match(sig, /shortcut/);
 });
 
-test('accounts.js createSteamAccountCard accepts shortcut param', () => {
-    const fnStart = ACC_JS.indexOf('function createSteamAccountCard');
-    const sig = ACC_JS.slice(fnStart, fnStart + 80);
+test('platform-panels.js createSteamAccountCard accepts shortcut param', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function createSteamAccountCard');
+    const sig = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 80);
     assert.match(sig, /shortcut/);
 });
 
-test('accounts.js createDiscordAccountCard accepts shortcut param', () => {
-    const fnStart = ACC_JS.indexOf('function createDiscordAccountCard');
+test('platform-panels.js createDiscordAccountCard accepts shortcut param', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function createDiscordAccountCard');
     // Second occurrence is the real one (first is the duplicate comment)
-    const first = ACC_JS.indexOf('function createDiscordAccountCard');
-    const second = ACC_JS.indexOf('function createDiscordAccountCard', first + 1);
-    const fn = second > -1 ? ACC_JS.slice(second, second + 80) : ACC_JS.slice(first, first + 80);
+    const first = PLATFORM_PANELS_JS.indexOf('function createDiscordAccountCard');
+    const second = PLATFORM_PANELS_JS.indexOf('function createDiscordAccountCard', first + 1);
+    const fn = second > -1 ? PLATFORM_PANELS_JS.slice(second, second + 80) : PLATFORM_PANELS_JS.slice(first, first + 80);
     assert.match(fn, /shortcut/);
 });
 
-test('accounts.js renders _shortcutBtnHtml inside account cards', () => {
-    assert.match(ACC_JS, /_shortcutBtnHtml\(shortcut\)/);
+test('platform-panels.js renders _shortcutBtnHtml inside account cards', () => {
+    assert.match(PLATFORM_PANELS_JS, /_shortcutBtnHtml\(shortcut\)/);
 });
 
-test('accounts.js wires shortcut button click on createAccountCard', () => {
-    const fnStart = ACC_JS.indexOf('function createAccountCard');
-    const fn = ACC_JS.slice(fnStart, fnStart + 4000);
+test('platform-panels.js wires shortcut button click on createAccountCard', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function createAccountCard');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 4000);
     assert.match(fn, /data-action="shortcut"/);
     assert.match(fn, /openShortcutCaptureModal/);
 });
 
-test('accounts.js wires shortcut button click on createSteamAccountCard', () => {
-    const fnStart = ACC_JS.indexOf('function createSteamAccountCard');
-    const fn = ACC_JS.slice(fnStart, fnStart + 4000);
+test('platform-panels.js wires shortcut button click on createSteamAccountCard', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function createSteamAccountCard');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 4000);
     assert.match(fn, /openShortcutCaptureModal/);
 });
 
-test('accounts.js loadAccountsForPlatform fetches shortcuts map', () => {
-    assert.match(ACC_JS, /_loadShortcutsMap/);
-    assert.match(ACC_JS, /shortcutsMap\.get/);
+test('platform-panels.js loadAccountsForPlatform fetches shortcuts map', () => {
+    assert.match(PLATFORM_PANELS_JS, /_loadShortcutsMap/);
+    assert.match(PLATFORM_PANELS_JS, /shortcutsMap\.get/);
 });
 
-test('accounts.js shortcut modal shows error field', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+test('platform-panels.js shortcut modal shows error field', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /shortcut-error/);
     assert.match(fn, /errorEl\.textContent/);
 });
 
-test('accounts.js shortcut modal Escape key closes modal', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+test('platform-panels.js shortcut modal Escape key closes modal', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /Escape/);
 });
 
-test('accounts.js shortcut modal Backspace/Delete clears capture', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+test('platform-panels.js shortcut modal Backspace/Delete clears capture', () => {
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /Backspace/);
     assert.match(fn, /Delete/);
 });
@@ -365,51 +366,51 @@ test('accounts.css has-shortcut variant styling', () => {
 
 // ── 10. validateShortcutCapture — renderer-side validation ──────────────────
 
-test('accounts.js defines validateShortcutCapture', () => {
-    assert.match(ACC_JS, /function validateShortcutCapture/);
+test('platform-panels.js defines validateShortcutCapture', () => {
+    assert.match(PLATFORM_PANELS_JS, /function validateShortcutCapture/);
 });
 
 test('validateShortcutCapture: Ctrl+K is invalid (only 1 modifier)', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 3000);
     // The function must check modifier count < 2 and return valid:false
     assert.match(fn, /normMods\.length < 2/);
 });
 
 test('validateShortcutCapture: blocks Ctrl+C, Ctrl+S, Alt+Tab', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /Ctrl\+C/);
     assert.match(fn, /Ctrl\+S/);
     assert.match(fn, /Alt\+Tab/);
 });
 
 test('validateShortcutCapture: rejects Escape/Backspace/Delete as main key', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /REJECT_KEYS/);
     assert.match(fn, /escape/);
     assert.match(fn, /backspace/);
 });
 
 test('validateShortcutCapture: returns { valid, message, normalized }', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /valid:/);
     assert.match(fn, /message:/);
     assert.match(fn, /normalized:/);
 });
 
 test('validateShortcutCapture: error message for 1-modifier shortcut suggests example', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 2000);
     // Must produce a friendly example like "Ctrl + Alt + H"
     assert.match(fn, /for example/i);
 });
 
 test('validateShortcutCapture: display format uses spaces around plus', () => {
-    const fnStart = ACC_JS.indexOf('function validateShortcutCapture');
-    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 3000);
     // Joins with ' + ' not '+'
     assert.match(fn, /join\(' \+ '\)/);
 });
@@ -417,54 +418,54 @@ test('validateShortcutCapture: display format uses spaces around plus', () => {
 // ── 11. Modal UI wired to validateShortcutCapture ───────────────────────────
 
 test('modal calls validateShortcutCapture in keydown handler', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /validateShortcutCapture/);
 });
 
 test('modal uses _refreshUI to sync state to DOM', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /_refreshUI/);
 });
 
 test('modal applies is-valid class to capture box', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /is-valid/);
 });
 
 test('modal applies is-invalid class to capture box', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /is-invalid/);
 });
 
 test('modal disables Save button when capturedValid is false', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     // The _refreshUI function sets saveBtn.disabled = true for invalid/empty state.
     assert.match(fn, /saveBtn\.disabled = true/);
     assert.match(fn, /saveBtn\.disabled = false/);
 });
 
 test('modal save handler guards on capturedValid before calling API', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 8000);
     assert.match(fn, /capturedValid/);
     // The guard: if (!capturedRaw || !capturedValid)
     assert.match(fn, /!capturedValid/);
 });
 
 test('modal shows placeholder text when nothing captured', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /Press a shortcut like/);
 });
 
 test('modal tracks capturedRaw separately from display', () => {
-    const fnStart = ACC_JS.indexOf('function openShortcutCaptureModal');
-    const fn = ACC_JS.slice(fnStart, fnStart + 6000);
+    const fnStart = PLATFORM_PANELS_JS.indexOf('function openShortcutCaptureModal');
+    const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 6000);
     assert.match(fn, /capturedRaw/);
     assert.match(fn, /capturedDisplay/);
 });
