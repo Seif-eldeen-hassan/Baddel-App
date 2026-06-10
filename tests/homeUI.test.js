@@ -1693,8 +1693,8 @@ test('app.js: getRecentGames sorts by lastQualifiedPlayed', () => {
     assert.doesNotMatch(fn, /\.sort\([^)]*lastPlayed[^)]*\)/);
 });
 
-test('app.js: buildPlaytimeCache includes lastQualifiedPlayed', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+test('playtime.js: buildPlaytimeCache includes lastQualifiedPlayed', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'playtime.js'), 'utf8');
     const fnStart = js.indexOf('function buildPlaytimeCache');
     const fn = js.slice(fnStart, fnStart + 400);
     assert.match(fn, /lastQualifiedPlayed/);
