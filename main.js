@@ -1,5 +1,5 @@
 const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, session, protocol, Notification, screen } = require('electron');
-let autoUpdater = null; // lazy-loaded inside setupAutoUpdater() â€” never required at module load
+let autoUpdater = null; // lazy-loaded inside setupAutoUpdater() - never required at module load
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
@@ -7,8 +7,6 @@ const os = require('os');
 const { exec, spawn } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
-const { BrowserView, WebContentsView } = require('electron');
-
 const {
     scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage,
     removeGame, renameGame, unhideAllGames, getHiddenGames,
@@ -27,15 +25,13 @@ const quickSwitcher = require('./services/quickSwitcher');
 const quickSwitcherSettings = require('./services/quickSwitcherSettings');
 const { registerPlatformSyncHandlers, steamConnector, epicConnector, registerPlatformSyncAssetDownloader, autoSyncOnStartup } = require('./platformSync');
 const analytics = require('./analytics');
-const psList = require('ps-list');
-const https = require('https');
 const steamBridge = require('./steamBridge');
 const { fileURLToPath } = require('url');
 const safeLauncher  = require('./services/safeLauncher');
 const ipcValidation = require('./services/ipcValidation');
 
 
-// One achievement fetch at a time â€” avoids overlapping authenticate/get_achievements on the single Python bridge.
+// One achievement fetch at a time - avoids overlapping authenticate/get_achievements on the single Python bridge.
 let _achievementIpcChain = Promise.resolve();
 function _enqueueAchievementFetch(fn) {
     const next = _achievementIpcChain.then(fn, fn);
@@ -44,12 +40,12 @@ function _enqueueAchievementFetch(fn) {
 }
 
 // ============================================================
-// AUTO UPDATER â€” state machine (initialised inside app.whenReady)
+// AUTO UPDATER - state machine (initialised inside app.whenReady)
 // ============================================================
-// âš ï¸  Do NOT call autoUpdater.setFeedURL / attach listeners here at module-load
+// Do NOT call autoUpdater.setFeedURL / attach listeners here at module-load
 //     time.  electron-updater v6 reads app.getAppPath()/package.json synchronously
 //     during initialisation; if the asar is still being replaced right after an
-//     NSIS update the file is transiently missing â†’ "ENOENT package.json" crash
+//     NSIS update the file is transiently missing -> "ENOENT package.json" crash
 //     before the window ever opens.  All setup is deferred to setupAutoUpdater()
 //     which is called from inside app.whenReady().
 
@@ -63,7 +59,7 @@ const _updState = {
     stallTimer:   null,   // reset on every download-progress; fires if progress stops for 120 s
 };
 
-// â”€â”€ Update notes â€” show once per installed version â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Update notes - show once per installed version --
 
 const UPDATE_NOTES_STATE_FILE = path.join(app.getPath('userData'), 'update-notes-state.json');
 
@@ -235,7 +231,7 @@ function _resetStallTimer() {
     _clearStallTimer();
     _updState.stallTimer = setTimeout(() => {
         if (_updState.status === 'downloading') {
-            console.warn('[AutoUpdater] Stall timeout â€” no download progress for 120 s');
+            console.warn('[AutoUpdater] Stall timeout - no download progress for 120 s');
             _updState.downloading = false;
             _updState.status      = 'error';
             const msg = 'Download stalled. Check your connection and try again.';
@@ -245,7 +241,7 @@ function _resetStallTimer() {
     }, 120_000);
 }
 
-// Called once from app.whenReady() â€” safe because app is fully initialised by then.
+// Called once from app.whenReady() - safe because app is fully initialised by then.
 function setupAutoUpdater() {
     try {
         // Lazy-load electron-updater here, never at module load time.
@@ -264,7 +260,7 @@ function setupAutoUpdater() {
         autoUpdater.autoDownload = false;
         autoUpdater.allowDowngrade = false;
 
-        // â”€â”€ events â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+        // -- events --
 
         autoUpdater.on('update-available', (info) => {
             console.log('[AutoUpdater] Update available:', info.version);
@@ -319,7 +315,7 @@ function setupAutoUpdater() {
             _sendUpdateStatus({ status: 'error', message: msg });
         });
 
-        console.log('[AutoUpdater] Initialised â€” current version:', app.getVersion());
+        console.log('[AutoUpdater] Initialised - current version:', app.getVersion());
     } catch (err) {
         // Non-fatal: log but don't crash the app if auto-updater can't initialise
         console.error('[AutoUpdater] Failed to initialise (non-fatal):', err.message);
@@ -335,8 +331,8 @@ require('./handlers/imageHandlers').register(ipcMain, {
     IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, resetGameImage,
 });
 
-// â”€â”€ IPC: start download â€” handle (invoke) so renderer gets immediate feedback â”€â”€
-// â”€â”€ Auto-Update IPC (moved to handlers/autoUpdateHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- IPC: start download - handle (invoke) so renderer gets immediate feedback --
+// -- Auto-Update IPC (moved to handlers/autoUpdateHandlers.js) --
 require('./handlers/autoUpdateHandlers').register(ipcMain, {
     _updState,
     getAutoUpdater:          () => autoUpdater,
@@ -487,7 +483,7 @@ if (!hasLock) {
 // ============================================================
 process.on('uncaughtException', (error) => {
     console.error('[Fatal][uncaughtException]', error);
-    // Only show the error dialog when the window is visible â€” at boot-time
+    // Only show the error dialog when the window is visible - at boot-time
     // (isStartupLaunch) the window may not exist yet, so skip the dialog.
     if (!isStartupLaunch) {
         try { dialog.showErrorBox('Crashing Error', error.stack || error.message); } catch {}
@@ -499,9 +495,6 @@ process.on('unhandledRejection', (reason) => {
     console.error('[Fatal][unhandledRejection]', reason);
 });
 
-// ============================================================
-// PLAYTIME TRACKER
-// ============================================================
 
 // ============================================================
 // DYNAMIC GAME EXE SCANNER
@@ -509,7 +502,6 @@ process.on('unhandledRejection', (reason) => {
 const dynamicExeCache = {};
 
 async function getDynamicGameExes(gameId, gamePath) {
-    // Ù„Ùˆ Ù‚Ø±Ø£Ù†Ø§ Ø§Ù„ÙÙˆÙ„Ø¯Ø± Ø¯Ù‡ Ù‚Ø¨Ù„ ÙƒØ¯Ù‡ØŒ Ù†Ø±Ø¬Ø¹ Ø§Ù„Ù†ØªÙŠØ¬Ø© Ù…Ù† Ø§Ù„ÙƒØ§Ø´ ÙÙˆØ±Ø§Ù‹
     if (dynamicExeCache[gameId]) return dynamicExeCache[gameId];
     
     const exes = new Set();
@@ -527,14 +519,12 @@ async function getDynamicGameExes(gameId, gamePath) {
             }
         } catch { /* fall through to directory scan */ }
         
-        // Ù‚Ø±Ø§Ø¡Ø© Ø§Ù„ÙÙˆÙ„Ø¯Ø± Ø§Ù„Ø±Ø¦ÙŠØ³ÙŠ Ù„Ù„Ø¹Ø¨Ø©
         const items = await fsPromises.readdir(gamePath, { withFileTypes: true });
         
         for (const item of items) {
             if (item.isFile() && item.name.toLowerCase().endsWith('.exe')) {
                 exes.add(item.name.toLowerCase());
             } else if (item.isDirectory()) {
-                // Ø§Ù„Ø¨Ø­Ø« ÙÙŠ Ø§Ù„Ù…Ø¬Ù„Ø¯Ø§Øª Ø§Ù„ÙØ±Ø¹ÙŠØ© Ø§Ù„Ø´Ù‡ÙŠØ±Ø© Ø§Ù„Ù„ÙŠ Ø§Ù„Ø´Ø±ÙƒØ§Øª Ø¨ØªØ®Ø¨ÙŠ ÙÙŠÙ‡Ø§ Ø§Ù„Ù€ exe
                 const lowerDir = item.name.toLowerCase();
                 if (['bin', 'binaries', 'win64', 'win32', 'core', 'retail'].some(sub => lowerDir.includes(sub))) {
                     try {
@@ -545,13 +535,12 @@ async function getDynamicGameExes(gameId, gamePath) {
                                 exes.add(subItem.name.toLowerCase());
                             }
                         }
-                    } catch(e) { /* ØªØ¬Ø§Ù‡Ù„ Ù…Ø¬Ù„Ø¯Ø§Øª Ø§Ù„Ù†Ø¸Ø§Ù… Ø§Ù„Ù…Ø­Ù…ÙŠØ© */ }
+                    } catch(e) {  }
                 }
             }
         }
-    } catch(e) { /* ØªØ¬Ø§Ù‡Ù„ Ù„Ùˆ Ø§Ù„Ù…Ø³Ø§Ø± ØºÙŠØ± Ù…ÙˆØ¬ÙˆØ¯ */ }
+    } catch(e) {  }
     
-    // ÙÙ„ØªØ±Ø© Ø§Ù„Ù…Ù„ÙØ§Øª Ø§Ù„Ù…Ø³Ø§Ø¹Ø¯Ø© (Ø¹Ø´Ø§Ù† Ù„Ùˆ ÙÙŠ uninstaller Ø´ØºØ§Ù„ Ù…Ù†Ø¹ØªØ¨Ø±ÙˆØ´ Ø§Ù„Ù„Ø¹Ø¨Ø©)
     const validExes = [...exes].filter(exe => 
         !exe.includes('uninstall') && 
         !exe.includes('crash') && 
@@ -599,7 +588,7 @@ function collectExplicitPathHints(game = {}) {
 }
 
 // ============================================================
-// DYNAMIC NAME GENERATOR (Ù„Ù„Ø£Ù„Ø¹Ø§Ø¨ Ø§Ù„Ù„ÙŠ Ù…Ù„Ù‡Ø§Ø´ Ù…Ø³Ø§Ø± ÙˆØ§Ø¶Ø­)
+// DYNAMIC NAME GENERATOR
 // ============================================================
 function generateDynamicAliases(gameName) {
     if (!gameName) return [];
@@ -607,7 +596,7 @@ function generateDynamicAliases(gameName) {
     const words = clean.split(/\s+/).filter(w => w.length > 0);
     
     const aliases = new Set();
-    // Ù…Ø«Ø§Ù„: "Rainbow Six Siege" -> "rainbowsixsiege"
+ // ...: "Rainbow Six Siege" -> "rainbowsixsiege"
     aliases.add(clean.replace(/\s+/g, '')); 
     
     // slug form: "rainbow-six-siege"
@@ -615,9 +604,9 @@ function generateDynamicAliases(gameName) {
     if (slug) aliases.add(slug);
 
     if (words.length > 1) {
-        // Ù…Ø«Ø§Ù„: "Rainbow Six Siege" -> "rss"
+ // ...: "Rainbow Six Siege" -> "rss"
         aliases.add(words.map(w => w[0]).join('')); 
-        // Ù…Ø«Ø§Ù„: "Assassins Creed Valhalla" -> "acvalhalla"
+ // ...: "Assassins Creed Valhalla" -> "acvalhalla"
         if (words[0] === 'assassins' && words[1] === 'creed') {
             aliases.add('ac' + words.slice(2).join('')); 
             aliases.add('ac ' + words.slice(2).join(' '));
@@ -629,13 +618,13 @@ function generateDynamicAliases(gameName) {
 
 const osHelper = require('./playtimeOsHelper');
 
-// â”€â”€ Tracking constants â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Tracking constants --
 const TRACK_INTERVAL_MS      = 10_000;
 const LAUNCH_TIMEOUT_MS      = 5 * 60_000;   // give up after 5 min if process never appears
 const GRACE_PERIOD_MS        = 90_000;        // alt-tab grace before entering paused_bg
-const IDLE_THRESHOLD_MS      = 5 * 60_000;   // 5 min idle â†’ paused_idle
+const IDLE_THRESHOLD_MS      = 5 * 60_000;   // 5 min idle -> paused_idle
 const SUSPICIOUS_MIN_RAW_MS  = 60 * 60_000;  // 1 h raw runtime before suspicious check
-const SUSPICIOUS_MAX_RATIO   = 0.05;         // <5 % active â†’ suspicious
+const SUSPICIOUS_MAX_RATIO   = 0.05;         // <5 % active -> suspicious
 const QUALIFIED_MIN_MINUTES  = 2;            // min counted min for a session to qualify
 
 const PLATFORM_CLIENTS = new Set([
@@ -711,7 +700,6 @@ async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = 
 
         const ignoredExes = ['explorer.exe', 'steam.exe', 'epicgameslauncher.exe', 'riotclientservices.exe', 'eadesktop.exe', 'upc.exe', 'cmd.exe', 'game.exe', 'launcher.exe', 'client.exe', 'host.exe'];
 
-        // Ø¬Ù„Ø¨ Ø§Ù„Ù€ Exes Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠØ§Ù‹
         const gameExes = await getDynamicGameExes(gameId, pathLower);
 
         for (const p of processes) {
@@ -724,10 +712,9 @@ async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = 
 
             if (ignoredExes.includes(pName)) continue;
 
-            // 1. Ø§Ù„ØªØ·Ø§Ø¨Ù‚ Ø§Ù„Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠ Ù…Ù† Ø§Ù„ÙÙˆÙ„Ø¯Ø±
             if (gameExes.includes(pName)) return true;
 
-            // 2. Riot Games â€” Win10 compatible detection
+            // 2. Riot Games - Win10 compatible detection
             // On Win10 ps-list may not expose --launch-product in cmd; we match
             // by the well-known game EXEs directly as a reliable fallback.
             const riotProduct = _getRiotProductForGame(trackingGame, cmdLower, gameName, gameId);
@@ -745,10 +732,8 @@ async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = 
                 }
             }
 
-            // 3. Ø§Ù„ØªØ·Ø§Ø¨Ù‚ Ø¨Ø§Ù„Ù…Ø³Ø§Ø±
             if (pathLower && pathLower.length > 5 && pCmd.includes(pathLower)) return true;
 
-            // 4. Ø§Ù„ØªØ·Ø§Ø¨Ù‚ Ø¨Ø§Ù„Ø§Ø³Ù… Ø£Ùˆ Ø§Ù„Ø§Ø®ØªØµØ§Ø±Ø§Øª Ø§Ù„Ø¯ÙŠÙ†Ø§Ù…ÙŠÙƒÙŠØ©
             if (cleanGameName && cleanProcessName.length >= 3) {
                 if (_safeFuzzyGameNameMatch(gameName, pName)) {
                     return true;
@@ -769,7 +754,7 @@ async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = 
 function _normalizeUwpText(value) {
     return String(value || '')
         .toLowerCase()
-        .replace(/[â„¢Â®Â©]/g, '')
+        .replace(/[\u2122\u00ae\u00a9]/g, '')
         .replace(/[^a-z0-9]+/g, ' ')
         .replace(/\s+/g, ' ')
         .trim();
@@ -821,7 +806,7 @@ function _isXboxOrStoreGame(game, gameId, command, gamePath) {
     );
 }
 
-// â”€â”€ Foreground helper â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Foreground helper --
 // Returns true  = game process is foreground
 //         false = something else is foreground
 //         null  = OS helper unavailable (treat as active / unknown)
@@ -894,7 +879,7 @@ if (cleanGameName && cleanFgName.length >= 3) {
     return false;
 }
 
-// â”€â”€ State machine tick â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- State machine tick --
 async function _tickTracker(gameId, command, gamePath, gameName) {
     const tracker = activeTrackers[gameId];
     if (!tracker) return;
@@ -904,14 +889,14 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
     const isRunning   = await isGameRunning(command, gamePath, gameName, gameId, isDebugTick);
     const now         = Date.now();
 
-    // â”€â”€ Process gone â†’ end â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Process gone -> end --
     if (!isRunning) {
         if (tracker.state === 'launching' && now - tracker.clickTime < LAUNCH_TIMEOUT_MS) return;
         _endTrackerSession(gameId, tracker, gameName, 'process_gone');
         return;
     }
 
-    // â”€â”€ First process detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- First process detection --
     if (!tracker.sessionStartTime) {
         tracker.sessionStartTime = now;
         tracker.state = 'detected';
@@ -919,7 +904,7 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
     }
     tracker.totalRawMs = now - tracker.sessionStartTime;
 
-    // â”€â”€ Foreground + idle checks â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Foreground + idle checks --
     const [fgProc, idleMs] = await Promise.all([
         osHelper.getForegroundProcess(),
         osHelper.getIdleMs(),
@@ -933,23 +918,23 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
     }
     const isIdle      = osAvailable ? idleMs >= IDLE_THRESHOLD_MS : false;
 
-    // â”€â”€ OS helper unavailable: split policy by session origin â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- OS helper unavailable: split policy by session origin --
     // User-explicitly-launched sessions get legacy counting (effectiveFg=true,
     // confidence upgraded to 'legacy'). External/watcher sessions stay in
-    // 'detected' state â€” they must not qualify without actual FG confirmation.
+    // 'detected' state - they must not qualify without actual FG confirmation.
     let effectiveFg;
     if (!osAvailable) {
         if (tracker.userLaunched) {
             effectiveFg = true;
             if (!tracker._osHelperWarnedOnce) {
-                console.log(`[Playtime] OS helper unavailable â€” legacy counting for user-launched: ${gameName}`);
+                console.log(`[Playtime] OS helper unavailable - legacy counting for user-launched: ${gameName}`);
                 tracker._osHelperWarnedOnce = true;
                 tracker.confidence = 'legacy';
             }
         } else {
             effectiveFg = false;
             if (!tracker._osHelperWarnedOnce) {
-                console.log(`[Playtime] OS helper unavailable â€” external session stays unconfirmed (won't qualify): ${gameName}`);
+                console.log(`[Playtime] OS helper unavailable - external session stays unconfirmed (won't qualify): ${gameName}`);
                 tracker._osHelperWarnedOnce = true;
             }
         }
@@ -958,7 +943,7 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
         effectiveFg = isFg === true;
     }
 
-    // â”€â”€ State transitions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- State transitions --
     if (tracker.state === 'detected' || tracker.state === 'paused_bg' || tracker.state === 'paused_idle') {
         if (effectiveFg && !isIdle) {
             // Transition to ACTIVE
@@ -988,16 +973,16 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
             tracker.bgStartTime  = now;
             console.log(`[Playtime] paused background: ${gameName}`);
         } else {
-            // Still active â€” accumulate
+            // Still active - accumulate
             tracker.foregroundSeen = true;
             _doPeriodicSave(gameId, tracker);
         }
     }
 
-    // â”€â”€ Grace period accounting for paused_bg â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Grace period accounting for paused_bg --
     if (tracker.state === 'paused_bg') {
         if (effectiveFg && !isIdle) {
-            // Came back â€” resume active
+            // Came back - resume active
             tracker.state        = 'active';
             tracker.activeStartTime = now;
             tracker.foregroundSeen  = true;
@@ -1007,13 +992,13 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
                 tracker.bgStartTime   = null;
             }
         } else if (now > tracker.graceEndTime && tracker.bgStartTime) {
-            // Grace expired â€” account background time and reset
+            // Grace expired - account background time and reset
             tracker.backgroundMs += now - tracker.bgStartTime;
             tracker.bgStartTime   = now;
         }
     }
 
-    // â”€â”€ Idle time accounting â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Idle time accounting --
     if (tracker.state === 'paused_idle' && tracker.idleStartTime) {
         if (!isIdle) {
             tracker.idleMs += now - tracker.idleStartTime;
@@ -1031,7 +1016,7 @@ async function _tickTracker(gameId, command, gamePath, gameName) {
         }
     }
 
-    // â”€â”€ Suspicious detection â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Suspicious detection --
     if (tracker.state !== 'suspicious' && tracker.totalRawMs >= SUSPICIOUS_MIN_RAW_MS) {
         const activeMs = tracker.totalActiveMs + (
             tracker.state === 'active' && tracker.activeStartTime ? now - tracker.activeStartTime : 0
@@ -1205,7 +1190,7 @@ function startGlobalWatcher() {
                 }
 
                 if (matchedConf) {
-                    console.log(`[Playtime] external launch detected: ${game.name} (confidence=${matchedConf}) â€” OS helper required for session to qualify`);
+                    console.log(`[Playtime] external launch detected: ${game.name} (confidence=${matchedConf}) - OS helper required for session to qualify`);
                     startGameTracking(game.id, game.command, game.path, game.name, matchedConf);
                 }
             }
@@ -1259,11 +1244,11 @@ function saveTrackerPlaytime(gameId, tracker, gameName) {
 
     // Guard: ensure the export is wired up correctly (catches future regressions early)
     if (typeof gameScanner.saveQualifiedSession !== 'function') {
-        console.error('[Playtime] saveQualifiedSession is not a function on gameScanner â€” skipping save for:', gameName);
+        console.error('[Playtime] saveQualifiedSession is not a function on gameScanner - skipping save for:', gameName);
         return;
     }
 
-    console.log(`[Playtime] saveTrackerPlaytime â†’ gameId=${gameId} gameName=${gameName}`);
+    console.log(`[Playtime] saveTrackerPlaytime -> gameId=${gameId} gameName=${gameName}`);
     console.log(`[Playtime] sessionData:`, JSON.stringify(sessionData));
 
     gameScanner.saveQualifiedSession(gameId, sessionData).then(result => {
@@ -1323,12 +1308,6 @@ function createTray() {
 // ============================================================
 // WINDOW
 // ============================================================
-// ============================================================
-// WINDOW
-// ============================================================
-// ============================================================
-// WINDOW
-// ============================================================
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1280, height: 800,
@@ -1346,7 +1325,7 @@ function createWindow() {
             webSecurity:                true,   // re-enabled; CDN scripts removed (see dashboard.html)
             webviewTag:                 true,   // renderer uses <webview> for YouTube trailers
             allowRunningInsecureContent: false,
-            // sandbox: true is intentionally omitted â€” our preload uses webUtils/shell from
+            // sandbox: true is intentionally omitted - our preload uses webUtils/shell from
             // require('electron') which are not available in fully sandboxed preloads
             // on Electron 28.  Revisit after full upgrade to Electron 34+.
         }
@@ -1356,8 +1335,8 @@ function createWindow() {
         if (!isQuitting) { event.preventDefault(); mainWindow.hide(); }
     });
 
-    // â”€â”€ Security hardening â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-    // Deny all permission requests from the renderer (camera, mic, geolocationâ€¦)
+    // -- Security hardening --
+    // Deny all permission requests from the renderer (camera, mic, geolocation...)
     mainWindow.webContents.session.setPermissionRequestHandler((_wc, _perm, callback) => {
         callback(false);
     });
@@ -1375,9 +1354,9 @@ function createWindow() {
             console.warn('[Security] Blocked renderer navigation to:', url);
         }
     });
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --
 
-    // â”€â”€ Webview security: only allow YouTube embed URLs â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Webview security: only allow YouTube embed URLs --
     // Matches youtube.com/embed/ID and youtube-nocookie.com/embed/ID
     const _YT_EMBED_RE = /^https:\/\/www\.(youtube(?:-nocookie)?\.com)\/embed\/[a-zA-Z0-9_-]{11}(\?|$)/;
     const _YT_ALLOWED  = /^https:\/\/(www\.)?(youtube(-nocookie)?\.com|youtu\.be|ytimg\.com|googlevideo\.com|gstatic\.com|google\.com)\//;
@@ -1387,7 +1366,7 @@ function createWindow() {
         delete webPreferences.preload;
         delete webPreferences.preloadURL;
 
-        // Force locked-down permissions â€” watch URLs and arbitrary pages are not allowed
+        // Force locked-down permissions - watch URLs and arbitrary pages are not allowed
         webPreferences.nodeIntegration            = false;
         webPreferences.contextIsolation           = true;
         webPreferences.sandbox                    = true;
@@ -1404,7 +1383,7 @@ function createWindow() {
             event.preventDefault();
         }
     });
-    // â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // --
 
     mainWindow.maximize();
     mainWindow.loadFile(path.join(__dirname, 'src', 'dashboard.html'));
@@ -1416,7 +1395,7 @@ function createWindow() {
             mainWindow.show();
         }
 
-        // Auto-updater check â€” delayed at boot to avoid hitting the network
+        // Auto-updater check - delayed at boot to avoid hitting the network
         // before Windows has fully initialised the network stack.
         runAfterStartupGrace('checkForUpdates', () => {
             if (autoUpdater) {
@@ -1425,7 +1404,7 @@ function createWindow() {
             }
         }, 60000);
 
-        // Background library sync â€” fires 12 s after window shows (or after the
+        // Background library sync - fires 12 s after window shows (or after the
         // startup grace period) so the first render cycle settles first.
         if (process.env.BADDEL_DISABLE_STARTUP_SYNC !== '1') {
             runAfterStartupGrace('autoSyncOnStartup', () => autoSyncOnStartup(), 45000);
@@ -1435,7 +1414,7 @@ function createWindow() {
     });
 }
 
-// â”€â”€ Webview security: navigation + popup hardening for all new webContents â”€
+// -- Webview security: navigation + popup hardening for all new webContents --
 // Runs for every WebContents including <webview> instances in the renderer.
 app.on('web-contents-created', (_event, contents) => {
     if (contents.getType() !== 'webview') return;
@@ -1467,96 +1446,18 @@ require('./handlers/windowHandlers').register(ipcMain, {
 // ============================================================
 let CACHE_DIR;
 
-// Semaphore to limit concurrent downloads to 3
-let _activeDownloads = 0;
-const _downloadQueue = [];
-
-function runDownloadQueue() {
-    while (_activeDownloads < 3 && _downloadQueue.length > 0) {
-        const { url, filename, resolve, reject } = _downloadQueue.shift();
-        _activeDownloads++;
-        _doDownload(url, filename)
-            .then(resolve)
-            .catch(reject)
-            .finally(() => { _activeDownloads--; runDownloadQueue(); });
-    }
-}
-
-async function _doDownload(url, filename) {
-    const filePath = path.join(CACHE_DIR, filename);
-    const tmpPath = filePath + '.tmp'; // Ø¥Ù†Ø´Ø§Ø¡ Ù…Ø³Ø§Ø± Ù„Ù…Ù„Ù Ù…Ø¤Ù‚Øª
-
-    // Return cached file immediately if it exists and has content
-    try {
-        const stats = await fs.stat(filePath);
-        if (stats.size > 0) return filePath;
-    } catch { /* not found, download it */ }
-
-    // Use https/http module â€” reliable in Electron main process, handles redirects
-    return new Promise((resolve, reject) => {
-        const protocol = url.startsWith('https') ? require('https') : require('http');
-        const fileStream = require('fs').createWriteStream(tmpPath); // Ø§Ù„ÙƒØªØ§Ø¨Ø© ÙÙŠ Ø§Ù„Ù…Ù„Ù Ø§Ù„Ù…Ø¤Ù‚Øª Ø£ÙˆÙ„Ø§Ù‹
-        const cleanup = () => { try { require('fs').unlinkSync(tmpPath); } catch {} };
-
-        const request = protocol.get(url, {
-            headers: { 'User-Agent': 'BaddelLauncher/1.0' },
-            timeout: 15000
-        }, (res) => {
-            // Follow redirects
-            if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-                fileStream.close();
-                cleanup();
-                _doDownload(res.headers.location, filename).then(resolve).catch(reject);
-                return;
-            }
-            if (res.statusCode !== 200) {
-                fileStream.close(); cleanup();
-                reject(new Error(`HTTP ${res.statusCode}`));
-                return;
-            }
-            res.pipe(fileStream);
-            fileStream.on('finish', () => { 
-                fileStream.close(() => {
-                    // Ø¨Ø¹Ø¯ Ø¥ØºÙ„Ø§Ù‚ Ø§Ù„Ù…Ù„Ù Ø¨Ø§Ù„ÙƒØ§Ù…Ù„ØŒ Ù†Ù‚ÙˆÙ… Ø¨ØªØºÙŠÙŠØ± Ø§Ø³Ù…Ù‡ Ù„Ù„Ù…Ø³Ø§Ø± Ø§Ù„Ù†Ù‡Ø§Ø¦ÙŠ
-                    try {
-                        require('fs').renameSync(tmpPath, filePath);
-                        resolve(filePath);
-                    } catch (e) {
-                        reject(e);
-                    }
-                }); 
-            });
-            fileStream.on('error', (e) => { cleanup(); reject(e); });
-        });
-
-        request.on('error', (e) => { fileStream.close(); cleanup(); reject(e); });
-        request.on('timeout', () => {
-            request.destroy();
-            fileStream.close(); cleanup();
-            reject(new Error('Timeout: ' + filename));
-        });
-    });
-}
-
-function downloadImage(url, filename) {
-    return new Promise((resolve, reject) => {
-        _downloadQueue.push({ url, filename, resolve, reject });
-        runDownloadQueue();
-    });
-}
-
 // ============================================================
 // APP STARTUP
 // ============================================================
 app.setAppUserModelId('com.baddel.launcher.beta');
 
-// âœ… Ù„Ø§Ø²Ù… ÙŠØªØ³Ø¬Ù„ Ù‚Ø¨Ù„ app.whenReady â€” Ø¨ÙŠØ¹Ø±Ù‘Ù Ø§Ù„Ù€ custom scheme Ø§Ù„Ù„ÙŠ Steam Ø¨ÙŠØ¹Ù…Ù„ redirect Ù„ÙŠÙ‡ Ø¨Ø¹Ø¯ login
+// ... app.whenReady - custom scheme Steam ... redirect login
 protocol.registerSchemesAsPrivileged([
     { scheme: 'baddelsteam', privileges: { standard: true, secure: true, supportFetchAPI: true } }
 ]);
 
 app.whenReady().then(async () => {
-    // â”€â”€ Startup diagnostics â€” logged before anything else can throw â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Startup diagnostics - logged before anything else can throw --
     try {
         const fsSync = require('fs');
         const appPath = app.getAppPath();
@@ -1573,10 +1474,10 @@ app.whenReady().then(async () => {
         console.warn('[Startup] Diagnostics error (non-fatal):', diagErr.message);
     }
 
-    // â”€â”€ Auto-updater (must be after app is ready â€” electron-updater reads package.json) â”€â”€
+    // -- Auto-updater (must be after app is ready - electron-updater reads package.json) --
     setupAutoUpdater();
 
-    // Analytics init â€” deferred at boot so the network flush doesn't fail during
+    // Analytics init - deferred at boot so the network flush doesn't fail during
     // the Windows startup window where network services may not be ready yet.
     // For normal launches, runAfterStartupGrace returns fn() so await still works.
     await runAfterStartupGrace('analytics.init', () => analytics.init(), 30000);
@@ -1590,7 +1491,7 @@ app.whenReady().then(async () => {
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
 
-    // â”€â”€ Installed Games IPC (moved to handlers/installedGamesHandlers.js) â”€â”€â”€â”€
+    // -- Installed Games IPC (moved to handlers/installedGamesHandlers.js) --
     // installedGamesState is declared here (inside whenReady) so its lifetime
     // matches the app session and it is passed by reference into the handler.
     const installedGamesState = { backgroundScanInProgress: false };
@@ -1603,7 +1504,7 @@ app.whenReady().then(async () => {
         installedGamesState,
     });
 
-    // â”€â”€ Game Library IPC (moved to handlers/gameLibraryHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Game Library IPC (moved to handlers/gameLibraryHandlers.js) --
     require('./handlers/gameLibraryHandlers').register(ipcMain, {
         ipcValidation,
         getSavedGames,
@@ -1623,7 +1524,7 @@ app.whenReady().then(async () => {
         addManualGame,
         getMainWindow: () => mainWindow,
     });
-    // â”€â”€ Local Metadata IPC (moved to handlers/localMetadataHandlers.js) â”€â”€â”€â”€â”€
+    // -- Local Metadata IPC (moved to handlers/localMetadataHandlers.js) --
     require('./handlers/localMetadataHandlers').register(ipcMain, {
         ipcValidation,
         getSavedGames,
@@ -1632,7 +1533,7 @@ app.whenReady().then(async () => {
         loadFullMetadata,
         getMainWindow: () => mainWindow,
     });
-    // â”€â”€ Playtime IPC (moved to handlers/playtimeHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Playtime IPC (moved to handlers/playtimeHandlers.js) --
     require('./handlers/playtimeHandlers').register(ipcMain, {
         updatePlaytime,
         setTimeTrackingEnabled,
@@ -1657,35 +1558,6 @@ app.whenReady().then(async () => {
     });
 
 
-function _normalizePlatformHints(hints = {}) {
-    const plats = new Set();
-    const rawPlatforms = Array.isArray(hints.platforms)
-        ? hints.platforms
-        : (typeof hints.platform === 'string' ? hints.platform.split(',') : []);
-
-    rawPlatforms.forEach((p) => {
-        const key = String(p || '').toLowerCase().trim();
-        if (key) plats.add(key);
-    });
-
-    if (!rawPlatforms.length) {
-        const src = `${hints.platform || ''} ${hints.command || ''} ${hints.path || ''}`.toLowerCase();
-        if (src.includes('steam')) plats.add('steam');
-        if (src.includes('epic')) plats.add('epic');
-        if (src.includes('ea') || src.includes('origin')) plats.add('ea');
-        if (src.includes('riot')) plats.add('riot');
-        if (src.includes('ubisoft')) plats.add('ubisoft');
-        if (src.includes('rockstar')) plats.add('rockstar');
-    }
-
-    return [...plats];
-}
-
-function _isSteamHostedImageUrl(url) {
-    if (!url || typeof url !== 'string') return false;
-    return /steam(static|powered)|akamaihd\.net\/steam|steamcdn/i.test(url);
-}
-
 function _extractSteamAppId(gameName, hints = {}) {
     const candidates = [
         hints.steamAppId,
@@ -1700,62 +1572,6 @@ function _extractSteamAppId(gameName, hints = {}) {
     return null;
 }
 
-function _decodeHtmlEntities(input = '') {
-    return String(input)
-        .replace(/&nbsp;/gi, ' ')
-        .replace(/&amp;/gi, '&')
-        .replace(/&quot;/gi, '"')
-        .replace(/&#39;/gi, "'")
-        .replace(/&lt;/gi, '<')
-        .replace(/&gt;/gi, '>');
-}
-
-function _stripHtmlToText(input = '') {
-    const text = String(input)
-        .replace(/<br\s*\/?>/gi, '\n')
-        .replace(/<\/(p|div|li|ul|ol|h1|h2|h3|h4|h5|h6)>/gi, '\n')
-        .replace(/<li[^>]*>/gi, 'â€¢ ')
-        .replace(/<[^>]+>/g, ' ')
-        .replace(/\r/g, '')
-        .replace(/\n{3,}/g, '\n\n')
-        .replace(/[ \t]{2,}/g, ' ')
-        .trim();
-    return _decodeHtmlEntities(text);
-}
-
-function _normalizeSteamDescription(data = {}) {
-    const shortDesc = _stripHtmlToText(data.short_description || '');
-    if (shortDesc.length >= 80) return shortDesc;
-
-    const longDesc = _stripHtmlToText(data.about_the_game || data.detailed_description || '');
-    if (!longDesc) return shortDesc || null;
-
-    // Keep it readable and story-first (avoid very long storefront dump)
-    if (longDesc.length <= 1400) return longDesc;
-    return `${longDesc.slice(0, 1400).trim()}...`;
-}
-
-function _parseStorefrontRequirements(html = '') {
-    if (!html) return {};
-    const text = _stripHtmlToText(html);
-    const lines = text.split('\n').map((l) => l.trim()).filter(Boolean);
-    const joined = lines.join('\n');
-
-    const pick = (labelRegex) => {
-        const re = new RegExp(`${labelRegex}\\s*:?[\\s\\n]*([^\\n]+)`, 'i');
-        const m = joined.match(re);
-        return m ? m[1].trim() : null;
-    };
-
-    return {
-        os: pick('(?:OS|Operating\\s*System)'),
-        cpu: pick('(?:Processor|CPU)'),
-        ram: pick('(?:Memory|RAM)'),
-        gpu: pick('(?:Graphics|Video\\s*Card|GPU)'),
-        storage: pick('(?:Storage|Hard\\s*Drive|Disk\\s*Space)'),
-        directx: pick('(?:DirectX|DX)'),
-    };
-}
 
 const _achievementsResultCache = new Map();
 const ACHIEVEMENTS_CACHE_TTL_MS = 90_000;
@@ -1795,14 +1611,14 @@ async function _fetchAchievementsForApp(payload = {}) {
     let activeSessionId = String(steamBridge.getLastSessionSteamId?.() || '');
     const allCreds = steamBridge.getAllSavedCredentials?.() || {};
 
-    console.log(`[Achievements] â–¶ app=${normalizedAppId} accounts=${accounts.length} ownerIds=[${ownerIds.join(',')}]`);
+    console.log(`[Achievements] > app=${normalizedAppId} accounts=${accounts.length} ownerIds=[${ownerIds.join(',')}]`);
 
     // Bootstrap auth once if bridge has no active session yet.
     if (!activeSessionId) {
         const firstCred = Object.values(allCreds)[0] || null;
         if (firstCred) {
             try {
-                console.log(`[Achievements] BOOTSTRAP â–¶`);
+                console.log(`[Achievements] BOOTSTRAP >`);
                 const boot = await withTimeout(
                     steamBridge.authenticate(firstCred, { waitForCache: false }),
                     12000,
@@ -1810,7 +1626,7 @@ async function _fetchAchievementsForApp(payload = {}) {
                 );
                 if (boot?.status === 'authenticated' && boot?.steamId) {
                     activeSessionId = String(boot.steamId);
-                    console.log(`[Achievements] BOOTSTRAP â—€ session=${activeSessionId}`);
+                    console.log(`[Achievements] BOOTSTRAP < session=${activeSessionId}`);
                 }
             } catch (e) {
                 console.warn(`[Achievements] BOOTSTRAP failed: ${e.message}`);
@@ -1847,13 +1663,13 @@ async function _fetchAchievementsForApp(payload = {}) {
                 } else {
                     let authRes;
                     try {
-                        console.log(`[Achievements] AUTH â–¶ ${displayName} (from ${activeSessionId || 'none'})`);
+                        console.log(`[Achievements] AUTH > ${displayName} (from ${activeSessionId || 'none'})`);
                         authRes = await withTimeout(
                             steamBridge.authenticate(creds, { waitForCache: false }),
                             20000,
                             `Steam auth (${displayName})`
                         );
-                        console.log(`[Achievements] AUTH â—€ ${displayName} status=${authRes?.status} steamId=${authRes?.steamId ?? 'n/a'}`);
+                        console.log(`[Achievements] AUTH < ${displayName} status=${authRes?.status} steamId=${authRes?.steamId ?? 'n/a'}`);
                     } catch (e) {
                         console.warn(`[Achievements] AUTH timeout/error ${displayName}: ${e.message}`);
                     }
@@ -1882,15 +1698,15 @@ async function _fetchAchievementsForApp(payload = {}) {
             // before requesting achievements. This mirrors the library-sync pattern and prevents
             // fetching against a transitioning Python session.
             if (didSwitch) {
-                console.log(`[Achievements] CACHE â³ ${displayName} â€” waiting for session ready`);
+                console.log(`[Achievements] CACHE  ${displayName} - waiting for session ready`);
                 await steamBridge.waitForCacheReady(accountId, 35_000);
-                console.log(`[Achievements] CACHE âœ… ${displayName} â€” session ready`);
+                console.log(`[Achievements] CACHE ... ${displayName} - session ready`);
             }
 
             // Guard against stale session switching.
             const currentSessionId = String(steamBridge.getLastSessionSteamId?.() || '');
             if (currentSessionId && currentSessionId !== accountId) {
-                console.warn(`[Achievements] Session mismatch â€” expected ${accountId}, got ${currentSessionId}`);
+                console.warn(`[Achievements] Session mismatch - expected ${accountId}, got ${currentSessionId}`);
                 rows.push({
                     accountId,
                     displayName,
@@ -1901,11 +1717,11 @@ async function _fetchAchievementsForApp(payload = {}) {
                 continue;
             }
 
-            // 120s per-account budget â€” must exceed Python's wait_ready(60) + wait_metadata_ready(30)
+            // 120s per-account budget - must exceed Python's wait_ready(60) + wait_metadata_ready(30)
             // which can take up to 90s on a cold CM connection. The bridge itself allows 180s;
             // this 120s safety net sits between the two so a genuinely hung account fails
             // individually without consuming the entire outer UI timeout.
-            console.log(`[Achievements] FETCH â–¶ ${displayName} app=${normalizedAppId}`);
+            console.log(`[Achievements] FETCH > ${displayName} app=${normalizedAppId}`);
             const achRes = await withTimeout(
                 steamBridge.getAchievements([normalizedAppId]),
                 120_000,
@@ -1915,7 +1731,7 @@ async function _fetchAchievementsForApp(payload = {}) {
     ? achRes.achievements[normalizedAppId]
     : [];
 
-// Ø§Ù„Ø¬Ø¯ÙŠØ¯: ÙƒÙ„ Ø§Ù„Ø¥Ù†Ø¬Ø§Ø²Ø§Øª Ù…Ù† Steam schema
+// : ... Steam schema
 const allSchemaAchievements =
     Array.isArray(achRes?.allAchievements?.[normalizedAppId])
         ? achRes.allAchievements[normalizedAppId]
@@ -1927,7 +1743,7 @@ const allSchemaAchievements =
 
 const normalizeAchKey = (value) => String(value || '')
     .toLowerCase()
-    .replace(/[â„¢Â®Â©]/g, '')
+    .replace(/[\u2122\u00ae\u00a9]/g, '')
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
@@ -1993,7 +1809,7 @@ const allAchievements = allSchemaAchievements.length
         : unlocked.length;
 
     console.log(
-        `[Achievements] FETCH â—€ ${displayName} unlocked=${unlockedCount} total=${totalCount ?? 'unknown'} all=${allAchievements.length}`
+        `[Achievements] FETCH < ${displayName} unlocked=${unlockedCount} total=${totalCount ?? 'unknown'} all=${allAchievements.length}`
     );
 
     rows.push({
@@ -2002,10 +1818,8 @@ const allAchievements = allSchemaAchievements.length
         totalCount,
         unlockedCount,
 
-        // Ø§Ù„Ù‚Ø¯ÙŠÙ… Ù†Ø³ÙŠØ¨Ù‡ Ù„Ù„ØªÙˆØ§ÙÙ‚
         unlocked,
 
-        // Ø§Ù„Ø¬Ø¯ÙŠØ¯
         allAchievements,
 
         unlockedPreview: allAchievements
@@ -2024,7 +1838,7 @@ const allAchievements = allSchemaAchievements.length
             });
         }
     }
-    console.log(`[Achievements] â—€ app=${normalizedAppId} rows=${rows.length} ok=${rows.filter(r => !r.error && !r.skipped).length}`);
+    console.log(`[Achievements] < app=${normalizedAppId} rows=${rows.length} ok=${rows.filter(r => !r.error && !r.skipped).length}`);
 
     rows.sort((a, b) => b.unlockedCount - a.unlockedCount);
     const result = { status: 'success', appId: normalizedAppId, accounts: rows };
@@ -2032,428 +1846,25 @@ const allAchievements = allSchemaAchievements.length
     return result;
 }
 
-async function _findSteamAppIdByName(gameName) {
-    try {
-        const searchRes = await fetch(`https://store.steampowered.com/api/storesearch/?term=${encodeURIComponent(gameName)}&l=english&cc=US`);
-        const searchData = await searchRes.json();
-        if (!searchData.items || searchData.items.length === 0) return null;
-        return String(searchData.items[0].id);
-    } catch {
-        return null;
-    }
-}
 
-async function _fetchSteamReviewSummary(appId) {
-    try {
-        const res = await fetch(`https://store.steampowered.com/appreviews/${appId}?json=1&language=all&purchase_type=all`);
-        const data = await res.json();
-        const summary = data?.query_summary || {};
-        const totalPositive = Number(summary.total_positive || 0);
-        const totalNegative = Number(summary.total_negative || 0);
-        const total = totalPositive + totalNegative;
-        const scorePercent = total > 0 ? Math.round((totalPositive / total) * 100) : null;
-
-        return {
-            reviewScore: typeof summary.review_score === 'number' ? summary.review_score : null,
-            reviewScoreDesc: summary.review_score_desc || null,
-            totalPositive,
-            totalNegative,
-            totalReviews: total,
-            scorePercent,
-        };
-    } catch {
-        return null;
-    }
-}
-
-// Steam Storefront (details + trailer + requirements). Card/hero: Store API images first, then CDN.
-async function fetchSteamStorefrontData(gameName, hints = {}) {
-    const _pickSteamMovieUrl = (movie = {}) => (
-        movie?.mp4?.max ||
-        movie?.mp4?.['480'] ||
-        movie?.webm?.max ||
-        movie?.webm?.['480'] ||
-        movie?.hls_h264 ||
-        movie?.dash_h264 ||
-        movie?.dash_av1 ||
-        null
-    );
-
-    // Returns an ordered array of all available sources for one Steam movie.
-    // Electron/Chromium plays WebM (VP9) and MP4 (H.264) natively; HLS/DASH need JS libs.
-    // Prefer WebM > MP4 > HLS > DASH so native formats are tried first.
-    const _pickSteamMovieSources = (movie = {}) => {
-        const push = (url, kind, label) => url ? { url, kind, label } : null;
-        return [
-            push(movie?.webm?.max,    'webm', 'WebM Max'),
-            push(movie?.webm?.['480'],'webm', 'WebM 480p'),
-            push(movie?.mp4?.max,     'mp4',  'MP4 Max'),
-            push(movie?.mp4?.['480'], 'mp4',  'MP4 480p'),
-            push(movie?.hls_h264,     'hls',  'HLS'),
-            push(movie?.dash_h264,    'dash', 'DASH H.264'),
-            push(movie?.dash_av1,     'dash', 'DASH AV1'),
-        ].filter(Boolean);
-    };
-
-    const _emptySteamInfo = (reviewSummary) => ({
-        description: null,
-        genres: [],
-        developer: null,
-        publisher: null,
-        releaseDate: null,
-        rating: null,
-        platforms: [],
-        engine: null,
-        gameMode: null,
-        website: null,
-        trailer: null,
-        allTrailers: [],
-        isDirectVideo: false,
-        artworks: [],
-        screenshots: [],
-        requirements: null,
-        steamReview: reviewSummary,
-        achievementsTotal: null,
+    // -- Metadata IPC (moved to handlers/gameMetadataHandlers.js) --
+    require('./handlers/gameMetadataHandlers').register(ipcMain, {
+        baddelApi,
+        mrm: require('./gameScanner').resolutionManager,
+        generateMetadataCandidates,
     });
-
-    try {
-        const appId = _extractSteamAppId(gameName, hints) || await _findSteamAppIdByName(gameName);
-        if (!appId) return null;
-
-        const [detailsRes, reviewSummary] = await Promise.all([
-            fetch(`https://store.steampowered.com/api/appdetails?appids=${appId}`, {
-                headers: {
-                    'Cookie': 'birthtime=283993201; lastagecheckage=1-January-1980; mature_content=1; wants_mature_content=1'
-                }
-            }),
-            _fetchSteamReviewSummary(appId),
-        ]);
-        let detailsData = null;
-        try {
-            detailsData = await detailsRes.json();
-        } catch {
-            detailsData = null;
-        }
-        const appKey = String(appId);
-        if (!detailsData || typeof detailsData !== 'object') {
-            return {
-                cover: null,
-                heroImage: null,
-                logo: null,
-                steamAppId: appId,
-                steamStoreCoverUrls: [],
-                steamStoreHeroUrls: [],
-                steamStoreLogoUrls: [],
-                usedSteamLibraryGridArt: false,
-                storeCapsuleFallback: null,
-                storeHeroFallback: null,
-                info: _emptySteamInfo(reviewSummary),
-            };
-        }
-        const ok = !!detailsData[appKey]?.success;
-        const data = ok ? detailsData[appKey].data : null;
-
-        if (!data) {
-            return {
-                cover: null,
-                heroImage: null,
-                logo: null,
-                steamAppId: appId,
-                steamStoreCoverUrls: [],
-                steamStoreHeroUrls: [],
-                steamStoreLogoUrls: [],
-                usedSteamLibraryGridArt: false,
-                storeCapsuleFallback: null,
-                storeHeroFallback: null,
-                info: _emptySteamInfo(reviewSummary),
-            };
-        }
-
-        const trailer = _pickSteamMovieUrl(data.movies?.[0] || null);
-        const allTrailers = (data.movies || []).map((movie, i) => {
-            const sources = _pickSteamMovieSources(movie);
-            return {
-                name: movie?.name || `Trailer ${i + 1}`,
-                url: sources[0]?.url || _pickSteamMovieUrl(movie),
-                thumbUrl: movie?.thumbnail || null,
-                sources,
-            };
-        }).filter((t) => !!t.url);
-
-        const screenshots = (data.screenshots || []).map((s) => s.path_full || s.path_thumbnail).filter(Boolean);
-        let requirements = null;
-        if (data.pc_requirements) {
-            const minimum = _parseStorefrontRequirements(data.pc_requirements.minimum || '');
-            const recommended = _parseStorefrontRequirements(data.pc_requirements.recommended || '');
-            const hasAny = Object.values(minimum).some(Boolean) || Object.values(recommended).some(Boolean);
-            requirements = hasAny ? { minimum, recommended } : null;
-        }
-
-        const storeCoverFallbacks = [
-            data.capsule_image,
-            data.capsule_imagev5,
-            data.header_image,
-            screenshots[0],
-        ].filter(Boolean);
-        const storeHeroFallbacks = [
-            data.background_raw,
-            data.background,
-            screenshots[0],
-            data.capsule_imagev5,
-            data.header_image,
-        ].filter(Boolean);
-        const storeLogoFallbacks = [
-            data.header_image,
-            data.capsule_imagev5,
-            data.capsule_image,
-            data.background_raw,
-            screenshots[0],
-        ].filter(Boolean);
-
-        return {
-            cover: null,
-            heroImage: null,
-            logo: null,
-            steamAppId: appId,
-            steamStoreCoverUrls: storeCoverFallbacks,
-            steamStoreHeroUrls: storeHeroFallbacks,
-            steamStoreLogoUrls: storeLogoFallbacks,
-            usedSteamLibraryGridArt: false,
-            storeCapsuleFallback: data.capsule_image || data.header_image || screenshots[0] || null,
-            storeHeroFallback: data.background_raw || data.background || data.capsule_imagev5 || data.header_image || null,
-            info: {
-                description: _normalizeSteamDescription(data),
-                genres: (data.genres || []).map((g) => g.description).filter(Boolean),
-                developer: Array.isArray(data.developers) ? data.developers.join(', ') : null,
-                publisher: Array.isArray(data.publishers) ? data.publishers.join(', ') : null,
-                releaseDate: data.release_date?.date || null,
-                rating: typeof data.metacritic?.score === 'number' ? data.metacritic.score : null,
-                platforms: Object.entries(data.platforms || {})
-                    .filter(([, val]) => !!val)
-                    .map(([k]) => k.toUpperCase()),
-                engine: null,
-                gameMode: null,
-                website: data.website || null,
-                trailer,
-                allTrailers,
-                isDirectVideo: !!trailer,
-                artworks: [],
-                screenshots,
-                requirements,
-                steamReview: reviewSummary,
-                achievementsTotal: Number(data.achievements?.total || 0) || null,
-            },
-        };
-    } catch (err) {
-        console.error('[Steam Storefront Fetch Error]', err);
-        const appId = _extractSteamAppId(gameName, hints);
-        if (!appId) return null;
-        return {
-            cover: null,
-            heroImage: null,
-            logo: null,
-            steamAppId: appId,
-            steamStoreCoverUrls: [],
-            steamStoreHeroUrls: [],
-            steamStoreLogoUrls: [],
-            usedSteamLibraryGridArt: false,
-            storeCapsuleFallback: null,
-            storeHeroFallback: null,
-            info: _emptySteamInfo(null),
-        };
-    }
-}
-
-// ============================================================
-// EPIC NAME MAPPING
-// ============================================================
-// Known Epic internal names â†’ real searchable game names
-const EPIC_NAME_MAP = {
-    'death stranding content':          'Death Stranding',
-    'gta v':                            'Grand Theft Auto V',
-    'gtav':                             'Grand Theft Auto V',
-    'among us inner sloth':             'Among Us',
-    'rocket league psyonix':            'Rocket League',
-    'fortnite battle royale':           'Fortnite',
-    'diabloiiiretailue':                'Diablo III',
-    'rage 2 bethesda':                  'RAGE 2',
-    'theouterworlds':                   'The Outer Worlds',
-    'borderlands3':                     'Borderlands 3',
-    'cyberpunk2077':                    'Cyberpunk 2077',
-    'readyornot':                       'Ready or Not',
-    'remnant2':                         'Remnant II',
-    'calluna':                          'Control',
-};
-
-/**
- * _searchLegendaryMetadataByAnyName(name)
- * 1. Finds the matching game in Legendary's local metadata JSON files (gives us
- *    app_title, app_name, namespace â€” the identifiers we need).
- * 2. Uses those identifiers to call fetchFromEpicStore(), which hits Epic's
- *    public store-content API and returns cover, hero, logo, description,
- *    screenshots, system requirements, trailers, and more.
- * 3. Falls back to the local keyImages (offline) if the network call fails.
- */
-async function _searchLegendaryMetadataByAnyName(gameName) {
-    try {
-        const userData = app.getPath('userData');
-        const items = await fs.readdir(userData);
-        const legendaryDirs = items.filter(d => d.startsWith('legendary-config-'));
-        const target = gameName.toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        for (const dir of legendaryDirs) {
-            const metaDir = path.join(userData, dir, 'metadata');
-            if (!require('fs').existsSync(metaDir)) continue;
-
-            const files = await fs.readdir(metaDir);
-            for (const file of files) {
-                if (!file.endsWith('.json')) continue;
-                try {
-                    const raw = await fs.readFile(path.join(metaDir, file), 'utf8');
-                    const data = JSON.parse(raw);
-                    const rawTitle = (data.app_title || data.app_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const rawName  = (data.app_name || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    const mappedTitle = EPIC_NAME_MAP[rawName]?.toLowerCase().replace(/[^a-z0-9]/g, '') || '';
-
-                    // Match logic: exact match only or mapping match.
-                    // Avoid fuzzy includes which causes false positives (e.g. empty string matches everything).
-                    const isMatch = (target.length > 0) && (
-                        (rawTitle === target) ||
-                        (rawName === target) ||
-                        (mappedTitle === target)
-                    );
-
-                    if (isMatch) {
-                        // Build the legendaryGame object the new API expects
-                        const legendaryGame = {
-                            app_title: data.app_title || data.app_name || '',
-                            app_name:  data.app_name  || '',
-                            metadata:  { namespace: data.metadata?.namespace || data.app_name || '' },
-                        };
-
-                        // Try the live store-content API first (full metadata)
-                        try {
-                            const storeResult = await fetchFromEpicStore(legendaryGame);
-                            if (storeResult) {
-                                console.log(`[Legendary] store-content OK for "${legendaryGame.app_title}"`);
-                                return storeResult; // { cover, heroImage, logo, info: { ... } }
-                            }
-                        } catch (apiErr) {
-                            console.warn('[Legendary] store-content failed, using local keyImages:', apiErr.message);
-                        }
-
-                        // Offline fallback: local keyImages only (no description/screenshots)
-                        const keyImages = data.metadata?.keyImages || [];
-                        return {
-                            cover:     _pickEpicCover(keyImages),
-                            hero:      _pickEpicHero(keyImages),
-                            heroImage: _pickEpicHero(keyImages),
-                            logo:      _pickEpicLogo(keyImages),
-                        };
-                    }
-                } catch { /* skip corrupted json */ }
-            }
-        }
-    } catch (err) {
-        // quiet
-    }
-    return null;
-}
-
-function _pickEpicCover(keyImages) {
-    if (!Array.isArray(keyImages) || keyImages.length === 0) return null;
-    const PREF = ['DieselGameBoxTall', 'DieselGameBox', 'OfferImageTall', 'Thumbnail'];
-    for (const type of PREF) {
-        const img = keyImages.find(k => k.type === type);
-        if (img?.url) return img.url;
-    }
-    return keyImages[0]?.url || null;
-}
-
-function _pickEpicHero(keyImages) {
-    if (!Array.isArray(keyImages) || keyImages.length === 0) return null;
-    const PREF = ['DieselGameBox', 'OfferImageWide', 'Featured', 'Thumbnail'];
-    for (const type of PREF) {
-        const img = keyImages.find((k) => k.type === type);
-        if (img?.url) return img.url;
-    }
-    return null;
-}
-
-function _pickEpicLogo(keyImages) {
-    if (!Array.isArray(keyImages) || keyImages.length === 0) return null;
-    const PREF = ['DieselLogo', 'Logo', 'OfferLogo'];
-    for (const type of PREF) {
-        const img = keyImages.find((k) => k.type === type);
-        if (img?.url) return img.url;
-    }
-    return null;
-}
-
-function _cleanNameForSearch(name) {
-    if (!name) return { full: '', short: '' };
-
-    // Check Epic internal name map first (before any cleaning)
-    const lowerName = name.toLowerCase().trim();
-    if (EPIC_NAME_MAP[lowerName]) {
-        const mapped = EPIC_NAME_MAP[lowerName];
-        return { full: mapped, short: null };
-    }
-
-    // Strip trailing " Content" / " DLC Content" â€” Epic internal suffix
-    // e.g. "Death Stranding Content" â†’ "Death Stranding"
-    let clean = name
-        .replace(/\s+Content\s*$/i, '')
-        .replace(/\s+DLC\s*$/i, '')
-        .replace(/\(.*\)/g, '')
-        .replace(/\[.*\]/g, '')
-        .replace(/Â®|â„¢|Â©/g, '');
-
-    const suffixes = [
-        'Editor', 'Dedicated Server', 'Beta', 'Trial', 
-        'Demo', 'Alpha', 'Development Kit', 'SDK', 'Public Test', 
-        'Test Branch', 'Test Edition', 'Server'
-    ];
-    // NOTE: 'Mod Kit' intentionally excluded â€” "Hello Mod Kit" is the actual product name,
-    // stripping it would leave "Hello" which matches a completely unrelated IGDB game.
     
-    suffixes.forEach(s => {
-        const reg = new RegExp(`\\s+${s}$`, 'i');
-        clean = clean.replace(reg, '');
+    // -- Achievement IPC (moved to handlers/achievementHandlers.js) --
+    require('./handlers/achievementHandlers').register(ipcMain, {
+        _extractSteamAppId,
+        _enqueueAchievementFetch,
+        _fetchAchievementsForApp,
     });
-
-    clean = clean.trim();
-
-    // 3D City: Metaverse -> 3D City
-    // Fallback to short name (series name) if colon or dash exists
-    let short = clean;
-    if (clean.includes(':'))   short = clean.split(':')[0].trim();
-    else if (clean.includes(' - ')) short = clean.split(' - ')[0].trim();
-
-    return { 
-        full: clean, 
-        short: (short !== clean && short.length > 2) ? short : null 
-    };
-}
-
-// â”€â”€ Metadata IPC (moved to handlers/gameMetadataHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-require('./handlers/gameMetadataHandlers').register(ipcMain, {
-    baddelApi,
-    mrm: require('./gameScanner').resolutionManager,
-    generateMetadataCandidates,
-});
-
-// â”€â”€ Achievement IPC (moved to handlers/achievementHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
-require('./handlers/achievementHandlers').register(ipcMain, {
-    _extractSteamAppId,
-    _enqueueAchievementFetch,
-    _fetchAchievementsForApp,
-});
 
     // ---- Collections (moved to handlers/collectionHandlers.js) ----
     require('./handlers/collectionHandlers').register(ipcMain, { colHandler, analytics });
 
-    // â”€â”€ Baddel Server IPC (moved to handlers/baddelApiHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Baddel Server IPC (moved to handlers/baddelApiHandlers.js) --
     require('./handlers/baddelApiHandlers').register(ipcMain, { baddelApi });
 
     createWindow();
@@ -2461,18 +1872,18 @@ require('./handlers/achievementHandlers').register(ipcMain, {
     registerAccountHandlers(ipcMain);
     registerPlatformSyncHandlers(ipcMain, () => mainWindow);
 
-    // â”€â”€ Account Shortcuts IPC (moved to handlers/accountShortcutHandlers.js) â”€â”€
+    // -- Account Shortcuts IPC (moved to handlers/accountShortcutHandlers.js) --
     require('./handlers/accountShortcutHandlers').register(ipcMain, { accountShortcuts });
 
-    // Register global shortcuts â€” fires switchAccountByPlatform and shows a notification.
+    // Register global shortcuts - fires switchAccountByPlatform and shows a notification.
     await accountShortcuts.registerAll(async (platform, accountId, accountName) => {
         try {
-            new Notification({ title: 'Baddel', body: `Switching to ${accountName}â€¦` }).show();
+            new Notification({ title: 'Baddel', body: `Switching to ${accountName}...` }).show();
         } catch {}
         return switchAccountByPlatform(platform, accountId);
     });
 
-    // â”€â”€ Quick Switcher IPC (moved to handlers/quickSwitcherHandlers.js) â”€â”€â”€â”€â”€â”€â”€
+    // -- Quick Switcher IPC (moved to handlers/quickSwitcherHandlers.js) --
     require('./handlers/quickSwitcherHandlers').register(ipcMain, {
         quickSwitcher, quickSwitcherSettings, accountShortcuts,
         ipcValidation, switchAccountByPlatform, analytics,
@@ -2485,7 +1896,7 @@ require('./handlers/achievementHandlers').register(ipcMain, {
     } catch {}
     quickSwitcher.createQuickSwitcherWindow();
 
-    // â”€â”€ Wire up background metadata pipeline dependencies â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+    // -- Wire up background metadata pipeline dependencies --
     // The local metadata resolver is kept for compatibility but is a no-op.
     // All non-Steam/Epic resolution now flows through MetadataResolutionManager
     // (mrm.resolve()) in both runBackgroundMetadataPipeline and get-game-metadata.
@@ -2494,7 +1905,7 @@ require('./handlers/achievementHandlers').register(ipcMain, {
     gameScanner.registerLocalMetadataResolver(async (gameName, hints = {}) => {
         try {
             const platform = (hints.platform || '').toLowerCase().trim();
-            // Steam/Epic are handled by the server enrich pipeline â€” skip here.
+            // Steam/Epic are handled by the server enrich pipeline - skip here.
             if (platform === 'steam' || platform === 'epic' || platform === 'epic games') {
                 return null;
             }
@@ -2571,7 +1982,7 @@ function getStartupExePath() {
 }
 
 // Returns the exact identity used for both setLoginItemSettings and getLoginItemSettings.
-// On Windows, path+args together identify the registry entry â€” both calls must use the same values.
+// On Windows, path+args together identify the registry entry - both calls must use the same values.
 function getStartupLoginItemOptions() {
     return { path: getStartupExePath(), args: ['--hidden', '--startup'] };
 }
@@ -2627,10 +2038,10 @@ function setupWindowsIntegration() {
     // Apply startup setting: respect explicit user preference; default to enabled on first run.
     const prefs = readStartupPrefs();
     if (prefs.userSetStartupEnabled === true) {
-        // User has explicitly toggled â€” honour their choice unconditionally.
+        // User has explicitly toggled - honour their choice unconditionally.
         applyStartupSetting(!!prefs.startupEnabled, 'user-preference');
     } else {
-        // No explicit user preference yet â†’ enable startup by default.
+        // No explicit user preference yet -> enable startup by default.
         applyStartupSetting(true, 'default-first-run');
         writeStartupPrefs({
             ...prefs,
@@ -2692,10 +2103,10 @@ app.on('before-quit', () => {
     osHelper.shutdown();
 });
 
-// ---- External-link handlers (open-external-url, open-community-url â€” moved to handlers/externalLinkHandlers.js) ----
+// ---- External-link handlers (open-external-url, open-community-url - moved to handlers/externalLinkHandlers.js) ----
 require('./handlers/externalLinkHandlers').register(ipcMain, { shell, ipcValidation, safeLauncher });
 
-// â”€â”€ Update notes IPC (moved to handlers/updateNotesHandlers.js) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+// -- Update notes IPC (moved to handlers/updateNotesHandlers.js) --
 require('./handlers/updateNotesHandlers').register(ipcMain, { getPendingUpdateNotesPayload, markUpdateNotesShown, app });
 
 
@@ -2712,7 +2123,7 @@ require('./handlers/launchHandlers').register(ipcMain, {
     app,
 });
 
-// ---- Analytics handlers (consent, log events â€” moved to handlers/analyticsHandlers.js) ----
+// ---- Analytics handlers (consent, log events - moved to handlers/analyticsHandlers.js) ----
 require('./handlers/analyticsHandlers').register(ipcMain, { analytics, fs, app });
 
 // get-app-version moved to handlers/windowHandlers.js

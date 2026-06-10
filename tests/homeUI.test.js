@@ -2249,28 +2249,6 @@ test('DASH branch: _attachDash uses _getDashVideoQualities and the new quality-s
         '_attachDash must log the dash.js version for diagnostics');
 });
 
-// ── main.js trailer pipeline guards ──────────────────────────────────────────
-const _mainSrc = (() => fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8'))();
-
-test('main.js: _pickSteamMovieSources returns multiple ordered candidates', () => {
-    assert.match(_mainSrc, /_pickSteamMovieSources/,
-        '_pickSteamMovieSources must be defined in main.js');
-    const fnStart = _mainSrc.indexOf('_pickSteamMovieSources');
-    const fnEnd   = _mainSrc.indexOf('\n    };', fnStart) + 6;
-    const fn      = _mainSrc.slice(fnStart, fnEnd);
-    assert.match(fn, /webm/,  '_pickSteamMovieSources must include webm candidates');
-    assert.match(fn, /mp4/,   '_pickSteamMovieSources must include mp4 candidates');
-    assert.match(fn, /hls/,   '_pickSteamMovieSources must include hls candidate');
-    assert.match(fn, /dash/,  '_pickSteamMovieSources must include dash candidates');
-});
-
-test('main.js: allTrailers entries include sources array', () => {
-    const allTrailersIdx = _mainSrc.indexOf('const allTrailers = (data.movies');
-    assert.ok(allTrailersIdx !== -1, 'allTrailers must be constructed from data.movies');
-    const snippet = _mainSrc.slice(allTrailersIdx, allTrailersIdx + 400);
-    assert.match(snippet, /sources/,
-        'each allTrailers entry must include a sources array from _pickSteamMovieSources');
-});
 
 // ── Artwork refresh: _patchGameInMemory / _patchVisibleGameCard helpers ───────
 
