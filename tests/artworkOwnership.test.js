@@ -530,12 +530,12 @@ test('gdCreatorSave: tolerates Game-not-found error from saveMetadata for synced
     assert.match(fnBody, /Game not found/, 'gdCreatorSave must handle "Game not found" from saveMetadata without crashing');
 });
 
-// ── Metadata sync: __baddelApplyGameCustomOverride defined in app.js ─────────
+// ── Metadata sync: __baddelApplyGameCustomOverride defined in artwork-sync.js ─────────
 
-test('app.js: __baddelApplyGameCustomOverride patches _suggAllGames, _suggPool, _suggFeaturedGame', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('artwork-sync.js: __baddelApplyGameCustomOverride patches _suggAllGames, _suggPool, _suggFeaturedGame', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
-    assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must be defined in app.js');
+    assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must be defined in artwork-sync.js');
     const fnBody = src.slice(fnStart, fnStart + 6000);
     assert.match(fnBody, /_suggAllGames/, 'must patch _suggAllGames');
     assert.match(fnBody, /_suggPool/, 'must patch _suggPool');
@@ -584,8 +584,8 @@ test('gdCreatorSave: uses _gdCollectCreatorOverrideTargets and applies patch to 
         'must NOT call __baddelApplyGameCustomOverride with only baseGame (hybrid case requires all targets)');
 });
 
-test('app.js: __baddelApplyGameCustomOverride updates _suggArtCache for _suggPool and _suggFeaturedGame', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('artwork-sync.js: __baddelApplyGameCustomOverride updates _suggArtCache for _suggPool and _suggFeaturedGame', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 6000);
@@ -599,8 +599,8 @@ test('app.js: __baddelApplyGameCustomOverride updates _suggArtCache for _suggPoo
 
 // ── __baddelApplyGameCustomOverride: full alias fields and pipeline guard ────
 
-test('app.js: __baddelApplyGameCustomOverride _applyPatch sets cover and hero alias fields', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch sets cover and hero alias fields', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 3000);
@@ -610,8 +610,8 @@ test('app.js: __baddelApplyGameCustomOverride _applyPatch sets cover and hero al
     assert.match(fnBody, /g\.heroImage\s*=\s*patch\.hero/, 'must set g.heroImage from patch.hero');
 });
 
-test('app.js: __baddelApplyGameCustomOverride _applyPatch sets pipeline guard flags for cover', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch sets pipeline guard flags for cover', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 3000);
@@ -683,7 +683,7 @@ test('saveGameSettings: calls _gdApplyExternalPatch to refresh open Game Detail'
 });
 
 test('__baddelApplyGameCustomOverride respects patch.artworkSource instead of forcing creator', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 4000);
@@ -696,7 +696,7 @@ test('__baddelApplyGameCustomOverride respects patch.artworkSource instead of fo
 });
 
 test('__baddelApplyGameCustomOverride respects patch.artworkUpdatedAt instead of always using now', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 4000);

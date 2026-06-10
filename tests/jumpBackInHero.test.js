@@ -5,7 +5,8 @@ const fs     = require('path');
 const path   = require('path');
 const fss    = require('fs');
 
-const APP_JS = fss.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+const APP_JS         = fss.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+const ARTWORK_SYNC_JS = fss.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
 
 // ── Helper functions defined ───────────────────────────────────────────────────
 
@@ -68,51 +69,51 @@ test('app.js: _getRecentDisplayImage calls _getRecentHeroCandidate first', () =>
 
 // ── hydrateRecentHeroArtwork ───────────────────────────────────────────────────
 
-test('app.js: hydrateRecentHeroArtwork function is defined', () => {
-    assert.ok(APP_JS.includes('async function hydrateRecentHeroArtwork(game, imgEl)'));
+test('artwork-sync.js: hydrateRecentHeroArtwork function is defined', () => {
+    assert.ok(ARTWORK_SYNC_JS.includes('async function hydrateRecentHeroArtwork(game, imgEl)'));
 });
 
-test('app.js: hydrateRecentHeroArtwork passes preferHero:true to getMetadata', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 1000);
+test('artwork-sync.js: hydrateRecentHeroArtwork passes preferHero:true to getMetadata', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 1000);
     assert.ok(block.includes('preferHero:     true') || block.includes("preferHero: true"), 'preferHero:true not passed');
 });
 
-test('app.js: hydrateRecentHeroArtwork passes source:jump-back-in to getMetadata', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 1000);
+test('artwork-sync.js: hydrateRecentHeroArtwork passes source:jump-back-in to getMetadata', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 1000);
     assert.ok(block.includes("source:         'jump-back-in'") || block.includes("source: 'jump-back-in'"), "source: 'jump-back-in' not passed");
 });
 
-test('app.js: hydrateRecentHeroArtwork sets game.heroImage on success', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 2000);
+test('artwork-sync.js: hydrateRecentHeroArtwork sets game.heroImage on success', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 2000);
     assert.ok(block.includes('game.heroImage'), 'game.heroImage not set');
     assert.ok(block.includes('game.defaultHero'), 'game.defaultHero not set');
     assert.ok(block.includes('game.heroUrl'), 'game.heroUrl not set');
 });
 
-test('app.js: hydrateRecentHeroArtwork sets imgEl.src to hero when hero found', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 2000);
+test('artwork-sync.js: hydrateRecentHeroArtwork sets imgEl.src to hero when hero found', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 2000);
     assert.ok(block.includes('imgEl.src = safeImageUrl(hero)'), 'imgEl.src not set to hero');
 });
 
-test('app.js: hydrateRecentHeroArtwork caches to localStorage', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 2000);
+test('artwork-sync.js: hydrateRecentHeroArtwork caches to localStorage', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 2000);
     assert.ok(block.includes("localStorage.setItem('hero_'"), 'localStorage.setItem for hero not found');
 });
 
-test('app.js: hydrateRecentHeroArtwork calls cacheAllAssets when assets available', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 2000);
+test('artwork-sync.js: hydrateRecentHeroArtwork calls cacheAllAssets when assets available', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 2000);
     assert.ok(block.includes('cacheAllAssets'), 'cacheAllAssets not called');
 });
 
-test('app.js: hydrateRecentHeroArtwork only uses cover as last fallback (no hero)', () => {
-    const idx = APP_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
-    const block = APP_JS.slice(idx, idx + 2500);
+test('artwork-sync.js: hydrateRecentHeroArtwork only uses cover as last fallback (no hero)', () => {
+    const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
+    const block = ARTWORK_SYNC_JS.slice(idx, idx + 2500);
     // The cover fallback must come AFTER the hero block
     const heroSetIdx  = block.indexOf('game.heroImage  = hero');
     const coverFbIdx  = block.indexOf('cover && !imgEl.src');

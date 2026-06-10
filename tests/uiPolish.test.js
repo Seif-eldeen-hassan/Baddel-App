@@ -4,8 +4,9 @@ const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const path   = require('node:path');
 
-const ROOT    = path.resolve(__dirname, '..');
-const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8');
+const ROOT           = path.resolve(__dirname, '..');
+const APP_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),         'utf8');
+const ARTWORK_SYNC_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'), 'utf8');
 const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
 const ACC_JS             = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                   'utf8');
@@ -652,29 +653,29 @@ test('accounts.js: Installed Games (allGamesData) is not affected by library fil
 const ADD_GAME_JS = fs.readFileSync(path.join(ROOT, 'src/js/addGameModal.js'), 'utf8');
 const PRELOAD_JS  = fs.readFileSync(path.join(ROOT, 'preload.js'),             'utf8');
 
-test('app.js: _clearArtworkLocalState is defined and exposed on window', () => {
-    assert.match(APP_JS, /function _clearArtworkLocalState\(gameId\)/, 'function must be declared');
-    assert.match(APP_JS, /window\._clearArtworkLocalState\s*=\s*_clearArtworkLocalState/, 'must be exposed on window');
+test('artwork-sync.js: _clearArtworkLocalState is defined and exposed on window', () => {
+    assert.match(ARTWORK_SYNC_JS, /function _clearArtworkLocalState\(gameId\)/, 'function must be declared');
+    assert.match(ARTWORK_SYNC_JS, /window\._clearArtworkLocalState\s*=\s*_clearArtworkLocalState/, 'must be exposed on window');
 });
 
-test('app.js: _clearArtworkLocalState removes localStorage keys for cover/hero/logo', () => {
-    const fnStart = APP_JS.indexOf('function _clearArtworkLocalState');
-    const fn = APP_JS.slice(fnStart, fnStart + 600);
+test('artwork-sync.js: _clearArtworkLocalState removes localStorage keys for cover/hero/logo', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('function _clearArtworkLocalState');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /localStorage\.removeItem\('cover_'\s*\+\s*id\)/, 'removes cover_ key');
     assert.match(fn, /localStorage\.removeItem\('hero_'\s*\+\s*id\)/, 'removes hero_ key');
     assert.match(fn, /localStorage\.removeItem\('logo_'\s*\+\s*id\)/, 'removes logo_ key');
 });
 
-test('app.js: _clearArtworkLocalState removes game from window._allGamesCache and allGamesData', () => {
-    const fnStart = APP_JS.indexOf('function _clearArtworkLocalState');
-    const fn = APP_JS.slice(fnStart, fnStart + 900);
+test('artwork-sync.js: _clearArtworkLocalState removes game from window._allGamesCache and allGamesData', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('function _clearArtworkLocalState');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 900);
     assert.match(fn, /window\._allGamesCache\s*=\s*window\._allGamesCache\.filter/, 'removes from _allGamesCache');
     assert.match(fn, /allGamesData\s*=\s*allGamesData\.filter/, 'removes from allGamesData');
 });
 
-test('app.js: _clearArtworkLocalState removes cardCache and _coverQueued entries', () => {
-    const fnStart = APP_JS.indexOf('function _clearArtworkLocalState');
-    const fn = APP_JS.slice(fnStart, fnStart + 900);
+test('artwork-sync.js: _clearArtworkLocalState removes cardCache and _coverQueued entries', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('function _clearArtworkLocalState');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 900);
     assert.match(fn, /cardCache.*instanceof Map/s, 'guards cardCache with instanceof Map');
     assert.match(fn, /cardCache\.delete\(id\)/, 'removes from cardCache');
     assert.match(fn, /_coverQueued.*instanceof Set/s, 'guards _coverQueued with instanceof Set');
@@ -710,29 +711,29 @@ test('main.js: delete-game-permanently sends game-deleted-permanently event on s
     assert.match(handler, /\.send\('game-deleted-permanently'.*\{\s*id\s*\}/, 'must include id in payload');
 });
 
-test('app.js: hydrateManualGameArtworkNow is defined and exposed on window', () => {
-    assert.match(APP_JS, /async function hydrateManualGameArtworkNow\(game\)/, 'function must be declared');
-    assert.match(APP_JS, /window\.hydrateManualGameArtworkNow\s*=\s*hydrateManualGameArtworkNow/, 'must be exposed on window');
+test('artwork-sync.js: hydrateManualGameArtworkNow is defined and exposed on window', () => {
+    assert.match(ARTWORK_SYNC_JS, /async function hydrateManualGameArtworkNow\(game\)/, 'function must be declared');
+    assert.match(ARTWORK_SYNC_JS, /window\.hydrateManualGameArtworkNow\s*=\s*hydrateManualGameArtworkNow/, 'must be exposed on window');
 });
 
-test('app.js: hydrateManualGameArtworkNow removes stale file:// cover from localStorage', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+test('artwork-sync.js: hydrateManualGameArtworkNow removes stale file:// cover from localStorage', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 1200);
     assert.match(fn, /localStorage\.removeItem\('cover_'/, 'removes stale cover from localStorage');
     assert.match(fn, /_isUsableLocalArtwork/, 'uses _isUsableLocalArtwork to probe');
 });
 
-test('app.js: hydrateManualGameArtworkNow passes force:true and bypassTtl:true unconditionally', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 2000);
+test('artwork-sync.js: hydrateManualGameArtworkNow passes force:true and bypassTtl:true unconditionally', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /force:\s*true/, 'must pass force:true unconditionally');
     assert.match(fn, /bypassTtl:\s*true/, 'must pass bypassTtl:true');
     assert.match(fn, /source:\s*'manual-add-readd'/, 'uses manual-add-readd source');
 });
 
-test('app.js: _isUsableLocalArtwork probes file:// URLs via probeLocalImage', () => {
-    const fnStart = APP_JS.indexOf('async function _isUsableLocalArtwork');
-    const fn = APP_JS.slice(fnStart, fnStart + 300);
+test('artwork-sync.js: _isUsableLocalArtwork probes file:// URLs via probeLocalImage', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function _isUsableLocalArtwork');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 300);
     assert.match(fn, /probeLocalImage\(url\)/, 'calls probeLocalImage');
     assert.match(fn, /file:\/\//, 'checks for file:// prefix');
 });
@@ -758,18 +759,18 @@ test('addGameModal.js: awaits hydrateManualGameArtworkNow before applyFilters', 
     assert.ok(hydrateIdx < applyIdx, 'applyFilters must come after hydration');
 });
 
-test('app.js: hydrateManualGameArtworkNow passes rich manual hints to getMetadata', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+test('artwork-sync.js: hydrateManualGameArtworkNow passes rich manual hints to getMetadata', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 1800);
     assert.match(fn, /command:\s*game\.command/, 'must pass command hint');
     assert.match(fn, /executablePath:\s*game\.executablePath/, 'must pass executablePath hint');
     assert.match(fn, /folderName:\s*game\.folderName/, 'must pass folderName hint');
     assert.match(fn, /exeName:\s*game\.exeName/, 'must pass exeName hint');
 });
 
-test('app.js: hydrateManualGameArtworkNow uses meta.image/defaultImage/coverUrl as cover fallback', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 2500);
+test('artwork-sync.js: hydrateManualGameArtworkNow uses meta.image/defaultImage/coverUrl as cover fallback', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 2500);
     // finalCover must try multiple aliases
     assert.match(fn, /meta\.image/, 'must try meta.image as cover fallback');
     assert.match(fn, /meta\.defaultImage/, 'must try meta.defaultImage as cover fallback');
@@ -877,23 +878,23 @@ test('gameScanner.js: addManualGame awaits backgroundDownload and returns hydrat
     assert.match(fn, /return \{ status: 'success', game: hydratedGame \}/, 'must return hydratedGame');
 });
 
-test('app.js: hydrateManualGameArtworkNow awaits cacheAllAssets (no fire-and-forget .then)', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 2600);
+test('artwork-sync.js: hydrateManualGameArtworkNow awaits cacheAllAssets (no fire-and-forget .then)', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 2600);
     assert.match(fn, /await window\.electronAPI\.cacheAllAssets/, 'must await cacheAllAssets');
     assert.doesNotMatch(fn, /cacheAllAssets\([^)]*\)\s*\n?\s*\.then\(/, 'must NOT use .then() (fire-and-forget)');
 });
 
-test('app.js: hydrateManualGameArtworkNow persists metadata with saveMetadata after caching', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 4000);
+test('artwork-sync.js: hydrateManualGameArtworkNow persists metadata with saveMetadata after caching', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 4000);
     assert.match(fn, /saveMetadata\??\.?\(game\.id/, 'must call saveMetadata');
     assert.match(fn, /artworkSource/, 'must include artworkSource in saved metadata');
 });
 
-test('app.js: hydrateManualGameArtworkNow always passes force:true to getMetadata', () => {
-    const fnStart = APP_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = APP_JS.slice(fnStart, fnStart + 2000);
+test('artwork-sync.js: hydrateManualGameArtworkNow always passes force:true to getMetadata', () => {
+    const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /force:\s*true/, 'must always pass force:true');
     assert.match(fn, /bypassTtl:\s*true/, 'must always pass bypassTtl:true');
 });

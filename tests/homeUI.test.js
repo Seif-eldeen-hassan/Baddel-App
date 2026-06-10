@@ -2252,14 +2252,15 @@ test('DASH branch: _attachDash uses _getDashVideoQualities and the new quality-s
 
 // ── Artwork refresh: _patchGameInMemory / _patchVisibleGameCard helpers ───────
 
-test('app.js: _patchGameInMemory and _patchVisibleGameCard are defined in section 6', () => {
-    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
-    assert.ok(src.includes('function _patchGameInMemory'), '_patchGameInMemory must be defined');
-    assert.ok(src.includes('function _patchVisibleGameCard'), '_patchVisibleGameCard must be defined');
-    assert.ok(src.includes('function _normalizeArtworkAliases'), '_normalizeArtworkAliases must be defined');
-    // helpers must appear before processQueue (section 6)
-    const patchIdx    = src.indexOf('function _patchGameInMemory');
-    const processIdx  = src.indexOf('async function processQueue');
+test('app.js/_patchGameInMemory and artwork-sync.js/_patchVisibleGameCard are defined', () => {
+    const appSrc    = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const syncSrc   = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
+    assert.ok(appSrc.includes('function _patchGameInMemory'), '_patchGameInMemory must be defined in app.js');
+    assert.ok(syncSrc.includes('function _patchVisibleGameCard'), '_patchVisibleGameCard must be defined in artwork-sync.js');
+    assert.ok(syncSrc.includes('function _normalizeArtworkAliases'), '_normalizeArtworkAliases must be defined in artwork-sync.js');
+    // _patchGameInMemory must appear before processQueue in app.js
+    const patchIdx   = appSrc.indexOf('function _patchGameInMemory');
+    const processIdx = appSrc.indexOf('async function processQueue');
     assert.ok(patchIdx < processIdx, '_patchGameInMemory defined before processQueue');
 });
 
