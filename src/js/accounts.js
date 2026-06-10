@@ -1900,8 +1900,8 @@ window.refreshAllGamesView = async function() {
             if (main && scrollTop) {
                 requestAnimationFrame(() => { main.scrollTop = scrollTop; });
             }
-        } else if (typeof renderAllGamesView === 'function') {
-            await renderAllGamesView({ suppressInitialLoading: true });
+        } else {
+            await _agSafeRenderAllGamesView({ suppressInitialLoading: true });
         }
     } catch (err) {
         if (typeof showToast === 'function') showToast('Refresh failed: ' + err.message, 'error');
@@ -1921,7 +1921,7 @@ async function _syncEpicAndRefresh() {
     if (panel && panel.style.display !== 'none') await _renderEpicLibraryPanel();
 
     // تحديث All Games لو مفتوح
-    if (typeof renderAllGamesView === 'function') renderAllGamesView();
+    _agSafeRenderAllGamesView();
 
     // تحديث count في sidebar
     const countEl = document.getElementById('allGamesCount');
@@ -1938,7 +1938,7 @@ window.unlinkEpicLibrary = async function() {
                 await window.electronAPI.platformSyncUnlink?.('epic');
                 showToast('Epic library disconnected.', 'success');
                 await _renderEpicLibraryPanel();
-                if (typeof renderAllGamesView === 'function') renderAllGamesView();
+                _agSafeRenderAllGamesView();
             } catch (err) {
                 showToast(`Error: ${err.message}`, 'error');
             }
@@ -3254,6 +3254,12 @@ async function _agMaybeRenderEmptyOnboarding(reason = '') {
     _agSetEmptyPageMode(false);
     _agSetToolbarVisible(true);
     return false;
+}
+
+function _agSafeRenderAllGamesView(options) {
+    const fn = window.renderAllGamesView;
+    if (typeof fn !== 'function') return Promise.resolve(null);
+    return Promise.resolve(fn(options));
 }
 
 window.renderAllGamesView = async function(options = {}) {
@@ -5399,7 +5405,7 @@ function _ensurePlatformSyncListener() {
                 _renderPlatformSyncStatusPanel(state.platform, state);
                 _schedulePlatformAccountsRender(state.platform);
             }
-            if (typeof renderAllGamesView === 'function') renderAllGamesView();
+            _agSafeRenderAllGamesView();
         });
     }
 
@@ -5719,7 +5725,7 @@ async function unlinkPlatformAccount(accountId) {
                 showToast('Account removed successfully.', 'success');
                 await updatePlatformsOverview();
                 await renderPlatformAccounts(activePlatformView);
-                if (typeof renderAllGamesView === 'function') await renderAllGamesView();
+                await _agSafeRenderAllGamesView();
                 if (activePlatformView === 'epic' && typeof _renderEpicLibraryPanel === 'function') await _renderEpicLibraryPanel();
             } catch (err) {
                 console.error('Unlink Error:', err);

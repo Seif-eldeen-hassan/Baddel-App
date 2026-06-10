@@ -1922,3 +1922,49 @@ test('Phase 2.3: app.js _coverQueued instanceof guards use window._vs optional c
             '_coverQueued instanceof guard must use window._vs?._coverQueued');
     }
 });
+
+// ── Phase 2.4 — _agSafeRenderAllGamesView consolidation ──────────────────────
+
+test('Phase 2.4: accounts.js defines _agSafeRenderAllGamesView', () => {
+    assert.match(ACC_JS, /function _agSafeRenderAllGamesView\s*\(/,
+        '_agSafeRenderAllGamesView must be defined in accounts.js');
+});
+
+test('Phase 2.4: _agSafeRenderAllGamesView reads window.renderAllGamesView', () => {
+    const fnStart = ACC_JS.indexOf('function _agSafeRenderAllGamesView');
+    const fn = ACC_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /window\.renderAllGamesView/,
+        'helper must read window.renderAllGamesView');
+});
+
+test('Phase 2.4: _agSafeRenderAllGamesView guards with typeof fn !== function check', () => {
+    const fnStart = ACC_JS.indexOf('function _agSafeRenderAllGamesView');
+    const fn = ACC_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /typeof fn !== 'function'/,
+        'helper must guard against fn not being a function');
+});
+
+test('Phase 2.4: _agSafeRenderAllGamesView returns Promise.resolve(null) when missing', () => {
+    const fnStart = ACC_JS.indexOf('function _agSafeRenderAllGamesView');
+    const fn = ACC_JS.slice(fnStart, fnStart + 200);
+    assert.match(fn, /Promise\.resolve\(null\)/,
+        'helper must return Promise.resolve(null) when renderAllGamesView is absent');
+});
+
+test('Phase 2.4: no repeated typeof renderAllGamesView guards remain in accounts.js', () => {
+    assert.doesNotMatch(ACC_JS, /typeof renderAllGamesView === 'function'/,
+        'all typeof renderAllGamesView guards must be replaced by _agSafeRenderAllGamesView');
+});
+
+test('Phase 2.4: window.renderAllGamesView definition is unchanged', () => {
+    assert.match(ACC_JS, /window\.renderAllGamesView\s*=\s*async function\s*\(\s*options\s*=\s*\{\}\s*\)/,
+        'window.renderAllGamesView definition signature must be unchanged');
+});
+
+test('Phase 2.4: direct renderAllGamesView calls inside navigateToAllGames are preserved', () => {
+    // navigateToAllGames is past the definition so the direct call is safe without a guard
+    const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
+    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
+    assert.match(fn, /await renderAllGamesView\(/,
+        'navigateToAllGames must still call renderAllGamesView directly (no guard needed)');
+});
