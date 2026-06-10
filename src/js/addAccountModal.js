@@ -11,7 +11,7 @@ const DONT_ASK_KEYS = {
     riot:    'baddel_dontAsk_add_riot',
     ubisoft: 'baddel_dontAsk_add_ubisoft',
     discord: 'baddel_dontAsk_add_discord',
-    rockstar: 'baddel_dontAsk_add_rockstar' // 🔴 السطر الجديد
+    rockstar: 'baddel_dontAsk_add_rockstar' 
 };
 
 // ---- Custom Modal Logos (Matching Sidebar Images) ----
