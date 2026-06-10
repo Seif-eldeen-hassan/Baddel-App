@@ -1,0 +1,625 @@
+'use strict';
+
+const fs   = require('fs');
+const path = require('path');
+const { describe, it } = require('node:test');
+const assert = require('node:assert/strict');
+
+const ROOT    = path.join(__dirname, '..');
+const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+
+// ── Extraction helpers ────────────────────────────────────────────────────────
+//
+// These use brace-balanced extraction so tests never break due to function
+// growth — they always see the full function body regardless of line count.
+
+/**
+ * Extract the full body of a named function declaration or expression.
+ * Matches: function NAME(...) { ... } or async function NAME(...) { ... }
+ * Returns the source from the function keyword through its closing brace.
+ */
+function getFunctionBody(source, functionName) {
+    const marker = 'function ' + functionName;
+    const start = source.indexOf(marker);
+    if (start === -1) return '';
+    const braceOpen = source.indexOf('{', start);
+    if (braceOpen === -1) return '';
+    let depth = 0;
+    for (let i = braceOpen; i < source.length; i++) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') {
+            depth--;
+            if (depth === 0) return source.slice(start, i + 1);
+        }
+    }
+    return source.slice(start);
+}
+
+/**
+ * Extract the full body of a window-assigned function.
+ * Matches: window.NAME = function(...) { ... }  or  window.NAME = async function(...) { ... }
+ * Returns source from "window.NAME" through the closing brace.
+ * Skips past the parameter list before looking for the body's opening brace so
+ * default-object parameters (e.g. patch = {}) do not confuse brace counting.
+ */
+function getWindowAssignedFunctionBody(source, assignmentName) {
+    const marker = 'window.' + assignmentName;
+    const start = source.indexOf(marker);
+    if (start === -1) return '';
+    const funcKw = source.indexOf('function', start);
+    if (funcKw === -1) return '';
+    const parenOpen = source.indexOf('(', funcKw);
+    if (parenOpen === -1) return '';
+    // Balance parens to skip past the parameter list.
+    let parenDepth = 0;
+    let parenClose = -1;
+    for (let i = parenOpen; i < source.length; i++) {
+        if (source[i] === '(') parenDepth++;
+        else if (source[i] === ')') {
+            parenDepth--;
+            if (parenDepth === 0) { parenClose = i; break; }
+        }
+    }
+    if (parenClose === -1) return '';
+    // Now find the opening brace of the function body.
+    const braceOpen = source.indexOf('{', parenClose);
+    if (braceOpen === -1) return '';
+    let depth = 0;
+    for (let i = braceOpen; i < source.length; i++) {
+        if (source[i] === '{') depth++;
+        else if (source[i] === '}') {
+            depth--;
+            if (depth === 0) return source.slice(start, i + 1);
+        }
+    }
+    return source.slice(start);
+}
+
+/**
+ * Extract source between two comment/string markers (exclusive of the end marker).
+ * Returns '' if either marker is not found.
+ */
+function getSectionBetween(source, startMarker, endMarker) {
+    const s = source.indexOf(startMarker);
+    const e = source.indexOf(endMarker);
+    if (s === -1 || e === -1 || e <= s) return '';
+    return source.slice(s, e);
+}
+
+// ── Section 1: Image URL helpers ─────────────────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — image URL helpers in app.js', () => {
+    it('isUsableImageUrl is defined', () => {
+        assert.match(APP_JS, /function isUsableImageUrl\s*\(/);
+    });
+    it('_preferLocalImage is defined', () => {
+        assert.match(APP_JS, /function _preferLocalImage\s*\(/);
+    });
+    it('getPosterUrl is defined', () => {
+        assert.match(APP_JS, /function getPosterUrl\s*\(/);
+    });
+    it('getPosterUrlInstalled is defined', () => {
+        assert.match(APP_JS, /function getPosterUrlInstalled\s*\(/);
+    });
+    it('_cardImageApply is defined', () => {
+        assert.match(APP_JS, /function _cardImageApply\s*\(/);
+    });
+    it('setCardImageStable is defined', () => {
+        assert.match(APP_JS, /function setCardImageStable\s*\(/);
+    });
+    it('_heroBgApply is defined', () => {
+        assert.match(APP_JS, /function _heroBgApply\s*\(/);
+    });
+    it('setHeroBgStable is defined', () => {
+        assert.match(APP_JS, /function setHeroBgStable\s*\(/);
+    });
+    it('_getGameCoverUrl is defined', () => {
+        assert.match(APP_JS, /function _getGameCoverUrl\s*\(/);
+    });
+});
+
+// ── Section 2: Artwork alias normalisation and in-memory patching ─────────────
+
+describe('Phase 2.12A: artwork-sync — normalise and patch helpers in app.js', () => {
+    it('_normalizeArtworkAliases is defined', () => {
+        assert.match(APP_JS, /function _normalizeArtworkAliases\s*\(/);
+    });
+    it('_patchGameInMemory is defined', () => {
+        assert.match(APP_JS, /function _patchGameInMemory\s*\(/);
+    });
+    it('_patchVisibleGameCard is defined', () => {
+        assert.match(APP_JS, /function _patchVisibleGameCard\s*\(/);
+    });
+
+    it('_normalizeArtworkAliases normalises cover aliases', () => {
+        const fn = getFunctionBody(APP_JS, '_normalizeArtworkAliases');
+        assert.match(fn, /g\.image\s*=/);
+        assert.match(fn, /g\.coverUrl\s*=/);
+        assert.match(fn, /g\.defaultImage\s*=/);
+    });
+    it('_normalizeArtworkAliases normalises hero aliases', () => {
+        const fn = getFunctionBody(APP_JS, '_normalizeArtworkAliases');
+        assert.match(fn, /g\.heroImage\s*=/);
+        assert.match(fn, /g\.heroUrl\s*=/);
+        assert.match(fn, /g\.defaultHero\s*=/);
+    });
+    it('_normalizeArtworkAliases normalises logo aliases', () => {
+        const fn = getFunctionBody(APP_JS, '_normalizeArtworkAliases');
+        assert.match(fn, /g\.logo\s*=/);
+        assert.match(fn, /g\.logoUrl\s*=/);
+        assert.match(fn, /g\.defaultLogo\s*=/);
+    });
+
+    it('_patchGameInMemory calls _normalizeArtworkAliases', () => {
+        const fn = getFunctionBody(APP_JS, '_patchGameInMemory');
+        assert.match(fn, /_normalizeArtworkAliases/);
+    });
+    it('_patchGameInMemory updates allGamesData', () => {
+        const fn = getFunctionBody(APP_JS, '_patchGameInMemory');
+        assert.match(fn, /allGamesData/);
+        assert.match(fn, /window\.allGamesData\s*=/);
+    });
+    it('_patchGameInMemory updates _allGamesCache', () => {
+        const fn = getFunctionBody(APP_JS, '_patchGameInMemory');
+        assert.match(fn, /window\._allGamesCache/);
+    });
+    it('_patchGameInMemory clears virtual-scroll card cache', () => {
+        const fn = getFunctionBody(APP_JS, '_patchGameInMemory');
+        assert.match(fn, /window\._vs\?\.cardCache/);
+    });
+
+    it('_patchVisibleGameCard targets [data-id] selector', () => {
+        const fn = getFunctionBody(APP_JS, '_patchVisibleGameCard');
+        assert.match(fn, /data-id/);
+    });
+    it('_patchVisibleGameCard targets .actual-img selector', () => {
+        const fn = getFunctionBody(APP_JS, '_patchVisibleGameCard');
+        assert.match(fn, /\.actual-img/);
+    });
+});
+
+// ── Section 3: Metadata fetch and image queue pipeline ───────────────────────
+
+describe('Phase 2.12A: artwork-sync — image queue pipeline in app.js', () => {
+    it('imageQueue state var is declared', () => {
+        assert.match(APP_JS, /^const imageQueue\s*=\s*\[\]/m);
+    });
+    it('activeRequests state var is declared', () => {
+        assert.match(APP_JS, /^let activeRequests\s*=/m);
+    });
+
+    it('fetchMetadata is defined', () => {
+        assert.match(APP_JS, /async function fetchMetadata\s*\(/);
+    });
+    it('processQueue is defined', () => {
+        assert.match(APP_JS, /async function processQueue\s*\(/);
+    });
+    it('checkBackgroundAssets is defined', () => {
+        assert.match(APP_JS, /function checkBackgroundAssets\s*\(/);
+    });
+
+    it('fetchMetadata pushes to imageQueue and calls processQueue', () => {
+        const fn = getFunctionBody(APP_JS, 'fetchMetadata');
+        assert.match(fn, /imageQueue\.push/);
+        assert.match(fn, /processQueue\(\)/);
+    });
+    it('fetchMetadata probes local file:// URLs before trusting them', () => {
+        const fn = getFunctionBody(APP_JS, 'fetchMetadata');
+        assert.match(fn, /probeLocalImage/);
+        assert.match(fn, /file:\/\//);
+    });
+    it('fetchMetadata checks disk cache via getCachedImage', () => {
+        const fn = getFunctionBody(APP_JS, 'fetchMetadata');
+        assert.match(fn, /getCachedImage/);
+    });
+    it('processQueue calls getMetadata for fresh metadata', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /getMetadata/);
+    });
+    it('processQueue calls cacheAllAssets to persist local copies', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /cacheAllAssets/);
+    });
+    it('processQueue calls saveMetadata after caching', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /saveMetadata/);
+    });
+    it('processQueue calls _patchGameInMemory and _patchVisibleGameCard', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /_patchGameInMemory/);
+        assert.match(fn, /_patchVisibleGameCard/);
+    });
+    it('processQueue caps activeRequests to 3', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /activeRequests\s*>=\s*3/);
+    });
+    it('processQueue retries server-pending results up to 3 times', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /_coverRetries\s*<\s*3/);
+        assert.match(fn, /setTimeout/);
+    });
+    it('checkBackgroundAssets reads hero and logo from localStorage', () => {
+        const fn = getFunctionBody(APP_JS, 'checkBackgroundAssets');
+        assert.match(fn, /localStorage\.getItem\('hero_'/);
+        assert.match(fn, /localStorage\.getItem\('logo_'/);
+    });
+});
+
+// ── Section 4: RTIA — Ready-to-Install Asset Hydrator ────────────────────────
+
+describe('Phase 2.12A: artwork-sync — RTIA asset hydrator in app.js', () => {
+    it('_RTIA_DISK_CONCURRENCY constant is declared', () => {
+        assert.match(APP_JS, /const _RTIA_DISK_CONCURRENCY\s*=/);
+    });
+    it('_RTIA_HYDRATE_TIMEOUT constant is declared', () => {
+        assert.match(APP_JS, /const _RTIA_HYDRATE_TIMEOUT\s*=/);
+    });
+    it('_rtia_running state var is declared', () => {
+        assert.match(APP_JS, /let\s+_rtia_running\s*=/);
+    });
+    it('_rtia_warmOne is defined', () => {
+        assert.match(APP_JS, /async function _rtia_warmOne\s*\(/);
+    });
+    it('_rtia_warmBatch is defined', () => {
+        assert.match(APP_JS, /async function _rtia_warmBatch\s*\(/);
+    });
+    it('_rtia_awaitHydration is defined', () => {
+        assert.match(APP_JS, /function _rtia_awaitHydration\s*\(/);
+    });
+    it('_rtia_hydrateAll is defined', () => {
+        assert.match(APP_JS, /async function _rtia_hydrateAll\s*\(/);
+    });
+
+    it('_rtia_warmOne validates file:// URLs via probeLocalImage', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_warmOne');
+        assert.match(fn, /probeLocalImage/);
+        assert.match(fn, /file:\/\//);
+    });
+    it('_rtia_warmOne falls back to disk cache via getCachedImage', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_warmOne');
+        assert.match(fn, /getCachedImage/);
+    });
+    it('_rtia_warmOne calls _suggArtCachePopulate after hydration', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_warmOne');
+        assert.match(fn, /_suggArtCachePopulate/);
+    });
+    it('_rtia_warmBatch processes games with _RTIA_DISK_CONCURRENCY parallel workers', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_warmBatch');
+        assert.match(fn, /_RTIA_DISK_CONCURRENCY/);
+        assert.match(fn, /Promise\.all/);
+    });
+    it('_rtia_hydrateAll guards against concurrent runs via _rtia_running', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_hydrateAll');
+        assert.match(fn, /_rtia_running/);
+    });
+    it('_rtia_hydrateAll awaits _rtia_warmBatch before kicking off network hydration', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_hydrateAll');
+        assert.match(fn, /await _rtia_warmBatch/);
+        assert.match(fn, /_suggHydrateArt/);
+    });
+});
+
+// ── Section 5: Suggestion art cache helpers ───────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — suggestion art cache helpers in app.js', () => {
+    it('_SUGG_ART_CACHE_KEY constant is declared', () => {
+        assert.match(APP_JS, /const _SUGG_ART_CACHE_KEY\s*=/);
+    });
+    it('_suggArtCache state var is declared', () => {
+        assert.match(APP_JS, /let _suggArtCache\s*=/);
+    });
+    it('_suggArtCacheGet is defined', () => {
+        assert.match(APP_JS, /function _suggArtCacheGet\s*\(/);
+    });
+    it('_suggArtCacheSave is defined', () => {
+        assert.match(APP_JS, /function _suggArtCacheSave\s*\(/);
+    });
+    it('_suggArtCacheSet is defined', () => {
+        assert.match(APP_JS, /function _suggArtCacheSet\s*\(/);
+    });
+    it('_suggArtCacheDeleteField is defined', () => {
+        assert.match(APP_JS, /function _suggArtCacheDeleteField\s*\(/);
+    });
+    it('_suggArtCachePopulate is defined', () => {
+        assert.match(APP_JS, /function _suggArtCachePopulate\s*\(/);
+    });
+
+    it('_suggArtCacheSave writes to localStorage', () => {
+        const fn = getFunctionBody(APP_JS, '_suggArtCacheSave');
+        assert.match(fn, /localStorage\.setItem/);
+        assert.match(fn, /_SUGG_ART_CACHE_KEY/);
+    });
+    it('_suggArtCacheSet merges with existing entry before saving', () => {
+        const fn = getFunctionBody(APP_JS, '_suggArtCacheSet');
+        assert.match(fn, /_suggArtCache\[key\]\s*\|\|\s*\{\}/);
+        assert.match(fn, /_suggArtCacheSave/);
+    });
+    it('_suggArtCacheDeleteField removes entry when last field is deleted', () => {
+        const fn = getFunctionBody(APP_JS, '_suggArtCacheDeleteField');
+        assert.match(fn, /delete _suggArtCache\[key\]/);
+        assert.match(fn, /_suggArtCacheSave/);
+    });
+    it('_suggArtCachePopulate uses _preferLocalImage for poster, hero, logo', () => {
+        const fn = getFunctionBody(APP_JS, '_suggArtCachePopulate');
+        assert.match(fn, /_preferLocalImage/);
+        assert.match(fn, /poster/);
+        assert.match(fn, /hero/);
+        assert.match(fn, /logo/);
+    });
+});
+
+// ── Section 6: Artwork local state management ─────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — local artwork state management in app.js', () => {
+    it('_clearArtworkLocalState is defined', () => {
+        assert.match(APP_JS, /function _clearArtworkLocalState\s*\(/);
+    });
+    it('_isUsableLocalArtwork is defined', () => {
+        assert.match(APP_JS, /async function _isUsableLocalArtwork\s*\(/);
+    });
+    it('hydrateManualGameArtworkNow is defined', () => {
+        assert.match(APP_JS, /async function hydrateManualGameArtworkNow\s*\(/);
+    });
+    it('hydrateRecentHeroArtwork is defined', () => {
+        assert.match(APP_JS, /async function hydrateRecentHeroArtwork\s*\(/);
+    });
+
+    it('_clearArtworkLocalState removes cover/hero/logo from localStorage', () => {
+        const fn = getFunctionBody(APP_JS, '_clearArtworkLocalState');
+        assert.match(fn, /localStorage\.removeItem\('cover_'/);
+        assert.match(fn, /localStorage\.removeItem\('hero_'/);
+        assert.match(fn, /localStorage\.removeItem\('logo_'/);
+    });
+    it('_clearArtworkLocalState purges virtual-scroll and games caches', () => {
+        const fn = getFunctionBody(APP_JS, '_clearArtworkLocalState');
+        assert.match(fn, /window\._vs\?\.cardCache/);
+        assert.match(fn, /window\._allGamesCache/);
+        assert.match(fn, /allGamesData/);
+    });
+
+    it('_isUsableLocalArtwork probes file:// URLs via probeLocalImage', () => {
+        const fn = getFunctionBody(APP_JS, '_isUsableLocalArtwork');
+        assert.match(fn, /probeLocalImage/);
+        assert.match(fn, /file:\/\//);
+    });
+    it('_isUsableLocalArtwork returns true for non-file URLs without probing', () => {
+        const fn = getFunctionBody(APP_JS, '_isUsableLocalArtwork');
+        assert.match(fn, /return true/);
+    });
+
+    it('hydrateManualGameArtworkNow reads cover/hero/logo from localStorage', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /localStorage\.getItem\('cover_'/);
+        assert.match(fn, /localStorage\.getItem\('hero_'/);
+        assert.match(fn, /localStorage\.getItem\('logo_'/);
+    });
+    it('hydrateManualGameArtworkNow calls getMetadata to fetch fresh art', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /getMetadata/);
+    });
+    it('hydrateManualGameArtworkNow calls cacheAllAssets to persist local copies', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /cacheAllAssets/);
+    });
+    it('hydrateManualGameArtworkNow calls saveMetadata after caching', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /saveMetadata/);
+    });
+    it('hydrateManualGameArtworkNow calls _patchGameInMemory and _patchVisibleGameCard', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /_patchGameInMemory/);
+        assert.match(fn, /_patchVisibleGameCard/);
+    });
+
+    it('hydrateRecentHeroArtwork calls getMetadata with preferHero flag', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateRecentHeroArtwork');
+        assert.match(fn, /getMetadata/);
+        assert.match(fn, /preferHero/);
+    });
+    it('hydrateRecentHeroArtwork calls cacheAllAssets and saveMetadata', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateRecentHeroArtwork');
+        assert.match(fn, /cacheAllAssets/);
+        assert.match(fn, /saveMetadata/);
+    });
+    it('hydrateRecentHeroArtwork calls _patchGameInMemory', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateRecentHeroArtwork');
+        assert.match(fn, /_patchGameInMemory/);
+    });
+});
+
+// ── Section 7: Custom artwork override ────────────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — custom artwork override in app.js', () => {
+    it('__baddelApplyGameCustomOverride is defined on window', () => {
+        assert.match(APP_JS, /window\.__baddelApplyGameCustomOverride\s*=/);
+    });
+    it('__baddelApplyGameCustomOverride applies cover patch fields', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /patch\.cover/);
+        assert.match(fn, /g\.image\s*=/);
+        assert.match(fn, /g\.coverUrl\s*=/);
+    });
+    it('__baddelApplyGameCustomOverride applies hero patch fields', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /patch\.hero/);
+        assert.match(fn, /g\.heroImage\s*=/);
+    });
+    it('__baddelApplyGameCustomOverride applies logo patch and supports logoCleared', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /patch\.logo/);
+        assert.match(fn, /patch\.logoCleared/);
+    });
+    it('__baddelApplyGameCustomOverride sets customArtworkLocked on patched game', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /customArtworkLocked\s*=\s*true/);
+    });
+    it('__baddelApplyGameCustomOverride writes cover/hero/logo to localStorage', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /localStorage\.setItem\('cover_'/);
+    });
+    it('__baddelApplyGameCustomOverride invalidates virtual-scroll card cache after patch', () => {
+        const fn = getWindowAssignedFunctionBody(APP_JS, '__baddelApplyGameCustomOverride');
+        assert.match(fn, /window\._vs\?\.cardCache/);
+    });
+});
+
+// ── Section 8: Window exports ─────────────────────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — window exports in app.js', () => {
+    it('window._clearArtworkLocalState is exported', () => {
+        assert.match(APP_JS, /window\._clearArtworkLocalState\s*=/);
+    });
+    it('window.hydrateManualGameArtworkNow is exported', () => {
+        assert.match(APP_JS, /window\.hydrateManualGameArtworkNow\s*=/);
+    });
+    it('window._suggArtCacheGet is exported', () => {
+        assert.match(APP_JS, /window\._suggArtCacheGet\s*=/);
+    });
+    it('window.__baddelApplyGameCustomOverride is exported', () => {
+        assert.match(APP_JS, /window\.__baddelApplyGameCustomOverride\s*=/);
+    });
+});
+
+// ── Section 9: electronAPI dependencies ──────────────────────────────────────
+
+describe('Phase 2.12A: artwork-sync — electronAPI calls in app.js', () => {
+    const artworkApiCalls = [
+        'pruneImageCache',
+        'probeLocalImage',
+        'getCachedImage',
+        'cacheAllAssets',
+        'getMetadata',
+        'saveMetadata',
+        'saveFullMetadata',
+    ];
+    for (const call of artworkApiCalls) {
+        it(`app.js references window.electronAPI.${call}`, () => {
+            assert.match(APP_JS, new RegExp(`window\\.electronAPI[?.]?\\.${call}\\b`));
+        });
+    }
+});
+
+// ── Section 10: localStorage keys used by artwork sync ───────────────────────
+
+describe('Phase 2.12A: artwork-sync — localStorage keys used in app.js', () => {
+    it("app.js reads/writes 'cover_' + game.id keys", () => {
+        assert.match(APP_JS, /['"]cover_['"]/);
+    });
+    it("app.js reads/writes 'hero_' + game.id keys", () => {
+        assert.match(APP_JS, /['"]hero_['"]/);
+    });
+    it("app.js reads/writes 'logo_' + game.id keys", () => {
+        assert.match(APP_JS, /['"]logo_['"]/);
+    });
+    it('app.js declares _SUGG_ART_CACHE_KEY for the suggestion art cache localStorage key', () => {
+        assert.match(APP_JS, /const _SUGG_ART_CACHE_KEY\s*=\s*['"]baddel_sugg_art_cache_v1['"]/);
+    });
+});
+
+// ── Section 11: DOM selectors used by artwork sync ───────────────────────────
+
+describe('Phase 2.12A: artwork-sync — DOM selectors used in app.js', () => {
+    it('_patchVisibleGameCard targets [data-id] attribute selector', () => {
+        const fn = getFunctionBody(APP_JS, '_patchVisibleGameCard');
+        assert.match(fn, /data-id/);
+    });
+    it('_patchVisibleGameCard targets .actual-img class', () => {
+        const fn = getFunctionBody(APP_JS, '_patchVisibleGameCard');
+        assert.match(fn, /\.actual-img/);
+    });
+    it('_patchVisibleGameCard adds img-loaded class on successful load', () => {
+        const fn = getFunctionBody(APP_JS, '_patchVisibleGameCard');
+        assert.match(fn, /img-loaded/);
+    });
+    it('_cardImageApply sets data-lastGoodImage on the element', () => {
+        const fn = getFunctionBody(APP_JS, '_cardImageApply');
+        assert.match(fn, /dataset\.lastGoodImage\s*=/);
+    });
+    it('_heroBgApply sets data-lastGoodBg on the element', () => {
+        const fn = getFunctionBody(APP_JS, '_heroBgApply');
+        assert.match(fn, /dataset\.lastGoodBg\s*=/);
+    });
+    it('failedImageIds Set tracks failed image URLs to avoid retries', () => {
+        assert.match(APP_JS, /const failedImageIds\s*=\s*new Set/);
+    });
+});
+
+// ── Section 12: Intentional dependencies from artwork sync section ────────────
+
+describe('Phase 2.12A: artwork-sync — intentional dependencies in app.js', () => {
+    it('processQueue calls updateHeroSection for the currently-displayed game', () => {
+        const fn = getFunctionBody(APP_JS, 'processQueue');
+        assert.match(fn, /updateHeroSection/);
+        assert.match(fn, /currentHeroGameId/);
+    });
+    it('hydrateManualGameArtworkNow calls applyFilters to refresh visible cards', () => {
+        const fn = getFunctionBody(APP_JS, 'hydrateManualGameArtworkNow');
+        assert.match(fn, /applyFilters\(\)/);
+    });
+    it('_patchGameInMemory consults window._agIsUserLibraryGame for cache membership', () => {
+        const fn = getFunctionBody(APP_JS, '_patchGameInMemory');
+        assert.match(fn, /window\._agIsUserLibraryGame/);
+    });
+    it('_rtia_warmOne uses _suggArtCacheSet from the suggestion art cache', () => {
+        const fn = getFunctionBody(APP_JS, '_rtia_warmOne');
+        assert.match(fn, /_suggArtCacheSet/);
+    });
+    it('fetchMetadata calls checkBackgroundAssets after loading from local cache', () => {
+        const fn = getFunctionBody(APP_JS, 'fetchMetadata');
+        assert.match(fn, /checkBackgroundAssets/);
+    });
+    it('safeImageUrl is called by artwork functions (defined in domUtils.js)', () => {
+        assert.match(APP_JS, /safeImageUrl\(/);
+    });
+});
+
+// ── Section 13: Dependency isolation — artwork section avoids unrelated state ─
+
+describe('Phase 2.12A: artwork-sync — dependency isolation', () => {
+    // Verify the core artwork sections (IMAGE QUEUE section + artwork helpers + RTIA)
+    // do not directly reference account panel state or display-prefs internals.
+    const artworkSections = (() => {
+        const iqStart = APP_JS.indexOf('// 6. IMAGE QUEUE');
+        const iqEnd   = APP_JS.indexOf('// 8. SIDEBAR');
+        const helpStart = APP_JS.indexOf('function isUsableImageUrl');
+        const helpEnd   = APP_JS.indexOf('function _suggKey');
+        const rtiaStart = APP_JS.indexOf('// ── ReadyToInstallAssetHydrator');
+        const rtiaEnd   = APP_JS.indexOf('// ── Deterministic seeded');
+        const localStart = APP_JS.indexOf('function _clearArtworkLocalState');
+        const localEnd   = APP_JS.indexOf('window.hydrateManualGameArtworkNow') + 50;
+
+        return [
+            iqStart !== -1 && iqEnd !== -1 ? APP_JS.slice(iqStart, iqEnd) : '',
+            helpStart !== -1 && helpEnd !== -1 ? APP_JS.slice(helpStart, helpEnd) : '',
+            rtiaStart !== -1 && rtiaEnd !== -1 ? APP_JS.slice(rtiaStart, rtiaEnd) : '',
+            localStart !== -1 && localEnd !== -1 ? APP_JS.slice(localStart, localEnd) : '',
+        ].join('\n');
+    })();
+
+    it('artwork section bounds are resolvable', () => {
+        assert.ok(artworkSections.length > 500, 'artwork section slice must be non-empty');
+    });
+
+    it('artwork sections do not reference currentSidebarSection', () => {
+        assert.doesNotMatch(artworkSections, /\bcurrentSidebarSection\b/);
+    });
+    it('artwork sections do not reference currentAccountPlatform', () => {
+        assert.doesNotMatch(artworkSections, /\bcurrentAccountPlatform\b/);
+    });
+    it('artwork sections do not reference activePlatformView', () => {
+        assert.doesNotMatch(artworkSections, /\bactivePlatformView\b/);
+    });
+    it('artwork sections do not reference openPlatformsModal', () => {
+        assert.doesNotMatch(artworkSections, /\bopenPlatformsModal\b/);
+    });
+    it('artwork sections do not reference renderAccountsView', () => {
+        assert.doesNotMatch(artworkSections, /\brenderAccountsView\b/);
+    });
+    it('artwork sections do not reference _agLoadDisplayPrefs', () => {
+        assert.doesNotMatch(artworkSections, /\b_agLoadDisplayPrefs\b/);
+    });
+    it('artwork sections do not reference _igLoadDisplayPrefs', () => {
+        assert.doesNotMatch(artworkSections, /\b_igLoadDisplayPrefs\b/);
+    });
+});
