@@ -599,10 +599,13 @@ test('winner card spacing does not rely on translateY(-10px)', () => {
     assert.equal(/\.roulette-card\.winner\s*{[^}]*translateY\(-10px\)/.test(css), false);
 });
 
-test('only one callable startRoulette implementation remains', () => {
-    const app = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
-    const matches = app.match(/function\s+startRoulette\s*\(/g) || [];
+test('only one callable startRoulette implementation remains (in roulette.js)', () => {
+    const rouletteJs = fs.readFileSync(path.join(ROOT, 'src/js/app/roulette.js'), 'utf8');
+    const matches = rouletteJs.match(/async\s+function\s+startRoulette\s*\(/g) || [];
     assert.equal(matches.length, 1);
+    // Confirm app.js no longer defines it
+    const appJs = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+    assert.doesNotMatch(appJs, /async\s+function\s+startRoulette\s*\(/);
 });
 
 test('starting second spin increments token and ignores stale callbacks from first spin', () => {

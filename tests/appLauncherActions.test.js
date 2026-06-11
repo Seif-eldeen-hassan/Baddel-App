@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const ROOT                = path.join(__dirname, '..');
 const APP_JS              = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const ROULETTE_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app/roulette.js'), 'utf8');
 const LAUNCHER_ACTIONS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/launcher-actions.js'), 'utf8');
 const GAME_CONTEXT_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
 const HTML                = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
@@ -267,8 +268,8 @@ describe('Phase 2.14B: launcher actions — cross-file callers', () => {
         const createRecentCardBody = getFunctionBody(APP_JS, 'createRecentCard');
         assert.match(createRecentCardBody, /triggerLaunchSequence\(/);
     });
-    it('playRouletteResult in app.js calls triggerLaunchSequence for play-mode winner', () => {
-        const fn = getFunctionBody(APP_JS, 'playRouletteResult');
+    it('playRouletteResult in roulette.js calls triggerLaunchSequence for play-mode winner', () => {
+        const fn = getFunctionBody(ROULETTE_JS, 'playRouletteResult');
         assert.match(fn, /triggerLaunchSequence\(/);
     });
     it('context menu HTML in game-context-actions.js uses openGameSettings onclick', () => {
