@@ -294,7 +294,7 @@ let tempImagePath = null;
 let isEditingMode = false;
 
 let activeHoverId = null;
-let isLaunching = false;
+// isLaunching moved to src/js/app/launcher-actions.js
 // currentHeroGameId moved to src/js/app/hero.js
 let currentFilters = { collectionId: null, platform: 'all', search: '', sort: 'manual' };
 // ============================================================
@@ -2868,71 +2868,8 @@ function getPlatformClass(p) {
 // ============================================================
 // 5. LAUNCHER
 // ============================================================
-async function triggerLaunchSequence(gameId) {
-    if (isLaunching) return;
-
-    const game = allGamesData.find(g => String(g.id) === String(gameId));
-    if (!game) return;
-
-    // 🎮 افتح الـ Play Launcher Modal أولاً (بيختار المنصة والأكاونت)
-    // لو اللعبة على منصة واحدة هيشغل مباشرة من غير Modal
-    if (typeof window.openPlayLauncher === 'function') {
-        window.openPlayLauncher(game);
-        return;
-    }
-
-    // ── Fallback: لو play-launcher.js مش محمّل ──
-    isLaunching = true;
-
-    const overlay = document.getElementById('launchOverlay');
-    const bgDiv = document.getElementById('launchBg');
-    const logoImg = document.getElementById('launchLogo');
-    const titleTxt = document.getElementById('launchTitle');
-    const statusText = document.getElementById('launchText');
-
-    logoImg.style.display = 'none'; logoImg.src = '';
-    titleTxt.style.display = 'none'; statusText.innerText = 'INITIALIZING...';
-
-    const bgUrl = game.heroImage || game.image || 'assets/default_hero.jpg';
-    if (bgUrl) bgDiv.style.backgroundImage = `url('${bgUrl.replace(/\\/g, '/')}')`;
-
-    if (game.logo) { logoImg.src = game.logo; logoImg.style.display = 'block'; }
-    else { titleTxt.innerText = game.name; titleTxt.style.display = 'block'; }
-
-    statusText.innerText = `STARTING ${game.name.toUpperCase()}...`;
-    overlay.classList.add('active');
-
-    let trackPath = game.path;
-    if (!trackPath && game.command) {
-        const cleanCommand = game.command.replace(/"/g, '');
-        trackPath = cleanCommand.substring(0, cleanCommand.lastIndexOf('\\'));
-    }
-
-    try {
-        const launchRes = await window.electronAPI.launchGame(game.command, game.id, trackPath, game.name);
-        if (launchRes && launchRes.status === 'error') {
-            console.error('[Launch] failed code=' + launchRes.code + ' msg=' + launchRes.message, launchRes.diagnostics || '');
-            throw new Error(launchRes.message);
-        }
-    } catch (e) {
-        const hint = e?.message?.includes('not found') || e?.message?.includes('NOT_FOUND')
-            ? 'Game file not found — check the installation path.'
-            : 'Error starting game! Make sure it\'s installed.';
-        showToast(hint, 'error');
-        overlay.classList.remove('active');
-        isLaunching = false;
-        return;
-    }
-
-    const finish = () => {
-        window.electronAPI.minimizeApp();
-        setTimeout(() => { overlay.classList.remove('active'); isLaunching = false; }, 400);
-    };
-
-    const onFocus = () => { finish(); window.removeEventListener('focus', onFocus); };
-    window.addEventListener('focus', onFocus);
-    setTimeout(() => { if (isLaunching) { finish(); window.removeEventListener('focus', onFocus); } }, 8000);
-}
+// isLaunching, triggerLaunchSequence, triggerPlay, closeGameSettings
+// moved to src/js/app/launcher-actions.js
 
 // ============================================================
 // 6. IMAGE QUEUE & METADATA
@@ -4018,7 +3955,7 @@ async function removeFromCurrentCollection(gameId) {
     }
 }
 
-function triggerPlay() { if (selectedGameId) triggerLaunchSequence(selectedGameId); hideContextMenu(); }
+// triggerPlay moved to src/js/app/launcher-actions.js
 
 async function toggleTimeTracking(gameId, enable) {
     hideContextMenu();
@@ -4185,12 +4122,7 @@ function hardDeleteGame(id) {
 
 
 
-function closeGameSettings(){
-     pendingImageChanges = {}; 
-    document.getElementById('gameSettingsModal').classList.remove('active'); 
-    selectedGameId = null;
-}
-
+// closeGameSettings moved to src/js/app/launcher-actions.js
 
 function refreshAllViews() {
     applyFilters(); 
