@@ -5,9 +5,10 @@ const path = require('node:path');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const ROOT   = path.join(__dirname, '..');
-const APP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
-const HTML   = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+const ROOT           = path.join(__dirname, '..');
+const APP_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const SYSTEM_STATS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/system-stats.js'), 'utf8');
+const HTML           = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── Extraction helper ─────────────────────────────────────────────────────────
 
@@ -28,197 +29,194 @@ function getFunctionBody(source, functionName) {
     return source.slice(start);
 }
 
-// ── Section 1: Source presence in app.js ─────────────────────────────────────
+// ── Section 1: Source presence in system-stats.js ────────────────────────────
 
-describe('Phase 2.16A: system stats — source presence in app.js', () => {
+describe('Phase 2.16B: system stats — source presence in system-stats.js', () => {
     it('checkAndManagePolling is defined', () => {
-        assert.match(APP_JS, /function checkAndManagePolling\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /function checkAndManagePolling\s*\(\s*\)/);
     });
     it('toggleSensors is defined', () => {
-        assert.match(APP_JS, /function toggleSensors\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /function toggleSensors\s*\(\s*\)/);
     });
     it('_resetStatsUI is defined', () => {
-        assert.match(APP_JS, /function _resetStatsUI\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /function _resetStatsUI\s*\(\s*\)/);
     });
     it('initSystemStats is defined as an async function', () => {
-        assert.match(APP_JS, /async function initSystemStats\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /async function initSystemStats\s*\(\s*\)/);
     });
     it('_loadStaticInfo is defined as an async function', () => {
-        assert.match(APP_JS, /async function _loadStaticInfo\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /async function _loadStaticInfo\s*\(\s*\)/);
     });
     it('_tickStats is defined as an async function', () => {
-        assert.match(APP_JS, /async function _tickStats\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /async function _tickStats\s*\(\s*\)/);
     });
     it('_setText is defined', () => {
-        assert.match(APP_JS, /function _setText\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function _setText\s*\(/);
     });
     it('_setBar is defined', () => {
-        assert.match(APP_JS, /function _setBar\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function _setBar\s*\(/);
     });
     it('_fmtBytes is defined', () => {
-        assert.match(APP_JS, /function _fmtBytes\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function _fmtBytes\s*\(/);
     });
     it('_fmtSpeed is defined', () => {
-        assert.match(APP_JS, /function _fmtSpeed\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function _fmtSpeed\s*\(/);
     });
     it('_shortName is defined', () => {
-        assert.match(APP_JS, /function _shortName\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function _shortName\s*\(/);
     });
     it('cyclePlaytimeFormat is defined', () => {
-        assert.match(APP_JS, /function cyclePlaytimeFormat\s*\(\s*\)/);
+        assert.match(SYSTEM_STATS_JS, /function cyclePlaytimeFormat\s*\(\s*\)/);
     });
     it('togglePlaytimeDropdown is defined', () => {
-        assert.match(APP_JS, /function togglePlaytimeDropdown\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function togglePlaytimeDropdown\s*\(/);
     });
     it('selectPlaytime is defined', () => {
-        assert.match(APP_JS, /function selectPlaytime\s*\(/);
+        assert.match(SYSTEM_STATS_JS, /function selectPlaytime\s*\(/);
     });
     it('updateFooterStats is defined', () => {
-        assert.match(APP_JS, /function updateFooterStats\s*\(\s*\)/);
-    });
-    it('system stats section header comment is present', () => {
-        assert.match(APP_JS, /\/\/ 13\. SYSTEM STATS HUD/);
+        assert.match(SYSTEM_STATS_JS, /function updateFooterStats\s*\(\s*\)/);
     });
 });
 
 // ── Section 2: State variables ────────────────────────────────────────────────
 
-describe('Phase 2.16A: system stats — state variables in app.js', () => {
+describe('Phase 2.16B: system stats — state variables in system-stats.js', () => {
     it('_prevNetBytes is declared with initial rx/tx/ts values', () => {
-        assert.match(APP_JS, /^let _prevNetBytes\s*=\s*\{/m);
-        assert.match(APP_JS, /rx:\s*0/);
-        assert.match(APP_JS, /tx:\s*0/);
-        assert.match(APP_JS, /ts:\s*0/);
+        assert.match(SYSTEM_STATS_JS, /^let _prevNetBytes\s*=\s*\{/m);
+        assert.match(SYSTEM_STATS_JS, /rx:\s*0/);
+        assert.match(SYSTEM_STATS_JS, /tx:\s*0/);
+        assert.match(SYSTEM_STATS_JS, /ts:\s*0/);
     });
     it('_hudInterval is declared', () => {
-        assert.match(APP_JS, /^let _hudInterval\s*=\s*null/m);
+        assert.match(SYSTEM_STATS_JS, /^let _hudInterval\s*=\s*null/m);
     });
     it('_isStatsInit is declared', () => {
-        assert.match(APP_JS, /^let _isStatsInit\s*=\s*false/m);
+        assert.match(SYSTEM_STATS_JS, /^let _isStatsInit\s*=\s*false/m);
     });
     it('_isStatsBusy is declared', () => {
-        assert.match(APP_JS, /^let _isStatsBusy\s*=\s*false/m);
+        assert.match(SYSTEM_STATS_JS, /^let _isStatsBusy\s*=\s*false/m);
     });
     it('isSensorEnabled is declared and reads baddel_sensors_enabled from localStorage', () => {
-        assert.match(APP_JS, /^let isSensorEnabled\s*=/m);
-        assert.match(APP_JS, /localStorage\.getItem\('baddel_sensors_enabled'\)/);
+        assert.match(SYSTEM_STATS_JS, /^let isSensorEnabled\s*=/m);
+        assert.match(SYSTEM_STATS_JS, /localStorage\.getItem\('baddel_sensors_enabled'\)/);
     });
     it('currentPlaytimeFormat is declared', () => {
-        assert.match(APP_JS, /^let currentPlaytimeFormat\s*=\s*0/m);
+        assert.match(SYSTEM_STATS_JS, /^let currentPlaytimeFormat\s*=\s*0/m);
     });
     it('currentPlaytimeFilterValue is declared with default "all"', () => {
-        assert.match(APP_JS, /^let currentPlaytimeFilterValue\s*=\s*'all'/m);
+        assert.match(SYSTEM_STATS_JS, /^let currentPlaytimeFilterValue\s*=\s*'all'/m);
     });
 });
 
 // ── Section 3: checkAndManagePolling behaviour ────────────────────────────────
 
-describe('Phase 2.16A: system stats — checkAndManagePolling behaviour', () => {
+describe('Phase 2.16B: system stats — checkAndManagePolling behaviour', () => {
     it('polls only when isSensorEnabled, hasFocus, and currentView is home', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /isSensorEnabled/);
         assert.match(fn, /hasFocus/);
         assert.match(fn, /isHomeView/);
         assert.match(fn, /currentView\s*===\s*'home'/);
     });
     it('starts the HUD interval using _tickStats every 3 seconds', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /setInterval\(_tickStats/);
         assert.match(fn, /3000/);
     });
     it('stores interval handle in _hudInterval', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /_hudInterval\s*=/);
     });
     it('clears _hudInterval when conditions are not met', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /clearInterval\(_hudInterval\)/);
         assert.match(fn, /_hudInterval\s*=\s*null/);
     });
     it('updates sysLiveDot opacity to indicate polling state', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /getElementById\('sysLiveDot'\)/);
         assert.match(fn, /liveDot\.style\.opacity/);
     });
     it('calls _tickStats immediately when starting the interval', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /_tickStats\(\)/);
     });
 });
 
 // ── Section 4: toggleSensors behaviour ────────────────────────────────────────
 
-describe('Phase 2.16A: system stats — toggleSensors behaviour', () => {
+describe('Phase 2.16B: system stats — toggleSensors behaviour', () => {
     it('flips isSensorEnabled and persists it to localStorage', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /isSensorEnabled\s*=\s*!isSensorEnabled/);
         assert.match(fn, /localStorage\.setItem\('baddel_sensors_enabled'/);
     });
     it('calls window.electronAPI.logHudSensorToggled with the new state', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /window\.electronAPI\.logHudSensorToggled/);
     });
     it('toggles sensorToggleBtn off class based on enabled state', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /getElementById\('sensorToggleBtn'\)/);
         assert.match(fn, /classList\.remove\('off'\)/);
         assert.match(fn, /classList\.add\('off'\)/);
     });
     it('updates sensorToggleText to "SENSORS: ON" or "SENSORS: OFF"', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /getElementById\('sensorToggleText'\)/);
         assert.match(fn, /SENSORS: ON/);
         assert.match(fn, /SENSORS: OFF/);
     });
     it('calls _tickStats when enabling sensors', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /_tickStats\(\)/);
     });
     it('calls _resetStatsUI when disabling sensors', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /_resetStatsUI\(\)/);
     });
     it('calls checkAndManagePolling after toggling', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /checkAndManagePolling\(\)/);
     });
 });
 
 // ── Section 5: initSystemStats and _loadStaticInfo behaviour ─────────────────
 
-describe('Phase 2.16A: system stats — initSystemStats behaviour', () => {
+describe('Phase 2.16B: system stats — initSystemStats behaviour', () => {
     it('initSystemStats guards against double-init with _isStatsInit', () => {
-        const fn = getFunctionBody(APP_JS, 'initSystemStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'initSystemStats');
         assert.match(fn, /_isStatsInit/);
         assert.match(fn, /if\s*\(_isStatsInit\)\s*return/);
     });
     it('initSystemStats calls _loadStaticInfo on first run', () => {
-        const fn = getFunctionBody(APP_JS, 'initSystemStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'initSystemStats');
         assert.match(fn, /await _loadStaticInfo\(\)/);
     });
     it('initSystemStats applies off-state to sensorToggleBtn when sensors are disabled', () => {
-        const fn = getFunctionBody(APP_JS, 'initSystemStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'initSystemStats');
         assert.match(fn, /getElementById\('sensorToggleBtn'\)/);
         assert.match(fn, /classList\.add\('off'\)/);
     });
     it('initSystemStats registers focus/blur listeners on window for polling management', () => {
-        const fn = getFunctionBody(APP_JS, 'initSystemStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'initSystemStats');
         assert.match(fn, /window\.addEventListener\('focus'/);
         assert.match(fn, /window\.addEventListener\('blur'/);
         assert.match(fn, /checkAndManagePolling/);
     });
     it('initSystemStats is scheduled via DOMContentLoaded with a 1000ms delay', () => {
-        assert.match(APP_JS, /DOMContentLoaded.*setTimeout\(initSystemStats,\s*1000\)|setTimeout\(initSystemStats,\s*1000\)/);
+        assert.match(SYSTEM_STATS_JS, /DOMContentLoaded.*setTimeout\(initSystemStats,\s*1000\)|setTimeout\(initSystemStats,\s*1000\)/);
     });
 });
 
-describe('Phase 2.16A: system stats — _loadStaticInfo behaviour', () => {
+describe('Phase 2.16B: system stats — _loadStaticInfo behaviour', () => {
     it('_loadStaticInfo calls window.electronAPI.getSystemInfo', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /window\.electronAPI\.getSystemInfo\(\)/);
     });
     it('_loadStaticInfo populates osName, cpuModel, cpuCores, ramTotal, ramSpeed, ramKits', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /_setText\('osName'/);
         assert.match(fn, /_setText\('cpuModel'/);
         assert.match(fn, /_setText\('cpuCores'/);
@@ -227,20 +225,20 @@ describe('Phase 2.16A: system stats — _loadStaticInfo behaviour', () => {
         assert.match(fn, /_setText\('ramKits'/);
     });
     it('_loadStaticInfo populates gpuModel and gpuVram when GPU is present', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /_setText\('gpuModel'/);
         assert.match(fn, /_setText\('gpuVram'/);
     });
     it('_loadStaticInfo calls _shortName to strip verbose CPU/GPU brand strings', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /_shortName\(/);
     });
     it('_loadStaticInfo calls _fmtBytes to format RAM and VRAM sizes', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /_fmtBytes\(/);
     });
     it('_loadStaticInfo wraps the IPC call in try/catch and warns on failure', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /try/);
         assert.match(fn, /catch/);
         assert.match(fn, /console\.warn/);
@@ -249,108 +247,108 @@ describe('Phase 2.16A: system stats — _loadStaticInfo behaviour', () => {
 
 // ── Section 6: _tickStats behaviour ──────────────────────────────────────────
 
-describe('Phase 2.16A: system stats — _tickStats behaviour', () => {
+describe('Phase 2.16B: system stats — _tickStats behaviour', () => {
     it('_tickStats guards against concurrent execution with _isStatsBusy', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /if\s*\(_isStatsBusy\)\s*return/);
         assert.match(fn, /_isStatsBusy\s*=\s*true/);
         assert.match(fn, /_isStatsBusy\s*=\s*false/);
     });
     it('_tickStats calls window.electronAPI.getLiveStats', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /window\.electronAPI\.getLiveStats\(\)/);
     });
     it('_tickStats updates CPU load, bar and temperature', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_setText\('cpuPercent'/);
         assert.match(fn, /_setBar\('cpuBar'/);
         assert.match(fn, /_setText\('cpuTemp'/);
     });
     it('_tickStats updates RAM percent, bar and used memory', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_setText\('ramPercent'/);
         assert.match(fn, /_setBar\('ramBar'/);
         assert.match(fn, /_setText\('ramUsed'/);
     });
     it('_tickStats updates network download, upload and ping', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_setText\('netDown'/);
         assert.match(fn, /_setText\('netUp'/);
         assert.match(fn, /_setText\('netPing'/);
     });
     it('_tickStats updates GPU load, bar and temperature', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_setText\('gpuPercent'/);
         assert.match(fn, /_setBar\('gpuBar'/);
         assert.match(fn, /_setText\('gpuTemp'/);
     });
     it('_tickStats calculates network speed from _prevNetBytes delta', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_prevNetBytes/);
         assert.match(fn, /netRxBytes/);
         assert.match(fn, /netTxBytes/);
     });
     it('_tickStats uses _fmtSpeed to format network speeds', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_fmtSpeed\(/);
     });
     it('_tickStats uses _fmtBytes to format RAM used', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /_fmtBytes\(/);
     });
     it('_tickStats resets _isStatsBusy in a finally block on success and error', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /finally/);
     });
 });
 
 // ── Section 7: Formatting helpers behaviour ───────────────────────────────────
 
-describe('Phase 2.16A: system stats — formatting helpers behaviour', () => {
+describe('Phase 2.16B: system stats — formatting helpers behaviour', () => {
     it('_setText only updates innerText when value differs from current', () => {
-        const fn = getFunctionBody(APP_JS, '_setText');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_setText');
         assert.match(fn, /el\.innerText\s*!==\s*val/);
     });
     it('_setBar caps the width at 100%', () => {
-        const fn = getFunctionBody(APP_JS, '_setBar');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_setBar');
         assert.match(fn, /Math\.min\(pct,\s*100\)/);
         assert.match(fn, /el\.style\.width/);
     });
     it('_fmtBytes returns GB for values >= 1e9', () => {
-        const fn = getFunctionBody(APP_JS, '_fmtBytes');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_fmtBytes');
         assert.match(fn, /1e9/);
         assert.match(fn, /GB/);
     });
     it('_fmtBytes returns MB for values >= 1e6', () => {
-        const fn = getFunctionBody(APP_JS, '_fmtBytes');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_fmtBytes');
         assert.match(fn, /1e6/);
         assert.match(fn, /MB/);
     });
     it('_fmtBytes returns "0 GB" for falsy input', () => {
-        const fn = getFunctionBody(APP_JS, '_fmtBytes');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_fmtBytes');
         assert.match(fn, /0 GB/);
     });
     it('_fmtSpeed returns MB/s for speeds >= 1e6', () => {
-        const fn = getFunctionBody(APP_JS, '_fmtSpeed');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_fmtSpeed');
         assert.match(fn, /1e6/);
         assert.match(fn, /MB\/s/);
     });
     it('_fmtSpeed returns KB/s for lower speeds', () => {
-        const fn = getFunctionBody(APP_JS, '_fmtSpeed');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_fmtSpeed');
         assert.match(fn, /KB\/s/);
     });
     it('_shortName strips Intel/Core/CPU/NVIDIA GeForce/AMD Radeon brand strings', () => {
-        const fn = getFunctionBody(APP_JS, '_shortName');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_shortName');
         assert.match(fn, /Intel/);
         assert.match(fn, /NVIDIA GeForce/);
         assert.match(fn, /AMD Radeon/);
     });
     it('_shortName returns "—" for falsy input', () => {
-        const fn = getFunctionBody(APP_JS, '_shortName');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_shortName');
         assert.match(fn, /return '—'/);
     });
     it('_resetStatsUI zeroes CPU, GPU, RAM and network fields', () => {
-        const fn = getFunctionBody(APP_JS, '_resetStatsUI');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_resetStatsUI');
         assert.match(fn, /_setText\('cpuPercent'/);
         assert.match(fn, /_setText\('gpuPercent'/);
         assert.match(fn, /_setText\('ramPercent'/);
@@ -360,22 +358,22 @@ describe('Phase 2.16A: system stats — formatting helpers behaviour', () => {
 
 // ── Section 8: Footer playtime stats behaviour ────────────────────────────────
 
-describe('Phase 2.16A: system stats — footer playtime stats behaviour', () => {
+describe('Phase 2.16B: system stats — footer playtime stats behaviour', () => {
     it('updateFooterStats reads allGamesData.length for games count', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /allGamesData\.length/);
         assert.match(fn, /getElementById\('gamesCount'\)/);
     });
     it('updateFooterStats reads playtimeData to compute total playtime', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /\bplaytimeData\b/);
     });
     it('updateFooterStats uses currentPlaytimeFilterValue to apply date filter', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /currentPlaytimeFilterValue/);
     });
     it('updateFooterStats supports today, week, month, year and all filters', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /'today'/);
         assert.match(fn, /'week'/);
         assert.match(fn, /'month'/);
@@ -383,31 +381,31 @@ describe('Phase 2.16A: system stats — footer playtime stats behaviour', () => 
         assert.match(fn, /'all'/);
     });
     it('updateFooterStats displays time as "Xh Ym" in totalLifePlaytime element', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /getElementById\('totalLifePlaytime'\)/);
         assert.match(fn, /hours/);
         assert.match(fn, /mins/);
     });
     it('cyclePlaytimeFormat increments currentPlaytimeFormat with wrap-around at 5', () => {
-        const fn = getFunctionBody(APP_JS, 'cyclePlaytimeFormat');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'cyclePlaytimeFormat');
         assert.match(fn, /currentPlaytimeFormat\s*=\s*\(currentPlaytimeFormat\s*\+\s*1\)\s*%\s*5/);
     });
     it('cyclePlaytimeFormat calls updateFooterStats after incrementing', () => {
-        const fn = getFunctionBody(APP_JS, 'cyclePlaytimeFormat');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'cyclePlaytimeFormat');
         assert.match(fn, /updateFooterStats\(\)/);
     });
     it('togglePlaytimeDropdown toggles playtimeMenu active class', () => {
-        const fn = getFunctionBody(APP_JS, 'togglePlaytimeDropdown');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'togglePlaytimeDropdown');
         assert.match(fn, /getElementById\('playtimeMenu'\)/);
         assert.match(fn, /classList\.toggle\('active'\)/);
     });
     it('selectPlaytime updates selectedPlaytimeText and currentPlaytimeFilterValue', () => {
-        const fn = getFunctionBody(APP_JS, 'selectPlaytime');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'selectPlaytime');
         assert.match(fn, /getElementById\('selectedPlaytimeText'\)/);
         assert.match(fn, /currentPlaytimeFilterValue\s*=\s*value/);
     });
     it('selectPlaytime closes playtimeMenu and calls updateFooterStats', () => {
-        const fn = getFunctionBody(APP_JS, 'selectPlaytime');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'selectPlaytime');
         assert.match(fn, /playtimeMenu.*remove.*active|classList\.remove\('active'\)/);
         assert.match(fn, /updateFooterStats\(\)/);
     });
@@ -415,7 +413,7 @@ describe('Phase 2.16A: system stats — footer playtime stats behaviour', () => 
 
 // ── Section 9: DOM IDs in dashboard.html ─────────────────────────────────────
 
-describe('Phase 2.16A: system stats — DOM IDs in dashboard.html', () => {
+describe('Phase 2.16B: system stats — DOM IDs in dashboard.html', () => {
     it('sysLiveDot element exists', () => { assert.match(HTML, /id="sysLiveDot"/); });
     it('sensorToggleBtn element exists', () => { assert.match(HTML, /id="sensorToggleBtn"/); });
     it('sensorToggleText element exists', () => { assert.match(HTML, /id="sensorToggleText"/); });
@@ -457,41 +455,41 @@ describe('Phase 2.16A: system stats — DOM IDs in dashboard.html', () => {
 
 // ── Section 10: electronAPI dependencies ─────────────────────────────────────
 
-describe('Phase 2.16A: system stats — electronAPI dependencies', () => {
+describe('Phase 2.16B: system stats — electronAPI dependencies', () => {
     it('_loadStaticInfo depends on window.electronAPI.getSystemInfo', () => {
-        const fn = getFunctionBody(APP_JS, '_loadStaticInfo');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_loadStaticInfo');
         assert.match(fn, /window\.electronAPI\.getSystemInfo/);
     });
     it('_tickStats depends on window.electronAPI.getLiveStats', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.match(fn, /window\.electronAPI\.getLiveStats/);
     });
     it('toggleSensors depends on window.electronAPI.logHudSensorToggled', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.match(fn, /window\.electronAPI\.logHudSensorToggled/);
     });
 });
 
 // ── Section 11: Intentional dependencies ─────────────────────────────────────
 
-describe('Phase 2.16A: system stats — intentional dependencies', () => {
+describe('Phase 2.16B: system stats — intentional dependencies', () => {
     it('checkAndManagePolling depends on currentView', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.match(fn, /\bcurrentView\b/);
     });
     it('updateFooterStats depends on allGamesData', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /\ballGamesData\b/);
     });
     it('updateFooterStats depends on playtimeData', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.match(fn, /\bplaytimeData\b/);
     });
     it('isSensorEnabled persists to localStorage key baddel_sensors_enabled', () => {
-        assert.match(APP_JS, /baddel_sensors_enabled/);
+        assert.match(SYSTEM_STATS_JS, /baddel_sensors_enabled/);
     });
     it('initSystemStats calls checkAndManagePolling during setup', () => {
-        const fn = getFunctionBody(APP_JS, 'initSystemStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'initSystemStats');
         assert.match(fn, /checkAndManagePolling\(\)/);
     });
     it('navigateToHome in app.js calls updateFooterStats', () => {
@@ -514,49 +512,179 @@ describe('Phase 2.16A: system stats — intentional dependencies', () => {
 
 // ── Section 12: Dependency isolation ─────────────────────────────────────────
 
-describe('Phase 2.16A: system stats — dependency isolation', () => {
+describe('Phase 2.16B: system stats — dependency isolation', () => {
     it('_tickStats does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('_tickStats does not reference activePlatformView', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.doesNotMatch(fn, /\bactivePlatformView\b/);
     });
     it('_tickStats does not reference renderPlatformAccounts', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.doesNotMatch(fn, /\brenderPlatformAccounts\b/);
     });
     it('_tickStats does not reference AG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, '_tickStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, '_tickStats');
         assert.doesNotMatch(fn, /\bAG_DISPLAY_DEFAULTS\b/);
     });
     it('checkAndManagePolling does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('checkAndManagePolling does not reference AG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, 'checkAndManagePolling');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'checkAndManagePolling');
         assert.doesNotMatch(fn, /\bAG_DISPLAY_DEFAULTS\b/);
     });
     it('toggleSensors does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'toggleSensors');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'toggleSensors');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('updateFooterStats does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('updateFooterStats does not reference activePlatformView', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.doesNotMatch(fn, /\bactivePlatformView\b/);
     });
     it('updateFooterStats does not reference window._agDisplayPrefs', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.doesNotMatch(fn, /window\._agDisplayPrefs/);
     });
     it('updateFooterStats does not reference IG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, 'updateFooterStats');
+        const fn = getFunctionBody(SYSTEM_STATS_JS, 'updateFooterStats');
         assert.doesNotMatch(fn, /\bIG_DISPLAY_DEFAULTS\b/);
+    });
+});
+
+// ── Section 13: app.js does NOT redeclare moved identifiers ──────────────────
+
+describe('Phase 2.16B: system stats — app.js does not redeclare moved identifiers', () => {
+    it('app.js does not declare function checkAndManagePolling', () => {
+        assert.doesNotMatch(APP_JS, /^function checkAndManagePolling\s*\(/m);
+    });
+    it('app.js does not declare function toggleSensors', () => {
+        assert.doesNotMatch(APP_JS, /^function toggleSensors\s*\(/m);
+    });
+    it('app.js does not declare function _resetStatsUI', () => {
+        assert.doesNotMatch(APP_JS, /^function _resetStatsUI\s*\(/m);
+    });
+    it('app.js does not declare async function initSystemStats', () => {
+        assert.doesNotMatch(APP_JS, /^async function initSystemStats\s*\(/m);
+    });
+    it('app.js does not declare async function _loadStaticInfo', () => {
+        assert.doesNotMatch(APP_JS, /^async function _loadStaticInfo\s*\(/m);
+    });
+    it('app.js does not declare async function _tickStats', () => {
+        assert.doesNotMatch(APP_JS, /^async function _tickStats\s*\(/m);
+    });
+    it('app.js does not declare function _setText', () => {
+        assert.doesNotMatch(APP_JS, /^function _setText\s*\(/m);
+    });
+    it('app.js does not declare function _setBar', () => {
+        assert.doesNotMatch(APP_JS, /^function _setBar\s*\(/m);
+    });
+    it('app.js does not declare function _fmtBytes', () => {
+        assert.doesNotMatch(APP_JS, /^function _fmtBytes\s*\(/m);
+    });
+    it('app.js does not declare function _fmtSpeed', () => {
+        assert.doesNotMatch(APP_JS, /^function _fmtSpeed\s*\(/m);
+    });
+    it('app.js does not declare function _shortName', () => {
+        assert.doesNotMatch(APP_JS, /^function _shortName\s*\(/m);
+    });
+    it('app.js does not declare function cyclePlaytimeFormat', () => {
+        assert.doesNotMatch(APP_JS, /^function cyclePlaytimeFormat\s*\(/m);
+    });
+    it('app.js does not declare function togglePlaytimeDropdown', () => {
+        assert.doesNotMatch(APP_JS, /^function togglePlaytimeDropdown\s*\(/m);
+    });
+    it('app.js does not declare function selectPlaytime', () => {
+        assert.doesNotMatch(APP_JS, /^function selectPlaytime\s*\(/m);
+    });
+    it('app.js does not declare function updateFooterStats', () => {
+        assert.doesNotMatch(APP_JS, /^function updateFooterStats\s*\(/m);
+    });
+    it('app.js does not redeclare _prevNetBytes', () => {
+        assert.doesNotMatch(APP_JS, /^let _prevNetBytes\s*=/m);
+    });
+    it('app.js does not redeclare _hudInterval', () => {
+        assert.doesNotMatch(APP_JS, /^let _hudInterval\s*=/m);
+    });
+    it('app.js does not redeclare _isStatsInit', () => {
+        assert.doesNotMatch(APP_JS, /^let _isStatsInit\s*=/m);
+    });
+    it('app.js does not redeclare _isStatsBusy', () => {
+        assert.doesNotMatch(APP_JS, /^let _isStatsBusy\s*=/m);
+    });
+    it('app.js does not redeclare isSensorEnabled', () => {
+        assert.doesNotMatch(APP_JS, /^let isSensorEnabled\s*=/m);
+    });
+    it('app.js does not redeclare currentPlaytimeFormat', () => {
+        assert.doesNotMatch(APP_JS, /^let currentPlaytimeFormat\s*=/m);
+    });
+    it('app.js does not redeclare currentPlaytimeFilterValue', () => {
+        assert.doesNotMatch(APP_JS, /^let currentPlaytimeFilterValue\s*=/m);
+    });
+});
+
+// ── Section 14: window exports ────────────────────────────────────────────────
+
+describe('Phase 2.16B: system stats — window exports', () => {
+    it('checkAndManagePolling is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.checkAndManagePolling\s*=/);
+    });
+    it('toggleSensors is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.toggleSensors\s*=/);
+    });
+    it('initSystemStats is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.initSystemStats\s*=/);
+    });
+    it('updateFooterStats is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.updateFooterStats\s*=/);
+    });
+    it('togglePlaytimeDropdown is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.togglePlaytimeDropdown\s*=/);
+    });
+    it('selectPlaytime is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.selectPlaytime\s*=/);
+    });
+    it('cyclePlaytimeFormat is exported to window', () => {
+        assert.match(SYSTEM_STATS_JS, /window\.cyclePlaytimeFormat\s*=/);
+    });
+});
+
+// ── Section 15: script load order ────────────────────────────────────────────
+
+describe('Phase 2.16B: system stats — script load order in dashboard.html', () => {
+    it('system-stats.js is loaded before app.js', () => {
+        const ssIdx  = HTML.indexOf('src="js/app/system-stats.js"');
+        const appIdx = HTML.indexOf('src="js/app.js"');
+        assert.ok(ssIdx !== -1, 'system-stats.js script tag not found');
+        assert.ok(appIdx !== -1, 'app.js script tag not found');
+        assert.ok(ssIdx < appIdx, 'system-stats.js must load before app.js');
+    });
+    it('system-stats.js is loaded after hero.js', () => {
+        const heroIdx = HTML.indexOf('src="js/app/hero.js"');
+        const ssIdx   = HTML.indexOf('src="js/app/system-stats.js"');
+        assert.ok(heroIdx !== -1, 'hero.js script tag not found');
+        assert.ok(ssIdx !== -1, 'system-stats.js script tag not found');
+        assert.ok(heroIdx < ssIdx, 'system-stats.js must load after hero.js');
+    });
+});
+
+// ── Section 16: comment hygiene ───────────────────────────────────────────────
+
+describe('Phase 2.16B: system stats — comment hygiene', () => {
+    it('system-stats.js contains no Arabic characters', () => {
+        assert.doesNotMatch(SYSTEM_STATS_JS, /[؀-ۿ]/);
+    });
+    it('system-stats.js contains no emoji characters', () => {
+        assert.doesNotMatch(SYSTEM_STATS_JS, /[\u{1F300}-\u{1FAFF}]/u);
+    });
+    it('system-stats.js contains no mojibake sequences', () => {
+        assert.doesNotMatch(SYSTEM_STATS_JS, /Ø|Ã|â€|Ð|Ñ/);
     });
 });
