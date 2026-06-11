@@ -5,9 +5,10 @@ const path = require('node:path');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const ROOT   = path.join(__dirname, '..');
-const APP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
-const HTML   = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+const ROOT             = path.join(__dirname, '..');
+const APP_JS           = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const TOAST_CONFIRM_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/toast-confirm.js'), 'utf8');
+const HTML             = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── Extraction helper ─────────────────────────────────────────────────────────
 
@@ -28,121 +29,118 @@ function getFunctionBody(source, functionName) {
     return source.slice(start);
 }
 
-// ── Section 1: Source presence in app.js ─────────────────────────────────────
+// ── Section 1: Source presence in toast-confirm.js ───────────────────────────
 
-describe('Phase 2.15A: toast/confirm — source presence in app.js', () => {
+describe('Phase 2.15B: toast/confirm — source presence in toast-confirm.js', () => {
     it('showToast is defined', () => {
-        assert.match(APP_JS, /function showToast\s*\(/);
+        assert.match(TOAST_CONFIRM_JS, /function showToast\s*\(/);
     });
     it('openConfirmModal is defined', () => {
-        assert.match(APP_JS, /function openConfirmModal\s*\(/);
+        assert.match(TOAST_CONFIRM_JS, /function openConfirmModal\s*\(/);
     });
     it('closeConfirmModal is defined', () => {
-        assert.match(APP_JS, /function closeConfirmModal\s*\(\s*\)/);
+        assert.match(TOAST_CONFIRM_JS, /function closeConfirmModal\s*\(\s*\)/);
     });
     it('executeConfirm is defined as an async function', () => {
-        assert.match(APP_JS, /async function executeConfirm\s*\(\s*\)/);
+        assert.match(TOAST_CONFIRM_JS, /async function executeConfirm\s*\(\s*\)/);
     });
     it('pendingConfirmAction state variable is declared', () => {
-        assert.match(APP_JS, /^let pendingConfirmAction\s*=\s*null/m);
-    });
-    it('confirm modal section header comment is present', () => {
-        assert.match(APP_JS, /\/\/ CONFIRM MODAL/);
+        assert.match(TOAST_CONFIRM_JS, /^let pendingConfirmAction\s*=\s*null/m);
     });
 });
 
 // ── Section 2: showToast behaviour ───────────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — showToast behaviour', () => {
+describe('Phase 2.15B: toast/confirm — showToast behaviour', () => {
     it('showToast accepts a plain string message as first argument', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /message\s*=\s*msgOrOpts/);
     });
     it('showToast accepts an object with message/title/type/duration fields', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /typeof msgOrOpts\s*===\s*'object'/);
         assert.match(fn, /msgOrOpts\.message/);
         assert.match(fn, /msgOrOpts\.type/);
         assert.match(fn, /msgOrOpts\.duration/);
     });
     it('showToast reads toast-wrapper by ID to append the notification', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /getElementById\('toast-wrapper'\)/);
     });
     it('showToast creates a div with class toast-notification', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /toast-notification/);
         assert.match(fn, /document\.createElement\('div'\)/);
     });
     it('showToast adds toast-error class when type is "error"', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /toast-error/);
         assert.match(fn, /type\s*===\s*'error'/);
     });
     it('showToast wraps message text in a <span>', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /<span>/);
     });
     it('showToast appends the notification div to the wrapper', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /w\.appendChild\(d\)/);
     });
     it('showToast auto-removes the notification after a timeout', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /setTimeout/);
         assert.match(fn, /d\.remove\(\)/);
     });
     it('showToast applies a fadeOutUp animation before removal', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /fadeOutUp/);
     });
     it('showToast default duration is 3500 ms', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /3500/);
     });
     it('showToast falls back to title field when message field is absent in object input', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.match(fn, /msgOrOpts\.message\s*\|\|\s*msgOrOpts\.title/);
     });
     it('showToast does not call escapeHtml on the message (raw HTML allowed)', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /escapeHtml/);
     });
 });
 
 // ── Section 3: openConfirmModal behaviour ────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — openConfirmModal behaviour', () => {
+describe('Phase 2.15B: toast/confirm — openConfirmModal behaviour', () => {
     it('openConfirmModal accepts title, message, buttonText, callback parameters', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /title/);
         assert.match(fn, /message/);
         assert.match(fn, /buttonText/);
         assert.match(fn, /callback/);
     });
     it('openConfirmModal sets confirmTitle innerHTML with escaped title and warning icon', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /getElementById\('confirmTitle'\)/);
         assert.match(fn, /innerHTML/);
         assert.match(fn, /escapeHtml\(title\)/);
         assert.match(fn, /&#9888;/);
     });
     it('openConfirmModal sets confirmMessage innerText', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /getElementById\('confirmMessage'\)/);
         assert.match(fn, /innerText\s*=\s*message/);
     });
     it('openConfirmModal sets confirmBtn innerText to buttonText', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /getElementById\('confirmBtn'\)/);
         assert.match(fn, /innerText\s*=\s*buttonText/);
     });
     it('openConfirmModal stores the callback in pendingConfirmAction', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /pendingConfirmAction\s*=\s*callback/);
     });
     it('openConfirmModal activates confirmModal by adding .active class', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /getElementById\('confirmModal'\)/);
         assert.match(fn, /classList\.add\('active'\)/);
     });
@@ -150,61 +148,61 @@ describe('Phase 2.15A: toast/confirm — openConfirmModal behaviour', () => {
 
 // ── Section 4: closeConfirmModal behaviour ───────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — closeConfirmModal behaviour', () => {
+describe('Phase 2.15B: toast/confirm — closeConfirmModal behaviour', () => {
     it('closeConfirmModal removes .active from confirmModal', () => {
-        const fn = getFunctionBody(APP_JS, 'closeConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'closeConfirmModal');
         assert.match(fn, /getElementById\('confirmModal'\)/);
         assert.match(fn, /classList\.remove\('active'\)/);
     });
     it('closeConfirmModal resets pendingConfirmAction to null', () => {
-        const fn = getFunctionBody(APP_JS, 'closeConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'closeConfirmModal');
         assert.match(fn, /pendingConfirmAction\s*=\s*null/);
     });
 });
 
 // ── Section 5: executeConfirm behaviour ──────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — executeConfirm behaviour', () => {
+describe('Phase 2.15B: toast/confirm — executeConfirm behaviour', () => {
     it('executeConfirm invokes pendingConfirmAction when set', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /pendingConfirmAction\s*\(\s*\)/);
     });
     it('executeConfirm awaits the callback (async operation)', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /await pendingConfirmAction/);
     });
     it('executeConfirm sets confirmBtn text to "Processing..." while running', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /Processing\.\.\./);
     });
     it('executeConfirm disables confirmBtn during callback execution', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /btn\.disabled\s*=\s*true/);
     });
     it('executeConfirm restores confirmBtn text after callback completes', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /btn\.innerText\s*=\s*originalText/);
     });
     it('executeConfirm re-enables confirmBtn after callback completes', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /btn\.disabled\s*=\s*false/);
     });
     it('executeConfirm always calls closeConfirmModal regardless of callback result', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /closeConfirmModal\(\)/);
     });
     it('executeConfirm reads confirmBtn by ID for progress state', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /getElementById\('confirmBtn'\)/);
     });
     it('pendingConfirmAction is initialized to null', () => {
-        assert.match(APP_JS, /^let pendingConfirmAction\s*=\s*null\s*;/m);
+        assert.match(TOAST_CONFIRM_JS, /^let pendingConfirmAction\s*=\s*null\s*;/m);
     });
 });
 
 // ── Section 6: DOM IDs in dashboard.html ─────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — DOM IDs in dashboard.html', () => {
+describe('Phase 2.15B: toast/confirm — DOM IDs in dashboard.html', () => {
     it('toast-wrapper element exists', () => {
         assert.match(HTML, /id="toast-wrapper"/);
     });
@@ -236,9 +234,9 @@ describe('Phase 2.15A: toast/confirm — DOM IDs in dashboard.html', () => {
 
 // ── Section 7: Intentional dependencies ──────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — intentional dependencies', () => {
+describe('Phase 2.15B: toast/confirm — intentional dependencies', () => {
     it('openConfirmModal depends on escapeHtml (from domUtils.js)', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.match(fn, /\bescapeHtml\b/);
     });
     it('escapeHtml is defined in domUtils.js', () => {
@@ -246,7 +244,7 @@ describe('Phase 2.15A: toast/confirm — intentional dependencies', () => {
         assert.match(DOMUTILS_JS, /function escapeHtml\s*\(|escapeHtml\s*=/);
     });
     it('executeConfirm calls closeConfirmModal (internal dependency)', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.match(fn, /\bcloseConfirmModal\b/);
     });
     it('launcher-actions.js calls showToast (cross-module dependency)', () => {
@@ -289,57 +287,132 @@ describe('Phase 2.15A: toast/confirm — intentional dependencies', () => {
 
 // ── Section 8: Dependency isolation ──────────────────────────────────────────
 
-describe('Phase 2.15A: toast/confirm — dependency isolation', () => {
+describe('Phase 2.15B: toast/confirm — dependency isolation', () => {
     it('showToast does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('showToast does not reference activePlatformView', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\bactivePlatformView\b/);
     });
     it('showToast does not reference openPlatformsModal', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\bopenPlatformsModal\b/);
     });
     it('showToast does not reference renderPlatformAccounts', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\brenderPlatformAccounts\b/);
     });
     it('showToast does not reference AG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\bAG_DISPLAY_DEFAULTS\b/);
     });
     it('showToast does not reference IG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /\bIG_DISPLAY_DEFAULTS\b/);
     });
     it('showToast does not reference window._agDisplayPrefs', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /window\._agDisplayPrefs/);
     });
     it('showToast does not reference window._igDisplayPrefs', () => {
-        const fn = getFunctionBody(APP_JS, 'showToast');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'showToast');
         assert.doesNotMatch(fn, /window\._igDisplayPrefs/);
     });
     it('openConfirmModal does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('openConfirmModal does not reference AG_DISPLAY_DEFAULTS', () => {
-        const fn = getFunctionBody(APP_JS, 'openConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'openConfirmModal');
         assert.doesNotMatch(fn, /\bAG_DISPLAY_DEFAULTS\b/);
     });
     it('executeConfirm does not reference currentAccountPlatform', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.doesNotMatch(fn, /\bcurrentAccountPlatform\b/);
     });
     it('executeConfirm does not reference selectedGameId (not coupled to a specific game)', () => {
-        const fn = getFunctionBody(APP_JS, 'executeConfirm');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'executeConfirm');
         assert.doesNotMatch(fn, /\bselectedGameId\b/);
     });
     it('closeConfirmModal does not reference selectedGameId', () => {
-        const fn = getFunctionBody(APP_JS, 'closeConfirmModal');
+        const fn = getFunctionBody(TOAST_CONFIRM_JS, 'closeConfirmModal');
         assert.doesNotMatch(fn, /\bselectedGameId\b/);
+    });
+});
+
+// ── Section 9: app.js does NOT redeclare moved identifiers ───────────────────
+
+describe('Phase 2.15B: toast/confirm — app.js does NOT redeclare moved identifiers', () => {
+    it('app.js does NOT define showToast (moved to toast-confirm.js)', () => {
+        assert.doesNotMatch(APP_JS, /function showToast\s*\(/);
+    });
+    it('app.js does NOT define openConfirmModal (moved to toast-confirm.js)', () => {
+        assert.doesNotMatch(APP_JS, /function openConfirmModal\s*\(/);
+    });
+    it('app.js does NOT define closeConfirmModal (moved to toast-confirm.js)', () => {
+        assert.doesNotMatch(APP_JS, /function closeConfirmModal\s*\(\s*\)/);
+    });
+    it('app.js does NOT define executeConfirm (moved to toast-confirm.js)', () => {
+        assert.doesNotMatch(APP_JS, /async function executeConfirm\s*\(\s*\)/);
+    });
+    it('app.js does NOT declare pendingConfirmAction (moved to toast-confirm.js)', () => {
+        assert.doesNotMatch(APP_JS, /^let pendingConfirmAction\s*=/m);
+    });
+});
+
+// ── Section 10: Window exports in toast-confirm.js ───────────────────────────
+
+describe('Phase 2.15B: toast/confirm — window exports', () => {
+    it('window.showToast is exported', () => {
+        assert.match(TOAST_CONFIRM_JS, /window\.showToast\s*=/);
+    });
+    it('window.openConfirmModal is exported', () => {
+        assert.match(TOAST_CONFIRM_JS, /window\.openConfirmModal\s*=/);
+    });
+    it('window.closeConfirmModal is exported', () => {
+        assert.match(TOAST_CONFIRM_JS, /window\.closeConfirmModal\s*=/);
+    });
+    it('window.executeConfirm is exported', () => {
+        assert.match(TOAST_CONFIRM_JS, /window\.executeConfirm\s*=/);
+    });
+});
+
+// ── Section 11: Script load order in dashboard.html ──────────────────────────
+
+describe('Phase 2.15B: toast/confirm — script load order in dashboard.html', () => {
+    it('toast-confirm.js is present in dashboard.html', () => {
+        assert.match(HTML, /js\/app\/toast-confirm\.js/);
+    });
+    it('toast-confirm.js loads before launcher-actions.js', () => {
+        const toastIdx    = HTML.indexOf('js/app/toast-confirm.js');
+        const launcherIdx = HTML.indexOf('js/app/launcher-actions.js');
+        assert.ok(toastIdx > -1, 'toast-confirm.js must be in dashboard.html');
+        assert.ok(toastIdx < launcherIdx, 'toast-confirm.js must load before launcher-actions.js');
+    });
+    it('toast-confirm.js loads before app.js', () => {
+        const toastIdx = HTML.indexOf('js/app/toast-confirm.js');
+        const appIdx   = HTML.indexOf('js/app.js');
+        assert.ok(toastIdx < appIdx, 'toast-confirm.js must load before app.js');
+    });
+    it('toast-confirm.js loads before accounts/platform-panels.js', () => {
+        const toastIdx   = HTML.indexOf('js/app/toast-confirm.js');
+        const panelsIdx  = HTML.indexOf('js/accounts/platform-panels.js');
+        assert.ok(toastIdx < panelsIdx, 'toast-confirm.js must load before platform-panels.js');
+    });
+    it('artwork-sync.js loads before toast-confirm.js', () => {
+        const artworkIdx = HTML.indexOf('js/app/artwork-sync.js');
+        const toastIdx   = HTML.indexOf('js/app/toast-confirm.js');
+        assert.ok(artworkIdx < toastIdx, 'artwork-sync.js must load before toast-confirm.js');
+    });
+});
+
+// ── Section 12: Comment hygiene in toast-confirm.js ──────────────────────────
+
+describe('Phase 2.15B: toast/confirm — comment hygiene', () => {
+    it('toast-confirm.js contains no Arabic-script characters', () => {
+        assert.doesNotMatch(TOAST_CONFIRM_JS, /[؀-ۿݐ-ݿࢠ-ࣿﭐ-﷿ﹰ-﻿]/,
+            'toast-confirm.js must not contain Arabic-script characters');
     });
 });

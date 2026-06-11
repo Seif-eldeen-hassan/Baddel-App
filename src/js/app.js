@@ -5468,23 +5468,7 @@ function clearRoulettePool() {
 // ============================================================
 // UTILS & GLOBAL EVENTS
 // ============================================================
-function showToast(msgOrOpts, t) {
-    let message, type, duration = 3500;
-    if (typeof msgOrOpts === 'object' && msgOrOpts !== null) {
-        message = msgOrOpts.message || msgOrOpts.title || '';
-        type = msgOrOpts.type || t;
-        duration = msgOrOpts.duration || 3500;
-    } else {
-        message = msgOrOpts;
-        type = t;
-    }
-    const w = document.getElementById('toast-wrapper');
-    const d = document.createElement('div');
-    d.className = `toast-notification ${type === 'error' ? 'toast-error' : ''}`;
-    d.innerHTML = `<span>${message}</span>`;
-    w.appendChild(d);
-    setTimeout(() => { d.style.animation = 'fadeOutUp 0.3s ease forwards'; setTimeout(() => d.remove(), 300); }, duration);
-}
+// showToast moved to src/js/app/toast-confirm.js
 
 function toggleDropdown(e) { if (e) e.stopPropagation(); document.getElementById('dropdownMenu').classList.toggle('active'); }
 
@@ -5690,35 +5674,8 @@ document.addEventListener('DOMContentLoaded', () => {
 // ============================================================
 // CONFIRM MODAL
 // ============================================================
-let pendingConfirmAction = null;
-
-function openConfirmModal(title, message, buttonText, callback) {
-    document.getElementById('confirmTitle').innerHTML = `&#9888; ${escapeHtml(title)}`;
-    document.getElementById('confirmMessage').innerText = message;
-    document.getElementById('confirmBtn').innerText = buttonText;
-    pendingConfirmAction = callback;
-    document.getElementById('confirmModal').classList.add('active');
-}
-
-function closeConfirmModal() {
-    document.getElementById('confirmModal').classList.remove('active');
-    pendingConfirmAction = null;
-}
-
-async function executeConfirm() {
-    if (pendingConfirmAction) {
-        const btn = document.getElementById('confirmBtn');
-        const originalText = btn.innerText;
-        btn.innerText = 'Processing...';
-        btn.disabled = true;
-        btn.style.opacity = '0.7';
-        await pendingConfirmAction();
-        btn.innerText = originalText;
-        btn.disabled = false;
-        btn.style.opacity = '1';
-    }
-    closeConfirmModal();
-}
+// pendingConfirmAction, openConfirmModal, closeConfirmModal, executeConfirm
+// moved to src/js/app/toast-confirm.js
 
 // ============================================================
 // FOOTER PLAYTIME STATS
