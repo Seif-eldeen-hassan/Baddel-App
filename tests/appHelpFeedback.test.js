@@ -4,10 +4,11 @@ const assert  = require('node:assert/strict');
 const fs      = require('node:fs');
 const path    = require('node:path');
 
-const ROOT    = path.resolve(__dirname, '..');
-const APP_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),              'utf8');
-const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'),'utf8');
-const HTML    = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),         'utf8');
+const ROOT           = path.resolve(__dirname, '..');
+const APP_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                              'utf8');
+const HELP_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'),                'utf8');
+const SETTINGS_QS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/settings-quick-switcher.js'),     'utf8');
+const HTML           = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),                         'utf8');
 
 // ─── helper: extract first function body by name ──────────────────────────────
 function extractFnSource(src, name) {
@@ -265,15 +266,15 @@ test('app.js: does NOT redeclare const _setSettingsUpdateRow at top level (preve
     assert.doesNotMatch(APP_JS, /^const _setSettingsUpdateRow\s*=/m);
 });
 
-test('app.js: openSettingsModal reads window._updateState at call time', () => {
-    const idx = APP_JS.indexOf('async function openSettingsModal');
-    const fn = APP_JS.slice(idx, idx + 2500);
+test('settings-quick-switcher.js: openSettingsModal reads window._updateState at call time', () => {
+    const idx = SETTINGS_QS_JS.indexOf('async function openSettingsModal');
+    const fn = SETTINGS_QS_JS.slice(idx, idx + 2500);
     assert.match(fn, /window\._updateState/, 'openSettingsModal must read window._updateState');
 });
 
-test('app.js: openSettingsModal calls window._setSettingsUpdateRow or local safe reference', () => {
-    const idx = APP_JS.indexOf('async function openSettingsModal');
-    const fn = APP_JS.slice(idx, idx + 2500);
+test('settings-quick-switcher.js: openSettingsModal calls window._setSettingsUpdateRow or local safe reference', () => {
+    const idx = SETTINGS_QS_JS.indexOf('async function openSettingsModal');
+    const fn = SETTINGS_QS_JS.slice(idx, idx + 2500);
     assert.match(fn, /window\._setSettingsUpdateRow|setSettingsUpdateRow/, 'openSettingsModal must reference _setSettingsUpdateRow');
 });
 

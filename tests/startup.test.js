@@ -8,6 +8,7 @@ const ROOT               = path.resolve(__dirname, '..');
 const MAIN_JS            = fs.readFileSync(path.join(ROOT, 'main.js'),    'utf8');
 const SYSTEM_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers/systemHandlers.js'), 'utf8');
 const APP_JS             = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const SETTINGS_QS_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/settings-quick-switcher.js'), 'utf8');
 const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 const PRELOAD            = fs.readFileSync(path.join(ROOT, 'preload.js'),  'utf8');
 
@@ -229,16 +230,16 @@ test('dashboard.html: startup toggle label text is correct', () => {
     assert.match(ctx, /Starts minimized in the background/, 'must have correct subtext');
 });
 
-test('app.js: openSettingsModal loads startupToggle state', () => {
-    const fnStart = APP_JS.indexOf('async function openSettingsModal()');
-    const fn = APP_JS.slice(fnStart, fnStart + 600);
+test('settings-quick-switcher.js: openSettingsModal loads startupToggle state', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function openSettingsModal()');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /startupToggle/, 'must reference startupToggle');
     assert.match(fn, /getStartupEnabled/, 'must call getStartupEnabled');
 });
 
-test('app.js: openSettingsModal handles both boolean and object response from getStartupEnabled', () => {
-    const fnStart = APP_JS.indexOf('async function openSettingsModal()');
-    const fn = APP_JS.slice(fnStart, fnStart + 600);
+test('settings-quick-switcher.js: openSettingsModal handles both boolean and object response from getStartupEnabled', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function openSettingsModal()');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 600);
     // Must handle typeof result === 'object' case
     assert.match(fn, /typeof result.*object|object.*typeof result/s, 'must handle object response');
 });
@@ -280,17 +281,17 @@ test('main.js: set-startup-enabled returns verified OS state (enabled: verifiedE
     assert.match(handler, /enabled:\s*verifiedEnabled/, 'return value must use verifiedEnabled, not raw enabled');
 });
 
-test('app.js: toggleStartup syncs checkbox with verified result.enabled from setStartupEnabled', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+test('settings-quick-switcher.js: toggleStartup syncs checkbox with verified result.enabled from setStartupEnabled', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 1000);
     assert.match(fn, /result\.enabled/, 'must read result.enabled from setStartupEnabled response');
     assert.match(fn, /checkbox\.checked\s*=\s*result\.enabled/, 'must sync checkbox.checked to result.enabled');
 });
 
-test('app.js: toggleStartup function exists and calls setStartupEnabled', () => {
-    assert.match(APP_JS, /async function toggleStartup\(checkbox\)/, 'toggleStartup must exist');
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 2000);
+test('settings-quick-switcher.js: toggleStartup function exists and calls setStartupEnabled', () => {
+    assert.match(SETTINGS_QS_JS, /async function toggleStartup\(checkbox\)/, 'toggleStartup must exist');
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 2000);
     assert.match(fn, /setStartupEnabled\(enabled\)/, 'must call setStartupEnabled(enabled)');
     assert.match(fn, /checkbox\.checked\s*=\s*!enabled/, 'must revert checkbox on error');
 });
@@ -353,29 +354,29 @@ test('main.js: set-startup-enabled saves verifiedEnabled to startupEnabled in pr
     assert.ok(!handler.includes('startupEnabled: enabled,'), 'must not save unverified requested value');
 });
 
-test('app.js: toggleStartup disables checkbox while saving', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 2100);
+test('settings-quick-switcher.js: toggleStartup disables checkbox while saving', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 2100);
     assert.match(fn, /checkbox\.disabled\s*=\s*true/, 'must disable checkbox before async call');
     assert.match(fn, /checkbox\.disabled\s*=\s*false/, 'must re-enable checkbox in finally');
 });
 
-test('app.js: toggleStartup guards against repeated clicks while saving', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 200);
+test('settings-quick-switcher.js: toggleStartup guards against repeated clicks while saving', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 200);
     assert.match(fn, /dataset\.saving/, 'must check dataset.saving to guard repeated clicks');
 });
 
-test('app.js: toggleStartup shows error toast on status mismatch', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+test('settings-quick-switcher.js: toggleStartup shows error toast on status mismatch', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 1300);
     assert.match(fn, /result\?\.status\s*===\s*'mismatch'|result\.status\s*===\s*'mismatch'/, 'must check for mismatch status');
     assert.match(fn, /could not be enabled|Startup Apps/, 'must show informative error on mismatch');
 });
 
-test('app.js: toggleStartup does not show success toast based on original requested value', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+test('settings-quick-switcher.js: toggleStartup does not show success toast based on original requested value', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 1000);
     // Old bug: showToast(enabled ? '...' : '...'). Must not use enabled directly in toast.
     assert.ok(
         !fn.includes("showToast(enabled ?") && !fn.includes('showToast( enabled ?'),
@@ -391,47 +392,48 @@ test('dashboard.html: startupToggle has no inline onchange attribute', () => {
     assert.ok(!ctx.includes('onchange'), 'startupToggle must not have inline onchange — listener attached via JS');
 });
 
-test('app.js: attaches controlled change listener to startupToggle at DOMContentLoaded', () => {
-    const idx = APP_JS.indexOf("getElementById('startupToggle')");
-    assert.ok(idx !== -1, "must call getElementById('startupToggle')");
-    const ctx = APP_JS.slice(idx, idx + 150);
+test('settings-quick-switcher.js: attaches controlled change listener to startupToggle at DOMContentLoaded', () => {
+    const domIdx = SETTINGS_QS_JS.indexOf("document.addEventListener('DOMContentLoaded'");
+    assert.ok(domIdx !== -1, 'DOMContentLoaded listener must exist');
+    const ctx = SETTINGS_QS_JS.slice(domIdx, domIdx + 250);
+    assert.ok(ctx.includes("getElementById('startupToggle')"), "must call getElementById('startupToggle')");
     assert.ok(
         ctx.includes("addEventListener('change'") || ctx.includes('addEventListener("change"'),
         'must attach change listener to startupToggle element'
     );
 });
 
-test('app.js: openSettingsModal stores dataset.currentState from getStartupEnabled result', () => {
-    const fnStart = APP_JS.indexOf('async function openSettingsModal()');
-    const fn = APP_JS.slice(fnStart, fnStart + 700);
+test('settings-quick-switcher.js: openSettingsModal stores dataset.currentState from getStartupEnabled result', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function openSettingsModal()');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 700);
     assert.match(fn, /dataset\.currentState/, 'openSettingsModal must set dataset.currentState on the startup toggle');
 });
 
-test('app.js: toggleStartup computes requested as the inverse of dataset.currentState', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 500);
+test('settings-quick-switcher.js: toggleStartup computes requested as the inverse of dataset.currentState', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 500);
     assert.match(fn, /currentState\s*===\s*['"]true['"]/, 'must read currentState to determine previous state');
     assert.ok(fn.includes('!previous'), 'must compute requested as !previous from currentState');
 });
 
-test('app.js: toggleStartup sets optimistic checkbox.checked before the async call', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 800);
+test('settings-quick-switcher.js: toggleStartup sets optimistic checkbox.checked before the async call', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 800);
     const checkedIdx = fn.indexOf('checkbox.checked = requested');
     const awaitIdx   = fn.indexOf('await window.electronAPI');
     assert.ok(checkedIdx !== -1, 'checkbox.checked = requested must be set');
     assert.ok(checkedIdx < awaitIdx, 'optimistic update must happen before the async IPC call');
 });
 
-test('app.js: toggleStartup updates dataset.currentState with verified result', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 1500);
+test('settings-quick-switcher.js: toggleStartup updates dataset.currentState with verified result', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 1500);
     assert.match(fn, /dataset\.currentState\s*=\s*String\(verified\)/, 'must store verified state in dataset.currentState');
 });
 
-test('app.js: toggleStartup uses result.status mismatch/error for failure toast (not enabled variable)', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 1500);
+test('settings-quick-switcher.js: toggleStartup uses result.status mismatch/error for failure toast (not enabled variable)', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 1500);
     // Mismatch toast must branch on `requested`, not on `enabled` or checkbox.checked
     const mismatchIdx = fn.indexOf("'mismatch'");
     assert.ok(mismatchIdx !== -1, "must check for 'mismatch' status");
@@ -440,9 +442,9 @@ test('app.js: toggleStartup uses result.status mismatch/error for failure toast 
     assert.match(toastCtx, /could not be enabled/, 'must have "could not be enabled" message');
 });
 
-test('app.js: toggleStartup reverts dataset.currentState on IPC error', () => {
-    const fnStart = APP_JS.indexOf('async function toggleStartup(checkbox)');
-    const fn = APP_JS.slice(fnStart, fnStart + 2000);
+test('settings-quick-switcher.js: toggleStartup reverts dataset.currentState on IPC error', () => {
+    const fnStart = SETTINGS_QS_JS.indexOf('async function toggleStartup(checkbox)');
+    const fn = SETTINGS_QS_JS.slice(fnStart, fnStart + 2000);
     const catchIdx = fn.indexOf('} catch (err)');
     assert.ok(catchIdx !== -1, 'catch block must exist');
     const catchBlock = fn.slice(catchIdx, catchIdx + 200);

@@ -536,49 +536,49 @@ test('dashboard.html: position select has all five positions', () => {
 
 // ── app.js — QS settings handlers ────────────────────────────────────────────
 
-test('app.js: defines qsToggleEnabled, qsChangePosition, qsToggleCloseAfter', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: defines qsToggleEnabled, qsChangePosition, qsToggleCloseAfter', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     assert.ok(src.includes('function qsToggleEnabled'), 'qsToggleEnabled');
     assert.ok(src.includes('function qsChangePosition'), 'qsChangePosition');
     assert.ok(src.includes('function qsToggleCloseAfter'), 'qsToggleCloseAfter');
 });
 
-test('app.js: defines qsChangeHotkey and qsResetHotkey', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: defines qsChangeHotkey and qsResetHotkey', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     assert.ok(src.includes('function qsChangeHotkey'), 'qsChangeHotkey');
     assert.ok(src.includes('function qsResetHotkey'), 'qsResetHotkey');
 });
 
-test('app.js: openSettingsModal calls _qsLoadSettings', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: openSettingsModal calls _qsLoadSettings', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     const modalSrc = src.slice(src.indexOf('async function openSettingsModal'), src.indexOf('async function openSettingsModal') + 3000);
     assert.ok(modalSrc.includes('_qsLoadSettings()'), '_qsLoadSettings called in openSettingsModal');
 });
 
-test('app.js: _openQSHotkeyModal uses shortcut-capture-box CSS classes', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: _openQSHotkeyModal uses shortcut-capture-box CSS classes', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     const modalSrc = src.slice(src.indexOf('function _openQSHotkeyModal'), src.indexOf('function _openQSHotkeyModal') + 2500);
     assert.ok(modalSrc.includes('shortcut-capture-box'), 'reuses capture-box class');
     assert.ok(modalSrc.includes('is-valid'), 'is-valid state');
     assert.ok(modalSrc.includes('is-invalid'), 'is-invalid state');
 });
 
-test('app.js: _openQSHotkeyModal guards Save button when invalid', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: _openQSHotkeyModal guards Save button when invalid', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     const modalSrc = src.slice(src.indexOf('function _openQSHotkeyModal'), src.indexOf('function _openQSHotkeyModal') + 2500);
     assert.ok(modalSrc.includes('saveBtn.disabled = true'), 'Save disabled when invalid');
     assert.ok(modalSrc.includes('!capturedValid') || modalSrc.includes('capturedValid'), 'guards on validity');
 });
 
-test('app.js: _qsBasicValidate rejects single-modifier shortcuts', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: _qsBasicValidate rejects single-modifier shortcuts', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     const fnSrc = src.slice(src.indexOf('function _qsBasicValidate'), src.indexOf('function _qsBasicValidate') + 500);
     assert.ok(fnSrc.includes('mods.length < 2'), 'rejects < 2 modifiers');
     assert.ok(fnSrc.includes('valid: false'), 'returns invalid');
 });
 
-test('app.js: qsToggleEnabled reverts checkbox on error', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
+test('settings-quick-switcher.js: qsToggleEnabled reverts checkbox on error', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
     const fnSrc = src.slice(src.indexOf('async function qsToggleEnabled'), src.indexOf('async function qsToggleEnabled') + 300);
     assert.ok(fnSrc.includes('catch'), 'has catch block');
     assert.ok(fnSrc.includes('checkbox.checked = prev'), 'reverts checkbox on error');
