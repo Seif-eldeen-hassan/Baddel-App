@@ -431,7 +431,6 @@ async function agFinalizeAddGame() {
 // GAME SETTINGS — LOGO SUPPORT & BETTER IMAGE PREVIEW
 // ============================================================
 
-// استبدل openGameSettings القديمة بالتالية:
 function openGameSettings(id) {
     pendingImageChanges = {};
     selectedGameId = id;
@@ -455,25 +454,20 @@ function openGameSettings(id) {
     // Init drag-to-pan for both Hero and Cover
     _gsInitImagePan('gs-hero-wrapper', 'previewHero');
     _gsInitImagePan('gs-cover-wrapper', 'previewCover');
-    // ابحث عن دالة openGameSettings(id) وعدل الجزء ده في آخرها، قبل الـ .classList.add('active')
 
     // update images
     document.getElementById('previewHero').src = (g.heroImage && g.heroImage != 'assets/default_hero.jpg') ? g.heroImage : 'assets/default_hero.jpg';
     document.getElementById('previewCover').src = (g.image && g.image != 'assets/logo.png') ? g.image : 'assets/logo.png';
     _gsUpdateLogoPreview(g.logo);
     
-    // --- التعديل الجديد هنا ---
-    // التشييك أول ما تفتح الـ Modal: لو الصور أصلاً Default، اقفل زراير الـ Reset
     const btnCover = document.getElementById('btn-reset-cover');
     const btnHero = document.getElementById('btn-reset-hero');
     const btnLogo = document.getElementById('btn-reset-logo');
 
-    // بنقفل الزرار لو الداتا فاضية أو بتحتوي على اسم صورة الديفولت
     if (btnCover) btnCover.disabled = !g.image || g.image.includes('assets/logo.png');
     if (btnHero) btnHero.disabled = !g.heroImage || g.heroImage.includes('assets/default_hero.jpg');
     if (btnLogo) btnLogo.disabled = !g.logo;
-    // --- نهاية التعديل ---
-
+    
     // open modal
     document.getElementById('gameSettingsModal').classList.add('active');
     overlay.classList.add('active');
@@ -504,7 +498,6 @@ function _gsInitImagePan(wrapperId, imgId) {
     const img = document.getElementById(imgId);
     if (!wrapper || !img) return;
 
-    // إزالة أي Listeners قديمة عشان ميتعملش مشاكل لما تفتح وتقفل الـ Modal
     const cloned = wrapper.cloneNode(true);
     wrapper.parentNode.replaceChild(cloned, wrapper);
 
@@ -512,7 +505,6 @@ function _gsInitImagePan(wrapperId, imgId) {
     const newImg = document.getElementById(imgId);
     const hint = newWrapper.querySelector('.gs-hero-pan-hint');
 
-    // تأكيد إن الصورة Cover ومتركزة في النص كبداية
     newImg.style.objectFit = 'cover';
     if (!newImg.style.objectPosition) newImg.style.objectPosition = '50% 50%';
 
@@ -524,7 +516,6 @@ function _gsInitImagePan(wrapperId, imgId) {
         startX = e.clientX;
         startY = e.clientY;
         
-        // استخراج النسب المئوية الحالية
         const pos = newImg.style.objectPosition.split(' ');
         startPosX = parseFloat(pos[0]) || 50;
         startPosY = parseFloat(pos[1]) || 50;
@@ -537,15 +528,12 @@ function _gsInitImagePan(wrapperId, imgId) {
     document.addEventListener('mousemove', (e) => {
         if (!isDragging) return;
         
-        // حساب المسافة اللي الماوس اتحركها
         const dx = e.clientX - startX;
         const dy = e.clientY - startY;
         
-        // تحويل المسافة بالبيكسل لنسبة مئوية (ضربنا في 0.8 لضبط سرعة السحب)
         const percentX = (dx / newWrapper.offsetWidth) * 100 * 0.8;
         const percentY = (dy / newWrapper.offsetHeight) * 100 * 0.8;
         
-        // عكس الاتجاه عشان تحس إنك ماسك الصورة بتسحبها، مع عمل Limit بين 0% و 100%
         let newPosX = Math.max(0, Math.min(100, startPosX - percentX));
         let newPosY = Math.max(0, Math.min(100, startPosY - percentY));
         
@@ -559,11 +547,9 @@ function _gsInitImagePan(wrapperId, imgId) {
         }
     });
 
-    // Reset position لما صورة جديدة تتحمل
     newImg.onload = () => { newImg.style.objectPosition = '50% 50%'; };
 }
 
-// استبدل changeGameImage القديمة:
 async function changeGameImage(type) {
     if (!selectedGameId) return;
     const newPath = await window.electronAPI.selectImage();
@@ -571,10 +557,9 @@ async function changeGameImage(type) {
 
     const safePath = `file://${newPath.replace(/\\/g, '/')}`;
 
-    // حفظ التغيير بشكل مؤقت (Draft)
+    
     pendingImageChanges[type] = { action: 'update', path: safePath };
 
-    // تحديث الواجهة بتاعت الـ Modal بس
     if (type === 'cover') {
         document.getElementById('previewCover').src = safePath;
     } else if (type === 'hero') {
@@ -584,19 +569,15 @@ async function changeGameImage(type) {
         _gsUpdateLogoPreview(safePath);
     }
 
-    // تفعيل زرار الـ Reset
     const btn = document.getElementById(`btn-reset-${type}`);
     if (btn) btn.disabled = false;
     
     if (typeof checkResetAllButtonState === 'function') checkResetAllButtonState();
 }
-// استبدل resetGameImage القديمة:
-// دالة لترسيت صورة واحدة (Cover أو Hero أو Logo)
-// دالة ترسيت صورة واحدة للـ Default
+
 async function resetGameImage(type) {
     if(!selectedGameId) return;
 
-    // 1. نمسح الصورة المخصصة من الـ LocalStorage والـ Backend
     localStorage.removeItem(`${type}_${selectedGameId}`);
 
     const g = allGamesData.find(x => x.id == selectedGameId);
@@ -614,47 +595,40 @@ async function resetGameImage(type) {
         console.error("Failed to reset in backend:", err);
     }
 
-    // 2. تحديث الواجهة فوراً (المسارات المصلحة)
-    // استخدمنا /assets/ لتفادي مشاكل الـ Path في Electron
     if (type === 'cover') {
         document.getElementById('previewCover').src = '/assets/logo.png';
     } else if (type === 'hero') {
         const heroImg = document.getElementById('previewHero');
         heroImg.src = '/assets/default_hero.jpg';
-        heroImg.style.objectPosition = '50% 50%'; // نرسّت الـ Pan كمان
+        heroImg.style.objectPosition = '50% 50%'; 
     } else if (type === 'logo') {
-        _gsUpdateLogoPreview(null); // دي هتبين شاشة "No Logo"
+        _gsUpdateLogoPreview(null); 
     }
 
-    // 3. نقفل زرار الـ Reset ده تحديداً عشان ميحصلش Spam
     const btn = document.getElementById(`btn-reset-${type}`);
     if (btn) {
         btn.disabled = true;
     }
 
     showToast(`${type} reset to default`, 'success');
-    refreshAllViews(); // نحدث المكتبة بره
+    refreshAllViews(); 
 }
 
 
 async function resetGameImage(type, skipToast = false) {
     if (!selectedGameId) return;
 
-    // 1. تسجيل الحدث كـ مسودة (Draft) عشان يتنفذ وقت الـ Save
     pendingImageChanges[type] = { action: 'reset' };
 
-    // 2. استنتاج مسار الصورة الديفولت عشان نعرضها كـ Preview بس (من غير مانكلم الباك إند يمسح حاجة)
     let restoredPath = null;
     const g = allGamesData.find(x => String(x.id) === String(selectedGameId));
     
-    // نجرب نجيب الديفولت المتسجل في الداتا الأول
     if (g) {
         if (type === 'cover') restoredPath = g.defaultImage;
         else if (type === 'hero') restoredPath = g.defaultHero;
         else if (type === 'logo') restoredPath = g.defaultLogo;
     }
 
-    // لو ملقناش ديفولت في الداتا، نجرب نقراه من الكاش (بدون ما نمسح الصورة المخصصة)
     if (!restoredPath && window.electronAPI && window.electronAPI.getCachedImage) {
         try {
             restoredPath = await window.electronAPI.getCachedImage(selectedGameId, type);
@@ -663,7 +637,6 @@ async function resetGameImage(type, skipToast = false) {
         }
     }
 
-    // 3. تحديث الصور في الـ Modal بناءً على المسار الحقيقي (كشكل بس)
     if (type === 'cover') {
         document.getElementById('previewCover').src = restoredPath || '../assets/logo.png';
     } else if (type === 'hero') {
@@ -674,7 +647,6 @@ async function resetGameImage(type, skipToast = false) {
         _gsUpdateLogoPreview(restoredPath || null);
     }
 
-    // 4. قفل زرار الـ Reset 
     const btn = document.getElementById(`btn-reset-${type}`);
     if (btn) btn.disabled = true;
     
@@ -683,10 +655,7 @@ async function resetGameImage(type, skipToast = false) {
     }
 
     if (!skipToast) showToast(`${type} set to default (Click Save to apply)`, 'info');
-    
-    // شيلنا مسح الـ localStorage من هنا (هيحصل وقت الـ Save)
-    // شيلنا تعديل g.image من هنا (هيحصل وقت الـ Save)
-    // شيلنا refreshAllViews()
+
 }
 
 function _gsLooseKey(value) {
@@ -804,7 +773,6 @@ async function saveGameSettings() {
     const _artworkTs    = Date.now();  // single timestamp for the whole settings save
     const _changedTypes = [];          // tracks which art types were updated (cover/hero/logo)
 
-    // 1. حفظ الاسم الجديد للعبة (لو اتغير)
     const nameInput = document.getElementById('editGameNameInput');
     if (nameInput) {
         const newName = nameInput.value.trim();
@@ -830,7 +798,6 @@ async function saveGameSettings() {
         }
     }
 
-    // 2. تطبيق كل تغييرات الصور اللي متسجلة في الـ Draft
     for (const type in pendingImageChanges) {
         const change = pendingImageChanges[type];
 
@@ -916,10 +883,8 @@ async function saveGameSettings() {
         }
     }
 
-    // تنظيف الـ Draft بعد الحفظ
     pendingImageChanges = {};
 
-    // 3. نقفل الـ Modal ونعمل Refresh للمكتبة مرة واحدة بس
     showToast('Settings saved successfully!', 'success');
     refreshAllViews();
     closeGameSettings();

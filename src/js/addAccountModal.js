@@ -216,7 +216,7 @@ const ADD_ACCOUNT_STEPS = {
 /**
  * showAddAccountModal
  * @param {string} platform - 'steam' | 'epic' | 'ea' | 'riot' | 'ubisoft' | 'discord'
- * @param {Function} onConfirm - callback لما اليوزر يضغط "Got it, Let's Go"
+ * @param {Function} onConfirm 
  */
 function showAddAccountModal(platform, onConfirm) {
     if (document.getElementById('addAccountModalOverlay')) return;
@@ -473,11 +473,9 @@ function showAddAccountModal(platform, onConfirm) {
 
     // ---- Event Listeners ----
     let confirmed = false;
-
-    // 🟢 دعم الكيبورد (Enter للتأكيد و Escape للإلغاء)
     const handleKeyDown = (e) => {
         if (e.key === 'Enter') {
-            e.preventDefault(); // نمنع أي أكشن افتراضي في الخلفية
+            e.preventDefault(); 
             document.getElementById('aamConfirmBtn')?.click();
         } else if (e.key === 'Escape') {
             e.preventDefault();
@@ -485,11 +483,9 @@ function showAddAccountModal(platform, onConfirm) {
         }
     };
     
-    // تشغيل مراقب الكيبورد
     window.addEventListener('keydown', handleKeyDown);
 
     const closeModal = () => {
-        // 🟢 إيقاف مراقب الكيبورد بمجرد قفل النافذة عشان ميعملش مشاكل بعدين
         window.removeEventListener('keydown', handleKeyDown);
         
         overlay.style.opacity = '0';
@@ -517,7 +513,6 @@ function showAddAccountModal(platform, onConfirm) {
         onConfirm();
     };
 
-    // 🟢 نقل الـ Focus لزرار التأكيد عشان الزرار اللي في الخلفية ميفضلش شغال
     setTimeout(() => {
         const confirmBtn = document.getElementById('aamConfirmBtn');
         if (confirmBtn) confirmBtn.focus();

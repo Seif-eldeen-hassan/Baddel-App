@@ -376,8 +376,7 @@ async function getProfiles(savedDir) {
     } catch { return []; }
 }
 
-// نفس getProfiles بس بترجع objects بدل strings
-// وبتضم platformAccountId من sync_link.json لو موجود
+
 async function getProfilesWithMeta(savedDir) {
     const names = await getProfiles(savedDir);
     return names.map(name => {
@@ -716,10 +715,6 @@ async function saveEpicAccount(name) {
         name: name.trim(),
     });
 
-    // ─── Auto-link: نقرأ الـ Epic Account ID مباشرة من ملفات الـ session ────
-    // Epic بيحفظ الـ accountId في Data/EpicGamesLauncher/user.json
-    // أو في أي json فيه accountId/account_id field
-    // بنعمل ده هنا عشان عندنا الـ Data folder بعد ما اتنسخ فوق
     try {
         const epicAccountId = await _readEpicAccountIdFromData(data);
         if (epicAccountId) {
@@ -738,8 +733,6 @@ async function saveEpicAccount(name) {
     return { status: 'success', name: name.trim() };
 }
 
-// Epic بيحفظ الـ session في ملف اسمه OC_<accountId>.dat جوه Data/ مباشرةً
-// بنقرأ الـ ID من اسم الملف نفسه — مش من جواه
 async function _readEpicAccountIdFromData(dataDir) {
     if (!fsSync.existsSync(dataDir)) return null;
     try { return await _scanDirForOCDat(dataDir, 0); }
@@ -1488,10 +1481,8 @@ async function switchRockstarAccount(name) {
         const socialClubProfiles = getRockstarSocialClubProfilesPath();
         const backupPath = path.join(app.getPath('userData'), 'accounts', 'rockstar', name);
 
-        // هنمسح فولدر الحساب الحالي بس، من غير ما نلمس الكاش بتاع اللانشر
         try { await fs.rm(socialClubProfiles, { recursive: true, force: true }); } catch (e) { }
 
-        // نرجع ملفات الأكونت اللي اليوزر اختاره
         await fs.cp(backupPath, socialClubProfiles, { recursive: true, force: true });
 
         const activeProfilePath = path.join(app.getPath('userData'), 'active_rockstar_profile.json');
@@ -1663,7 +1654,6 @@ async function saveDiscordAccount(name) {
 
     await safeWriteFile(activeDiscordProfilePath, name.trim());
     discordLog(`Account (${name}) saved.`, 'SUCCESS');
-    // مثال داخل دالة saveEAAccount قبل الـ return مباشرة
     analytics.logAccountAdded('discord').catch(() => {});
     return { status: 'success', name: name.trim(), avatarUrl: userData?.avatarUrl };
 }

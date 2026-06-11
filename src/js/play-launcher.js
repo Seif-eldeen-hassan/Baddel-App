@@ -118,7 +118,6 @@ window.openPlayLauncher = async function(game) {
         _plSelectedPlatform  = _plPrimaryPlatform;
         _plSelectedLaunchOpt = launchOpts.find(o => _plGetPlatformKey(o) === _plSelectedPlatform) || launchOpts[0];
 
-        // ✅ Auto-launch: single installed launcher + single account → skip modal
         if (platforms.length === 1) {
             const singlePlat = platforms[0];
             const singleOpt  = _plSelectedLaunchOpt;
@@ -150,7 +149,7 @@ window.openPlayLauncher = async function(game) {
                                 if (typeof showToast === 'function')
                                     showToast('This account has no Steam license for this game — choose another account or Launch Directly.', 'info');
                             }
-                        } catch(e) { /* keep auto-launch */ }
+                        } catch(e) {}
                     }
                     if (!forceModal) {
                         const switchFn = PL_SWITCH_MAP[singlePlat];
@@ -244,7 +243,7 @@ window.openPlayLauncher = async function(game) {
 };
 
 // ============================================================
-// كشف المنصات الحقيقية — delegated to the shared canonical resolver
+// delegated to the shared canonical resolver
 // ============================================================
 function _plDetectPlatforms(game) {
     const resolver = window._baddelCanonicalPlatforms || function() { return ['manual']; };
@@ -426,7 +425,7 @@ window.plSetPrimary = function(platKey) {
 };
 
 // ============================================================
-// LOAD ACCOUNTS — تفلتر حقيقي من الـ sync data
+// LOAD ACCOUNTS — sync data
 // ============================================================
 async function _plLoadAccounts(platKey) {
     _plUpdateAccountPlatformHint(platKey);
@@ -812,7 +811,7 @@ async function _plResolveLaunchOverlayAssets(game) {
     };
 }
 
-// Launch overlay مباشرة — بدون triggerLaunchSequence عشان منعملش loop
+// Launch overlay 
 async function _plDoActualLaunch(game) {
     if (window.isLaunching) return;
     window.isLaunching = true;

@@ -27,10 +27,7 @@ function _poSteamInstallCandidates(game) {
     function addCandidate(value, source) {
         const s = String(value || '').trim();
 
-        // Steam AppID لازم يبقى رقم فقط
         if (!/^\d+$/.test(s)) return;
-
-        // تجاهل 0 أو IDs فاضية/غلط
         if (Number(s) <= 0) return;
 
         candidates.push({
@@ -42,7 +39,6 @@ function _poSteamInstallCandidates(game) {
     function extractSteamUri(value, source) {
         const s = String(value || '').trim();
 
-        // يدعم:
         // steam://run/730
         // steam://rungameid/730
         // steam://install/730
@@ -54,21 +50,16 @@ function _poSteamInstallCandidates(game) {
         }
     }
 
-    // 1) أقوى مصادر Steam الصريحة
     addCandidate(game.steamAppId, 'steamAppId');
     addCandidate(game.steam_appid, 'steam_appid');
     addCandidate(game.appid, 'appid');
 
-    // 2) IDs من ownership / resolver
     addCandidate(game.allIds?.steam, 'allIds.steam');
     addCandidate(game.appId, 'appId');
-
-    // 3) بعض البيانات ممكن تكون جاية من platform sync
     addCandidate(game.namespace, 'namespace');
     addCandidate(game.productId, 'productId');
     addCandidate(game.launcherGameId, 'launcherGameId');
 
-    // 4) id مباشر أو بصيغة steam-<appid>
     const idStr = String(game.id || '').trim();
 
     if (/^\d+$/.test(idStr)) {
@@ -80,18 +71,12 @@ function _poSteamInstallCandidates(game) {
         addCandidate(steamIdMatch[1], 'id (steam-<appid>)');
     }
 
-    // 5) appName أحيانًا بيكون AppID رقمي في بعض الداتا
     addCandidate(game.appName, 'appName');
-
-    // 6) استخراج من command / launchCommand
     extractSteamUri(game.command, 'command');
     extractSteamUri(game.launchCommand, 'launchCommand');
-
-    // 7) استخراج من installUrl / url لو موجودين
     extractSteamUri(game.installUrl, 'installUrl');
     extractSteamUri(game.url, 'url');
 
-    // إزالة التكرار مع الحفاظ على أول مصدر ظهر
     const seen = new Set();
     const uniqueCandidates = [];
 
