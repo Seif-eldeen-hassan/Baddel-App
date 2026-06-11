@@ -6,6 +6,7 @@ const path   = require('node:path');
 
 const ROOT              = path.resolve(__dirname, '..');
 const APP_JS            = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                         'utf8');
+const SUGGESTIONS_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/suggestions.js'),              'utf8');
 const SIDEBAR_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                 'utf8');
 const COLLECTIONS_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'),             'utf8');
 const GAME_CONTEXT_JS   = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'),    'utf8');
@@ -245,18 +246,18 @@ test('Task H: no raw emoji in syncedSuggEmpty initial HTML', () => {
     assert.equal(innerContent, '', `syncedSuggEmpty should be empty but contains: ${innerContent.slice(0, 80)}`);
 });
 
-test('Task H: empty.innerHTML in app.js uses SVG icon, not emoji', () => {
+test('Task H: empty.innerHTML in suggestions.js uses SVG icon, not emoji', () => {
     // The svg has class="synced-empty-icon" — search for the opening tag
-    assert.match(APP_JS, /<svg[^>]*synced-empty-icon/);
-    assert.doesNotMatch(APP_JS.slice(
-        APP_JS.indexOf('synced-empty-icon'),
-        APP_JS.indexOf('synced-empty-icon') + 200
+    assert.match(SUGGESTIONS_JS, /<svg[^>]*synced-empty-icon/);
+    assert.doesNotMatch(SUGGESTIONS_JS.slice(
+        SUGGESTIONS_JS.indexOf('synced-empty-icon'),
+        SUGGESTIONS_JS.indexOf('synced-empty-icon') + 200
     ), /✅/);
 });
 
 test('Task H: empty state uses .synced-empty-title and .synced-empty-sub classes', () => {
-    assert.match(APP_JS, /synced-empty-title/);
-    assert.match(APP_JS, /synced-empty-sub/);
+    assert.match(SUGGESTIONS_JS, /synced-empty-title/);
+    assert.match(SUGGESTIONS_JS, /synced-empty-sub/);
 });
 
 test('Task H: CSS defines .synced-empty-title', () => {
@@ -264,9 +265,9 @@ test('Task H: CSS defines .synced-empty-title', () => {
 });
 
 test('Task H: CTA button navigates to accounts when no platforms linked', () => {
-    const ctaBlock = APP_JS.slice(
-        APP_JS.indexOf('syncedCtaBtns'),
-        APP_JS.indexOf('syncedCtaBtns') + 600
+    const ctaBlock = SUGGESTIONS_JS.slice(
+        SUGGESTIONS_JS.indexOf('syncedCtaBtns'),
+        SUGGESTIONS_JS.indexOf('syncedCtaBtns') + 600
     );
     // Navigates either via selectAccountPlatform or navigateToAllGames / nav-all-games click
     assert.match(ctaBlock, /selectAccountPlatform|navigateToAllGames|nav-all-games/);
@@ -274,9 +275,9 @@ test('Task H: CTA button navigates to accounts when no platforms linked', () => 
 
 test('Task H: CTA has a single connect button, not two redundant platform buttons', () => {
     // Find the ctaBtns.innerHTML assignment inside the linkedPlatforms.length === 0 branch
-    const noAccBranch = APP_JS.slice(
-        APP_JS.indexOf('linkedPlatforms.length === 0'),
-        APP_JS.indexOf('linkedPlatforms.length === 0') + 1400
+    const noAccBranch = SUGGESTIONS_JS.slice(
+        SUGGESTIONS_JS.indexOf('linkedPlatforms.length === 0'),
+        SUGGESTIONS_JS.indexOf('linkedPlatforms.length === 0') + 1400
     );
     // Button text is either "Open Accounts" or "Connect Accounts" — no "Connect Steam" duplicate
     assert.match(noAccBranch, /Open Accounts|Connect Accounts/);

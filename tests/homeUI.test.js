@@ -1028,13 +1028,13 @@ test('gdInstallConfirm: does_not_own check before modal removal', () => {
 
 // ── window._agFindInstalledLocalMatch (All Games → Game Details consistency) ──
 
-test('app.js exposes window._agFindInstalledLocalMatch', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+test('suggestions.js exposes window._agFindInstalledLocalMatch', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     assert.match(js, /window\._agFindInstalledLocalMatch\s*=/);
 });
 
 test('window._agFindInstalledLocalMatch is a function returning a record object', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     // The core loop lives in _agCollectMatches; it must push records (not true/false)
     const fnStart = js.indexOf('function _agCollectMatches');
     const fn      = js.slice(fnStart, fnStart + 5000);
@@ -1045,7 +1045,7 @@ test('window._agFindInstalledLocalMatch is a function returning a record object'
 });
 
 test('window._agFindInstalledLocalMatch: Epic appName matching is supported', () => {
-    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     const fnStart = js.indexOf('function _agCollectMatches');
     const fn      = js.slice(fnStart, fnStart + 5000);
     assert.match(fn, /epicAppName/);
@@ -1053,7 +1053,7 @@ test('window._agFindInstalledLocalMatch: Epic appName matching is supported', ()
 });
 
 test('window._agFindInstalledLocalMatch: launcherGameId tuple matching is supported', () => {
-    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     const fnStart = js.indexOf('function _agCollectMatches');
     const fn      = js.slice(fnStart, fnStart + 5000);
     assert.match(fn, /epicTuple/);
@@ -1061,7 +1061,7 @@ test('window._agFindInstalledLocalMatch: launcherGameId tuple matching is suppor
 });
 
 test('window._agFindInstalledLocalMatch: Epic namespace alone must NOT be used as match', () => {
-    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js      = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     const fnStart = js.indexOf('window._agFindInstalledLocalMatch');
     const fnEnd   = js.indexOf('\n};', fnStart) + 3;
     const fn      = js.slice(fnStart, fnEnd);
@@ -1302,7 +1302,7 @@ test('game-details: action button reads game.path || game.command for PLAY vs IN
 // ── Play modal installed-only launch options ───────────────────────────────────
 
 test('play modal: _agFindInstalledLocalMatches exists and returns an array', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     assert.match(js, /window\._agFindInstalledLocalMatches\s*=/);
     // Must return an array (results variable)
     const fnStart = js.indexOf('window._agFindInstalledLocalMatches');
@@ -1311,7 +1311,7 @@ test('play modal: _agFindInstalledLocalMatches exists and returns an array', () 
 });
 
 test('play modal: _agFindInstalledLocalMatch returns first item from _agFindInstalledLocalMatches', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'suggestions.js'), 'utf8');
     // Find the single-match function body
     const idx = js.indexOf('window._agFindInstalledLocalMatch = function(game)');
     assert.ok(idx !== -1, 'single-match function not found');

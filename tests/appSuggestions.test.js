@@ -4,9 +4,10 @@ const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const path   = require('node:path');
 
-const ROOT   = path.resolve(__dirname, '..');
-const APP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
-const HTML   = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+const ROOT          = path.resolve(__dirname, '..');
+const APP_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const SUGGESTIONS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/suggestions.js'), 'utf8');
+const HTML          = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -18,267 +19,267 @@ function extractFn(src, sig, maxLen = 2000) {
 
 // ── 1. State variables ────────────────────────────────────────────────────────
 
-test('app.js: _suggAllGames state is declared as an empty array', () => {
-    assert.match(APP_JS, /^let _suggAllGames\s*=\s*\[\]/m);
+test('suggestions.js: _suggAllGames state is declared as an empty array', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggAllGames\s*=\s*\[\]/m);
 });
 
-test('app.js: _suggAllGames is exposed on window', () => {
-    assert.match(APP_JS, /window\._suggAllGames\s*=\s*_suggAllGames/);
+test('suggestions.js: _suggAllGames is exposed on window', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggAllGames\s*=\s*_suggAllGames/);
 });
 
-test('app.js: _suggFilter is declared with default value "all"', () => {
-    assert.match(APP_JS, /^let _suggFilter\s*=\s*['"]all['"]/m);
+test('suggestions.js: _suggFilter is declared with default value "all"', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggFilter\s*=\s*['"]all['"]/m);
 });
 
-test('app.js: _SUGG_STATE_KEY constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_STATE_KEY\s*=/);
-    assert.match(APP_JS, /baddel_sugg_state_v4/);
+test('suggestions.js: _SUGG_STATE_KEY constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_STATE_KEY\s*=/);
+    assert.match(SUGGESTIONS_JS, /baddel_sugg_state_v4/);
 });
 
-test('app.js: _SUGG_POOL_TTL constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_POOL_TTL\s*=/);
+test('suggestions.js: _SUGG_POOL_TTL constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_POOL_TTL\s*=/);
 });
 
-test('app.js: _SUGG_ROTATE_MS constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_ROTATE_MS\s*=/);
+test('suggestions.js: _SUGG_ROTATE_MS constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_ROTATE_MS\s*=/);
 });
 
-test('app.js: _SUGG_POOL_PER_PLAT constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_POOL_PER_PLAT\s*=/);
+test('suggestions.js: _SUGG_POOL_PER_PLAT constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_POOL_PER_PLAT\s*=/);
 });
 
-test('app.js: _SUGG_POOL_SINGLE constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_POOL_SINGLE\s*=/);
+test('suggestions.js: _SUGG_POOL_SINGLE constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_POOL_SINGLE\s*=/);
 });
 
-test('app.js: _suggPool is declared as an empty array', () => {
-    assert.match(APP_JS, /^let _suggPool\s*=\s*\[\]/m);
+test('suggestions.js: _suggPool is declared as an empty array', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggPool\s*=\s*\[\]/m);
 });
 
-test('app.js: _suggPoolIdx is declared', () => {
-    assert.match(APP_JS, /^let _suggPoolIdx\s*=/m);
+test('suggestions.js: _suggPoolIdx is declared', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggPoolIdx\s*=/m);
 });
 
-test('app.js: _suggRotateTimer is declared as null', () => {
-    assert.match(APP_JS, /^let _suggRotateTimer\s*=\s*null/m);
+test('suggestions.js: _suggRotateTimer is declared as null', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggRotateTimer\s*=\s*null/m);
 });
 
-test('app.js: _suggPoolTs is declared', () => {
-    assert.match(APP_JS, /^let _suggPoolTs\s*=/m);
+test('suggestions.js: _suggPoolTs is declared', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggPoolTs\s*=/m);
 });
 
-test('app.js: _suggState is declared with bucket/recommendedItems/steamItems/epicItems/activeFilter shape', () => {
-    assert.match(APP_JS, /let _suggState\s*=\s*\{/);
-    assert.match(APP_JS, /bucket:/);
-    assert.match(APP_JS, /recommendedItems:/);
-    assert.match(APP_JS, /steamItems:/);
-    assert.match(APP_JS, /epicItems:/);
-    assert.match(APP_JS, /activeFilter:/);
+test('suggestions.js: _suggState is declared with bucket/recommendedItems/steamItems/epicItems/activeFilter shape', () => {
+    assert.match(SUGGESTIONS_JS, /let _suggState\s*=\s*\{/);
+    assert.match(SUGGESTIONS_JS, /bucket:/);
+    assert.match(SUGGESTIONS_JS, /recommendedItems:/);
+    assert.match(SUGGESTIONS_JS, /steamItems:/);
+    assert.match(SUGGESTIONS_JS, /epicItems:/);
+    assert.match(SUGGESTIONS_JS, /activeFilter:/);
 });
 
-test('app.js: hydratedGameIds is declared as a Set', () => {
-    assert.match(APP_JS, /const hydratedGameIds\s*=\s*new Set\(\)/);
+test('suggestions.js: hydratedGameIds is declared as a Set', () => {
+    assert.match(SUGGESTIONS_JS, /const hydratedGameIds\s*=\s*new Set\(\)/);
 });
 
-test('app.js: hydratingGameIds is declared as a Set', () => {
-    assert.match(APP_JS, /const hydratingGameIds\s*=\s*new Set\(\)/);
+test('suggestions.js: hydratingGameIds is declared as a Set', () => {
+    assert.match(SUGGESTIONS_JS, /const hydratingGameIds\s*=\s*new Set\(\)/);
 });
 
-test('app.js: _SUGG_HYDRATE_CONCURRENCY constant is declared', () => {
-    assert.match(APP_JS, /const _SUGG_HYDRATE_CONCURRENCY\s*=/);
+test('suggestions.js: _SUGG_HYDRATE_CONCURRENCY constant is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_HYDRATE_CONCURRENCY\s*=/);
 });
 
-test('app.js: _suggHydrateActive is declared', () => {
-    assert.match(APP_JS, /^let _suggHydrateActive\s*=/m);
+test('suggestions.js: _suggHydrateActive is declared', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggHydrateActive\s*=/m);
 });
 
-test('app.js: _suggCarouselIdx state is declared', () => {
-    assert.match(APP_JS, /^let _suggCarouselIdx\s*=/m);
+test('suggestions.js: _suggCarouselIdx state is declared', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggCarouselIdx\s*=/m);
 });
 
-test('app.js: _suggFeaturedGame state is declared as null', () => {
-    assert.match(APP_JS, /^let _suggFeaturedGame\s*=\s*null/m);
+test('suggestions.js: _suggFeaturedGame state is declared as null', () => {
+    assert.match(SUGGESTIONS_JS, /^let _suggFeaturedGame\s*=\s*null/m);
 });
 
-test('app.js: _SUGG_PLAT_CFG config object is declared', () => {
-    assert.match(APP_JS, /const _SUGG_PLAT_CFG\s*=/);
-    assert.match(APP_JS, /steam:/);
-    assert.match(APP_JS, /epic:/);
+test('suggestions.js: _SUGG_PLAT_CFG config object is declared', () => {
+    assert.match(SUGGESTIONS_JS, /const _SUGG_PLAT_CFG\s*=/);
+    assert.match(SUGGESTIONS_JS, /steam:/);
+    assert.match(SUGGESTIONS_JS, /epic:/);
 });
 
 // ── 2. Function presence ──────────────────────────────────────────────────────
 
-test('app.js: _seededShuffle function exists', () => {
-    assert.match(APP_JS, /^function _seededShuffle\s*\(/m);
+test('suggestions.js: _seededShuffle function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _seededShuffle\s*\(/m);
 });
 
-test('app.js: _suggNorm function exists', () => {
-    assert.match(APP_JS, /^function _suggNorm\s*\(/m);
+test('suggestions.js: _suggNorm function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggNorm\s*\(/m);
 });
 
-test('app.js: _suggNormStrict function exists', () => {
-    assert.match(APP_JS, /^function _suggNormStrict\s*\(/m);
+test('suggestions.js: _suggNormStrict function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggNormStrict\s*\(/m);
 });
 
-test('app.js: _suggIsInstalled function exists', () => {
-    assert.match(APP_JS, /^function _suggIsInstalled\s*\(/m);
+test('suggestions.js: _suggIsInstalled function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggIsInstalled\s*\(/m);
 });
 
-test('app.js: _suggOwned function exists', () => {
-    assert.match(APP_JS, /^function _suggOwned\s*\(/m);
+test('suggestions.js: _suggOwned function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggOwned\s*\(/m);
 });
 
-test('app.js: _suggScore function exists', () => {
-    assert.match(APP_JS, /^function _suggScore\s*\(/m);
+test('suggestions.js: _suggScore function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggScore\s*\(/m);
 });
 
-test('app.js: _suggKey function exists', () => {
-    assert.match(APP_JS, /^function _suggKey\s*\(/m);
+test('suggestions.js: _suggKey function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggKey\s*\(/m);
 });
 
-test('app.js: _suggIsCacheStale async function exists', () => {
-    assert.match(APP_JS, /^async function _suggIsCacheStale\s*\(/m);
+test('suggestions.js: _suggIsCacheStale async function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^async function _suggIsCacheStale\s*\(/m);
 });
 
-test('app.js: _buildSyncedSuggestions async function exists', () => {
-    assert.match(APP_JS, /^async function _buildSyncedSuggestions\s*\(\)/m);
+test('suggestions.js: _buildSyncedSuggestions async function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^async function _buildSyncedSuggestions\s*\(\)/m);
 });
 
-test('app.js: _suggBuildGame function exists', () => {
-    assert.match(APP_JS, /^function _suggBuildGame\s*\(/m);
+test('suggestions.js: _suggBuildGame function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggBuildGame\s*\(/m);
 });
 
-test('app.js: _suggBadge function exists', () => {
-    assert.match(APP_JS, /^function _suggBadge\s*\(/m);
+test('suggestions.js: _suggBadge function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggBadge\s*\(/m);
 });
 
-test('app.js: _suggStaleBadge function exists', () => {
-    assert.match(APP_JS, /^function _suggStaleBadge\s*\(\)/m);
+test('suggestions.js: _suggStaleBadge function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggStaleBadge\s*\(\)/m);
 });
 
-test('app.js: _suggSaveState function exists', () => {
-    assert.match(APP_JS, /^function _suggSaveState\s*\(\)/m);
+test('suggestions.js: _suggSaveState function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggSaveState\s*\(\)/m);
 });
 
-test('app.js: _suggLoadState function exists', () => {
-    assert.match(APP_JS, /^function _suggLoadState\s*\(\)/m);
+test('suggestions.js: _suggLoadState function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggLoadState\s*\(\)/m);
 });
 
-test('app.js: _suggBuildPool function exists', () => {
-    assert.match(APP_JS, /^function _suggBuildPool\s*\(\)/m);
+test('suggestions.js: _suggBuildPool function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggBuildPool\s*\(\)/m);
 });
 
-test('app.js: _suggDedupe function exists', () => {
-    assert.match(APP_JS, /^function _suggDedupe\s*\(/m);
+test('suggestions.js: _suggDedupe function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggDedupe\s*\(/m);
 });
 
-test('app.js: _suggSyncState function exists', () => {
-    assert.match(APP_JS, /^function _suggSyncState\s*\(/m);
+test('suggestions.js: _suggSyncState function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggSyncState\s*\(/m);
 });
 
-test('app.js: _suggSelectForFilter function exists', () => {
-    assert.match(APP_JS, /^function _suggSelectForFilter\s*\(/m);
+test('suggestions.js: _suggSelectForFilter function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggSelectForFilter\s*\(/m);
 });
 
-test('app.js: _suggStopRotation function exists', () => {
-    assert.match(APP_JS, /^function _suggStopRotation\s*\(\)/m);
+test('suggestions.js: _suggStopRotation function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggStopRotation\s*\(\)/m);
 });
 
-test('app.js: _suggStartRotation function exists', () => {
-    assert.match(APP_JS, /^function _suggStartRotation\s*\(\)/m);
+test('suggestions.js: _suggStartRotation function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggStartRotation\s*\(\)/m);
 });
 
-test('app.js: window._suggSelectGame is assigned', () => {
-    assert.match(APP_JS, /window\._suggSelectGame\s*=\s*function\s*\(\s*idx\s*\)/);
+test('suggestions.js: window._suggSelectGame is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggSelectGame\s*=\s*function\s*\(\s*idx\s*\)/);
 });
 
-test('app.js: window.suggViewDetails is assigned', () => {
-    assert.match(APP_JS, /window\.suggViewDetails\s*=\s*function\s*\(/);
+test('suggestions.js: window.suggViewDetails is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\.suggViewDetails\s*=\s*function\s*\(/);
 });
 
-test('app.js: _suggHydrateArt async function exists', () => {
-    assert.match(APP_JS, /^async function _suggHydrateArt\s*\(/m);
+test('suggestions.js: _suggHydrateArt async function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^async function _suggHydrateArt\s*\(/m);
 });
 
-test('app.js: _suggReRenderOne function exists', () => {
-    assert.match(APP_JS, /^function _suggReRenderOne\s*\(/m);
+test('suggestions.js: _suggReRenderOne function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggReRenderOne\s*\(/m);
 });
 
-test('app.js: _suggRailMetaHtml function exists', () => {
-    assert.match(APP_JS, /^function _suggRailMetaHtml\s*\(/m);
+test('suggestions.js: _suggRailMetaHtml function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggRailMetaHtml\s*\(/m);
 });
 
-test('app.js: window._suggCarouselPrev is assigned', () => {
-    assert.match(APP_JS, /window\._suggCarouselPrev\s*=\s*function\s*\(\)/);
+test('suggestions.js: window._suggCarouselPrev is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggCarouselPrev\s*=\s*function\s*\(\)/);
 });
 
-test('app.js: window._suggCarouselNext is assigned', () => {
-    assert.match(APP_JS, /window\._suggCarouselNext\s*=\s*function\s*\(\)/);
+test('suggestions.js: window._suggCarouselNext is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggCarouselNext\s*=\s*function\s*\(\)/);
 });
 
-test('app.js: _suggCarouselSlides function exists', () => {
-    assert.match(APP_JS, /^function _suggCarouselSlides\s*\(/m);
+test('suggestions.js: _suggCarouselSlides function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggCarouselSlides\s*\(/m);
 });
 
-test('app.js: _suggUpdateCarouselSlide function exists', () => {
-    assert.match(APP_JS, /^function _suggUpdateCarouselSlide\s*\(/m);
+test('suggestions.js: _suggUpdateCarouselSlide function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggUpdateCarouselSlide\s*\(/m);
 });
 
-test('app.js: _renderSyncedFeature function exists', () => {
-    assert.match(APP_JS, /^function _renderSyncedFeature\s*\(/m);
+test('suggestions.js: _renderSyncedFeature function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _renderSyncedFeature\s*\(/m);
 });
 
-test('app.js: _renderSyncedRail function exists', () => {
-    assert.match(APP_JS, /^function _renderSyncedRail\s*\(/m);
+test('suggestions.js: _renderSyncedRail function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _renderSyncedRail\s*\(/m);
 });
 
-test('app.js: _suggRenderFiltered function exists', () => {
-    assert.match(APP_JS, /^function _suggRenderFiltered\s*\(\)/m);
+test('suggestions.js: _suggRenderFiltered function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggRenderFiltered\s*\(\)/m);
 });
 
-test('app.js: _suggUpdatePills function exists', () => {
-    assert.match(APP_JS, /^function _suggUpdatePills\s*\(\)/m);
+test('suggestions.js: _suggUpdatePills function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^function _suggUpdatePills\s*\(\)/m);
 });
 
-test('app.js: renderSyncedSuggestions async function exists', () => {
-    assert.match(APP_JS, /^async function renderSyncedSuggestions\s*\(\)/m);
+test('suggestions.js: renderSyncedSuggestions async function exists', () => {
+    assert.match(SUGGESTIONS_JS, /^async function renderSyncedSuggestions\s*\(\)/m);
 });
 
-test('app.js: window.setSyncedFilter is assigned', () => {
-    assert.match(APP_JS, /window\.setSyncedFilter\s*=\s*function\s*\(/);
+test('suggestions.js: window.setSyncedFilter is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\.setSyncedFilter\s*=\s*function\s*\(/);
 });
 
-test('app.js: window.suggInstall is assigned', () => {
-    assert.match(APP_JS, /window\.suggInstall\s*=\s*function\s*\(/);
+test('suggestions.js: window.suggInstall is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\.suggInstall\s*=\s*function\s*\(/);
 });
 
-test('app.js: window._onSyncLibraryUpdated is assigned', () => {
-    assert.match(APP_JS, /window\._onSyncLibraryUpdated\s*=\s*function\s*\(\)/);
+test('suggestions.js: window._onSyncLibraryUpdated is assigned', () => {
+    assert.match(SUGGESTIONS_JS, /window\._onSyncLibraryUpdated\s*=\s*function\s*\(\)/);
 });
 
 // ── 3. _seededShuffle behaviour ───────────────────────────────────────────────
 
-test('app.js: _seededShuffle returns a new array without mutating the input', () => {
-    const fn = extractFn(APP_JS, 'function _seededShuffle(', 400);
+test('suggestions.js: _seededShuffle returns a new array without mutating the input', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _seededShuffle(', 400);
     assert.match(fn, /\[\.\.\.\s*arr\s*\]/);
 });
 
-test('app.js: _seededShuffle uses xorshift32 PRNG (bit-shift pattern)', () => {
-    const fn = extractFn(APP_JS, 'function _seededShuffle(', 400);
+test('suggestions.js: _seededShuffle uses xorshift32 PRNG (bit-shift pattern)', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _seededShuffle(', 400);
     assert.match(fn, /s\s*\^=\s*s\s*<<\s*13/);
     assert.match(fn, /s\s*\^=\s*s\s*>>\s*17/);
 });
 
 // ── 4. _suggNorm / _suggNormStrict behaviour ──────────────────────────────────
 
-test('app.js: _suggNorm lowercases and strips trademark symbols', () => {
-    const fn = extractFn(APP_JS, 'function _suggNorm(', 200);
+test('suggestions.js: _suggNorm lowercases and strips trademark symbols', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggNorm(', 200);
     assert.match(fn, /toLowerCase/);
     assert.match(fn, /[®©™]/);
 });
 
-test('app.js: _suggNormStrict strips all non-alphanumeric characters', () => {
-    const fn = extractFn(APP_JS, 'function _suggNormStrict(', 150);
+test('suggestions.js: _suggNormStrict strips all non-alphanumeric characters', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggNormStrict(', 150);
     // Source contains /[^a-z0-9]/gi — verify via replace call and toLowerCase
     assert.match(fn, /\.replace\s*\(/);
     assert.match(fn, /toLowerCase\s*\(\)/);
@@ -286,86 +287,86 @@ test('app.js: _suggNormStrict strips all non-alphanumeric characters', () => {
 
 // ── 5. _suggIsInstalled behaviour ─────────────────────────────────────────────
 
-test('app.js: _suggIsInstalled delegates to _agIsInstalled when available', () => {
-    const fn = extractFn(APP_JS, 'function _suggIsInstalled(', 400);
+test('suggestions.js: _suggIsInstalled delegates to _agIsInstalled when available', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggIsInstalled(', 400);
     assert.match(fn, /typeof _agIsInstalled\s*===\s*['"]function['"]/);
     assert.match(fn, /_agIsInstalled\s*\(\s*syncedGame\s*\)/);
 });
 
-test('app.js: _suggIsInstalled probes steam-prefix variants via _agBuildInstalledMap', () => {
-    const fn = extractFn(APP_JS, 'function _suggIsInstalled(', 600);
+test('suggestions.js: _suggIsInstalled probes steam-prefix variants via _agBuildInstalledMap', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggIsInstalled(', 600);
     assert.match(fn, /_agBuildInstalledMap/);
     assert.match(fn, /steam-/);
 });
 
-test('app.js: _suggIsInstalled falls back to window.allGamesData when _agIsInstalled unavailable', () => {
-    const fn = extractFn(APP_JS, 'function _suggIsInstalled(', 1200);
+test('suggestions.js: _suggIsInstalled falls back to window.allGamesData when _agIsInstalled unavailable', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggIsInstalled(', 1200);
     assert.match(fn, /window\.allGamesData/);
 });
 
 // ── 6. _suggKey behaviour ─────────────────────────────────────────────────────
 
-test('app.js: _suggKey returns a platform:id composite string', () => {
-    const fn = extractFn(APP_JS, 'function _suggKey(', 120);
+test('suggestions.js: _suggKey returns a platform:id composite string', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggKey(', 120);
     assert.match(fn, /_platform/);
     assert.match(fn, /id/);
 });
 
 // ── 7. _suggIsCacheStale behaviour ────────────────────────────────────────────
 
-test('app.js: _suggIsCacheStale calls electronAPI.platformSyncGetState', () => {
-    const fn = extractFn(APP_JS, 'async function _suggIsCacheStale(', 900);
+test('suggestions.js: _suggIsCacheStale calls electronAPI.platformSyncGetState', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggIsCacheStale(', 900);
     assert.match(fn, /electronAPI\.platformSyncGetState\s*\(/);
 });
 
-test('app.js: _suggIsCacheStale returns true when phase is error', () => {
-    const fn = extractFn(APP_JS, 'async function _suggIsCacheStale(', 900);
+test('suggestions.js: _suggIsCacheStale returns true when phase is error', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggIsCacheStale(', 900);
     assert.match(fn, /phase\s*===\s*['"]error['"]/);
     assert.match(fn, /return true/);
 });
 
-test('app.js: _suggIsCacheStale returns false on IPC failure', () => {
-    const fn = extractFn(APP_JS, 'async function _suggIsCacheStale(', 900);
+test('suggestions.js: _suggIsCacheStale returns false on IPC failure', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggIsCacheStale(', 900);
     assert.match(fn, /catch/);
     assert.match(fn, /return false/);
 });
 
 // ── 8. _buildSyncedSuggestions behaviour ─────────────────────────────────────
 
-test('app.js: _buildSyncedSuggestions resets _suggAllGames to empty array', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 200);
+test('suggestions.js: _buildSyncedSuggestions resets _suggAllGames to empty array', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 200);
     assert.match(fn, /_suggAllGames\s*=\s*\[\]/);
 });
 
-test('app.js: _buildSyncedSuggestions calls electronAPI.platformSyncGetCached', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 600);
+test('suggestions.js: _buildSyncedSuggestions calls electronAPI.platformSyncGetCached', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 600);
     assert.match(fn, /electronAPI\.platformSyncGetCached\s*\(/);
 });
 
-test('app.js: _buildSyncedSuggestions calls electronAPI.platformSyncGetAccounts', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 600);
+test('suggestions.js: _buildSyncedSuggestions calls electronAPI.platformSyncGetAccounts', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 600);
     assert.match(fn, /electronAPI\.platformSyncGetAccounts\s*\(/);
 });
 
-test('app.js: _buildSyncedSuggestions sets window._suggAllGames after building', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 3920);
+test('suggestions.js: _buildSyncedSuggestions sets window._suggAllGames after building', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 3920);
     assert.match(fn, /window\._suggAllGames\s*=/);
 });
 
-test('app.js: _buildSyncedSuggestions sets window.__platformLibraryReady', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 3920);
+test('suggestions.js: _buildSyncedSuggestions sets window.__platformLibraryReady', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 3920);
     assert.match(fn, /window\.__platformLibraryReady/);
 });
 
-test('app.js: _buildSyncedSuggestions uses _suggIsInstalled to filter out already-installed games', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 3000);
+test('suggestions.js: _buildSyncedSuggestions uses _suggIsInstalled to filter out already-installed games', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 3000);
     assert.match(fn, /_suggIsInstalled\s*\(/);
 });
 
 // ── 9. _suggBuildGame behaviour ───────────────────────────────────────────────
 
-test('app.js: _suggBuildGame maps synced game fields to local game shape', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildGame(', 500);
+test('suggestions.js: _suggBuildGame maps synced game fields to local game shape', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildGame(', 500);
     assert.match(fn, /id:/);
     assert.match(fn, /name:/);
     assert.match(fn, /image:/);
@@ -373,8 +374,8 @@ test('app.js: _suggBuildGame maps synced game fields to local game shape', () =>
     assert.match(fn, /platforms:/);
 });
 
-test('app.js: _suggBuildGame copies appName, namespace, catalogItemId, allIds', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildGame(', 500);
+test('suggestions.js: _suggBuildGame copies appName, namespace, catalogItemId, allIds', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildGame(', 500);
     assert.match(fn, /appName:/);
     assert.match(fn, /namespace:/);
     assert.match(fn, /catalogItemId:/);
@@ -383,50 +384,50 @@ test('app.js: _suggBuildGame copies appName, namespace, catalogItemId, allIds', 
 
 // ── 10. _suggBuildPool behaviour ──────────────────────────────────────────────
 
-test('app.js: _suggBuildPool calls _suggLoadState for bucket-restore logic', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildPool()', 1800);
+test('suggestions.js: _suggBuildPool calls _suggLoadState for bucket-restore logic', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildPool()', 1800);
     assert.match(fn, /_suggLoadState\s*\(\)/);
 });
 
-test('app.js: _suggBuildPool calls _suggSyncState with computed bucket', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildPool()', 1800);
+test('suggestions.js: _suggBuildPool calls _suggSyncState with computed bucket', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildPool()', 1800);
     assert.match(fn, /_suggSyncState\s*\(\s*bucket\s*\)/);
 });
 
-test('app.js: _suggBuildPool calls _suggSaveState after building a fresh pool', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildPool()', 1800);
+test('suggestions.js: _suggBuildPool calls _suggSaveState after building a fresh pool', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildPool()', 1800);
     assert.match(fn, /_suggSaveState\s*\(\)/);
 });
 
-test('app.js: _suggBuildPool calls _suggSelectForFilter to select games', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildPool()', 1800);
+test('suggestions.js: _suggBuildPool calls _suggSelectForFilter to select games', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildPool()', 1800);
     assert.match(fn, /_suggSelectForFilter\s*\(\s*_suggFilter/);
 });
 
 // ── 11. _suggDedupe behaviour ─────────────────────────────────────────────────
 
-test('app.js: _suggDedupe removes duplicates by _suggKey', () => {
-    const fn = extractFn(APP_JS, 'function _suggDedupe(', 250);
+test('suggestions.js: _suggDedupe removes duplicates by _suggKey', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggDedupe(', 250);
     assert.match(fn, /_suggKey\s*\(/);
     assert.match(fn, /seen/);
 });
 
 // ── 12. _suggSelectForFilter behaviour ───────────────────────────────────────
 
-test('app.js: _suggSelectForFilter uses _seededShuffle for deterministic order', () => {
-    const fn = extractFn(APP_JS, 'function _suggSelectForFilter(', 350);
+test('suggestions.js: _suggSelectForFilter uses _seededShuffle for deterministic order', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggSelectForFilter(', 350);
     assert.match(fn, /_seededShuffle\s*\(\s*_suggAllGames/);
 });
 
-test('app.js: _suggSelectForFilter filters by platform when filter is not "all"', () => {
-    const fn = extractFn(APP_JS, 'function _suggSelectForFilter(', 350);
+test('suggestions.js: _suggSelectForFilter filters by platform when filter is not "all"', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggSelectForFilter(', 350);
     assert.match(fn, /_platform\s*===\s*filter/);
 });
 
 // ── 13. _suggStartRotation behaviour ─────────────────────────────────────────
 
-test('app.js: _suggStartRotation calls _suggStopRotation first', () => {
-    const fn = extractFn(APP_JS, 'function _suggStartRotation()', 400);
+test('suggestions.js: _suggStartRotation calls _suggStopRotation first', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggStartRotation()', 400);
     const stopIdx  = fn.indexOf('_suggStopRotation()');
     const timerIdx = fn.indexOf('setInterval');
     assert.ok(stopIdx > -1, '_suggStopRotation must be called');
@@ -434,55 +435,55 @@ test('app.js: _suggStartRotation calls _suggStopRotation first', () => {
     assert.ok(stopIdx < timerIdx, '_suggStopRotation must come before setInterval');
 });
 
-test('app.js: _suggStartRotation uses _SUGG_ROTATE_MS as the interval delay', () => {
-    const fn = extractFn(APP_JS, 'function _suggStartRotation()', 400);
+test('suggestions.js: _suggStartRotation uses _SUGG_ROTATE_MS as the interval delay', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggStartRotation()', 400);
     assert.match(fn, /_SUGG_ROTATE_MS/);
 });
 
-test('app.js: _suggStartRotation advances _suggPoolIdx in the interval callback', () => {
-    const fn = extractFn(APP_JS, 'function _suggStartRotation()', 400);
+test('suggestions.js: _suggStartRotation advances _suggPoolIdx in the interval callback', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggStartRotation()', 400);
     assert.match(fn, /_suggPoolIdx\s*=\s*\(/);
     assert.match(fn, /_suggPool\.length/);
 });
 
 // ── 14. _suggStopRotation behaviour ──────────────────────────────────────────
 
-test('app.js: _suggStopRotation clears _suggRotateTimer and resets it to null', () => {
-    const fn = extractFn(APP_JS, 'function _suggStopRotation()', 150);
+test('suggestions.js: _suggStopRotation clears _suggRotateTimer and resets it to null', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggStopRotation()', 150);
     assert.match(fn, /clearInterval\s*\(\s*_suggRotateTimer\s*\)/);
     assert.match(fn, /_suggRotateTimer\s*=\s*null/);
 });
 
 // ── 15. window._suggSelectGame behaviour ─────────────────────────────────────
 
-test('app.js: _suggSelectGame guards against out-of-range index', () => {
-    const fn = extractFn(APP_JS, 'window._suggSelectGame = function(', 300);
+test('suggestions.js: _suggSelectGame guards against out-of-range index', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggSelectGame = function(', 300);
     assert.match(fn, /idx\s*<\s*0\s*\|\|\s*idx\s*>=\s*_suggPool\.length/);
     assert.match(fn, /return/);
 });
 
-test('app.js: _suggSelectGame updates _suggPoolIdx and restarts rotation', () => {
-    const fn = extractFn(APP_JS, 'window._suggSelectGame = function(', 300);
+test('suggestions.js: _suggSelectGame updates _suggPoolIdx and restarts rotation', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggSelectGame = function(', 300);
     assert.match(fn, /_suggPoolIdx\s*=\s*idx/);
     assert.match(fn, /_suggStartRotation\s*\(\)/);
 });
 
-test('app.js: _suggSelectGame calls _renderSyncedRail and _renderSyncedFeature', () => {
-    const fn = extractFn(APP_JS, 'window._suggSelectGame = function(', 300);
+test('suggestions.js: _suggSelectGame calls _renderSyncedRail and _renderSyncedFeature', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggSelectGame = function(', 300);
     assert.match(fn, /_renderSyncedRail\s*\(\s*_suggPool\s*\)/);
     assert.match(fn, /_renderSyncedFeature\s*\(/);
 });
 
 // ── 16. window.suggViewDetails behaviour ─────────────────────────────────────
 
-test('app.js: suggViewDetails looks up game in _suggAllGames by platform and id', () => {
-    const fn = extractFn(APP_JS, 'window.suggViewDetails = function(', 500);
+test('suggestions.js: suggViewDetails looks up game in _suggAllGames by platform and id', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggViewDetails = function(', 500);
     assert.match(fn, /_suggAllGames\.find/);
     assert.match(fn, /_platform\s*===\s*platform/);
 });
 
-test('app.js: suggViewDetails sets window._gdSyncedGameOverride before opening details', () => {
-    const fn = extractFn(APP_JS, 'window.suggViewDetails = function(', 500);
+test('suggestions.js: suggViewDetails sets window._gdSyncedGameOverride before opening details', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggViewDetails = function(', 500);
     const overrideIdx = fn.indexOf('_gdSyncedGameOverride');
     // Use the actual call (not the comment) by searching for 'openGameDetails('
     const openIdx     = fn.indexOf('openGameDetails(');
@@ -491,128 +492,128 @@ test('app.js: suggViewDetails sets window._gdSyncedGameOverride before opening d
     assert.ok(overrideIdx < openIdx, '_gdSyncedGameOverride must be set before openGameDetails call');
 });
 
-test('app.js: suggViewDetails uses _suggBuildGame to convert the synced game object', () => {
-    const fn = extractFn(APP_JS, 'window.suggViewDetails = function(', 500);
+test('suggestions.js: suggViewDetails uses _suggBuildGame to convert the synced game object', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggViewDetails = function(', 500);
     assert.match(fn, /_suggBuildGame\s*\(\s*g\s*\)/);
 });
 
 // ── 17. _suggHydrateArt behaviour ────────────────────────────────────────────
 
-test('app.js: _suggHydrateArt calls electronAPI.getMetadata for art enrichment', () => {
-    const fn = extractFn(APP_JS, 'async function _suggHydrateArt(', 1300);
+test('suggestions.js: _suggHydrateArt calls electronAPI.getMetadata for art enrichment', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 1300);
     assert.match(fn, /electronAPI\.getMetadata\s*\(/);
 });
 
-test('app.js: _suggHydrateArt guards against duplicate in-flight requests via hydratingGameIds', () => {
-    const fn = extractFn(APP_JS, 'async function _suggHydrateArt(', 450);
+test('suggestions.js: _suggHydrateArt guards against duplicate in-flight requests via hydratingGameIds', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 450);
     assert.match(fn, /hydratingGameIds\.has\s*\(/);
     assert.match(fn, /hydratedGameIds\.has\s*\(/);
 });
 
-test('app.js: _suggHydrateArt respects _SUGG_HYDRATE_CONCURRENCY limit', () => {
-    const fn = extractFn(APP_JS, 'async function _suggHydrateArt(', 600);
+test('suggestions.js: _suggHydrateArt respects _SUGG_HYDRATE_CONCURRENCY limit', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 600);
     assert.match(fn, /_suggHydrateActive\s*>=\s*_SUGG_HYDRATE_CONCURRENCY/);
 });
 
-test('app.js: _suggHydrateArt calls _suggReRenderOne after fetching art', () => {
-    const fn = extractFn(APP_JS, 'async function _suggHydrateArt(', 5280);
+test('suggestions.js: _suggHydrateArt calls _suggReRenderOne after fetching art', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 5280);
     assert.match(fn, /_suggReRenderOne\s*\(/);
 });
 
 // ── 18. _suggCarouselSlides behaviour ────────────────────────────────────────
 
-test('app.js: _suggCarouselSlides returns metaScreenshots when available', () => {
-    const fn = extractFn(APP_JS, 'function _suggCarouselSlides(', 250);
+test('suggestions.js: _suggCarouselSlides returns metaScreenshots when available', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggCarouselSlides(', 250);
     assert.match(fn, /_metaScreenshots/);
 });
 
-test('app.js: _suggCarouselSlides falls back to heroImage when no screenshots', () => {
-    const fn = extractFn(APP_JS, 'function _suggCarouselSlides(', 250);
+test('suggestions.js: _suggCarouselSlides falls back to heroImage when no screenshots', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggCarouselSlides(', 250);
     assert.match(fn, /heroImage/);
     assert.match(fn, /fallback/);
 });
 
 // ── 19. _suggUpdateCarouselSlide behaviour ────────────────────────────────────
 
-test('app.js: _suggUpdateCarouselSlide updates #suggCarouselStage element', () => {
-    const fn = extractFn(APP_JS, 'function _suggUpdateCarouselSlide(', 550);
+test('suggestions.js: _suggUpdateCarouselSlide updates #suggCarouselStage element', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggUpdateCarouselSlide(', 550);
     assert.match(fn, /getElementById\s*\(\s*['"]suggCarouselStage['"]\s*\)/);
 });
 
-test('app.js: _suggUpdateCarouselSlide updates carousel pip dots', () => {
-    const fn = extractFn(APP_JS, 'function _suggUpdateCarouselSlide(', 550);
+test('suggestions.js: _suggUpdateCarouselSlide updates carousel pip dots', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggUpdateCarouselSlide(', 550);
     assert.match(fn, /\.sugg-carousel-pip/);
     assert.match(fn, /classList\.toggle\s*\(\s*['"]active['"]/);
 });
 
-test('app.js: _suggUpdateCarouselSlide shows/hides prev/next buttons based on slide count', () => {
-    const fn = extractFn(APP_JS, 'function _suggUpdateCarouselSlide(', 750);
+test('suggestions.js: _suggUpdateCarouselSlide shows/hides prev/next buttons based on slide count', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggUpdateCarouselSlide(', 750);
     assert.match(fn, /getElementById\s*\(\s*['"]suggCarouselPrev['"]\s*\)/);
     assert.match(fn, /getElementById\s*\(\s*['"]suggCarouselNext['"]\s*\)/);
 });
 
 // ── 20. _suggCarouselPrev / _suggCarouselNext behaviour ───────────────────────
 
-test('app.js: _suggCarouselPrev returns early when no featured game', () => {
-    const fn = extractFn(APP_JS, 'window._suggCarouselPrev = function()', 250);
+test('suggestions.js: _suggCarouselPrev returns early when no featured game', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggCarouselPrev = function()', 250);
     assert.match(fn, /if\s*\(\s*!_suggFeaturedGame\s*\)\s*return/);
 });
 
-test('app.js: _suggCarouselPrev decrements _suggCarouselIdx with wrap-around', () => {
-    const fn = extractFn(APP_JS, 'window._suggCarouselPrev = function()', 250);
+test('suggestions.js: _suggCarouselPrev decrements _suggCarouselIdx with wrap-around', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggCarouselPrev = function()', 250);
     assert.match(fn, /_suggCarouselIdx\s*-\s*1/);
     assert.match(fn, /slides\.length/);
 });
 
-test('app.js: _suggCarouselNext increments _suggCarouselIdx with wrap-around', () => {
-    const fn = extractFn(APP_JS, 'window._suggCarouselNext = function()', 250);
+test('suggestions.js: _suggCarouselNext increments _suggCarouselIdx with wrap-around', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._suggCarouselNext = function()', 250);
     assert.match(fn, /_suggCarouselIdx\s*\+\s*1/);
     assert.match(fn, /slides\.length/);
 });
 
 // ── 21. _renderSyncedFeature behaviour ───────────────────────────────────────
 
-test('app.js: _renderSyncedFeature uses #syncedFeatureWrap element', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 300);
+test('suggestions.js: _renderSyncedFeature uses #syncedFeatureWrap element', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 300);
     assert.match(fn, /getElementById\s*\(\s*['"]syncedFeatureWrap['"]\s*\)/);
 });
 
-test('app.js: _renderSyncedFeature sets _suggFeaturedGame reference', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 400);
+test('suggestions.js: _renderSyncedFeature sets _suggFeaturedGame reference', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 400);
     assert.match(fn, /_suggFeaturedGame\s*=\s*g/);
 });
 
-test('app.js: _renderSyncedFeature wires window.suggInstall in generated onclick', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 2700);
+test('suggestions.js: _renderSyncedFeature wires window.suggInstall in generated onclick', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 2700);
     assert.match(fn, /suggInstall\s*\(/);
 });
 
-test('app.js: _renderSyncedFeature wires window.suggViewDetails in generated onclick', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 2700);
+test('suggestions.js: _renderSyncedFeature wires window.suggViewDetails in generated onclick', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 2700);
     assert.match(fn, /suggViewDetails\s*\(/);
 });
 
 // ── 22. _renderSyncedRail behaviour ───────────────────────────────────────────
 
-test('app.js: _renderSyncedRail uses #syncedRail element', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedRail(', 600);
+test('suggestions.js: _renderSyncedRail uses #syncedRail element', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 600);
     assert.match(fn, /getElementById\s*\(\s*['"]syncedRail['"]\s*\)/);
 });
 
-test('app.js: _renderSyncedRail wires window._suggSelectGame in generated onclick', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedRail(', 1400);
+test('suggestions.js: _renderSyncedRail wires window._suggSelectGame in generated onclick', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1400);
     assert.match(fn, /_suggSelectGame\s*\(/);
 });
 
-test('app.js: _renderSyncedRail uses escapeHtml for game titles', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedRail(', 1700);
+test('suggestions.js: _renderSyncedRail uses escapeHtml for game titles', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1700);
     assert.match(fn, /escapeHtml\s*\(/);
 });
 
 // ── 23. _suggRenderFiltered behaviour ─────────────────────────────────────────
 
-test('app.js: _suggRenderFiltered calls _suggBuildPool then renders feature and rail', () => {
-    const fn = extractFn(APP_JS, 'function _suggRenderFiltered()', 420);
+test('suggestions.js: _suggRenderFiltered calls _suggBuildPool then renders feature and rail', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggRenderFiltered()', 420);
     const buildIdx   = fn.indexOf('_suggBuildPool()');
     const featureIdx = fn.indexOf('_renderSyncedFeature(');
     const railIdx    = fn.indexOf('_renderSyncedRail(');
@@ -622,34 +623,34 @@ test('app.js: _suggRenderFiltered calls _suggBuildPool then renders feature and 
     assert.ok(buildIdx < featureIdx, '_suggBuildPool must come before _renderSyncedFeature');
 });
 
-test('app.js: _suggRenderFiltered calls _suggStartRotation', () => {
-    const fn = extractFn(APP_JS, 'function _suggRenderFiltered()', 450);
+test('suggestions.js: _suggRenderFiltered calls _suggStartRotation', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggRenderFiltered()', 450);
     assert.match(fn, /_suggStartRotation\s*\(\)/);
 });
 
 // ── 24. _suggUpdatePills behaviour ────────────────────────────────────────────
 
-test('app.js: _suggUpdatePills shows/hides Steam pill based on presence in _suggAllGames', () => {
-    const fn = extractFn(APP_JS, 'function _suggUpdatePills()', 400);
+test('suggestions.js: _suggUpdatePills shows/hides Steam pill based on presence in _suggAllGames', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggUpdatePills()', 400);
     assert.match(fn, /_suggAllGames\.some/);
     assert.match(fn, /\[data-filter="steam"\]/);
     assert.match(fn, /style\.display/);
 });
 
-test('app.js: _suggUpdatePills shows/hides Epic pill based on presence in _suggAllGames', () => {
-    const fn = extractFn(APP_JS, 'function _suggUpdatePills()', 400);
+test('suggestions.js: _suggUpdatePills shows/hides Epic pill based on presence in _suggAllGames', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggUpdatePills()', 400);
     assert.match(fn, /\[data-filter="epic"\]/);
 });
 
 // ── 25. renderSyncedSuggestions behaviour ────────────────────────────────────
 
-test('app.js: renderSyncedSuggestions calls _suggStopRotation at entry', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 200);
+test('suggestions.js: renderSyncedSuggestions calls _suggStopRotation at entry', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 200);
     assert.match(fn, /_suggStopRotation\s*\(\)/);
 });
 
-test('app.js: renderSyncedSuggestions uses all expected section DOM IDs', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 600);
+test('suggestions.js: renderSyncedSuggestions uses all expected section DOM IDs', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 600);
     assert.match(fn, /syncedSuggestionsSection/);
     assert.match(fn, /syncedSuggLoading/);
     assert.match(fn, /syncedSuggEmpty/);
@@ -658,13 +659,13 @@ test('app.js: renderSyncedSuggestions uses all expected section DOM IDs', () => 
     assert.match(fn, /syncedSuggStats/);
 });
 
-test('app.js: renderSyncedSuggestions calls electronAPI.platformSyncGetAccounts per platform', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 1000);
+test('suggestions.js: renderSyncedSuggestions calls electronAPI.platformSyncGetAccounts per platform', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 1000);
     assert.match(fn, /electronAPI\.platformSyncGetAccounts\s*\(/);
 });
 
-test('app.js: renderSyncedSuggestions calls _buildSyncedSuggestions after account check', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 2300);
+test('suggestions.js: renderSyncedSuggestions calls _buildSyncedSuggestions after account check', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 2300);
     const accountIdx = fn.indexOf('platformSyncGetAccounts');
     const buildIdx   = fn.indexOf('_buildSyncedSuggestions()');
     assert.ok(accountIdx > -1, 'platformSyncGetAccounts must be called');
@@ -674,40 +675,40 @@ test('app.js: renderSyncedSuggestions calls _buildSyncedSuggestions after accoun
 
 // ── 26. window.setSyncedFilter behaviour ─────────────────────────────────────
 
-test('app.js: setSyncedFilter stops rotation and resets pool state', () => {
-    const fn = extractFn(APP_JS, 'window.setSyncedFilter = function(', 350);
+test('suggestions.js: setSyncedFilter stops rotation and resets pool state', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.setSyncedFilter = function(', 350);
     assert.match(fn, /_suggStopRotation\s*\(\)/);
     assert.match(fn, /_suggPool\s*=\s*\[\]/);
     assert.match(fn, /_suggPoolTs\s*=\s*0/);
 });
 
-test('app.js: setSyncedFilter updates _suggFilter and calls _suggRenderFiltered', () => {
-    const fn = extractFn(APP_JS, 'window.setSyncedFilter = function(', 350);
+test('suggestions.js: setSyncedFilter updates _suggFilter and calls _suggRenderFiltered', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.setSyncedFilter = function(', 350);
     assert.match(fn, /_suggFilter\s*=\s*filter/);
     assert.match(fn, /_suggRenderFiltered\s*\(\)/);
 });
 
-test('app.js: setSyncedFilter toggles active class on the pill buttons', () => {
-    const fn = extractFn(APP_JS, 'window.setSyncedFilter = function(', 350);
+test('suggestions.js: setSyncedFilter toggles active class on the pill buttons', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.setSyncedFilter = function(', 350);
     assert.match(fn, /\.sugg-pill/);
     assert.match(fn, /classList\.remove\s*\(\s*['"]active['"]\s*\)/);
 });
 
 // ── 27. window.suggInstall behaviour ─────────────────────────────────────────
 
-test('app.js: suggInstall looks up game in _suggAllGames by platform and id', () => {
-    const fn = extractFn(APP_JS, 'window.suggInstall = function(', 350);
+test('suggestions.js: suggInstall looks up game in _suggAllGames by platform and id', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggInstall = function(', 350);
     assert.match(fn, /_suggAllGames\.find/);
     assert.match(fn, /_platform\s*===\s*platform/);
 });
 
-test('app.js: suggInstall delegates to window._gdOpenInstallPickerForGame', () => {
-    const fn = extractFn(APP_JS, 'window.suggInstall = function(', 350);
+test('suggestions.js: suggInstall delegates to window._gdOpenInstallPickerForGame', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggInstall = function(', 350);
     assert.match(fn, /window\._gdOpenInstallPickerForGame\s*\(/);
 });
 
-test('app.js: suggInstall builds the game object via _suggBuildGame before passing to install picker', () => {
-    const fn = extractFn(APP_JS, 'window.suggInstall = function(', 350);
+test('suggestions.js: suggInstall builds the game object via _suggBuildGame before passing to install picker', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggInstall = function(', 350);
     const buildIdx  = fn.indexOf('_suggBuildGame(');
     const pickerIdx = fn.indexOf('_gdOpenInstallPickerForGame(');
     assert.ok(buildIdx > -1, '_suggBuildGame must be called');
@@ -717,13 +718,13 @@ test('app.js: suggInstall builds the game object via _suggBuildGame before passi
 
 // ── 28. window._onSyncLibraryUpdated behaviour ───────────────────────────────
 
-test('app.js: _onSyncLibraryUpdated only re-renders when currentView is "home"', () => {
-    const fn = extractFn(APP_JS, 'window._onSyncLibraryUpdated = function()', 200);
+test('suggestions.js: _onSyncLibraryUpdated only re-renders when currentView is "home"', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._onSyncLibraryUpdated = function()', 200);
     assert.match(fn, /currentView\s*===\s*['"]home['"]/);
 });
 
-test('app.js: _onSyncLibraryUpdated stops rotation then calls renderSyncedSuggestions', () => {
-    const fn = extractFn(APP_JS, 'window._onSyncLibraryUpdated = function()', 200);
+test('suggestions.js: _onSyncLibraryUpdated stops rotation then calls renderSyncedSuggestions', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._onSyncLibraryUpdated = function()', 200);
     const stopIdx   = fn.indexOf('_suggStopRotation()');
     const renderIdx = fn.indexOf('renderSyncedSuggestions()');
     assert.ok(stopIdx > -1, '_suggStopRotation must be called');
@@ -733,13 +734,13 @@ test('app.js: _onSyncLibraryUpdated stops rotation then calls renderSyncedSugges
 
 // ── 29. _suggSaveState / _suggLoadState behaviour ────────────────────────────
 
-test('app.js: _suggSaveState writes to localStorage using _SUGG_STATE_KEY', () => {
-    const fn = extractFn(APP_JS, 'function _suggSaveState()', 200);
+test('suggestions.js: _suggSaveState writes to localStorage using _SUGG_STATE_KEY', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggSaveState()', 200);
     assert.match(fn, /localStorage\.setItem\s*\(\s*_SUGG_STATE_KEY/);
 });
 
-test('app.js: _suggSaveState stores filter, bucket, poolKeys, activeIdx, timestamp', () => {
-    const fn = extractFn(APP_JS, 'function _suggSaveState()', 350);
+test('suggestions.js: _suggSaveState stores filter, bucket, poolKeys, activeIdx, timestamp', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggSaveState()', 350);
     assert.match(fn, /filter:/);
     assert.match(fn, /bucket:/);
     assert.match(fn, /poolKeys:/);
@@ -747,13 +748,13 @@ test('app.js: _suggSaveState stores filter, bucket, poolKeys, activeIdx, timesta
     assert.match(fn, /timestamp:/);
 });
 
-test('app.js: _suggLoadState reads from localStorage using _SUGG_STATE_KEY', () => {
-    const fn = extractFn(APP_JS, 'function _suggLoadState()', 150);
+test('suggestions.js: _suggLoadState reads from localStorage using _SUGG_STATE_KEY', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggLoadState()', 150);
     assert.match(fn, /localStorage\.getItem\s*\(\s*_SUGG_STATE_KEY/);
 });
 
-test('app.js: _suggLoadState returns null on parse failure', () => {
-    const fn = extractFn(APP_JS, 'function _suggLoadState()', 150);
+test('suggestions.js: _suggLoadState returns null on parse failure', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggLoadState()', 150);
     assert.match(fn, /catch/);
     assert.match(fn, /return null/);
 });
@@ -824,116 +825,230 @@ test('dashboard.html: carousel stage DOM elements are NOT present (built dynamic
 
 // ── 31. electronAPI dependencies ─────────────────────────────────────────────
 
-test('app.js: suggestion code depends on electronAPI.platformSyncGetState', () => {
-    assert.match(APP_JS, /electronAPI\.platformSyncGetState\s*\(/);
+test('suggestions.js: suggestion code depends on electronAPI.platformSyncGetState', () => {
+    assert.match(SUGGESTIONS_JS, /electronAPI\.platformSyncGetState\s*\(/);
 });
 
-test('app.js: suggestion code depends on electronAPI.platformSyncGetCached', () => {
-    assert.match(APP_JS, /electronAPI\.platformSyncGetCached\s*\(/);
+test('suggestions.js: suggestion code depends on electronAPI.platformSyncGetCached', () => {
+    assert.match(SUGGESTIONS_JS, /electronAPI\.platformSyncGetCached\s*\(/);
 });
 
-test('app.js: suggestion code depends on electronAPI.platformSyncGetAccounts', () => {
-    const count = (APP_JS.match(/electronAPI\.platformSyncGetAccounts\s*\(/g) || []).length;
+test('suggestions.js: suggestion code depends on electronAPI.platformSyncGetAccounts', () => {
+    const count = (SUGGESTIONS_JS.match(/electronAPI\.platformSyncGetAccounts\s*\(/g) || []).length;
     assert.ok(count >= 2, 'platformSyncGetAccounts used in _buildSyncedSuggestions and renderSyncedSuggestions');
 });
 
-test('app.js: suggestion code depends on electronAPI.getMetadata for art hydration', () => {
-    assert.match(APP_JS, /electronAPI\.getMetadata\s*\(/);
+test('suggestions.js: suggestion code depends on electronAPI.getMetadata for art hydration', () => {
+    assert.match(SUGGESTIONS_JS, /electronAPI\.getMetadata\s*\(/);
 });
 
 // ── 32. Intentional cross-file dependencies ───────────────────────────────────
 
-test('app.js: _suggIsInstalled depends on _agIsInstalled from accounts.js helpers', () => {
-    assert.match(APP_JS, /_agIsInstalled\s*\(/);
+test('suggestions.js: _suggIsInstalled depends on _agIsInstalled from accounts.js helpers', () => {
+    assert.match(SUGGESTIONS_JS, /_agIsInstalled\s*\(/);
 });
 
-test('app.js: _suggIsInstalled depends on _agBuildInstalledMap from accounts.js helpers', () => {
-    assert.match(APP_JS, /_agBuildInstalledMap\s*\(/);
+test('suggestions.js: _suggIsInstalled depends on _agBuildInstalledMap from accounts.js helpers', () => {
+    assert.match(SUGGESTIONS_JS, /_agBuildInstalledMap\s*\(/);
 });
 
-test('app.js: suggestion code depends on window.allGamesData as installed-game fallback', () => {
-    const fn = extractFn(APP_JS, 'function _suggIsInstalled(', 1200);
+test('suggestions.js: suggestion code depends on window.allGamesData as installed-game fallback', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggIsInstalled(', 1200);
     assert.match(fn, /window\.allGamesData/);
 });
 
-test('app.js: _renderSyncedRail depends on escapeHtml', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedRail(', 1700);
+test('suggestions.js: _renderSyncedRail depends on escapeHtml', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1700);
     assert.match(fn, /escapeHtml\s*\(/);
 });
 
-test('app.js: _renderSyncedFeature depends on isUsableImageUrl from artwork-sync.js', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 700);
+test('suggestions.js: _renderSyncedFeature depends on isUsableImageUrl from artwork-sync.js', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 700);
     assert.match(fn, /isUsableImageUrl\s*\(/);
 });
 
-test('app.js: _suggReRenderOne depends on setHeroBgStable from artwork-sync.js', () => {
-    const fn = extractFn(APP_JS, 'function _suggReRenderOne(', 1200);
+test('suggestions.js: _suggReRenderOne depends on setHeroBgStable from artwork-sync.js', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 1200);
     assert.match(fn, /setHeroBgStable\s*\(/);
 });
 
-test('app.js: _suggReRenderOne depends on setCardImageStable from artwork-sync.js', () => {
-    const fn = extractFn(APP_JS, 'function _suggReRenderOne(', 2800);
+test('suggestions.js: _suggReRenderOne depends on setCardImageStable from artwork-sync.js', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 2800);
     assert.match(fn, /setCardImageStable\s*\(/);
 });
 
-test('app.js: suggViewDetails depends on openGameDetails from app.js', () => {
-    const fn = extractFn(APP_JS, 'window.suggViewDetails = function(', 500);
+test('suggestions.js: suggViewDetails depends on openGameDetails from app.js', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggViewDetails = function(', 500);
     assert.match(fn, /openGameDetails\s*\(/);
 });
 
-test('app.js: suggViewDetails sets window._gdSyncedGameOverride for game-details.js handoff', () => {
-    const fn = extractFn(APP_JS, 'window.suggViewDetails = function(', 500);
+test('suggestions.js: suggViewDetails sets window._gdSyncedGameOverride for game-details.js handoff', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggViewDetails = function(', 500);
     assert.match(fn, /window\._gdSyncedGameOverride\s*=/);
 });
 
-test('app.js: suggInstall depends on window._gdOpenInstallPickerForGame from game-details.js', () => {
-    const fn = extractFn(APP_JS, 'window.suggInstall = function(', 350);
+test('suggestions.js: suggInstall depends on window._gdOpenInstallPickerForGame from game-details.js', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window.suggInstall = function(', 350);
     assert.match(fn, /window\._gdOpenInstallPickerForGame/);
 });
 
-test('app.js: _onSyncLibraryUpdated depends on currentView to guard re-render', () => {
-    const fn = extractFn(APP_JS, 'window._onSyncLibraryUpdated = function()', 200);
+test('suggestions.js: _onSyncLibraryUpdated depends on currentView to guard re-render', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'window._onSyncLibraryUpdated = function()', 200);
     assert.match(fn, /currentView/);
 });
 
 // ── 33. Isolation tests ───────────────────────────────────────────────────────
 
-test('app.js: _suggBuildPool does not call quick-switcher internals', () => {
-    const fn = extractFn(APP_JS, 'function _suggBuildPool()', 1800);
+test('suggestions.js: _suggBuildPool does not call quick-switcher internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggBuildPool()', 1800);
     assert.doesNotMatch(fn, /openSettingsQuickSwitcher|closeSettingsQuickSwitcher|renderQuickSwitcher/);
 });
 
-test('app.js: renderSyncedSuggestions does not call system-stats internals', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 3000);
+test('suggestions.js: renderSyncedSuggestions does not call system-stats internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 3000);
     assert.doesNotMatch(fn, /initSystemStats|_hudInterval|checkAndManagePolling/);
 });
 
-test('app.js: _renderSyncedFeature does not call collection settings modal internals', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedFeature(', 2700);
+test('suggestions.js: _renderSyncedFeature does not call collection settings modal internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 2700);
     assert.doesNotMatch(fn, /openCollectionSettings|closeCollectionSettings|saveCollectionSettings/);
 });
 
-test('app.js: _renderSyncedRail does not call context menu internals', () => {
-    const fn = extractFn(APP_JS, 'function _renderSyncedRail(', 1700);
+test('suggestions.js: _renderSyncedRail does not call context menu internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1700);
     assert.doesNotMatch(fn, /showContextMenu|hideContextMenu|triggerRemove/);
 });
 
-test('app.js: renderSyncedSuggestions does not call account display preference internals', () => {
-    const fn = extractFn(APP_JS, 'async function renderSyncedSuggestions()', 3000);
+test('suggestions.js: renderSyncedSuggestions does not call account display preference internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 3000);
     assert.doesNotMatch(fn, /renderPlatformPanels|updateDisplayPrefs|applyDisplayPreferences/);
 });
 
-test('app.js: _buildSyncedSuggestions does not call game context action internals', () => {
-    const fn = extractFn(APP_JS, 'async function _buildSyncedSuggestions()', 3000);
+test('suggestions.js: _buildSyncedSuggestions does not call game context action internals', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _buildSyncedSuggestions()', 3000);
     assert.doesNotMatch(fn, /confirmDeleteAction|triggerRemove|_toggleCardFavorite/);
 });
 
 // ── 34. Comment hygiene ───────────────────────────────────────────────────────
 
-test('app.js (suggestion range): no Arabic-script characters near suggestion functions', () => {
-    const start = APP_JS.indexOf('let _suggAllGames');
-    const end   = APP_JS.indexOf('window._onSyncLibraryUpdated');
-    assert.ok(start > -1 && end > start, 'suggestion range must be locatable');
-    const slice = APP_JS.slice(start, end + 200);
-    assert.doesNotMatch(slice, /[؀-ۿ]/);
+test('suggestions.js: no Arabic-script characters', () => {
+    assert.doesNotMatch(SUGGESTIONS_JS, /[؀-ۿ]/);
+});
+
+test('suggestions.js: no emoji in comments', () => {
+    // Strip string literals before checking for emoji in comments
+    const stripped = SUGGESTIONS_JS.replace(/(['"`])(?:(?!\1)[^\\]|\\.)*\1/g, '""');
+    assert.doesNotMatch(stripped, /[\u{1F300}-\u{1FFFF}]/u);
+});
+
+// ── 35. app.js no-redeclaration tests ────────────────────────────────────────
+
+test('app.js: does not redeclare _suggAllGames', () => {
+    assert.doesNotMatch(APP_JS, /^let _suggAllGames\b/m);
+});
+
+test('app.js: does not redeclare _suggFilter', () => {
+    assert.doesNotMatch(APP_JS, /^let _suggFilter\b/m);
+});
+
+test('app.js: does not redeclare _SUGG_STATE_KEY', () => {
+    assert.doesNotMatch(APP_JS, /^const _SUGG_STATE_KEY\b/m);
+});
+
+test('app.js: does not redeclare _seededShuffle', () => {
+    assert.doesNotMatch(APP_JS, /^function _seededShuffle\b/m);
+});
+
+test('app.js: does not redeclare _suggIsInstalled', () => {
+    assert.doesNotMatch(APP_JS, /^function _suggIsInstalled\b/m);
+});
+
+test('app.js: does not redeclare _buildSyncedSuggestions', () => {
+    assert.doesNotMatch(APP_JS, /^async function _buildSyncedSuggestions\b/m);
+});
+
+test('app.js: does not redeclare renderSyncedSuggestions', () => {
+    assert.doesNotMatch(APP_JS, /^async function renderSyncedSuggestions\b/m);
+});
+
+test('app.js: does not redeclare _suggBuildPool', () => {
+    assert.doesNotMatch(APP_JS, /^function _suggBuildPool\b/m);
+});
+
+test('app.js: does not redeclare _renderSyncedFeature', () => {
+    assert.doesNotMatch(APP_JS, /^function _renderSyncedFeature\b/m);
+});
+
+test('app.js: does not redeclare _renderSyncedRail', () => {
+    assert.doesNotMatch(APP_JS, /^function _renderSyncedRail\b/m);
+});
+
+test('app.js: does not redeclare _suggHydrateArt', () => {
+    assert.doesNotMatch(APP_JS, /^async function _suggHydrateArt\b/m);
+});
+
+// ── 36. Script load order in dashboard.html ───────────────────────────────────
+
+test('dashboard.html: suggestions.js script tag is present', () => {
+    assert.match(HTML, /src="js\/app\/suggestions\.js"/);
+});
+
+test('dashboard.html: game-context-actions.js loads before suggestions.js', () => {
+    const ctxIdx  = HTML.indexOf('game-context-actions.js');
+    const suggIdx = HTML.indexOf('suggestions.js');
+    assert.ok(ctxIdx > -1, 'game-context-actions.js must be in HTML');
+    assert.ok(suggIdx > -1, 'suggestions.js must be in HTML');
+    assert.ok(ctxIdx < suggIdx, 'game-context-actions.js must load before suggestions.js');
+});
+
+test('dashboard.html: suggestions.js loads before app.js', () => {
+    const suggIdx = HTML.indexOf('suggestions.js');
+    const appIdx  = HTML.indexOf('"js/app.js"');
+    assert.ok(suggIdx > -1, 'suggestions.js must be in HTML');
+    assert.ok(appIdx > -1, 'app.js must be in HTML');
+    assert.ok(suggIdx < appIdx, 'suggestions.js must load before app.js');
+});
+
+test('dashboard.html: collections.js loads before suggestions.js', () => {
+    const collIdx = HTML.indexOf('collections.js');
+    const suggIdx = HTML.indexOf('suggestions.js');
+    assert.ok(collIdx < suggIdx, 'collections.js must load before suggestions.js');
+});
+
+// ── 37. Window export tests ───────────────────────────────────────────────────
+
+test('suggestions.js: window.renderSyncedSuggestions is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\.renderSyncedSuggestions\s*=\s*renderSyncedSuggestions/);
+});
+
+test('suggestions.js: window._suggAllGames is set at module load', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggAllGames\s*=\s*_suggAllGames/);
+});
+
+test('suggestions.js: window._suggSelectGame is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggSelectGame\s*=/);
+});
+
+test('suggestions.js: window.suggViewDetails is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\.suggViewDetails\s*=/);
+});
+
+test('suggestions.js: window._suggCarouselPrev is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggCarouselPrev\s*=/);
+});
+
+test('suggestions.js: window._suggCarouselNext is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\._suggCarouselNext\s*=/);
+});
+
+test('suggestions.js: window.setSyncedFilter is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\.setSyncedFilter\s*=/);
+});
+
+test('suggestions.js: window.suggInstall is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\.suggInstall\s*=/);
+});
+
+test('suggestions.js: window._onSyncLibraryUpdated is exported', () => {
+    assert.match(SUGGESTIONS_JS, /window\._onSyncLibraryUpdated\s*=/);
 });
