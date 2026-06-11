@@ -4,11 +4,12 @@ const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const path   = require('node:path');
 
-const ROOT            = path.resolve(__dirname, '..');
-const APP_JS          = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                         'utf8');
-const SIDEBAR_JS      = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                 'utf8');
-const COLLECTIONS_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'),             'utf8');
-const ARTWORK_SYNC_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'),            'utf8');
+const ROOT              = path.resolve(__dirname, '..');
+const APP_JS            = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                         'utf8');
+const SIDEBAR_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                 'utf8');
+const COLLECTIONS_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'),             'utf8');
+const GAME_CONTEXT_JS   = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'),    'utf8');
+const ARTWORK_SYNC_JS   = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'),            'utf8');
 const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
 const ACC_JS             = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                   'utf8');
@@ -78,15 +79,15 @@ test('Task A: createGameCard includes gc-fav-btn in its output', () => {
     assert.match(APP_JS, /gc-fav-btn/);
 });
 
-test('Task A: _toggleCardFavorite function exists in app.js', () => {
-    assert.match(APP_JS, /function _toggleCardFavorite\s*\(/);
-    assert.match(APP_JS, /async function _toggleCardFavorite/);
+test('Task A: _toggleCardFavorite function exists in game-context-actions.js', () => {
+    assert.match(GAME_CONTEXT_JS, /function _toggleCardFavorite\s*\(/);
+    assert.match(GAME_CONTEXT_JS, /async function _toggleCardFavorite/);
 });
 
 test('Task A: _toggleCardFavorite calls removeGameFromCollection when unfavoriting', () => {
-    const fn = APP_JS.slice(
-        APP_JS.indexOf('async function _toggleCardFavorite'),
-        APP_JS.indexOf('\n}', APP_JS.indexOf('async function _toggleCardFavorite')) + 2
+    const fn = GAME_CONTEXT_JS.slice(
+        GAME_CONTEXT_JS.indexOf('async function _toggleCardFavorite'),
+        GAME_CONTEXT_JS.indexOf('\n}', GAME_CONTEXT_JS.indexOf('async function _toggleCardFavorite')) + 2
     );
     assert.match(fn, /removeGameFromCollection/);
     assert.match(fn, /addGameToCollection/);
@@ -684,9 +685,9 @@ test('artwork-sync.js: _clearArtworkLocalState removes cardCache and _coverQueue
     assert.match(fn, /_coverQueued\.delete\(id\)/, 'removes from _coverQueued');
 });
 
-test('app.js: hardDeleteGame calls _clearArtworkLocalState after deleteGamePermanently', () => {
-    const fnStart = APP_JS.indexOf('function hardDeleteGame');
-    const fn = APP_JS.slice(fnStart, fnStart + 500);
+test('game-context-actions.js: hardDeleteGame calls _clearArtworkLocalState after deleteGamePermanently', () => {
+    const fnStart = GAME_CONTEXT_JS.indexOf('function hardDeleteGame');
+    const fn = GAME_CONTEXT_JS.slice(fnStart, fnStart + 500);
     assert.match(fn, /deleteGamePermanently\(id\)/, 'calls deleteGamePermanently');
     const deleteIdx = fn.indexOf('deleteGamePermanently');
     const clearIdx  = fn.indexOf('_clearArtworkLocalState');

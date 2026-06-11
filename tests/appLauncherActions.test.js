@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const ROOT                = path.join(__dirname, '..');
 const APP_JS              = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
 const LAUNCHER_ACTIONS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/launcher-actions.js'), 'utf8');
+const GAME_CONTEXT_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
 const HTML                = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── Extraction helper ─────────────────────────────────────────────────────────
@@ -270,8 +271,8 @@ describe('Phase 2.14B: launcher actions — cross-file callers', () => {
         const fn = getFunctionBody(APP_JS, 'playRouletteResult');
         assert.match(fn, /triggerLaunchSequence\(/);
     });
-    it('context menu HTML in app.js uses openGameSettings onclick', () => {
-        assert.match(APP_JS, /onclick="openGameSettings\('/);
+    it('context menu HTML in game-context-actions.js uses openGameSettings onclick', () => {
+        assert.match(GAME_CONTEXT_JS, /onclick="openGameSettings\('/);
     });
     it('hero.js triggerPlayFromHero delegates to triggerLaunchSequence via currentHeroGameId', () => {
         const HERO_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/hero.js'), 'utf8');

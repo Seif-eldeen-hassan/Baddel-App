@@ -4,7 +4,8 @@ const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
 
-const ROOT = path.resolve(__dirname, '..');
+const ROOT            = path.resolve(__dirname, '..');
+const GAME_CONTEXT_JS = require('node:fs').readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
 const _SUGG_POOL_TTL = 6 * 60 * 60 * 1000;
 const _SUGG_POOL_SINGLE = 5;
 
@@ -1700,19 +1701,17 @@ test('playtime.js: buildPlaytimeCache includes lastQualifiedPlayed', () => {
     assert.match(fn, /lastQualifiedPlayed/);
 });
 
-test('app.js: showContextMenu has time tracking toggle item', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
-    const fnStart = js.indexOf('function showContextMenu');
-    const fn = js.slice(fnStart, fnStart + 2000);
+test('game-context-actions.js: showContextMenu has time tracking toggle item', () => {
+    const fnStart = GAME_CONTEXT_JS.indexOf('function showContextMenu');
+    const fn = GAME_CONTEXT_JS.slice(fnStart, fnStart + 2600);
     assert.match(fn, /toggleTimeTracking/);
     assert.match(fn, /Time Tracking/);
 });
 
-test('app.js: toggleTimeTracking calls setTimeTrackingEnabled', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
-    const fnStart = js.indexOf('async function toggleTimeTracking');
+test('game-context-actions.js: toggleTimeTracking calls setTimeTrackingEnabled', () => {
+    const fnStart = GAME_CONTEXT_JS.indexOf('async function toggleTimeTracking');
     assert.ok(fnStart !== -1, 'toggleTimeTracking must be defined');
-    const fn = js.slice(fnStart, fnStart + 400);
+    const fn = GAME_CONTEXT_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /setTimeTrackingEnabled/);
 });
 
@@ -1929,19 +1928,17 @@ test('main.js: set-time-tracking-enabled has defensive fallback for missing expo
     assert.match(js, /setTimeTrackingEnabled missing from gameScanner/, 'must log when export missing');
 });
 
-test('app.js: toggleTimeTracking shows error toast on failure', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
-    const fnStart = js.indexOf('async function toggleTimeTracking');
-    const fn = js.slice(fnStart, fnStart + 1100);
+test('game-context-actions.js: toggleTimeTracking shows error toast on failure', () => {
+    const fnStart = GAME_CONTEXT_JS.indexOf('async function toggleTimeTracking');
+    const fn = GAME_CONTEXT_JS.slice(fnStart, fnStart + 1300);
     assert.match(fn, /showToast.*error|error.*showToast/, 'must show error toast on failure');
 });
 
 test('context menu: Time Tracking item has no emoji', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
     // Check the area around "Disable Time Tracking" / "Enable Time Tracking"
-    const idx = js.indexOf('Disable Time Tracking');
+    const idx = GAME_CONTEXT_JS.indexOf('Disable Time Tracking');
     assert.ok(idx !== -1, 'Disable Time Tracking text must exist in context menu');
-    const snippet = js.slice(Math.max(0, idx - 50), idx + 100);
+    const snippet = GAME_CONTEXT_JS.slice(Math.max(0, idx - 50), idx + 100);
     // No emoji between the opening quote and the text
     assert.doesNotMatch(snippet, /[⏱⏰⏳]/, 'no clock emoji in context menu time tracking item');
 });
