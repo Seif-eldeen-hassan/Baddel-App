@@ -5,10 +5,11 @@ const path = require('path');
 const { describe, it } = require('node:test');
 const assert = require('node:assert/strict');
 
-const ROOT           = path.join(__dirname, '..');
-const APP_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const ROOT            = path.join(__dirname, '..');
+const APP_JS          = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
 const ARTWORK_SYNC_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'), 'utf8');
-const HTML           = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
+const COLLECTIONS_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'), 'utf8');
+const HTML            = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── Extraction helpers ────────────────────────────────────────────────────────
 //
@@ -115,8 +116,8 @@ describe('Phase 2.12B: artwork-sync — image URL helpers in artwork-sync.js', (
     it('setHeroBgStable is defined', () => {
         assert.match(ARTWORK_SYNC_JS, /function setHeroBgStable\s*\(/);
     });
-    it('_getGameCoverUrl is defined in app.js', () => {
-        assert.match(APP_JS, /function _getGameCoverUrl\s*\(/);
+    it('_getGameCoverUrl is defined in collections.js', () => {
+        assert.match(COLLECTIONS_JS, /function _getGameCoverUrl\s*\(/);
     });
 });
 

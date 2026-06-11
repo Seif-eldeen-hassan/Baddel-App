@@ -4,9 +4,10 @@ const assert = require('node:assert/strict');
 const fs     = require('node:fs');
 const path   = require('node:path');
 
-const ROOT           = path.resolve(__dirname, '..');
-const APP_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                          'utf8');
-const SIDEBAR_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                  'utf8');
+const ROOT            = path.resolve(__dirname, '..');
+const APP_JS          = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                         'utf8');
+const SIDEBAR_JS      = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                 'utf8');
+const COLLECTIONS_JS  = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'),             'utf8');
 const ARTWORK_SYNC_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'),            'utf8');
 const HELP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/help-feedback.js'), 'utf8');
 const GD_JS   = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'),'utf8');
@@ -1225,16 +1226,16 @@ test('app.js: navigateToInstalled calls updateSidebarActiveState and sets collec
     assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
 });
 
-test('app.js: navigateToCollections calls updateSidebarActiveState and sets collectionId null', () => {
-    const fnStart = APP_JS.indexOf('function navigateToCollections');
-    const fn = APP_JS.slice(fnStart, fnStart + 400);
+test('collections.js: navigateToCollections calls updateSidebarActiveState and sets collectionId null', () => {
+    const fnStart = COLLECTIONS_JS.indexOf('function navigateToCollections');
+    const fn = COLLECTIONS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /updateSidebarActiveState\(\)/, 'navigateToCollections must call updateSidebarActiveState');
     assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
 });
 
-test('app.js: filterByCollection calls updateSidebarActiveState instead of manual nav activation', () => {
-    const fnStart = APP_JS.indexOf('function filterByCollection');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+test('collections.js: filterByCollection calls updateSidebarActiveState instead of manual nav activation', () => {
+    const fnStart = COLLECTIONS_JS.indexOf('function filterByCollection');
+    const fn = COLLECTIONS_JS.slice(fnStart, fnStart + 1200);
     assert.match(fn, /updateSidebarActiveState\(\)/, 'filterByCollection must call updateSidebarActiveState');
     // Must not manually add active to individual nav items
     assert.doesNotMatch(fn, /classList\.add\('active'\)/, 'must not manually add active — let updateSidebarActiveState do it');
@@ -1329,9 +1330,9 @@ test('sidebar.js: updateSbContextBtn delegates to syncSidebarActionButton (Add G
 
 // ── Issue 1: Collection from Manage keeps correct context button ──────────────
 
-test('app.js: filterByCollection calls updateSbContextBtn after updateSidebarActiveState', () => {
-    const fnStart = APP_JS.indexOf('function filterByCollection');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+test('collections.js: filterByCollection calls updateSbContextBtn after updateSidebarActiveState', () => {
+    const fnStart = COLLECTIONS_JS.indexOf('function filterByCollection');
+    const fn = COLLECTIONS_JS.slice(fnStart, fnStart + 1200);
     assert.match(fn, /updateSbContextBtn/, 'filterByCollection must call updateSbContextBtn');
     const activeIdx = fn.indexOf('updateSidebarActiveState');
     const ctxIdx    = fn.indexOf('updateSbContextBtn');

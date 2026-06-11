@@ -8,6 +8,7 @@ const assert = require('node:assert/strict');
 const ROOT             = path.join(__dirname, '..');
 const APP_JS           = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
 const TOAST_CONFIRM_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/toast-confirm.js'), 'utf8');
+const COLLECTIONS_JS   = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'), 'utf8');
 const HTML             = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 
 // ── Extraction helper ─────────────────────────────────────────────────────────
@@ -272,7 +273,7 @@ describe('Phase 2.15B: toast/confirm — intentional dependencies', () => {
         assert.match(fn, /openConfirmModal\s*\(/);
     });
     it('openConfirmModal is called by deleteColl for collection delete confirmation', () => {
-        const fn = getFunctionBody(APP_JS, 'deleteColl');
+        const fn = getFunctionBody(COLLECTIONS_JS, 'deleteColl');
         assert.match(fn, /openConfirmModal\s*\(/);
     });
     it('openConfirmModal is called by hardDeleteGame for permanent-delete confirmation', () => {
@@ -280,7 +281,7 @@ describe('Phase 2.15B: toast/confirm — intentional dependencies', () => {
         assert.match(fn, /openConfirmModal\s*\(/);
     });
     it('openConfirmModal is called by triggerDeleteCollection for collection-settings delete', () => {
-        const fn = getFunctionBody(APP_JS, 'triggerDeleteCollection');
+        const fn = getFunctionBody(COLLECTIONS_JS, 'triggerDeleteCollection');
         assert.match(fn, /openConfirmModal\s*\(/);
     });
 });
