@@ -40,11 +40,11 @@ test('game-context-actions.js: fixSubmenuPosition.reset static method exists', (
 });
 
 test('game-context-actions.js: triggerRemove function exists', () => {
-    assert.match(GAME_CONTEXT_JS, /^function triggerRemove\s*\(\)/m);
+    assert.match(GAME_CONTEXT_JS, /^function triggerRemove\s*\(/m);
 });
 
 test('game-context-actions.js: confirmDeleteAction function exists', () => {
-    assert.match(GAME_CONTEXT_JS, /^async function confirmDeleteAction\s*\(\)/m);
+    assert.match(GAME_CONTEXT_JS, /^async function confirmDeleteAction\s*\(/m);
 });
 
 test('game-context-actions.js: hardDeleteGame function exists', () => {
@@ -93,9 +93,9 @@ test('game-context-actions.js: showContextMenu looks up fav_system_default colle
     assert.match(fn, /allCollections\.find/);
 });
 
-test('game-context-actions.js: showContextMenu generates toggleFavorite onclick entries', () => {
+test('game-context-actions.js: showContextMenu generates _toggleCardFavorite onclick entries', () => {
     const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
-    assert.match(fn, /toggleFavorite\s*\(/);
+    assert.match(fn, /_toggleCardFavorite\s*\(/);
 });
 
 test('game-context-actions.js: showContextMenu generates addToCollection submenu from allCollections', () => {
@@ -133,9 +133,9 @@ test('game-context-actions.js: showContextMenu includes openGameSettings entry',
     assert.match(fn, /openGameSettings\s*\(/);
 });
 
-test('game-context-actions.js: showContextMenu includes triggerRemove entry', () => {
+test('game-context-actions.js: showContextMenu includes triggerRemove entry with explicit id', () => {
     const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
-    assert.match(fn, /triggerRemove\s*\(\)/);
+    assert.match(fn, /triggerRemove\s*\(/);
 });
 
 test('game-context-actions.js: showContextMenu sets display:block on the menu element', () => {
@@ -189,7 +189,7 @@ test('app.js: window.onclick calls hideContextMenu when click is outside #contex
 // ── 6. triggerRemove behaviour ────────────────────────────────────────────────
 
 test('game-context-actions.js: triggerRemove calls hideContextMenu before confirm modal', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove()', 400);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove(', 400);
     const hideIdx    = fn.indexOf('hideContextMenu');
     const confirmIdx = fn.indexOf('openConfirmModal');
     assert.ok(hideIdx > -1, 'must call hideContextMenu');
@@ -198,62 +198,62 @@ test('game-context-actions.js: triggerRemove calls hideContextMenu before confir
 });
 
 test('game-context-actions.js: triggerRemove confirmation title mentions Recycle Bin', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove()', 400);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove(', 400);
     assert.match(fn, /Recycle Bin|Move to Bin/i);
 });
 
 test('game-context-actions.js: triggerRemove confirm callback delegates to confirmDeleteAction', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove()', 400);
-    assert.match(fn, /confirmDeleteAction\s*\(\)/);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove(', 400);
+    assert.match(fn, /confirmDeleteAction\s*\(/);
 });
 
 // ── 7. confirmDeleteAction behaviour ─────────────────────────────────────────
 
-test('game-context-actions.js: confirmDeleteAction calls electronAPI.removeGame with selectedGameId', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
-    assert.match(fn, /electronAPI\.removeGame\s*\(\s*selectedGameId\s*\)/);
+test('game-context-actions.js: confirmDeleteAction calls electronAPI.removeGame with resolved id', () => {
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
+    assert.match(fn, /electronAPI\.removeGame\s*\(\s*id\s*\)/);
 });
 
 test('game-context-actions.js: confirmDeleteAction shows success toast on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
     assert.match(fn, /showToast\s*\(/);
     assert.match(fn, /success/);
 });
 
-test('game-context-actions.js: confirmDeleteAction filters allGamesData by selectedGameId on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+test('game-context-actions.js: confirmDeleteAction filters allGamesData using resolved id on success', () => {
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 800);
     assert.match(fn, /allGamesData\s*=\s*allGamesData\.filter/);
     assert.match(fn, /selectedGameId/);
 });
 
 test('game-context-actions.js: confirmDeleteAction refreshes allCollections via getCollections on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 950);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1150);
     assert.match(fn, /electronAPI\.getCollections\s*\(\)/);
 });
 
 test('game-context-actions.js: confirmDeleteAction calls applyFilters on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 900);
     assert.match(fn, /applyFilters\s*\(\)/);
 });
 
 test('game-context-actions.js: confirmDeleteAction calls renderRecentlyPlayed on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 650);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 950);
     assert.match(fn, /renderRecentlyPlayed\s*\(\)/);
 });
 
 test('game-context-actions.js: confirmDeleteAction calls renderExploreCarousel on success', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 680);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1000);
     assert.match(fn, /renderExploreCarousel\s*\(\)/);
 });
 
 test('game-context-actions.js: confirmDeleteAction clears currentHeroGameId when it matches removed game', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 850);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1000);
     assert.match(fn, /currentHeroGameId/);
     assert.match(fn, /null/);
 });
 
 test('game-context-actions.js: confirmDeleteAction keeps window.allGamesData in sync after removal', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 850);
     assert.match(fn, /window\.allGamesData\s*=\s*allGamesData/);
 });
 
@@ -399,7 +399,7 @@ test('game-context-actions.js: _toggleCardFavorite DOM heart update appears befo
 });
 
 test('game-context-actions.js: confirmDeleteAction applyFilters appears before allCollections refresh', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 950);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1200);
     const applyPos = fn.indexOf('applyFilters()');
     const collectionsPos = fn.indexOf('electronAPI.getCollections');
     assert.ok(applyPos > 0, 'applyFilters must exist');
@@ -498,12 +498,12 @@ test('dashboard.html: restoreSelectedGames is wired to Restore Selected button i
 // ── 16. electronAPI dependencies ─────────────────────────────────────────────
 
 test('game-context-actions.js: confirmDeleteAction depends on electronAPI.removeGame', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
     assert.match(fn, /electronAPI\.removeGame\b/);
 });
 
 test('game-context-actions.js: confirmDeleteAction depends on electronAPI.getCollections', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 950);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1150);
     assert.match(fn, /electronAPI\.getCollections\b/);
 });
 
@@ -556,29 +556,29 @@ test('game-context-actions.js: showContextMenu reads currentFilters.collectionId
 });
 
 test('game-context-actions.js: confirmDeleteAction uses selectedGameId to remove and filter', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
     assert.match(fn, /\bselectedGameId\b/);
 });
 
 test('game-context-actions.js: confirmDeleteAction references currentHeroGameId for hero reset', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 850);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1000);
     assert.match(fn, /\bcurrentHeroGameId\b/);
 });
 
 test('game-context-actions.js: confirmDeleteAction depends on showToast for user feedback', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
     assert.match(fn, /\bshowToast\b/);
 });
 
 test('game-context-actions.js: confirmDeleteAction depends on applyFilters, renderRecentlyPlayed, renderExploreCarousel', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 700);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 1000);
     assert.match(fn, /\bapplyFilters\b/);
     assert.match(fn, /\brenderRecentlyPlayed\b/);
     assert.match(fn, /\brenderExploreCarousel\b/);
 });
 
 test('game-context-actions.js: triggerRemove depends on hideContextMenu and openConfirmModal', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove()', 400);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove(', 400);
     assert.match(fn, /\bhideContextMenu\b/);
     assert.match(fn, /\bopenConfirmModal\b/);
 });
@@ -648,7 +648,7 @@ test('game-context-actions.js: showContextMenu does not call hero internals', ()
 });
 
 test('game-context-actions.js: triggerRemove does not call platform panel or account display preference internals', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove()', 400);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function triggerRemove(', 400);
     assert.doesNotMatch(fn, /renderPlatformPanels|updateDisplayPrefs|applyDisplayPreferences/);
 });
 
@@ -658,7 +658,7 @@ test('game-context-actions.js: hardDeleteGame does not call collection settings 
 });
 
 test('game-context-actions.js: confirmDeleteAction does not call hero internals directly', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction()', 600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'async function confirmDeleteAction(', 600);
     assert.doesNotMatch(fn, /setHeroGame\s*\(|_heroBgApply\s*\(|setHeroBgStable\s*\(/);
 });
 
