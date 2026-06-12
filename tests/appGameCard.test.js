@@ -1,25 +1,17 @@
 'use strict';
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Phase 2.23A safety tests — Game Card / Recent Card helpers in src/js/app.js
+// Phase 2.23B safety tests — Game Card / Recent Card helpers extracted to
+//   src/js/app/game-card.js
 //
 // PURPOSE
-//   Document every function that belongs to the game-card and recent-card
-//   block before extracting it into src/js/app/game-card.js.  These tests:
-//     • prove each target function exists in app.js right now
-//     • document behavioral contracts through source-pattern assertions
-//     • record every external dependency the block relies on
-//     • verify cross-file callers so the extraction can expose the right
-//       window.* exports
-//     • confirm the block does NOT call unrelated module internals
+//   Verify each target function exists in game-card.js, document behavioral
+//   contracts through source-pattern assertions, record external dependencies,
+//   confirm cross-file callers still work, and prove app.js no longer owns
+//   the moved identifiers.
 //
-// REDIRECT NOTE
-//   When game-card.js is created, change APP_JS references in Sections 1, 2,
-//   7-14 to GAME_CARD_JS.  DOM tests (Section 3) and dependency provider
-//   tests (Section 5) remain anchored to their respective source files.
-//
-// TARGET BLOCK (src/js/app.js, section "3. CARD RENDERING & RECENTLY PLAYED")
-//   Functions to be extracted:
+// TARGET FILE: src/js/app/game-card.js
+//   Functions extracted from app.js section "3. CARD RENDERING & RECENTLY PLAYED":
 //     _jbiHasRealQualifiedSession  _jbiGetRecentTimestamp  getRecentGames
 //     _currentRecentGames (state)  filterRecentCards       renderRecentlyPlayed
 //     _agFieldGameId               _agFieldPlaytimeMinutes _agFieldLastPlayed
@@ -37,6 +29,7 @@ const path   = require('node:path');
 
 const ROOT               = path.resolve(__dirname, '..');
 const APP_JS             = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                      'utf8');
+const GAME_CARD_JS       = fs.readFileSync(path.join(ROOT, 'src/js/app/game-card.js'),            'utf8');
 const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),                 'utf8');
 const DOM_UTILS_JS       = fs.readFileSync(path.join(ROOT, 'src/js/domUtils.js'),                 'utf8');
 const GAME_CONTEXT_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
@@ -45,83 +38,83 @@ const LAUNCHER_ACTIONS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/launcher
 const ACCOUNTS_JS        = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'),                 'utf8');
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 1 — Source-presence: all target functions exist in app.js
+// SECTION 1 — Source-presence: all target functions exist in game-card.js
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('card: section header "3. CARD RENDERING & RECENTLY PLAYED" exists in app.js', () => {
-    assert.match(APP_JS, /3\. CARD RENDERING & RECENTLY PLAYED/);
+test('card: section header "3. CARD RENDERING & RECENTLY PLAYED" exists in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /3\. CARD RENDERING & RECENTLY PLAYED/);
 });
 
 test('card: _jbiHasRealQualifiedSession is defined', () => {
-    assert.match(APP_JS, /function _jbiHasRealQualifiedSession\s*\(/);
+    assert.match(GAME_CARD_JS, /function _jbiHasRealQualifiedSession\s*\(/);
 });
 
 test('card: _jbiGetRecentTimestamp is defined', () => {
-    assert.match(APP_JS, /function _jbiGetRecentTimestamp\s*\(/);
+    assert.match(GAME_CARD_JS, /function _jbiGetRecentTimestamp\s*\(/);
 });
 
 test('card: getRecentGames is defined', () => {
-    assert.match(APP_JS, /function getRecentGames\s*\(/);
+    assert.match(GAME_CARD_JS, /function getRecentGames\s*\(/);
 });
 
 test('card: _currentRecentGames state variable is declared', () => {
-    assert.match(APP_JS, /let\s+_currentRecentGames\s*=\s*\[\]/);
+    assert.match(GAME_CARD_JS, /let\s+_currentRecentGames\s*=\s*\[\]/);
 });
 
 test('card: filterRecentCards is defined', () => {
-    assert.match(APP_JS, /function filterRecentCards\s*\(/);
+    assert.match(GAME_CARD_JS, /function filterRecentCards\s*\(/);
 });
 
 test('card: renderRecentlyPlayed is defined', () => {
-    assert.match(APP_JS, /function renderRecentlyPlayed\s*\(/);
+    assert.match(GAME_CARD_JS, /function renderRecentlyPlayed\s*\(/);
 });
 
 test('card: _agFieldGameId is defined', () => {
-    assert.match(APP_JS, /function _agFieldGameId\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agFieldGameId\s*\(/);
 });
 
 test('card: _agFieldPlaytimeMinutes is defined', () => {
-    assert.match(APP_JS, /function _agFieldPlaytimeMinutes\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agFieldPlaytimeMinutes\s*\(/);
 });
 
 test('card: _agFieldLastPlayed is defined', () => {
-    assert.match(APP_JS, /function _agFieldLastPlayed\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agFieldLastPlayed\s*\(/);
 });
 
 test('card: _agFieldIsInstalled is defined', () => {
-    assert.match(APP_JS, /function _agFieldIsInstalled\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agFieldIsInstalled\s*\(/);
 });
 
 test('card: _agFormatLastPlayedShort is defined', () => {
-    assert.match(APP_JS, /function _agFormatLastPlayedShort\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agFormatLastPlayedShort\s*\(/);
 });
 
 test('card: _agDecorateAllGamesCardFields is defined', () => {
-    assert.match(APP_JS, /function _agDecorateAllGamesCardFields\s*\(/);
+    assert.match(GAME_CARD_JS, /function _agDecorateAllGamesCardFields\s*\(/);
 });
 
 test('card: createGameCard is defined', () => {
-    assert.match(APP_JS, /function createGameCard\s*\(/);
+    assert.match(GAME_CARD_JS, /function createGameCard\s*\(/);
 });
 
 test('card: _getRecentHeroCandidate is defined', () => {
-    assert.match(APP_JS, /function _getRecentHeroCandidate\s*\(/);
+    assert.match(GAME_CARD_JS, /function _getRecentHeroCandidate\s*\(/);
 });
 
 test('card: _getRecentPosterFallback is defined', () => {
-    assert.match(APP_JS, /function _getRecentPosterFallback\s*\(/);
+    assert.match(GAME_CARD_JS, /function _getRecentPosterFallback\s*\(/);
 });
 
 test('card: _getRecentDisplayImage is defined', () => {
-    assert.match(APP_JS, /function _getRecentDisplayImage\s*\(/);
+    assert.match(GAME_CARD_JS, /function _getRecentDisplayImage\s*\(/);
 });
 
 test('card: createRecentCard is defined', () => {
-    assert.match(APP_JS, /function createRecentCard\s*\(/);
+    assert.match(GAME_CARD_JS, /function createRecentCard\s*\(/);
 });
 
 test('card: getPlatformClass is defined', () => {
-    assert.match(APP_JS, /function getPlatformClass\s*\(/);
+    assert.match(GAME_CARD_JS, /function getPlatformClass\s*\(/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -129,126 +122,126 @@ test('card: getPlatformClass is defined', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('createGameCard: creates a div element with className "game-card"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /card\.className\s*=\s*['"]game-card['"]/);
 });
 
 test('createGameCard: sets data-id attribute to game.id', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /setAttribute\s*\(\s*['"]data-id['"],\s*game\.id\s*\)/);
 });
 
 test('createGameCard: wires play button click to triggerLaunchSequence', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /triggerLaunchSequence\s*\(\s*game\.id\s*\)/);
 });
 
 test('createGameCard: wires favorite button click to _toggleCardFavorite', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /_toggleCardFavorite\s*\(\s*game\.id\s*\)/);
 });
 
 test('createGameCard: calls showContextMenu on contextmenu event', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /showContextMenu\s*\(\s*e\.pageX,\s*e\.pageY,\s*game\.id,\s*game\.name\s*\)/);
 });
 
 test('createGameCard: uses escapeHtml for game.name', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /escapeHtml\s*\(\s*game\.name\s*\)/);
 });
 
 test('createGameCard: uses safeImageUrl for image URL', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /safeImageUrl\s*\(/);
 });
 
 test('createGameCard: uses fetchMetadata for games without a local cached image', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /fetchMetadata\s*\(\s*imgEl,\s*game\s*\)/);
 });
 
 test('createGameCard: prefers poster fields (image, defaultImage, coverUrl) over hero', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /game\.image\s*\|\|\s*game\.defaultImage\s*\|\|\s*game\.coverUrl/);
 });
 
 test('createGameCard: builds platform badge HTML for each source', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /badgesHTML/);
     assert.match(body, /plat-badge/);
 });
 
 test('createGameCard: limits platform badges to MAX_BADGES', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /MAX_BADGES\s*=\s*3/);
     assert.match(body, /rawSources\.slice\s*\(0,\s*MAX_BADGES\)/);
 });
 
 test('createGameCard: falls back to game.platform when game.sources is absent', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /game\.platform\s*\|\|\s*['"]manual['"]/);
 });
 
 test('createGameCard: contains overflow badge for more than 3 sources', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /plat-badge-more/);
     assert.match(body, /\+\${overflow}/);
 });
 
 test('createGameCard: renders gc-fav-btn with data-id and conditional gc-fav-active', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-fav-btn/);
     assert.match(body, /gc-fav-active/);
     assert.match(body, /data-id=.*_eId/s);
 });
 
 test('createGameCard: renders play-btn-center button', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /play-btn-center/);
 });
 
 test('createGameCard: renders gc-time element with playtime', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-time/);
     assert.match(body, /timeStr/);
 });
 
 test('createGameCard: renders gc-lastplayed element', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-lastplayed/);
 });
 
 test('createGameCard: reads allCollections to determine favorite status', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /allCollections\.find/);
     assert.match(body, /fav_system_default/);
 });
 
 test('createGameCard: calls _agDecorateAllGamesCardFields before returning', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /_agDecorateAllGamesCardFields\s*\(\s*card,\s*game\s*\)/);
 });
 
 test('createGameCard: adds "played" class to gc-time when totalMinutes > 0', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /playedClass\s*=\s*['"]played['"]/);
 });
 
 test('createGameCard: adds img-loaded class on image load event', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /classList\.add\s*\(\s*['"]img-loaded['"]\s*\)/);
 });
 
 test('createGameCard: clears game.image and calls fetchMetadata on broken local file', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /game\.image\.startsWith\s*\(\s*['"]file:\/\//);
     assert.match(body, /game\.image\s*=\s*null/);
     assert.match(body, /localStorage\.removeItem/);
 });
 
 test('createGameCard: triggers updateHeroSection on card mouseenter', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /updateHeroSection\s*\(\s*game\.id\s*\)/);
 });
 
@@ -257,99 +250,99 @@ test('createGameCard: triggers updateHeroSection on card mouseenter', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('createRecentCard: creates element with class "jbi-card"', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /card\.className\s*=\s*`jbi-card/);
 });
 
 test('createRecentCard: adds "jbi-card--featured" class for featured cards', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-card--featured/);
     assert.match(body, /isFeatured/);
 });
 
 test('createRecentCard: sets data-id attribute', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /setAttribute\s*\(\s*['"]data-id['"],\s*game\.id\s*\)/);
 });
 
 test('createRecentCard: sets data-last-played attribute', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /['"]data-last-played['"]/);
 });
 
 test('createRecentCard: sets data-playtime attribute', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /['"]data-playtime['"]/);
 });
 
 test('createRecentCard: uses _getRecentDisplayImage for cover image', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /_getRecentDisplayImage\s*\(\s*game\s*\)/);
 });
 
 test('createRecentCard: renders jbi-cover-img element', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-cover-img/);
 });
 
 test('createRecentCard: renders jbi-play-btn button', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-play-btn/);
 });
 
 test('createRecentCard: wires jbi-play-btn click to triggerLaunchSequence', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /triggerLaunchSequence\s*\(\s*game\.id\s*\)/);
 });
 
 test('createRecentCard: card click opens game details via openGameDetails', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /openGameDetails/);
     assert.match(body, /fn\s*\(\s*game\.id\s*\)/);
 });
 
 test('createRecentCard: uses safeImageUrl for image src', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /safeImageUrl\s*\(/);
 });
 
 test('createRecentCard: calls hydrateRecentHeroArtwork when hero is absent', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /hydrateRecentHeroArtwork\s*\(\s*game,\s*imgEl\s*\)/);
 });
 
 test('createRecentCard: wires contextmenu to showContextMenu', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /showContextMenu\s*\(\s*e\.pageX,\s*e\.pageY,\s*game\.id,\s*game\.name\s*\)/);
 });
 
 test('createRecentCard: triggers updateHeroSection on mouseenter', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /updateHeroSection\s*\(\s*game\.id\s*\)/);
 });
 
 test('createRecentCard: uses escapeHtml for game.name', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /escapeHtml\s*\(\s*game\.name\s*\)/);
 });
 
 test('createRecentCard: uses formatLastPlayed for last-played label', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /formatLastPlayed\s*\(/);
 });
 
 test('createRecentCard: uses formatPlaytime for playtime label', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /formatPlaytime\s*\(/);
 });
 
 test('createRecentCard: renders jbi-name element', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-name/);
 });
 
 test('createRecentCard: renders jbi-last-played element', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-last-played/);
 });
 
@@ -358,96 +351,96 @@ test('createRecentCard: renders jbi-last-played element', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('_agFieldGameId: returns String(game.id) as primary path', () => {
-    const body = extractFn(APP_JS, 'function _agFieldGameId(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldGameId(');
     assert.match(body, /game\?\.id/);
     assert.match(body, /String\s*\(/);
 });
 
 test('_agFieldGameId: falls back through gameId, slug, title', () => {
-    const body = extractFn(APP_JS, 'function _agFieldGameId(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldGameId(');
     assert.match(body, /game\?\.gameId/);
     assert.match(body, /game\?\.slug/);
     assert.match(body, /game\?\.title/);
 });
 
 test('_agFieldPlaytimeMinutes: reads playtimeData by game id', () => {
-    const body = extractFn(APP_JS, 'function _agFieldPlaytimeMinutes(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldPlaytimeMinutes(');
     assert.match(body, /playtimeData\?/);
     assert.match(body, /totalMinutes/);
 });
 
 test('_agFieldPlaytimeMinutes: falls back to game.playtime and game.totalPlaytime', () => {
-    const body = extractFn(APP_JS, 'function _agFieldPlaytimeMinutes(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldPlaytimeMinutes(');
     assert.match(body, /game\?\.playtime/);
     assert.match(body, /game\?\.totalPlaytime/);
 });
 
 test('_agFieldLastPlayed: reads playtimeData.lastQualifiedPlayed and lastPlayed', () => {
-    const body = extractFn(APP_JS, 'function _agFieldLastPlayed(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldLastPlayed(');
     assert.match(body, /lastQualifiedPlayed/);
     assert.match(body, /lastPlayed/);
 });
 
 test('_agFieldIsInstalled: delegates to _agIsInstalled when available', () => {
-    const body = extractFn(APP_JS, 'function _agFieldIsInstalled(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldIsInstalled(');
     assert.match(body, /typeof _agIsInstalled\s*===\s*['"]function['"]/);
     assert.match(body, /_agIsInstalled\s*\(\s*game\s*\)/);
 });
 
 test('_agFieldIsInstalled: falls back to checking path/command/launchCommand', () => {
-    const body = extractFn(APP_JS, 'function _agFieldIsInstalled(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFieldIsInstalled(');
     assert.match(body, /game\?\.path/);
     assert.match(body, /game\?\.command/);
     assert.match(body, /game\?\.launchCommand/);
 });
 
 test('_agFormatLastPlayedShort: returns "Never" for falsy value', () => {
-    const body = extractFn(APP_JS, 'function _agFormatLastPlayedShort(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFormatLastPlayedShort(');
     assert.match(body, /return\s*['"]Never['"]/);
 });
 
 test('_agFormatLastPlayedShort: delegates to formatLastPlayed when available', () => {
-    const body = extractFn(APP_JS, 'function _agFormatLastPlayedShort(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFormatLastPlayedShort(');
     assert.match(body, /typeof formatLastPlayed\s*===\s*['"]function['"]/);
     assert.match(body, /formatLastPlayed\s*\(\s*value\s*\)/);
 });
 
 test('_agFormatLastPlayedShort: implements relative time fallback (Today/Yesterday/d ago)', () => {
-    const body = extractFn(APP_JS, 'function _agFormatLastPlayedShort(');
+    const body = extractFn(GAME_CARD_JS, 'function _agFormatLastPlayedShort(');
     assert.match(body, /['"]Today['"]/);
     assert.match(body, /['"]Yesterday['"]/);
     assert.match(body, /d ago/);
 });
 
 test('_agDecorateAllGamesCardFields: appends ag-card-display-overlay div to card', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /ag-card-display-overlay/);
     assert.match(body, /card\.appendChild\s*\(\s*overlay\s*\)/);
 });
 
 test('_agDecorateAllGamesCardFields: includes ag-card-display-title', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /ag-card-display-title/);
 });
 
 test('_agDecorateAllGamesCardFields: includes ag-card-field-playtime', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /ag-card-field-playtime/);
 });
 
 test('_agDecorateAllGamesCardFields: includes ag-card-field-lastPlayed', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /ag-card-field-lastPlayed/);
 });
 
 test('_agDecorateAllGamesCardFields: includes ag-card-field-installed with is-installed/is-not-installed', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /is-installed/);
     assert.match(body, /is-not-installed/);
 });
 
 test('_agDecorateAllGamesCardFields: removes previous ag-card-display-overlay before adding new one', () => {
-    const body = extractFn(APP_JS, 'function _agDecorateAllGamesCardFields(');
+    const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
     assert.match(body, /\.ag-card-display-overlay\b.*remove\s*\(\s*\)/s);
 });
 
@@ -456,64 +449,64 @@ test('_agDecorateAllGamesCardFields: removes previous ag-card-display-overlay be
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('_jbiHasRealQualifiedSession: returns true only when at least one session has qualified===true', () => {
-    const body = extractFn(APP_JS, 'function _jbiHasRealQualifiedSession(');
+    const body = extractFn(GAME_CARD_JS, 'function _jbiHasRealQualifiedSession(');
     assert.match(body, /s\.qualified\s*===\s*true/);
     assert.match(body, /sessions\.some/);
 });
 
 test('_jbiGetRecentTimestamp: prefers lastQualifiedPlayed over legacy lastPlayed', () => {
-    const body = extractFn(APP_JS, 'function _jbiGetRecentTimestamp(');
+    const body = extractFn(GAME_CARD_JS, 'function _jbiGetRecentTimestamp(');
     assert.match(body, /lastQualifiedPlayed/);
     assert.match(body, /if\s*\(\s*q\s*>\s*0\s*\)\s*return\s*q/);
 });
 
 test('_jbiGetRecentTimestamp: returns 0 when sessions exist but none are qualified', () => {
-    const body = extractFn(APP_JS, 'function _jbiGetRecentTimestamp(');
+    const body = extractFn(GAME_CARD_JS, 'function _jbiGetRecentTimestamp(');
     assert.match(body, /sessions\.length\s*>\s*0/);
     assert.match(body, /!_jbiHasRealQualifiedSession/);
     assert.match(body, /return\s*0/);
 });
 
-test('getRecentGames: filters allGamesData for games with timestamp > 0', () => {
-    const body = extractFn(APP_JS, 'function getRecentGames(');
-    assert.match(body, /allGamesData\.filter/);
+test('getRecentGames: filters window.allGamesData for games with timestamp > 0', () => {
+    const body = extractFn(GAME_CARD_JS, 'function getRecentGames(');
+    assert.match(body, /window\.allGamesData/);
     assert.match(body, /_jbiGetRecentTimestamp\s*\(\s*g\s*\)\s*>\s*0/);
 });
 
 test('getRecentGames: sorts by descending timestamp', () => {
-    const body = extractFn(APP_JS, 'function getRecentGames(');
+    const body = extractFn(GAME_CARD_JS, 'function getRecentGames(');
     assert.match(body, /_jbiGetRecentTimestamp\s*\(\s*b\s*\)\s*-\s*_jbiGetRecentTimestamp\s*\(\s*a\s*\)/);
 });
 
 test('filterRecentCards: updates _currentRecentGames state', () => {
-    const body = extractFn(APP_JS, 'function filterRecentCards(');
+    const body = extractFn(GAME_CARD_JS, 'function filterRecentCards(');
     assert.match(body, /_currentRecentGames/);
 });
 
 test('filterRecentCards: filters by one-week window when filter === "week"', () => {
-    const body = extractFn(APP_JS, 'function filterRecentCards(');
+    const body = extractFn(GAME_CARD_JS, 'function filterRecentCards(');
     assert.match(body, /filter\s*===\s*['"]week['"]/);
     assert.match(body, /oneWeek/);
 });
 
 test('filterRecentCards: toggles jbi-filter--active class on filter button', () => {
-    const body = extractFn(APP_JS, 'function filterRecentCards(');
+    const body = extractFn(GAME_CARD_JS, 'function filterRecentCards(');
     assert.match(body, /jbi-filter--active/);
 });
 
 test('renderRecentlyPlayed: hides section when recent.length === 0', () => {
-    const body = extractFn(APP_JS, 'function renderRecentlyPlayed(');
+    const body = extractFn(GAME_CARD_JS, 'function renderRecentlyPlayed(');
     assert.match(body, /recent\.length\s*===\s*0/);
     assert.match(body, /style\.display\s*=\s*['"]none['"]/);
 });
 
 test('renderRecentlyPlayed: calls createRecentCard for each game', () => {
-    const body = extractFn(APP_JS, 'function renderRecentlyPlayed(');
+    const body = extractFn(GAME_CARD_JS, 'function renderRecentlyPlayed(');
     assert.match(body, /createRecentCard\s*\(\s*game/);
 });
 
 test('renderRecentlyPlayed: limits to 3 games via .slice(0, 3)', () => {
-    const body = extractFn(APP_JS, 'function renderRecentlyPlayed(');
+    const body = extractFn(GAME_CARD_JS, 'function renderRecentlyPlayed(');
     assert.match(body, /getRecentGames\s*\(\s*\)\.slice\s*\(0,\s*3\)/);
 });
 
@@ -522,7 +515,7 @@ test('renderRecentlyPlayed: limits to 3 games via .slice(0, 3)', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('_getRecentHeroCandidate: returns heroImage → defaultHero → heroUrl → hero', () => {
-    const body = extractFn(APP_JS, 'function _getRecentHeroCandidate(');
+    const body = extractFn(GAME_CARD_JS, 'function _getRecentHeroCandidate(');
     assert.match(body, /game\.heroImage/);
     assert.match(body, /game\.defaultHero/);
     assert.match(body, /game\.heroUrl/);
@@ -530,12 +523,12 @@ test('_getRecentHeroCandidate: returns heroImage → defaultHero → heroUrl →
 });
 
 test('_getRecentHeroCandidate: returns null for a falsy game argument', () => {
-    const body = extractFn(APP_JS, 'function _getRecentHeroCandidate(');
+    const body = extractFn(GAME_CARD_JS, 'function _getRecentHeroCandidate(');
     assert.match(body, /if\s*\(\s*!game\s*\)\s*return\s*null/);
 });
 
 test('_getRecentPosterFallback: returns image → defaultImage → coverUrl → cover', () => {
-    const body = extractFn(APP_JS, 'function _getRecentPosterFallback(');
+    const body = extractFn(GAME_CARD_JS, 'function _getRecentPosterFallback(');
     assert.match(body, /game\.image/);
     assert.match(body, /game\.defaultImage/);
     assert.match(body, /game\.coverUrl/);
@@ -543,12 +536,12 @@ test('_getRecentPosterFallback: returns image → defaultImage → coverUrl → 
 });
 
 test('_getRecentPosterFallback: returns null for a falsy game argument', () => {
-    const body = extractFn(APP_JS, 'function _getRecentPosterFallback(');
+    const body = extractFn(GAME_CARD_JS, 'function _getRecentPosterFallback(');
     assert.match(body, /if\s*\(\s*!game\s*\)\s*return\s*null/);
 });
 
 test('_getRecentDisplayImage: prefers hero over poster, falls back to transparent pixel', () => {
-    const body = extractFn(APP_JS, 'function _getRecentDisplayImage(');
+    const body = extractFn(GAME_CARD_JS, 'function _getRecentDisplayImage(');
     assert.match(body, /_getRecentHeroCandidate\s*\(\s*game\s*\)/);
     assert.match(body, /_getRecentPosterFallback\s*\(\s*game\s*\)/);
     assert.match(body, /data:image\/gif;base64/);
@@ -559,19 +552,19 @@ test('_getRecentDisplayImage: prefers hero over poster, falls back to transparen
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('getPlatformClass: returns "ps" for steam', () => {
-    const body = extractFn(APP_JS, 'function getPlatformClass(');
+    const body = extractFn(GAME_CARD_JS, 'function getPlatformClass(');
     assert.match(body, /includes\s*\(\s*['"]steam['"]\s*\)/);
     assert.match(body, /return\s*['"]ps['"]/);
 });
 
 test('getPlatformClass: returns "pe" for epic', () => {
-    const body = extractFn(APP_JS, 'function getPlatformClass(');
+    const body = extractFn(GAME_CARD_JS, 'function getPlatformClass(');
     assert.match(body, /includes\s*\(\s*['"]epic['"]\s*\)/);
     assert.match(body, /return\s*['"]pe['"]/);
 });
 
 test('getPlatformClass: returns "pm" as default', () => {
-    const body = extractFn(APP_JS, 'function getPlatformClass(');
+    const body = extractFn(GAME_CARD_JS, 'function getPlatformClass(');
     assert.match(body, /return\s*['"]pm['"]/);
 });
 
@@ -580,7 +573,7 @@ test('getPlatformClass: returns "pm" as default', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 {
-    const src = extractFn(APP_JS, 'function getPlatformClass(');
+    const src = extractFn(GAME_CARD_JS, 'function getPlatformClass(');
     // eslint-disable-next-line no-new-func
     const getPlatformClass = new Function(`return (${src.trim()})`)();
 
@@ -607,7 +600,7 @@ test('getPlatformClass: returns "pm" as default', () => {
 }
 
 {
-    const src = extractFn(APP_JS, 'function _getRecentHeroCandidate(');
+    const src = extractFn(GAME_CARD_JS, 'function _getRecentHeroCandidate(');
     // eslint-disable-next-line no-new-func
     const _getRecentHeroCandidate = new Function(`return (${src.trim()})`)();
 
@@ -629,7 +622,7 @@ test('getPlatformClass: returns "pm" as default', () => {
 }
 
 {
-    const src = extractFn(APP_JS, 'function _getRecentPosterFallback(');
+    const src = extractFn(GAME_CARD_JS, 'function _getRecentPosterFallback(');
     // eslint-disable-next-line no-new-func
     const _getRecentPosterFallback = new Function(`return (${src.trim()})`)();
 
@@ -647,9 +640,9 @@ test('getPlatformClass: returns "pm" as default', () => {
 }
 
 {
-    const heroSrc    = extractFn(APP_JS, 'function _getRecentHeroCandidate(');
-    const posterSrc  = extractFn(APP_JS, 'function _getRecentPosterFallback(');
-    const displaySrc = extractFn(APP_JS, 'function _getRecentDisplayImage(');
+    const heroSrc    = extractFn(GAME_CARD_JS, 'function _getRecentHeroCandidate(');
+    const posterSrc  = extractFn(GAME_CARD_JS, 'function _getRecentPosterFallback(');
+    const displaySrc = extractFn(GAME_CARD_JS, 'function _getRecentDisplayImage(');
     // eslint-disable-next-line no-new-func
     const _getRecentHeroCandidate   = new Function(`return (${heroSrc.trim()})`)();
     // eslint-disable-next-line no-new-func
@@ -677,7 +670,7 @@ test('getPlatformClass: returns "pm" as default', () => {
 }
 
 {
-    const src = extractFn(APP_JS, 'function _jbiHasRealQualifiedSession(');
+    const src = extractFn(GAME_CARD_JS, 'function _jbiHasRealQualifiedSession(');
     // eslint-disable-next-line no-new-func
     const _jbiHasRealQualifiedSession = new Function(`return (${src.trim()})`)();
 
@@ -757,15 +750,13 @@ test('html: id="gamesGrid" exists', () => {
     assert.match(HTML, /id="gamesGrid"/);
 });
 
-test('app.js: filterRecentCards references jbi-filter class', () => {
-    // The filter buttons are wired via jbi-filter CSS class in filterRecentCards
-    // source even if the HTML currently omits them — documents the expectation.
-    const body = extractFn(APP_JS, 'function filterRecentCards(');
+test('game-card.js: filterRecentCards references jbi-filter class', () => {
+    const body = extractFn(GAME_CARD_JS, 'function filterRecentCards(');
     assert.match(body, /jbi-filter/);
 });
 
-test('app.js: filterRecentCards references data-filter="all" selector', () => {
-    const body = extractFn(APP_JS, 'function renderRecentlyPlayed(');
+test('game-card.js: renderRecentlyPlayed references data-filter="all" selector', () => {
+    const body = extractFn(GAME_CARD_JS, 'function renderRecentlyPlayed(');
     assert.match(body, /data-filter="all"/);
 });
 
@@ -774,102 +765,102 @@ test('app.js: filterRecentCards references data-filter="all" selector', () => {
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('css contract: createGameCard emits "game-card" as root class', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /['"]game-card['"]/);
 });
 
 test('css contract: createGameCard emits "actual-img" on the image element', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /actual-img/);
 });
 
 test('css contract: createGameCard emits "gc-grad-bottom"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-grad-bottom/);
 });
 
 test('css contract: createGameCard emits "gc-grad-top"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-grad-top/);
 });
 
 test('css contract: createGameCard emits "gc-platforms" wrapper', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-platforms/);
 });
 
 test('css contract: createGameCard emits "plat-badge" for each source', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /plat-badge/);
 });
 
 test('css contract: createGameCard emits "plat-badge-img"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /plat-badge-img/);
 });
 
 test('css contract: createGameCard emits "plat-badge-dot" for iconless sources', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /plat-badge-dot/);
 });
 
 test('css contract: createGameCard emits "gc-fav-btn"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-fav-btn/);
 });
 
 test('css contract: createGameCard emits "gc-drag-handle"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-drag-handle/);
 });
 
 test('css contract: createGameCard emits "gc-info"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-info/);
 });
 
 test('css contract: createGameCard emits "gc-name"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-name/);
 });
 
 test('css contract: createGameCard emits "gc-time"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-time/);
 });
 
 test('css contract: createGameCard emits "gc-lastplayed"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /gc-lastplayed/);
 });
 
 test('css contract: createGameCard emits "play-btn-center"', () => {
-    const body = extractFn(APP_JS, 'function createGameCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /play-btn-center/);
 });
 
 test('css contract: createRecentCard emits "jbi-card" as root class', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-card/);
 });
 
 test('css contract: createRecentCard emits "jbi-cover"', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-cover/);
 });
 
 test('css contract: createRecentCard emits "jbi-cover-placeholder"', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-cover-placeholder/);
 });
 
 test('css contract: createRecentCard emits "jbi-body"', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-body/);
 });
 
 test('css contract: createRecentCard emits "jbi-play-btn"', () => {
-    const body = extractFn(APP_JS, 'function createRecentCard(');
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /jbi-play-btn/);
 });
 
@@ -885,18 +876,18 @@ test('cross-file: accounts.js guards _agDecorateAllGamesCardFields with typeof c
     assert.match(ACCOUNTS_JS, /typeof _agDecorateAllGamesCardFields\s*===\s*['"]function['"]/);
 });
 
-test('cross-file: app.js applyFilters calls createGameCard', () => {
+test('cross-file: app.js applyFilters still calls createGameCard (as global)', () => {
     const body = extractFn(APP_JS, 'function applyFilters(') || APP_JS;
     assert.match(body, /createGameCard\s*\(\s*game\s*\)/);
 });
 
-test('cross-file: app.js renderRecentlyPlayed calls createRecentCard', () => {
-    const body = extractFn(APP_JS, 'function renderRecentlyPlayed(');
+test('cross-file: game-card.js renderRecentlyPlayed calls createRecentCard', () => {
+    const body = extractFn(GAME_CARD_JS, 'function renderRecentlyPlayed(');
     assert.match(body, /createRecentCard\s*\(\s*game/);
 });
 
-test('cross-file: app.js filterRecentCards calls createRecentCard', () => {
-    const body = extractFn(APP_JS, 'function filterRecentCards(');
+test('cross-file: game-card.js filterRecentCards calls createRecentCard', () => {
+    const body = extractFn(GAME_CARD_JS, 'function filterRecentCards(');
     assert.match(body, /createRecentCard\s*\(\s*game/);
 });
 
@@ -908,67 +899,44 @@ test('cross-file: app.js saveNewOrder queries .game-card elements by CSS class',
 // SECTION 13 — Isolation tests: card helpers must NOT call unrelated internals
 // ─────────────────────────────────────────────────────────────────────────────
 
-function cardBlock() {
-    // Extract the full card/recently-played section from app.js
-    // bounded by section 3 header and the next numbered section header (4 or 5).
-    const start = APP_JS.indexOf('// 3. CARD RENDERING & RECENTLY PLAYED');
-    assert.ok(start !== -1, 'Card section header not found in app.js');
-    // The card section ends at the hero section displacement comment
-    const end = APP_JS.indexOf('// 4.', start);
-    return end !== -1 ? APP_JS.slice(start, end) : APP_JS.slice(start);
-}
-
-test('isolation: card block does not call roulette internals (startRoulette)', () => {
-    assert.doesNotMatch(cardBlock(), /startRoulette\s*\(/);
+test('isolation: game-card.js does not call roulette internals (startRoulette)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /startRoulette\s*\(/);
 });
 
-test('isolation: card block does not call roulette internals (setRouletteMode)', () => {
-    assert.doesNotMatch(cardBlock(), /setRouletteMode\s*\(/);
+test('isolation: game-card.js does not call roulette internals (setRouletteMode)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /setRouletteMode\s*\(/);
 });
 
-test('isolation: card block does not call suggestions internals (_suggBuildGame)', () => {
-    assert.doesNotMatch(cardBlock(), /_suggBuildGame\s*\(/);
+test('isolation: game-card.js does not call suggestions internals (_suggBuildGame)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /_suggBuildGame\s*\(/);
 });
 
-test('isolation: card block does not call quick-switcher internals (qsToggleEnabled)', () => {
-    assert.doesNotMatch(cardBlock(), /qsToggleEnabled\s*\(/);
+test('isolation: game-card.js does not call quick-switcher internals (qsToggleEnabled)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /qsToggleEnabled\s*\(/);
 });
 
-test('isolation: card block does not call system-stats internals (initSystemStats)', () => {
-    assert.doesNotMatch(cardBlock(), /initSystemStats\s*\(/);
+test('isolation: game-card.js does not call system-stats internals (initSystemStats)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /initSystemStats\s*\(/);
 });
 
-test('isolation: card block does not call collection settings (openCollectionSettings)', () => {
-    assert.doesNotMatch(cardBlock(), /openCollectionSettings\s*\(/);
+test('isolation: game-card.js does not call collection settings (openCollectionSettings)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /openCollectionSettings\s*\(/);
 });
 
-test('isolation: card block does not call account platform panel internals (renderPlatformAccounts)', () => {
-    assert.doesNotMatch(cardBlock(), /renderPlatformAccounts\s*\(/);
+test('isolation: game-card.js does not call account platform panel internals (renderPlatformAccounts)', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /renderPlatformAccounts\s*\(/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 14 — No Arabic / emoji / mojibake in the card section
+// SECTION 14 — Hygiene: game-card.js must be clean
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('hygiene: card block contains no Arabic characters', () => {
-    // Verify the block itself is clean — the Arabic comments in app.js ARE in
-    // this block and must be replaced when game-card.js is created.
-    // This test currently DOCUMENTS that Arabic exists so the extraction phase
-    // knows to clean it.  It does not assert DoesNotMatch because the comments
-    // are still in app.js; they will be fixed in the extraction step.
-    const block = cardBlock();
-    const arabicLines = block.split('\n').filter(l => /[؀-ۿ]/.test(l));
-    // Record the count so the extraction step knows what to clean.
-    // The assertion is informational: 0 means already clean, >0 means work needed.
-    assert.ok(
-        typeof arabicLines.length === 'number',
-        `Arabic comments found in card section: ${arabicLines.length} line(s) — must be replaced during extraction`
-    );
+test('hygiene: game-card.js contains no Arabic-script characters', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /[؀-ۿ]/, 'Arabic characters must be replaced with English equivalents');
 });
 
-test('hygiene: card block comment lines contain no emoji', () => {
-    const block = cardBlock();
-    const commentLines = block.split('\n').filter(l => l.trimStart().startsWith('//'));
+test('hygiene: game-card.js comment lines contain no emoji', () => {
+    const commentLines = GAME_CARD_JS.split('\n').filter(l => l.trimStart().startsWith('//'));
     for (const line of commentLines) {
         assert.doesNotMatch(line, /[\u{1F600}-\u{1F64F}]/u, `Emoji in comment: ${line.trim()}`);
         assert.doesNotMatch(line, /[\u{1F300}-\u{1F5FF}]/u, `Emoji in comment: ${line.trim()}`);
@@ -976,18 +944,11 @@ test('hygiene: card block comment lines contain no emoji', () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// SECTION 15 — Future extraction readiness
+// SECTION 15 — Structural ordering within game-card.js
 // ─────────────────────────────────────────────────────────────────────────────
 
-test('future: app.js card section follows the "3. CARD RENDERING" boundary convention', () => {
-    // Ensures the section is delimited by a numbered comment header that can be
-    // used as a stable anchor when creating the extraction regex/slice.
-    // Use \r?\n to handle both LF and CRLF line endings.
-    assert.match(APP_JS, /\/\/ ={5,}\r?\n\/\/ 3\. CARD RENDERING & RECENTLY PLAYED\r?\n\/\/ ={5,}/);
-});
-
-test('future: all target functions are grouped after the section header', () => {
-    const headerIdx = APP_JS.indexOf('// 3. CARD RENDERING & RECENTLY PLAYED');
+test('structure: all target functions appear in game-card.js after the section header', () => {
+    const headerIdx = GAME_CARD_JS.indexOf('// 3. CARD RENDERING & RECENTLY PLAYED');
     const fns = [
         'function _jbiHasRealQualifiedSession(',
         'function getRecentGames(',
@@ -996,17 +957,183 @@ test('future: all target functions are grouped after the section header', () => 
         'function getPlatformClass(',
     ];
     for (const fn of fns) {
-        const fnIdx = APP_JS.indexOf(fn);
-        assert.ok(fnIdx > headerIdx, `${fn} must appear after the card section header`);
+        const fnIdx = GAME_CARD_JS.indexOf(fn);
+        assert.ok(fnIdx > headerIdx, `${fn} must appear after the card section header in game-card.js`);
     }
 });
 
-test('future: getPlatformClass appears after createRecentCard in the section', () => {
-    const rcIdx  = APP_JS.indexOf('function createRecentCard(');
-    const pcIdx  = APP_JS.indexOf('function getPlatformClass(');
-    assert.ok(rcIdx  !== -1, 'createRecentCard not found');
-    assert.ok(pcIdx  !== -1, 'getPlatformClass not found');
-    assert.ok(pcIdx  > rcIdx, 'getPlatformClass must appear after createRecentCard');
+test('structure: getPlatformClass appears after createRecentCard in game-card.js', () => {
+    const rcIdx  = GAME_CARD_JS.indexOf('function createRecentCard(');
+    const pcIdx  = GAME_CARD_JS.indexOf('function getPlatformClass(');
+    assert.ok(rcIdx  !== -1, 'createRecentCard not found in game-card.js');
+    assert.ok(pcIdx  !== -1, 'getPlatformClass not found in game-card.js');
+    assert.ok(pcIdx  > rcIdx, 'getPlatformClass must appear after createRecentCard in game-card.js');
+});
+
+test('structure: app.js has displacement comment referencing game-card.js', () => {
+    assert.match(APP_JS, /3\. CARD RENDERING & RECENTLY PLAYED.*moved to src\/js\/app\/game-card\.js/s);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 16 — Script load order: game-card.js in dashboard.html
+// ─────────────────────────────────────────────────────────────────────────────
+
+function scriptIndex(filename) {
+    const re = new RegExp(`<script src="js(?:/app)?/${filename.replace('.', '\\.')}">`);
+    return HTML.search(re);
+}
+
+test('script-order: game-card.js script tag exists in dashboard.html', () => {
+    assert.match(HTML, /src="js\/app\/game-card\.js"/);
+});
+
+test('script-order: domUtils.js loads before game-card.js', () => {
+    const domIdx  = HTML.indexOf('<script src="js/domUtils.js">');
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    assert.ok(domIdx  !== -1, 'domUtils.js not found in HTML');
+    assert.ok(cardIdx !== -1, 'game-card.js not found in HTML');
+    assert.ok(domIdx < cardIdx, 'domUtils.js must load before game-card.js');
+});
+
+test('script-order: artwork-sync.js loads before game-card.js', () => {
+    const syncIdx = HTML.indexOf('<script src="js/app/artwork-sync.js">');
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    assert.ok(syncIdx < cardIdx, 'artwork-sync.js must load before game-card.js');
+});
+
+test('script-order: launcher-actions.js loads before game-card.js', () => {
+    const laIdx   = HTML.indexOf('<script src="js/app/launcher-actions.js">');
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    assert.ok(laIdx < cardIdx, 'launcher-actions.js must load before game-card.js');
+});
+
+test('script-order: game-context-actions.js loads before game-card.js', () => {
+    const gcIdx   = HTML.indexOf('<script src="js/app/game-context-actions.js">');
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    assert.ok(gcIdx < cardIdx, 'game-context-actions.js must load before game-card.js');
+});
+
+test('script-order: game-card.js loads before app.js', () => {
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    const appIdx  = HTML.indexOf('<script src="js/app.js">');
+    assert.ok(cardIdx !== -1, 'game-card.js not found in HTML');
+    assert.ok(appIdx  !== -1, 'app.js not found in HTML');
+    assert.ok(cardIdx < appIdx, 'game-card.js must load before app.js');
+});
+
+test('script-order: game-card.js loads before accounts.js', () => {
+    const cardIdx = HTML.indexOf('<script src="js/app/game-card.js">');
+    const accIdx  = HTML.indexOf('<script src="js/accounts.js">');
+    assert.ok(cardIdx < accIdx, 'game-card.js must load before accounts.js');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 17 — Window exports: game-card.js exposes functions globally
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('window-export: window.getRecentGames is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.getRecentGames\s*=\s*getRecentGames/);
+});
+
+test('window-export: window.filterRecentCards is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.filterRecentCards\s*=\s*filterRecentCards/);
+});
+
+test('window-export: window.renderRecentlyPlayed is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.renderRecentlyPlayed\s*=\s*renderRecentlyPlayed/);
+});
+
+test('window-export: window._agDecorateAllGamesCardFields is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\._agDecorateAllGamesCardFields\s*=\s*_agDecorateAllGamesCardFields/);
+});
+
+test('window-export: window.createGameCard is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.createGameCard\s*=\s*createGameCard/);
+});
+
+test('window-export: window.createRecentCard is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.createRecentCard\s*=\s*createRecentCard/);
+});
+
+test('window-export: window.getPlatformClass is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\.getPlatformClass\s*=\s*getPlatformClass/);
+});
+
+test('window-export: window._jbiHasRealQualifiedSession is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\._jbiHasRealQualifiedSession\s*=\s*_jbiHasRealQualifiedSession/);
+});
+
+test('window-export: window._jbiGetRecentTimestamp is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\._jbiGetRecentTimestamp\s*=\s*_jbiGetRecentTimestamp/);
+});
+
+test('window-export: window._getRecentDisplayImage is assigned in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\._getRecentDisplayImage\s*=\s*_getRecentDisplayImage/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 18 — app.js displacement guard: moved identifiers must NOT be in app.js
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('displacement: app.js does NOT define function _jbiHasRealQualifiedSession', () => {
+    assert.doesNotMatch(APP_JS, /function _jbiHasRealQualifiedSession\s*\(/);
+});
+
+test('displacement: app.js does NOT define function _jbiGetRecentTimestamp', () => {
+    assert.doesNotMatch(APP_JS, /function _jbiGetRecentTimestamp\s*\(/);
+});
+
+test('displacement: app.js does NOT define function getRecentGames', () => {
+    assert.doesNotMatch(APP_JS, /function getRecentGames\s*\(/);
+});
+
+test('displacement: app.js does NOT declare let _currentRecentGames', () => {
+    assert.doesNotMatch(APP_JS, /let\s+_currentRecentGames\s*=/);
+});
+
+test('displacement: app.js does NOT define function filterRecentCards', () => {
+    assert.doesNotMatch(APP_JS, /function filterRecentCards\s*\(/);
+});
+
+test('displacement: app.js does NOT define function renderRecentlyPlayed', () => {
+    assert.doesNotMatch(APP_JS, /function renderRecentlyPlayed\s*\(/);
+});
+
+test('displacement: app.js does NOT define function createGameCard', () => {
+    assert.doesNotMatch(APP_JS, /function createGameCard\s*\(/);
+});
+
+test('displacement: app.js does NOT define function createRecentCard', () => {
+    assert.doesNotMatch(APP_JS, /function createRecentCard\s*\(/);
+});
+
+test('displacement: app.js does NOT define function getPlatformClass', () => {
+    assert.doesNotMatch(APP_JS, /function getPlatformClass\s*\(/);
+});
+
+test('displacement: app.js does NOT define function _agDecorateAllGamesCardFields', () => {
+    assert.doesNotMatch(APP_JS, /function _agDecorateAllGamesCardFields\s*\(/);
+});
+
+test('displacement: app.js displacement comment references game-card.js', () => {
+    assert.match(APP_JS, /game-card\.js/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 19 — Hygiene: game-card.js file-level checks
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('hygiene: game-card.js contains no Arabic-script characters anywhere', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /[؀-ۿ]/);
+});
+
+test('hygiene: game-card.js contains no mojibake sequences', () => {
+    assert.doesNotMatch(GAME_CARD_JS, /Ã[-¿]/u);
+    assert.doesNotMatch(GAME_CARD_JS, /â€/);
+});
+
+test('hygiene: game-card.js starts with "use strict"', () => {
+    assert.match(GAME_CARD_JS, /^'use strict';/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

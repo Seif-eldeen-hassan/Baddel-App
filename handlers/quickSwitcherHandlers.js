@@ -11,6 +11,29 @@
 // quickSwitcher.createQuickSwitcherWindow() lifecycle calls are NOT moved here —
 // they remain in main.js because they are app startup side effects, not IPC handlers.
 
+// Quick Switcher supports one or more modifiers plus a non-modifier key.
+// This is intentionally more permissive than the per-account shortcut validator,
+// which requires at least two modifiers to reduce accidental captures.
+const _QS_MODS    = new Set(['ctrl', 'shift', 'alt', 'super', 'meta']);
+const _QS_BLOCKED = new Set([
+    'Ctrl+C', 'Ctrl+V', 'Ctrl+X', 'Ctrl+A', 'Ctrl+Z', 'Ctrl+Y',
+    'Ctrl+S', 'Ctrl+P', 'Ctrl+W', 'Ctrl+R', 'Ctrl+F', 'Ctrl+T',
+    'Ctrl+N', 'Ctrl+Q', 'Alt+F4', 'Alt+Tab', 'F5', 'F11', 'F12',
+    'Ctrl+Shift+I', 'Ctrl+Shift+J',
+]);
+
+function _validateQSAccelerator(accelerator, accountShortcuts) {
+    const norm = accountShortcuts.normalizeAccelerator(accelerator);
+    if (!norm) return { valid: false, error: 'Invalid shortcut format.' };
+    const parts = norm.split('+');
+    const mods  = parts.filter(p => _QS_MODS.has(p.toLowerCase()));
+    const keys  = parts.filter(p => !_QS_MODS.has(p.toLowerCase()));
+    if (keys.length === 0) return { valid: false, error: 'Shortcut must include a non-modifier key.' };
+    if (mods.length < 1)  return { valid: false, error: 'Use at least one modifier key (e.g. Alt+F7, Ctrl+B).' };
+    if (_QS_BLOCKED.has(norm)) return { valid: false, error: 'This shortcut is reserved by the system. Try a different combination.' };
+    return { valid: true, normalized: norm };
+}
+
 module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) {
     const {
         quickSwitcher, quickSwitcherSettings, accountShortcuts,
@@ -38,8 +61,7 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
     ipcMain.handle('quick-switcher:set-hotkey', async (_, accelerator) => {
         try {
             ipcValidation.assertString(accelerator, 'accelerator', 64);
-            // Validate via Phase 1 accountShortcuts validator.
-            const v = accountShortcuts.validateAccelerator(accelerator);
+            const v = _validateQSAccelerator(accelerator, accountShortcuts);
             if (!v.valid) return { status: 'error', message: v.error };
             const norm = v.normalized;
 
@@ -77,7 +99,7 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
     ipcMain.handle('quick-switcher:validate-hotkey', (_, accelerator) => {
         try {
             ipcValidation.assertString(accelerator, 'accelerator', 64);
-            return accountShortcuts.validateAccelerator(accelerator);
+            return _validateQSAccelerator(accelerator, accountShortcuts);
         } catch (err) { return { valid: false, error: err.message }; }
     });
 

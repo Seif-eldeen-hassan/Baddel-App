@@ -6,6 +6,7 @@ const path   = require('node:path');
 
 const ROOT            = path.resolve(__dirname, '..');
 const APP_JS          = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                        'utf8');
+const GAME_CARD_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/game-card.js'),               'utf8');
 const GAME_CONTEXT_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'),   'utf8');
 const HTML            = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),                   'utf8');
 
@@ -611,8 +612,8 @@ test('game-context-actions.js: _toggleCardFavorite depends on allCollections, re
 
 // ── 18. Cross-file callers ────────────────────────────────────────────────────
 
-test('app.js: showContextMenu is invoked from game-card contextmenu event handlers in app.js', () => {
-    const count = (APP_JS.match(/showContextMenu\s*\(/g) || []).length;
+test('game-card.js: showContextMenu is invoked from game-card contextmenu event handlers in game-card.js', () => {
+    const count = (GAME_CARD_JS.match(/showContextMenu\s*\(/g) || []).length;
     assert.ok(count >= 2, 'showContextMenu must be called from at least two card-building sites');
 });
 

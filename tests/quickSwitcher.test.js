@@ -251,32 +251,31 @@ test('quick-switcher.html: exists and has required ids', () => {
     assert.ok(src.includes('id="quickSwitcherClose"'), 'close button id');
 });
 
-test('quick-switcher.html: premium structure — shell, panel, header, brand, footer', () => {
+test('quick-switcher.html: deck structure — overlay, deck, bar, results, hints', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('quick-switcher-shell'), 'outer shell for animation');
-    assert.ok(src.includes('quick-switcher-panel'), 'glass panel element');
-    assert.ok(src.includes('quick-switcher-header'), 'header element');
-    assert.ok(src.includes('quick-switcher-brand'), 'brand area');
-    assert.ok(src.includes('quick-switcher-footer'), 'footer element');
+    assert.ok(src.includes('qs-overlay'), 'overlay root element');
+    assert.ok(src.includes('qs-deck'), 'deck container');
+    assert.ok(src.includes('qs-bar'), 'command bar');
+    assert.ok(src.includes('qs-deck-results'), 'results container');
+    assert.ok(src.includes('qs-deck-hints'), 'hints line');
 });
 
-test('quick-switcher.html: brand includes logo, title, subtitle, hotkey hint', () => {
+test('quick-switcher.html: bar includes label, shortcut chip, and close button', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('quick-switcher-logo'), 'logo element');
-    assert.ok(src.includes('quick-switcher-title'), 'title span');
-    assert.ok(src.includes('quick-switcher-subtitle'), 'subtitle span');
-    assert.ok(src.includes('qs-hotkey-hint'), 'hotkey hint (replaces GLOBAL pill)');
+    assert.ok(src.includes('qs-bar-label'), 'bar label');
+    assert.ok(src.includes('qsHotkeyHint'), 'hotkey hint id');
+    assert.ok(src.includes('quickSwitcherClose'), 'close button');
 });
 
-test('quick-switcher.html: search input inside quick-switcher-search-wrap', () => {
+test('quick-switcher.html: search input inside bar search area', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('quick-switcher-search-wrap'), 'search wrap');
-    assert.ok(src.includes('quick-switcher-search'), 'search input class');
+    assert.ok(src.includes('qs-bar-search'), 'search area container');
+    assert.ok(src.includes('qs-bar-input'), 'search input class');
 });
 
-test('quick-switcher.html: footer has qs-keycap elements', () => {
+test('quick-switcher.html: has keyboard hint line', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('qs-keycap'), 'keycap elements in footer');
+    assert.ok(src.includes('qs-deck-hints'), 'deck hints element present');
 });
 
 test('quick-switcher.html: loads quick-switcher.css and quick-switcher.js', () => {
@@ -308,10 +307,10 @@ test('quick-switcher.css: has .is-selected and .is-active states', () => {
     assert.ok(src.includes('.is-active'),   '.is-active');
 });
 
-test('quick-switcher.css: has .qs-active-badge and .qs-shortcut-pill', () => {
+test('quick-switcher.css: has .qs-active-pill and .qs-shortcut-label', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-active-badge'), '.qs-active-badge');
-    assert.ok(src.includes('.qs-shortcut-pill'), '.qs-shortcut-pill');
+    assert.ok(src.includes('.qs-active-pill'),    '.qs-active-pill');
+    assert.ok(src.includes('.qs-shortcut-label'), '.qs-shortcut-label');
 });
 
 test('quick-switcher.css: transparent body background (overlay window)', () => {
@@ -329,45 +328,46 @@ test('quick-switcher.css: spinner animation defined', () => {
     assert.ok(src.includes('@keyframes qs-spin') || src.includes('.qs-spinner'), 'spinner');
 });
 
-test('quick-switcher.css: has .quick-switcher-panel (glass card)', () => {
+test('quick-switcher.css: has .qs-bar and .qs-deck (command bar card)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.quick-switcher-panel'), '.quick-switcher-panel defined');
+    assert.ok(src.includes('.qs-bar'), '.qs-bar defined');
+    assert.ok(src.includes('.qs-deck'), '.qs-deck defined');
 });
 
-test('quick-switcher.css: has .qs-account-row (replaces .qs-account-item)', () => {
+test('quick-switcher.css: has .qs-card (account card button)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-account-row'), '.qs-account-row defined');
-    assert.ok(src.includes('.qs-account-row.is-active'), '.qs-account-row.is-active');
-    assert.ok(src.includes('.qs-account-row.is-selected'), '.qs-account-row.is-selected');
+    assert.ok(src.includes('.qs-card'), '.qs-card defined');
+    assert.ok(src.includes('.qs-card.is-active'), '.qs-card.is-active');
+    assert.ok(src.includes('.qs-card.is-selected'), '.qs-card.is-selected');
 });
 
-test('quick-switcher.css: has .quick-switcher-footer', () => {
+test('quick-switcher.css: has .qs-deck-hints (replaces old footer bar)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.quick-switcher-footer'), '.quick-switcher-footer');
+    assert.ok(src.includes('.qs-deck-hints'), '.qs-deck-hints defined');
 });
 
-test('quick-switcher.css: has .qs-account-icon-wrap for platform icon container', () => {
+test('quick-switcher.css: has .qs-card-avatar for platform icon container', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-account-icon-wrap'), '.qs-account-icon-wrap');
+    assert.ok(src.includes('.qs-card-avatar'), '.qs-card-avatar for platform icon container');
 });
 
-test('quick-switcher.css: has .qs-platform-group and .qs-platform-header', () => {
+test('quick-switcher.css: has .qs-platform-group, .qs-platform-chip, .qs-platform-count', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
     assert.ok(src.includes('.qs-platform-group'), '.qs-platform-group');
-    assert.ok(src.includes('.qs-platform-header'), '.qs-platform-header');
+    assert.ok(src.includes('.qs-platform-chip'),  '.qs-platform-chip');
     assert.ok(src.includes('.qs-platform-count'), '.qs-platform-count');
 });
 
-test('quick-switcher.css: active row has .qs-row-indicator left accent bar', () => {
+test('quick-switcher.css: active card has left accent mark', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-row-indicator'), '.qs-row-indicator defined');
-    assert.ok(src.includes('.qs-account-row.is-active .qs-row-indicator'), 'indicator shown on active row');
+    assert.ok(src.includes('.qs-card.is-active'), '.qs-card.is-active defined');
+    assert.ok(src.includes('inset') && src.includes('2px 0 0'), 'inset left accent on active card');
 });
 
-test('quick-switcher.css: .qs-enter-hint shown only on hover/selected', () => {
+test('quick-switcher.css: enter glyph shown only on hover/selected', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-enter-hint'), '.qs-enter-hint defined');
-    assert.ok(src.includes('opacity: 0'), 'enter hint hidden by default');
+    assert.ok(src.includes('.qs-enter-glyph'), '.qs-enter-glyph defined');
+    assert.ok(src.includes('opacity: 0'), 'enter glyph hidden by default');
 });
 
 test('quick-switcher.css: entrance animation defined', () => {
@@ -381,9 +381,9 @@ test('quick-switcher.css: error bar styled as alert when non-empty', () => {
     assert.ok(src.includes(':not(:empty)'), 'styled when non-empty');
 });
 
-test('quick-switcher.css: .qs-keycap defined for footer hints', () => {
+test('quick-switcher.css: has .qs-deck-hints for keyboard hints', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-keycap'), '.qs-keycap defined');
+    assert.ok(src.includes('.qs-deck-hints'), '.qs-deck-hints defined');
 });
 
 // ── overlay renderer JS ───────────────────────────────────────────────────────
@@ -449,17 +449,17 @@ test('quick-switcher.js: HTML-escapes account names before inserting into DOM', 
     assert.ok(src.includes("replace(/</g, '&lt;')"), '_esc replaces <');
 });
 
-test('quick-switcher.js: renders .qs-account-row buttons (not plain divs)', () => {
+test('quick-switcher.js: renders .qs-card buttons for accounts', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    assert.ok(src.includes('qs-account-row'), 'qs-account-row class used');
-    assert.ok(src.includes('<button'), 'button element used for rows');
+    assert.ok(src.includes('qs-card'), 'qs-card class used');
+    assert.ok(src.includes('<button'), 'button element used for cards');
 });
 
-test('quick-switcher.js: renders account icon wrap with real platform icon', () => {
+test('quick-switcher.js: renders card avatar with real platform icon', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    assert.ok(src.includes('qs-account-icon-wrap'), '.qs-account-icon-wrap rendered');
-    assert.ok(src.includes('getPlatformIcon('), 'getPlatformIcon called in row');
-    assert.ok(src.includes('function getPlatformIcon'), 'getPlatformIcon defined');
+    assert.ok(src.includes('qs-card-avatar'), '.qs-card-avatar rendered');
+    assert.ok(src.includes('_platformIcon('), '_platformIcon called in card builder');
+    assert.ok(src.includes('function _platformIcon'), '_platformIcon defined');
 });
 
 test('quick-switcher.js: PLATFORM_ICONS maps all platforms to real bundled asset paths', () => {
@@ -476,7 +476,7 @@ test('quick-switcher.js: groups accounts into .qs-platform-group sections', () =
     assert.ok(src.includes('qs-platform-group'), 'platform group wrapper');
 });
 
-test('quick-switcher.js: platform header includes count of accounts', () => {
+test('quick-switcher.js: platform chip includes count of accounts', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
     assert.ok(src.includes('qs-platform-count'), 'platform count badge');
     assert.ok(src.includes('.count'), 'count from flat item');
@@ -488,10 +488,10 @@ test('quick-switcher.js: uses event delegation on listEl (no per-row addEventLis
     assert.ok(src.includes('.closest('), 'closest() for delegation');
 });
 
-test('quick-switcher.js: _highlightSelected uses .qs-account-row selector', () => {
+test('quick-switcher.js: _highlightSelected uses .qs-card selector', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
     const fnSrc = src.slice(src.indexOf('function _highlightSelected'), src.indexOf('function _highlightSelected') + 200);
-    assert.ok(fnSrc.includes('qs-account-row'), '_highlightSelected targets .qs-account-row');
+    assert.ok(fnSrc.includes('qs-card'), '_highlightSelected targets .qs-card');
 });
 
 test('quick-switcher.js: empty state renders polished message with icon', () => {
@@ -501,11 +501,11 @@ test('quick-switcher.js: empty state renders polished message with icon', () => 
     assert.ok(src.includes('No matching accounts') || src.includes('No accounts found'), 'friendly empty text');
 });
 
-test('quick-switcher.js: account row includes .qs-account-main, .qs-account-side, .qs-enter-hint', () => {
+test('quick-switcher.js: account card includes .qs-card-body, .qs-card-state, .qs-enter-glyph', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    assert.ok(src.includes('qs-account-main'), '.qs-account-main');
-    assert.ok(src.includes('qs-account-side'), '.qs-account-side');
-    assert.ok(src.includes('qs-enter-hint'), '.qs-enter-hint indicator');
+    assert.ok(src.includes('qs-card-body'),   '.qs-card-body');
+    assert.ok(src.includes('qs-card-state'),  '.qs-card-state');
+    assert.ok(src.includes('qs-enter-glyph'), '.qs-enter-glyph indicator');
 });
 
 // ── dashboard.html — QS settings section ─────────────────────────────────────
@@ -515,7 +515,7 @@ test('dashboard.html: has Quick Switcher settings section', () => {
     assert.ok(src.includes('Quick Switcher'), 'QS section heading');
     assert.ok(src.includes('id="qsEnabledToggle"'), 'enabled toggle');
     assert.ok(src.includes('id="qsHotkeyDisplay"'), 'hotkey display element');
-    assert.ok(src.includes('id="qsPositionSelect"'), 'position select');
+    assert.ok(!src.includes('id="qsPositionSelect"'), 'position select removed');
     assert.ok(src.includes('id="qsCloseAfterSwitchToggle"'), 'close-after-switch toggle');
 });
 
@@ -526,12 +526,10 @@ test('dashboard.html: hotkey Change and Reset buttons call correct functions', (
     assert.ok(qsSrc.includes('qsResetHotkey()'), 'Reset calls qsResetHotkey');
 });
 
-test('dashboard.html: position select has all five positions', () => {
+test('dashboard.html: position select is removed from settings UI', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'dashboard.html'), 'utf8');
-    const selSrc = src.slice(src.indexOf('qsPositionSelect'), src.indexOf('qsPositionSelect') + 700);
-    for (const p of ['right', 'center', 'left', 'top', 'bottom']) {
-        assert.ok(selSrc.includes(`value="${p}"`), `position option missing: ${p}`);
-    }
+    assert.ok(!src.includes('qsPositionSelect'), 'position select element removed');
+    assert.ok(!src.includes('qsChangePosition'), 'qsChangePosition handler removed from HTML');
 });
 
 // ── app.js — QS settings handlers ────────────────────────────────────────────
@@ -570,11 +568,14 @@ test('settings-quick-switcher.js: _openQSHotkeyModal guards Save button when inv
     assert.ok(modalSrc.includes('!capturedValid') || modalSrc.includes('capturedValid'), 'guards on validity');
 });
 
-test('settings-quick-switcher.js: _qsBasicValidate rejects single-modifier shortcuts', () => {
+test('settings-quick-switcher.js: _qsBasicValidate allows single-modifier shortcuts', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'settings-quick-switcher.js'), 'utf8');
-    const fnSrc = src.slice(src.indexOf('function _qsBasicValidate'), src.indexOf('function _qsBasicValidate') + 500);
-    assert.ok(fnSrc.includes('mods.length < 2'), 'rejects < 2 modifiers');
-    assert.ok(fnSrc.includes('valid: false'), 'returns invalid');
+    const start = src.indexOf('function _qsBasicValidate');
+    const end   = src.indexOf('\n}', start) + 2;
+    const fnSrc = src.slice(start, end);
+    assert.ok(fnSrc.includes('mods.length < 1'), 'rejects modifier-only (< 1 non-modifier key)');
+    assert.ok(fnSrc.includes('valid: false'), 'returns invalid when no modifier');
+    assert.ok(fnSrc.includes('valid: true'), 'returns valid for good input');
 });
 
 test('settings-quick-switcher.js: qsToggleEnabled reverts checkbox on error', () => {
@@ -584,35 +585,35 @@ test('settings-quick-switcher.js: qsToggleEnabled reverts checkbox on error', ()
     assert.ok(fnSrc.includes('checkbox.checked = prev'), 'reverts checkbox on error');
 });
 
-// ── Round 2 UI polish — real assets, toned-down green ────────────────────────
+// ── Deck UI — new command palette structure ───────────────────────────────────
 
-test('quick-switcher.html: logo uses real Baddel app icon image', () => {
+test('quick-switcher.html: bar area has label and shortcut chip id', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('app_icon.png'), 'logo references app_icon.png');
-    assert.ok(src.includes('quick-switcher-logo-img'), 'logo img class present');
+    assert.ok(src.includes('qs-bar-label') || src.includes('qs-bar'), 'bar with label');
+    assert.ok(src.includes('qsHotkeyHint'), 'hotkey hint id present');
 });
 
-test('quick-switcher.html: has hotkey hint element (not GLOBAL pill)', () => {
+test('quick-switcher.html: has hotkey hint id (not GLOBAL pill)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
-    assert.ok(src.includes('qs-hotkey-hint'), 'qs-hotkey-hint present');
-    assert.ok(!src.includes('qs-global-pill'), 'no GLOBAL pill in Round 2');
+    assert.ok(src.includes('qsHotkeyHint'), 'qsHotkeyHint id present');
+    assert.ok(!src.includes('qs-global-pill'), 'no GLOBAL pill');
 });
 
-test('quick-switcher.css: has .qs-platform-icon for real platform icons', () => {
+test('quick-switcher.css: has .qs-card-icon or .qs-chip-icon for real platform icons', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-platform-icon'), '.qs-platform-icon defined');
+    assert.ok(src.includes('.qs-card-icon') || src.includes('.qs-chip-icon'), 'platform icon classes defined');
 });
 
-test('quick-switcher.css: has .qs-platform-heading-icon for platform group header', () => {
+test('quick-switcher.css: has .qs-chip-icon for platform chip header', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-platform-heading-icon'), '.qs-platform-heading-icon defined');
+    assert.ok(src.includes('.qs-chip-icon'), '.qs-chip-icon defined');
 });
 
-test('quick-switcher.css: panel border variable is neutral white, not bright green', () => {
+test('quick-switcher.css: bar uses neutral white border, not bright green', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('--qs-panel-border:    rgba(255, 255, 255, 0.08)'), 'panel border variable is subtle white');
-    // Panel border declaration should use the variable, not a hardcoded green value
-    assert.ok(src.includes('border: 1px solid var(--qs-panel-border)'), 'panel uses white border variable');
+    // Bar border should be a subtle white, not a green value
+    assert.ok(src.includes('rgba(255, 255, 255, 0.10)') || src.includes('rgba(255,255,255,0.10)'), 'subtle white border on bar');
+    assert.ok(!src.includes('0 0 48px rgba(18, 206, 24'), 'no large green glow');
 });
 
 test('quick-switcher.css: no large panel-level green glow shadow', () => {
@@ -620,58 +621,60 @@ test('quick-switcher.css: no large panel-level green glow shadow', () => {
     assert.ok(!src.includes('0 0 48px rgba(18, 206, 24'), 'no large green glow');
 });
 
-test('quick-switcher.css: has .qs-hotkey-hint style', () => {
+test('quick-switcher.css: has .qs-bar-shortcut style', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.qs-hotkey-hint'), '.qs-hotkey-hint styled');
+    assert.ok(src.includes('.qs-bar-shortcut'), '.qs-bar-shortcut styled');
 });
 
-test('quick-switcher.js: getPlatformIcon returns img tag with qs-platform-icon class', () => {
+test('quick-switcher.js: _platformIcon returns img tag; called with qs- class names', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    const fnSrc = src.slice(src.indexOf('function getPlatformIcon'), src.indexOf('function getPlatformIcon') + 300);
-    assert.ok(fnSrc.includes('qs-platform-icon'), 'getPlatformIcon uses qs-platform-icon class');
-    assert.ok(fnSrc.includes('<img'), 'getPlatformIcon returns img element');
+    const fnSrc = src.slice(src.indexOf('function _platformIcon'), src.indexOf('function _platformIcon') + 300);
+    assert.ok(fnSrc.length > 50, '_platformIcon function found');
+    assert.ok(fnSrc.includes('<img'), '_platformIcon returns img element');
+    // Call sites must pass qs- prefixed class names
+    assert.ok(src.includes('qs-card-icon'), 'qs-card-icon passed to _platformIcon at card call site');
+    assert.ok(src.includes('qs-chip-icon'), 'qs-chip-icon passed to _platformIcon at chip call site');
 });
 
-test('quick-switcher.js: _platformHeaderHtml uses qs-platform-heading-icon img', () => {
+test('quick-switcher.js: _platformChipHtml outputs chip with data-platform', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    const fnSrc = src.slice(src.indexOf('function _platformHeaderHtml'), src.indexOf('function _platformHeaderHtml') + 400);
-    assert.ok(fnSrc.includes('qs-platform-heading-icon'), 'heading icon class used');
+    const fnSrc = src.slice(src.indexOf('function _platformChipHtml'), src.indexOf('function _platformChipHtml') + 400);
+    assert.ok(fnSrc.includes('qs-chip-icon') || fnSrc.includes('qs-platform'), 'chip icon class used');
+    assert.ok(fnSrc.includes('data-platform='), 'data-platform on chip div');
 });
 
-test('quick-switcher.js: account row includes .qs-row-indicator element', () => {
+test('quick-switcher.js: account card has no .qs-row-indicator (replaced by box-shadow accent)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    const fnSrc = src.slice(src.indexOf('function _accountRowHtml'), src.indexOf('function _accountRowHtml') + 600);
-    assert.ok(fnSrc.includes('qs-row-indicator'), '.qs-row-indicator in account row HTML');
+    const cardFn = src.slice(src.indexOf('function _accountCardHtml'), src.indexOf('function _accountCardHtml') + 600);
+    assert.ok(!cardFn.includes('qs-row-indicator'), 'no qs-row-indicator in new card template');
 });
 
-// ── Fixed-size overlay + transparent background ───────────────────────────────
+// ── Overlay dim + layout ──────────────────────────────────────────────────────
 
 test('quick-switcher.css: html/body background is transparent', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
     assert.ok(src.includes('background: transparent !important'), 'html/body transparent !important');
 });
 
-test('quick-switcher.css: .quick-switcher-shell background is transparent, no flex layout', () => {
+test('quick-switcher.css: .qs-overlay has dim background for readability', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    const shellSrc = src.slice(src.indexOf('.quick-switcher-shell {'), src.indexOf('.quick-switcher-shell {') + 250);
-    assert.ok(shellSrc.includes('background: transparent'), 'shell is transparent');
-    assert.ok(shellSrc.includes('padding: 10px'), 'shell has 10px padding for shadow room');
+    const overlaySrc = src.slice(src.indexOf('.qs-overlay {'), src.indexOf('.qs-overlay {') + 300);
+    assert.ok(overlaySrc.includes('rgba(0, 0, 0,'), 'overlay has dim background');
+    assert.ok(overlaySrc.length > 50, '.qs-overlay rule found and non-empty');
 });
 
-test('quick-switcher.css: .quick-switcher-panel fills full height of window', () => {
+test('quick-switcher.css: .qs-deck is centered and max-width constrained', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    const panelSrc = src.slice(src.indexOf('.quick-switcher-panel {'), src.indexOf('.quick-switcher-panel {') + 350);
-    assert.ok(panelSrc.includes('height: 100%'), 'panel height is 100%');
-    assert.ok(panelSrc.includes('width: 100%'), 'panel width is 100%');
-    assert.ok(!panelSrc.includes('max-height'), 'no max-height that allows shrinking');
+    const deckSrc = src.slice(src.indexOf('.qs-deck {'), src.indexOf('.qs-deck {') + 250);
+    assert.ok(deckSrc.includes('max-width'), 'deck has max-width constraint');
+    assert.ok(deckSrc.length > 50, '.qs-deck rule found and non-empty');
 });
 
-test('quick-switcher.css: .quick-switcher-list uses flex:1 with min-height:0 to scroll within panel', () => {
+test('quick-switcher.css: .qs-deck-results scrolls with max-height', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    const listSrc = src.slice(src.indexOf('.quick-switcher-list {'), src.indexOf('.quick-switcher-list {') + 200);
-    assert.ok(listSrc.includes('flex: 1 1 auto'), 'list grows to fill remaining space');
-    assert.ok(listSrc.includes('min-height: 0'), 'min-height:0 allows flex item to shrink for scroll');
-    assert.ok(listSrc.includes('overflow-y: auto'), 'list scrolls internally');
+    const resultsSrc = src.slice(src.indexOf('.qs-deck-results {'), src.indexOf('.qs-deck-results {') + 250);
+    assert.ok(resultsSrc.includes('max-height'), 'results has max-height for scroll');
+    assert.ok(resultsSrc.includes('overflow-y: auto'), 'results scrolls internally');
 });
 
 // ── Compact size + Epic fix ───────────────────────────────────────────────────
@@ -702,9 +705,9 @@ test('quickSwitcher service: BrowserWindow is transparent with no background col
     assert.ok(winSrc.includes("backgroundColor: '#00000000'"), 'backgroundColor fully transparent');
 });
 
-test('quick-switcher.css: scoped Epic logo visibility rule inside .quick-switcher-panel', () => {
+test('quick-switcher.css: scoped Epic logo visibility rule on card or chip', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    assert.ok(src.includes('.quick-switcher-panel') && src.includes('[data-platform="epic"]'), 'scoped Epic rule present');
+    assert.ok(src.includes('[data-platform="epic"]'), 'scoped Epic rule present');
     assert.ok(src.includes('filter: brightness(0) invert(1)'), 'filter inverts Epic icon to white');
 });
 
@@ -714,18 +717,18 @@ test('quick-switcher.css: Epic fix does not target sidebar nav (not global)', ()
     assert.ok(!src.includes('.epic-icon'), 'no sidebar epic-icon class in overlay CSS');
 });
 
-test('quick-switcher.css: compact account rows (min-height ≤ 50px)', () => {
+test('quick-switcher.css: compact account cards (min-height ≤ 50px)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
-    const rowSrc = src.slice(src.indexOf('.qs-account-row {'), src.indexOf('.qs-account-row {') + 400);
-    const mhMatch = rowSrc.match(/min-height:\s*(\d+)px/);
-    assert.ok(mhMatch, 'min-height defined on .qs-account-row');
+    const cardSrc = src.slice(src.indexOf('.qs-card {'), src.indexOf('.qs-card {') + 400);
+    const mhMatch = cardSrc.match(/min-height:\s*(\d+)px/);
+    assert.ok(mhMatch, 'min-height defined on .qs-card');
     assert.ok(Number(mhMatch[1]) <= 50, `min-height ${mhMatch[1]}px should be ≤ 50`);
 });
 
-test('quick-switcher.js: _platformHeaderHtml adds data-platform to header div', () => {
+test('quick-switcher.js: _platformChipHtml adds data-platform to chip div', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    const fnSrc = src.slice(src.indexOf('function _platformHeaderHtml'), src.indexOf('function _platformHeaderHtml') + 700);
-    assert.ok(fnSrc.includes('data-platform='), 'data-platform on platform header div');
+    const fnSrc = src.slice(src.indexOf('function _platformChipHtml'), src.indexOf('function _platformChipHtml') + 700);
+    assert.ok(fnSrc.includes('data-platform='), 'data-platform on platform chip div');
 });
 
 // ── Regression: shortcut map was always empty (getAll() returns array, not {shortcuts:[]} ──

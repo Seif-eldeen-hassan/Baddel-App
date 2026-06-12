@@ -55,36 +55,13 @@ function createQuickSwitcherWindow() {
     });
 }
 
-function _positionWindow(settings) {
+function _positionWindow() {
     if (!_win || _win.isDestroyed()) return;
     try {
-        const cursor = screen.getCursorScreenPoint();
+        const cursor  = screen.getCursorScreenPoint();
         const display = screen.getDisplayNearestPoint(cursor);
-        const wa = display.workArea;
-        const [winW, winH] = _win.getSize();
-        let x, y;
-        switch (settings.position) {
-            case 'right':
-                x = wa.x + wa.width - winW - 22;
-                y = wa.y + Math.round((wa.height - winH) / 2);
-                break;
-            case 'left':
-                x = wa.x + 22;
-                y = wa.y + Math.round((wa.height - winH) / 2);
-                break;
-            case 'top':
-                x = wa.x + Math.round((wa.width - winW) / 2);
-                y = wa.y + 22;
-                break;
-            case 'bottom':
-                x = wa.x + Math.round((wa.width - winW) / 2);
-                y = wa.y + wa.height - winH - 22;
-                break;
-            default:
-                x = wa.x + Math.round((wa.width - winW) / 2);
-                y = wa.y + Math.round((wa.height - winH) / 2);
-        }
-        _win.setBounds({ x, y, width: winW, height: winH });
+        const { x, y, width, height } = display.workArea;
+        _win.setBounds({ x, y, width, height });
     } catch {}
 }
 
@@ -98,17 +75,21 @@ async function showQuickSwitcherOverlay() {
         await new Promise(r => setTimeout(r, 250));
     }
 
-    _positionWindow(settings);
+    _positionWindow();
 
     if (_win && !_win.isDestroyed()) {
-        _win.show();
-        _win.focus();
+        // Send qs:show before showing the window so the renderer can begin
+        // loading accounts while the window is still transparent (opacity 0).
+        // The renderer adds .is-open only after the load completes, ensuring
+        // one unified reveal with no empty-overlay flash.
         if (_ready) {
             _win.webContents.send('qs:show', {
                 showSearch:      settings.showSearchOnOpen,
                 closeAfterSwitch: settings.closeAfterSwitch,
             });
         }
+        _win.show();
+        _win.focus();
     }
 }
 

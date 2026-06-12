@@ -6,6 +6,7 @@ const path   = require('node:path');
 
 const ROOT              = path.resolve(__dirname, '..');
 const APP_JS            = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                         'utf8');
+const GAME_CARD_JS      = fs.readFileSync(path.join(ROOT, 'src/js/app/game-card.js'),               'utf8');
 const SUGGESTIONS_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/suggestions.js'),              'utf8');
 const SIDEBAR_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app/sidebar.js'),                 'utf8');
 const COLLECTIONS_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/collections.js'),             'utf8');
@@ -370,8 +371,8 @@ test('Task G: _vsBuildCard calls _agDecorateAllGamesCardFields', () => {
     );
 });
 
-test('Task G: _agDecorateAllGamesCardFields exists in app.js', () => {
-    assert.match(APP_JS, /function _agDecorateAllGamesCardFields/);
+test('Task G: _agDecorateAllGamesCardFields exists in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /function _agDecorateAllGamesCardFields/);
 });
 
 test('Task G: ag-card-display-overlay CSS is defined for #allGamesGrid', () => {

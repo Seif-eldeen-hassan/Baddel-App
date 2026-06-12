@@ -7,66 +7,65 @@
     <link rel="stylesheet" href="css/quick-switcher.css">
 </head>
 <body>
-    <div class="quick-switcher-shell">
-        <section class="quick-switcher-panel" id="quickSwitcherApp">
+    <div id="quickSwitcherApp" class="qs-overlay" role="dialog" aria-modal="true" aria-label="Switch account">
 
-            <header class="quick-switcher-header">
-                <div class="quick-switcher-brand">
-                    <span class="quick-switcher-logo" aria-hidden="true">
-                        <img class="quick-switcher-logo-img" src="../assets/app_icon.png" alt="Baddel" draggable="false">
-                    </span>
-                    <div class="quick-switcher-brand-text">
-                        <span class="quick-switcher-title">Quick Switch</span>
-                        <span class="quick-switcher-subtitle">Switch accounts without opening Baddel</span>
-                    </div>
-                    <span class="qs-hotkey-hint" id="qsHotkeyHint">Ctrl + Alt + B</span>
-                </div>
-                <button class="quick-switcher-close" id="quickSwitcherClose" title="Close (Esc)" aria-label="Close">
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                        <line x1="18" y1="6" x2="6" y2="18"/>
-                        <line x1="6" y1="6" x2="18" y2="18"/>
-                    </svg>
-                </button>
-            </header>
-
-            <div class="quick-switcher-search-wrap">
-                <svg class="qs-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+        <div class="qs-search-zone qs-bar">
+            <div class="qs-title-line qs-bar-top">
+                <span class="qs-title-text qs-bar-label">Quick Switch</span>
+                <span class="qs-hotkey-hint qs-bar-shortcut" id="qsHotkeyHint">Ctrl+Alt+B</span>
+            </div>
+            <div class="qs-searchbar qs-bar-search">
+                <svg class="qs-search-icon qs-bar-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
                     <circle cx="11" cy="11" r="8"/>
                     <line x1="21" y1="21" x2="16.65" y2="16.65"/>
                 </svg>
                 <input
                     type="text"
                     id="quickSwitcherSearch"
-                    class="quick-switcher-search"
-                    placeholder="Search accounts or platforms…"
+                    class="qs-search-input qs-bar-input"
+                    placeholder="Search accounts or platforms..."
                     autocomplete="off"
                     spellcheck="false"
                     aria-label="Search accounts"
                 >
             </div>
+            <div id="qsPlatformFilters" class="qs-platform-filters" role="group" aria-label="Filter by platform"></div>
+        </div>
 
-            <div id="quickSwitcherList" class="quick-switcher-list">
+        <div class="qs-carousel-wrapper">
+            <button class="qs-nav qs-nav-left" id="qsNavLeft" type="button" aria-label="Previous account" tabindex="-1">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="15 18 9 12 15 6"/>
+                </svg>
+            </button>
+
+            <div id="quickSwitcherList" class="qs-carousel qs-deck-results" role="listbox" aria-label="Accounts">
                 <div class="qs-loading">
                     <div class="qs-spinner"></div>
                     <span>Loading accounts…</span>
                 </div>
             </div>
 
-            <p id="quickSwitcherError" class="qs-error-bar" role="alert" aria-live="polite"></p>
+            <button class="qs-nav qs-nav-right" id="qsNavRight" type="button" aria-label="Next account" tabindex="-1">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                    <polyline points="9 18 15 12 9 6"/>
+                </svg>
+            </button>
+        </div>
 
-            <footer class="quick-switcher-footer">
-                <span class="qs-keycap">↑</span>
-                <span class="qs-keycap">↓</span>
-                <span class="qs-footer-label">Navigate</span>
-                <span class="qs-footer-sep" aria-hidden="true">·</span>
-                <span class="qs-keycap">↵</span>
-                <span class="qs-footer-label">Switch</span>
-                <span class="qs-footer-sep" aria-hidden="true">·</span>
-                <span class="qs-keycap">Esc</span>
-                <span class="qs-footer-label">Close</span>
-            </footer>
+        <div id="qsSwitchStatus" class="qs-switch-status" aria-live="polite" aria-atomic="true"></div>
 
-        </section>
+        <p id="quickSwitcherError" class="qs-error qs-error-bar" role="alert" aria-live="polite"></p>
+
+        <div class="qs-deck-hints">← → choose &nbsp;·&nbsp; Enter switch &nbsp;·&nbsp; Esc close</div>
+
+        <button id="quickSwitcherClose" class="qs-close" type="button" title="Close (Esc)" aria-label="Close">
+            <svg width="14" height="14" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true">
+                <line x1="1" y1="1" x2="11" y2="11"/>
+                <line x1="11" y1="1" x2="1" y2="11"/>
+            </svg>
+        </button>
+
     </div>
     <script src="js/quick-switcher.js"></script>
 </body>

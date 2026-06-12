@@ -1684,8 +1684,8 @@ test('tracker: timeTrackingEnabled=false skips startGameTracking', () => {
     assert.match(fn, /tracking disabled/);
 });
 
-test('app.js: getRecentGames sorts by lastQualifiedPlayed', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
+test('game-card.js: getRecentGames sorts by lastQualifiedPlayed', () => {
+    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'game-card.js'), 'utf8');
     // getRecentGames delegates timestamp resolution to _jbiGetRecentTimestamp which uses lastQualifiedPlayed
     const fnStart = js.indexOf('function getRecentGames');
     const fn = js.slice(fnStart, fnStart + 500);

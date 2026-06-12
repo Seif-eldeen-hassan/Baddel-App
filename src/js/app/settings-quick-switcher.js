@@ -3,8 +3,7 @@
 // panel, and the analytics/startup toggles.
 // Loads before app.js; showToast is available from toast-confirm.js (loaded
 // earlier). window._updateState and window._setSettingsUpdateRow from
-// help-feedback.js resolve at call time. validateShortcutCapture from
-// accounts.js resolves at call time with a fallback to _qsBasicValidate.
+// help-feedback.js resolve at call time.
 
 async function openSettingsModal() {
     const modal  = document.getElementById('settingsModal');
@@ -66,11 +65,9 @@ async function _qsLoadSettings() {
         const s = await window.electronAPI.quickSwitcher.getSettings();
         const enabledToggle  = document.getElementById('qsEnabledToggle');
         const hotkeyDisplay  = document.getElementById('qsHotkeyDisplay');
-        const posSelect      = document.getElementById('qsPositionSelect');
         const closeToggle    = document.getElementById('qsCloseAfterSwitchToggle');
         if (enabledToggle) enabledToggle.checked = !!s.enabled;
         if (hotkeyDisplay) hotkeyDisplay.textContent = s.accelerator ? s.accelerator.replace(/\+/g, ' + ') : 'None';
-        if (posSelect) posSelect.value = s.position || 'right';
         if (closeToggle) closeToggle.checked = !!s.closeAfterSwitch;
     } catch {}
 }
@@ -130,8 +127,8 @@ function _openQSHotkeyModal() {
         box.style.cssText = 'max-width:400px; padding:28px 24px;';
         box.innerHTML = `
             <h3 style="margin:0 0 8px; font-size:1.05rem; color:#e8e8e8;">Change Quick Switcher Hotkey</h3>
-            <p style="margin:0 0 18px; font-size:0.83rem; color:#888;">Press a new key combination (2+ modifier keys).</p>
-            <div id="_qsCapBox" class="shortcut-capture-box">Press a shortcut like Ctrl + Alt + B</div>
+            <p style="margin:0 0 18px; font-size:0.83rem; color:#888;">Press a new key combination (one or more modifiers + a key).</p>
+            <div id="_qsCapBox" class="shortcut-capture-box">Press a shortcut like Alt + F7</div>
             <p id="_qsCapErr" class="shortcut-error" style="min-height:18px; margin:8px 0 0;"></p>
             <div style="display:flex; gap:10px; justify-content:flex-end; margin-top:20px;">
                 <button id="_qsCapCancel" class="btn-cancel">Cancel</button>
@@ -181,10 +178,7 @@ function _openQSHotkeyModal() {
             const k = e.key.length === 1 ? e.key.toUpperCase() : e.key;
             parts.push(k);
             capturedRaw = parts.join('+');
-            // Use renderer-side validator from accounts.js if loaded, else basic check.
-            const v = typeof validateShortcutCapture === 'function'
-                ? validateShortcutCapture(capturedRaw)
-                : _qsBasicValidate(capturedRaw);
+            const v = _qsBasicValidate(capturedRaw);
             capturedValid = v.valid;
             capturedMessage = v.message || '';
             capturedDisplay = v.normalized || parts.slice(0, -1).join(' + ') + ' + ' + k;
@@ -220,7 +214,7 @@ function _qsBasicValidate(accel) {
     const mods = parts.filter(p => MODS.has(p));
     const keys = parts.filter(p => !MODS.has(p));
     if (keys.length === 0) return { valid: false, message: 'Include a non-modifier key.', normalized: '' };
-    if (mods.length < 2)  return { valid: false, message: 'Use at least 2 modifier keys — e.g. Ctrl + Alt + B.', normalized: '' };
+    if (mods.length < 1)  return { valid: false, message: 'Use at least one modifier key — e.g. Alt + F7 or Ctrl + B.', normalized: '' };
     return { valid: true, message: '', normalized: parts.join(' + ') };
 }
 

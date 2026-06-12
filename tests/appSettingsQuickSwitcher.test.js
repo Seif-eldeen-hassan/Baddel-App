@@ -145,12 +145,12 @@ describe('Phase 2.17B: settings/QS — _qsLoadSettings behaviour', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_qsLoadSettings');
         assert.match(fn, /window\.electronAPI\.quickSwitcher\.getSettings\(\)/);
     });
-    it('populates qsEnabledToggle, qsHotkeyDisplay, qsPositionSelect, qsCloseAfterSwitchToggle', () => {
+    it('populates qsEnabledToggle, qsHotkeyDisplay, qsCloseAfterSwitchToggle (position selector removed)', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_qsLoadSettings');
         assert.match(fn, /getElementById\('qsEnabledToggle'\)/);
         assert.match(fn, /getElementById\('qsHotkeyDisplay'\)/);
-        assert.match(fn, /getElementById\('qsPositionSelect'\)/);
         assert.match(fn, /getElementById\('qsCloseAfterSwitchToggle'\)/);
+        assert.doesNotMatch(fn, /getElementById\('qsPositionSelect'\)/);
     });
     it('formats the hotkey display with spaces around plus signs', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_qsLoadSettings');
@@ -298,9 +298,8 @@ describe('Phase 2.17B: settings/QS — _openQSHotkeyModal behaviour', () => {
         assert.match(fn, /window\.electronAPI\.quickSwitcher\.setSettings/);
         assert.match(fn, /accelerator.*capturedRaw/);
     });
-    it('uses validateShortcutCapture if available, falls back to _qsBasicValidate', () => {
+    it('uses _qsBasicValidate for shortcut validation', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_openQSHotkeyModal');
-        assert.match(fn, /validateShortcutCapture/);
         assert.match(fn, /_qsBasicValidate/);
     });
     it('marks save button disabled initially and enables it only on valid capture', () => {
@@ -324,10 +323,10 @@ describe('Phase 2.17B: settings/QS — _qsBasicValidate behaviour', () => {
         assert.match(fn, /valid:\s*false/);
         assert.match(fn, /Include a non-modifier key/);
     });
-    it('returns valid: false when fewer than 2 modifier keys are provided', () => {
+    it('returns valid: false when no modifier key is provided', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_qsBasicValidate');
-        assert.match(fn, /mods\.length\s*<\s*2/);
-        assert.match(fn, /Use at least 2 modifier keys/);
+        assert.match(fn, /mods\.length\s*<\s*1/);
+        assert.match(fn, /Use at least one modifier key/);
     });
     it('returns valid: true with a normalized string when valid', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_qsBasicValidate');
@@ -438,7 +437,7 @@ describe('Phase 2.17B: settings/QS — DOM IDs in dashboard.html', () => {
     it('settingsVersionLabel element exists', () => { assert.match(HTML, /id="settingsVersionLabel"/); });
     it('qsEnabledToggle element exists', () => { assert.match(HTML, /id="qsEnabledToggle"/); });
     it('qsHotkeyDisplay element exists', () => { assert.match(HTML, /id="qsHotkeyDisplay"/); });
-    it('qsPositionSelect element exists', () => { assert.match(HTML, /id="qsPositionSelect"/); });
+    it('qsPositionSelect element is removed from settings UI', () => { assert.doesNotMatch(HTML, /id="qsPositionSelect"/); });
     it('qsCloseAfterSwitchToggle element exists', () => { assert.match(HTML, /id="qsCloseAfterSwitchToggle"/); });
     it('nav-settings triggers openSettingsModal via onclick', () => {
         assert.match(HTML, /onclick="openSettingsModal\(\)"/);
@@ -449,8 +448,8 @@ describe('Phase 2.17B: settings/QS — DOM IDs in dashboard.html', () => {
     it('qsEnabledToggle triggers qsToggleEnabled via onchange', () => {
         assert.match(HTML, /onchange="qsToggleEnabled\(this\)"/);
     });
-    it('qsPositionSelect triggers qsChangePosition via onchange', () => {
-        assert.match(HTML, /onchange="qsChangePosition\(this\)"/);
+    it('qsPositionSelect onchange handler is not present in settings UI', () => {
+        assert.doesNotMatch(HTML, /id="qsPositionSelect"/);
     });
     it('qsCloseAfterSwitchToggle triggers qsToggleCloseAfter via onchange', () => {
         assert.match(HTML, /onchange="qsToggleCloseAfter\(this\)"/);
@@ -518,9 +517,9 @@ describe('Phase 2.17B: settings/QS — intentional cross-file dependencies', () 
         const fn = getFunctionBody(SETTINGS_QS_JS, 'openSettingsModal');
         assert.match(fn, /window\._setSettingsUpdateRow/);
     });
-    it('_openQSHotkeyModal uses validateShortcutCapture from accounts.js when available', () => {
+    it('_openQSHotkeyModal uses _qsBasicValidate for validation', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, '_openQSHotkeyModal');
-        assert.match(fn, /typeof validateShortcutCapture\s*===\s*'function'/);
+        assert.match(fn, /_qsBasicValidate/);
     });
     it('qsChangeHotkey calls showToast from toast-confirm.js', () => {
         const fn = getFunctionBody(SETTINGS_QS_JS, 'qsChangeHotkey');

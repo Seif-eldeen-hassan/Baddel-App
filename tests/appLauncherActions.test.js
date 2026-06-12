@@ -7,6 +7,7 @@ const assert = require('node:assert/strict');
 
 const ROOT                = path.join(__dirname, '..');
 const APP_JS              = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
+const GAME_CARD_JS        = fs.readFileSync(path.join(ROOT, 'src/js/app/game-card.js'), 'utf8');
 const ROULETTE_JS         = fs.readFileSync(path.join(ROOT, 'src/js/app/roulette.js'), 'utf8');
 const LAUNCHER_ACTIONS_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/launcher-actions.js'), 'utf8');
 const GAME_CONTEXT_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
@@ -260,12 +261,12 @@ describe('Phase 2.14B: launcher actions — cross-file callers', () => {
     it('triggerPlay in launcher-actions.js wraps triggerLaunchSequence for context menu', () => {
         assert.match(LAUNCHER_ACTIONS_JS, /function triggerPlay[^{]*\{[^}]*triggerLaunchSequence/);
     });
-    it('createGameCard in app.js wires play button to triggerLaunchSequence', () => {
-        const createGameCardBody = getFunctionBody(APP_JS, 'createGameCard');
+    it('createGameCard in game-card.js wires play button to triggerLaunchSequence', () => {
+        const createGameCardBody = getFunctionBody(GAME_CARD_JS, 'createGameCard');
         assert.match(createGameCardBody, /triggerLaunchSequence\(/);
     });
-    it('createRecentCard in app.js wires JumpBackIn play button to triggerLaunchSequence', () => {
-        const createRecentCardBody = getFunctionBody(APP_JS, 'createRecentCard');
+    it('createRecentCard in game-card.js wires JumpBackIn play button to triggerLaunchSequence', () => {
+        const createRecentCardBody = getFunctionBody(GAME_CARD_JS, 'createRecentCard');
         assert.match(createRecentCardBody, /triggerLaunchSequence\(/);
     });
     it('playRouletteResult in roulette.js calls triggerLaunchSequence for play-mode winner', () => {
