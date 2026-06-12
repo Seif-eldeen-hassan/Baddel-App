@@ -694,14 +694,17 @@ if (window.electronAPI.onLibraryUpdated) {
         });
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
+        window._readyToInstallRenderedGames = null; // invalidate stale RTI page count
         renderSidebar();
         if (currentView === 'home') {
             renderRecentlyPlayed();
             renderExploreCarousel();
-            renderSyncedSuggestions();
+            renderSyncedSuggestions(); // also rebuilds _suggAllGames + updates sidebar count
             applyHeroForHome();
         } else {
             applyFilters();
+            // Silently rebuild suggestions pool so the sidebar badge reflects post-sync counts.
+            if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
         }
     });
 }

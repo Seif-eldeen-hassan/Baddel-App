@@ -197,59 +197,42 @@ function updateSmartSidebarCounts() {
     if (navReady) {
         const count = getReadyToInstallCount();
         if (count === null) {
-            // Data not ready — show loading indicator only if we've started loading
-            const loading = Array.isArray(window._allGamesCache) || window.__platformLibraryReady;
-            if (loading) navReady.textContent = '…';
-            // else leave "—" (initial state before any data arrives)
+            // If canonical state exists (accounts.js loaded), show loading "…"
+            // Otherwise show initial dash "—"
+            navReady.textContent = window.__readyToInstallState ? '…' : '—';
         } else {
             navReady.textContent = String(count);
         }
     }
 }
 
-// ── Ready to Install count — single source of truth ─────────────────────────
-// Priority: _suggAllGames first (pre-filtered to owned-not-installed), then
-// _allGamesCache filtered by !_agIsInstalled as a fallback.
-// Returns null when no data has loaded yet so the UI can show "…" instead of 0.
+// ── Ready to Install count — reads from canonical state ──────────────────────
+// The canonical state is owned by accounts.js and published after every
+// reliable library cache rebuild. Returns null when data is not yet ready.
 function getReadyToInstallGamesForCounts() {
-    // 0. Canonical source: the exact list the Ready to Install page last rendered.
-    //    This guarantees the sidebar badge matches the page count pixel-for-pixel.
-    if (Array.isArray(window._readyToInstallRenderedGames)) {
-        return window._readyToInstallRenderedGames;
+    if (typeof window.getCanonicalReadyToInstallGames === 'function') {
+        const games = window.getCanonicalReadyToInstallGames();
+        if (games !== null) {
+            console.log(`[ReadyCount] sidebar consumed count=${games.length}`);
+        }
+        return games; // null = not ready, [] = ready but all installed, Array = ready
     }
-
-    // 1. Best source: the synced suggestions pool is already filtered to
-    //    owned-but-not-installed games — use it directly when available.
-    if (Array.isArray(window._suggAllGames) && window._suggAllGames.length > 0) {
-        return window._suggAllGames;
-    }
-
-    // 2. Full all-games cache filtered by install status.
-    let source = [];
-    if (typeof _agGetUserLibraryGames === 'function' &&
-            Array.isArray(window._allGamesCache) && window._allGamesCache.length) {
-        source = _agGetUserLibraryGames(window._allGamesCache);
-    } else if (Array.isArray(window._allGamesCache) && window._allGamesCache.length) {
-        source = window._allGamesCache;
-    }
-
-    if (source.length > 0 && typeof _agIsInstalled === 'function') {
-        const ready = source.filter(g => { try { return !_agIsInstalled(g); } catch (_) { return false; } });
-        if (ready.length > 0) return ready;
-        // source existed but everything is installed — only return [] when we
-        // know the platform library is fully loaded, otherwise stay null.
-        if (window.__platformLibraryReady === true) return [];
-        return null;
-    }
-
-    // 3. Data not ready yet — caller should show loading state.
     return null;
 }
 
 function getReadyToInstallCount() {
-    const games = getReadyToInstallGamesForCounts();
-    return games === null ? null : games.length;
+    if (typeof window.getCanonicalReadyToInstallCount === 'function') {
+        return window.getCanonicalReadyToInstallCount();
+    }
+    return null;
 }
+
+// Update sidebar counts whenever canonical ready state changes.
+try {
+    window.addEventListener('baddel:ready-install-updated', () => {
+        try { updateSmartSidebarCounts(); } catch (_) {}
+    });
+} catch (_) {}
 
 // ── Sidebar action context — based on active view, not section toggle ─────────
 function getSidebarActionContext() {

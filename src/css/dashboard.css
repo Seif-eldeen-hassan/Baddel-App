@@ -614,7 +614,7 @@ body {
     box-shadow: none;
 }
 
-/* في الـ All Games view — الـ badges تكون أصغر قليلاً عشان الكروت أصغر */
+/* In All Games view, platform badges are slightly smaller to match the compact cards. */
 #allGamesGrid .plat-badge {
     width: 22px;
     height: 22px;
@@ -6821,6 +6821,57 @@ body.ag-route-pending #allGamesView {
 
 /* ── Ready to Install mode — hide the Installed filter chip ── */
 body.ag-ready-mode .ag-installed-toggle { display: none !important; }
+
+/* ── Ready to Install loading state ─────────────────────────────────────────── */
+
+/* Sibling wrapper inserted next to allGamesGrid inside library-section. */
+.ag-rti-loading-wrap {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* Full-height centering container. Uses grid/place-items for robust centering
+   that works regardless of the parent element's display mode. */
+.ag-ready-loading-state {
+    width: 100%;
+    min-height: calc(100vh - 180px);
+    display: grid;
+    place-items: center;
+    text-align: center;
+    box-sizing: border-box;
+}
+
+/* Inner column flex layout for spinner + text. */
+.ag-ready-loading-inner {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 18px;
+}
+
+.ag-rls-spinner {
+    width: 28px;
+    height: 28px;
+    flex-shrink: 0;
+    border-width: 2.5px;
+}
+
+.ag-rls-title {
+    display: block;
+    color: var(--text-main, rgba(255,255,255,0.85));
+    font-size: 0.93rem;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    opacity: 0.85;
+}
+
+.ag-rls-sub {
+    display: block;
+    color: var(--text-sec, #86868b);
+    font-size: 0.78rem;
+    margin-top: 4px;
+    opacity: 0.7;
+}
 
 /* ── Beta Feedback Banner ──────────────────────────────────────────────────── */
 @keyframes betaFeedbackIn {

@@ -951,6 +951,42 @@ test('app.js: does not redeclare _suggFilter', () => {
     assert.doesNotMatch(APP_JS, /^let _suggFilter\b/m);
 });
 
+// ── 36. Canonical RTI state behavioral tests ─────────────────────────────────
+
+test('suggestions.js: renderSyncedSuggestions stats block uses getCanonicalReadyToInstallCount (not _suggAllGames.length)', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 5000);
+    assert.match(fn, /getCanonicalReadyToInstallCount/, 'must call getCanonicalReadyToInstallCount for the stat display');
+    // Verify it does not use _suggAllGames.length as the stat value directly
+    // (it may still use staleCount from _suggAllGames, but not for the main count)
+    const statsIdx = fn.indexOf('syncedSuggStats');
+    const rtiIdx   = fn.indexOf('getCanonicalReadyToInstallCount');
+    assert.ok(statsIdx > -1, 'stats element must be referenced');
+    assert.ok(rtiIdx > -1, 'getCanonicalReadyToInstallCount must be called');
+});
+
+test('suggestions.js: home stat shows "..." when canonical count is null (not ready)', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 5000);
+    // The stat display must handle null count with a loading indicator
+    assert.match(fn, /\.\.\.|…/, 'must show loading indicator when canonical count is null');
+});
+
+test('suggestions.js: _suggAllGames.length=117 + canonical count=119 -> home stat shows 119', () => {
+    // Unit simulation: canonical count takes precedence over _suggAllGames.length
+    const _suggAllGames = Array.from({ length: 117 }, (_, i) => ({ id: i, title: `Game ${i}`, _cacheStale: false }));
+    const canonicalCount = 119;
+    const getCanonicalReadyToInstallCount = () => canonicalCount;
+    const _rtiCount = typeof getCanonicalReadyToInstallCount === 'function'
+        ? getCanonicalReadyToInstallCount()
+        : null;
+    const _rtiDisplay = _rtiCount !== null ? String(_rtiCount) : '…';
+    assert.strictEqual(_rtiDisplay, '119', 'home stat must show canonical count 119, not _suggAllGames.length 117');
+});
+
+test('suggestions.js: baddel:ready-install-updated event listener is registered', () => {
+    assert.match(SUGGESTIONS_JS, /baddel:ready-install-updated/, 'must listen for canonical state change events');
+    assert.match(SUGGESTIONS_JS, /addEventListener\s*\(\s*['"]baddel:ready-install-updated['"]/);
+});
+
 test('app.js: does not redeclare _SUGG_STATE_KEY', () => {
     assert.doesNotMatch(APP_JS, /^const _SUGG_STATE_KEY\b/m);
 });

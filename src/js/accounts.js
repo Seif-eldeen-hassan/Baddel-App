@@ -335,6 +335,9 @@ window.unlinkEpicLibrary = async function() {
 // ============================================================
 
 window._allGamesCache = [];
+window.__readyToInstallState = {
+    ready: false, games: null, count: null, version: 0, source: 'not-ready',
+};
 
 function _agMetadataHints(game) {
     const platforms = Array.isArray(game.platforms) && game.platforms.length
@@ -1231,6 +1234,61 @@ function _agGetUserLibraryGames(games) {
 window._agIsUserLibraryGame   = _agIsUserLibraryGame;
 window._agGetUserLibraryGames = _agGetUserLibraryGames;
 
+// ── Canonical Ready-to-Install state ─────────────────────────────────────────
+// Single source of truth for the count of owned-but-not-installed synced games.
+// Published after every reliable library cache rebuild (onLibraryUpdated).
+// Before that fires, state is not-ready and UIs show loading ("...").
+
+function _agComputeReadyToInstallGamesFromCache() {
+    if (!Array.isArray(window._allGamesCache) || window._allGamesCache.length === 0) return null;
+    if (typeof _agIsInstalled !== 'function') return null;
+    const lib = _agGetUserLibraryGames(window._allGamesCache);
+    return lib.filter(g => { try { return !_agIsInstalled(g); } catch (_) { return false; } });
+}
+
+function _agPublishReadyToInstallState(games, source) {
+    const count = Array.isArray(games) ? games.length : null;
+    window.__readyToInstallState = {
+        ready: true, games, count,
+        version: (window.__readyToInstallState?.version ?? 0) + 1,
+        source: source || 'accounts',
+    };
+    console.log(`[ReadyCount] published count=${count} source=${source}`);
+    try {
+        window.dispatchEvent(new CustomEvent('baddel:ready-install-updated', {
+            detail: { count, source },
+        }));
+    } catch (_) {}
+}
+
+function _agMarkReadyToInstallNotReady(source) {
+    window.__readyToInstallState = {
+        ready: false, games: null, count: null,
+        version: (window.__readyToInstallState?.version ?? 0) + 1,
+        source: source || 'not-ready',
+    };
+    console.log(`[ReadyCount] state=not-ready source=${source}`);
+    try {
+        window.dispatchEvent(new CustomEvent('baddel:ready-install-updated', {
+            detail: { count: null, source },
+        }));
+    } catch (_) {}
+}
+
+window.getCanonicalReadyToInstallGames = function() {
+    return window.__readyToInstallState?.ready === true
+        ? window.__readyToInstallState.games : null;
+};
+
+window.getCanonicalReadyToInstallCount = function() {
+    return window.__readyToInstallState?.ready === true
+        ? window.__readyToInstallState.count : null;
+};
+
+window.isCanonicalReadyToInstallReady = function() {
+    return window.__readyToInstallState?.ready === true;
+};
+
 async function navigateToAllGames(opts = {}) {
     // ── 1. Mode flags (synchronous) ──────────────────────────────────────────────
     if (!opts._keepReadyMode) {
@@ -1338,6 +1396,16 @@ async function navigateToAllGames(opts = {}) {
             if (libraryCache.length > 0) {
                 window._allGamesCache = libraryCache;
                 _agRenderAccountFilterOptions(window._allGamesCache);
+
+                // RTI loading guard: stale cache produces wrong pre-sync count.
+                // Wait for canonical Ready-to-Install state before rendering cards.
+                if (window.agReadyOnly
+                    && typeof window.isCanonicalReadyToInstallReady === 'function'
+                    && !window.isCanonicalReadyToInstallReady()) {
+                    _agRenderReadyToInstallLoading();
+                    return; // finally → _agEndAllGamesRoute(); listener re-renders when ready
+                }
+
                 // resetScroll=false because scrollTop was already set to 0 in step 2;
                 // for back-navigation we'll restore the saved position after render.
                 _applyAgFilters({ resetScroll: !opts.restoreState?.scrollTop });
@@ -1365,6 +1433,58 @@ async function navigateToAllGames(opts = {}) {
     } finally {
         _agEndAllGamesRoute();
     }
+}
+
+// Show a centered loading placeholder on the Ready to Install page while canonical
+// state is not yet available. Hides the game grid and inserts a sibling wrapper
+// inside the same parent section so the panel is not constrained by the grid's
+// column layout or justify-content:start alignment.
+// DOM updates are idempotent; the event listener registers only once.
+function _agRenderReadyToInstallLoading() {
+    _agSetToolbarVisible(false);
+    const countEl = document.getElementById('agResultCount');
+    if (countEl) countEl.textContent = '…';
+
+    // Hide the grid so stale pre-sync cards are not visible.
+    const grid = document.getElementById('allGamesGrid');
+    if (grid) grid.style.display = 'none';
+
+    // Insert a sibling loading wrapper inside library-section so it spans the
+    // full content width independently of the grid's column layout.
+    const section = grid?.parentElement;
+    if (section && !section.querySelector('.ag-rti-loading-wrap')) {
+        const wrap = document.createElement('div');
+        wrap.className = 'ag-rti-loading-wrap';
+        wrap.innerHTML =
+            '<div class="ag-ready-loading-state">' +
+            '<div class="ag-ready-loading-inner">' +
+            '<div class="acc-spinner ag-rls-spinner"></div>' +
+            '<div>' +
+            '<span class="ag-rls-title">Preparing your library…</span>' +
+            '<span class="ag-rls-sub">Syncing accounts and ready‑to‑install games</span>' +
+            '</div>' +
+            '</div>' +
+            '</div>';
+        section.appendChild(wrap);
+    }
+
+    if (window._agRtiLoadingListenerActive) return;
+    window._agRtiLoadingListenerActive = true;
+
+    function _onCanonicalReady(evt) {
+        window._agRtiLoadingListenerActive = false;
+        window.removeEventListener('baddel:ready-install-updated', _onCanonicalReady);
+        // Remove loading wrapper and restore grid visibility before re-rendering.
+        document.querySelector('.ag-rti-loading-wrap')?.remove();
+        const g = document.getElementById('allGamesGrid');
+        if (g) g.style.display = '';
+        if (!window.agReadyOnly) return;
+        if (typeof currentView !== 'undefined' && currentView !== 'all-games') return;
+        if (!evt?.detail?.count && evt?.detail?.count !== 0) return;
+        _agSetToolbarVisible(true);
+        _applyAgFilters({ resetScroll: true });
+    }
+    window.addEventListener('baddel:ready-install-updated', _onCanonicalReady);
 }
 
 // ── All Games: toolbar visibility helper ─────────────────────────────────────
@@ -1656,12 +1776,12 @@ window.renderAllGamesView = async function(options = {}) {
     if (!grid) { window._allGamesRendering = false; return; }
 
     try {
-    // 1. فحص الـ status لـ Epic و Steam
+    // 1. Check platform link status for Epic and Steam.
     const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
     const isEpicLinked = status?.epic === true;
     const isSteamLinked = status?.steam === true;
 
-    // 2. لو محدش متربط — ادّي المستخدم الـ onboarding panel
+    // 2. No accounts linked — show onboarding panel.
     if (!isEpicLinked && !isSteamLinked) {
         window._allGamesRendering = false;
         _agSetToolbarVisible(false);
@@ -1672,7 +1792,7 @@ window.renderAllGamesView = async function(options = {}) {
         return;
     }
 
-    // 3. في الأقل واحدة متربطة — ظهّر الـ toolbar وأخفي الـ banner القديمة
+    // 3. At least one account linked — show toolbar and hide legacy banners.
     window._agNoLinkedAccounts = false;
     _agSetEmptyPageMode(false);
     _agSetToolbarVisible(true);
@@ -1692,7 +1812,7 @@ window.renderAllGamesView = async function(options = {}) {
         let rawGames = [];
         const accountNameByKey = new Map();
 
-        // 1. جلب الألعاب من المنصتين
+        // 1. Fetch cached games from each linked platform.
         if (isEpicLinked) {
             const epicAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('epic');
             const epicAccounts = epicAccountsRes?.accounts || [];
@@ -1712,33 +1832,33 @@ window.renderAllGamesView = async function(options = {}) {
             if (steamRes?.games) rawGames.push(...steamRes.games);
         }
 
-        // 2. فلترة ودمج الألعاب المكررة
+        // 2. Deduplicate by normalized title and merge platform metadata.
         const mergedGamesMap = new Map();
 
         rawGames.forEach(game => {
-            // توحيد اسم اللعبة للمقارنة (حروف صغيرة وبدون أي مسافات أو رموز عشان نتفادى الاختلافات البسيطة بين Steam و Epic)
+            // Normalize title for dedup comparison (lowercase, alphanumeric only).
             const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 
             if (mergedGamesMap.has(cleanTitle)) {
-                // اللعبة موجودة أصلاً! هنضيف المنصة والـ ID للبيانات القديمة
+                // Merge additional platform/ID into the existing entry.
                 const existingGame = mergedGamesMap.get(cleanTitle);
 
-                // إضافة المنصة الجديدة لو مش موجودة
+                // Add new platform if not already tracked.
                 if (!existingGame.platforms.includes(game.platform)) {
                     existingGame.platforms.push(game.platform);
                 }
 
-                // حفظ الـ IDs بتاعت المنصتين عشان لو حبيت تشغلها من مكان معين
+                // Preserve per-platform ID for targeted launching.
                 existingGame.allIds[game.platform] = game.id;
                 existingGame._agSource     = 'platform-sync';
                 existingGame.librarySource = 'synced-account';
                 _agMergeAccountMeta(existingGame, game, accountNameByKey);
 
             } else {
-                // أول مرة نشوف اللعبة دي، هنجهز لها المصفوفات
+                // First occurrence — initialize platform arrays.
                 const newGame = { ...game };
-                newGame.platforms      = [game.platform]; // مصفوفة فيها المنصات
-                newGame.allIds         = { [game.platform]: game.id }; // Object فيه الـ ID بتاع كل منصة
+                newGame.platforms      = [game.platform];
+                newGame.allIds         = { [game.platform]: game.id };
                 newGame._agSource      = 'platform-sync';
                 newGame.librarySource  = 'synced-account';
                 _agMergeAccountMeta(newGame, game, accountNameByKey);
@@ -1746,7 +1866,7 @@ window.renderAllGamesView = async function(options = {}) {
             }
         });
 
-        // تحويل الـ Map لـ Array عشان الـ Cache
+        // Convert merged Map to array and apply installed-creator overrides.
         const _rawResolved = await _agApplyInstalledCreatorOverrides(
             Array.from(mergedGamesMap.values())
         );
@@ -1755,13 +1875,32 @@ window.renderAllGamesView = async function(options = {}) {
 
         if (window._vs?.cardCache) window._vs.cardCache.clear();
 
-        // 3. تحديث الرقم في الـ Sidebar
+        // Update sidebar All Games count badge.
         if (allGamesCount) {
             allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
         }
         _agRenderAccountFilterOptions(window._allGamesCache);
 
         if (await _agMaybeRenderEmptyOnboarding('renderAllGamesView')) return;
+
+        // RTI guard: canonical state not ready — block raw cache render to avoid stale count.
+        if (window.agReadyOnly
+            && typeof window.isCanonicalReadyToInstallReady === 'function'
+            && !window.isCanonicalReadyToInstallReady()) {
+            console.log('[ReadyCount] renderAllGamesView blocked raw RTI render; waiting canonical');
+            _agRenderReadyToInstallLoading();
+            return;
+        }
+
+        // RTI canonical: render from canonical list rather than raw _allGamesCache.
+        if (window.agReadyOnly
+            && typeof window.getCanonicalReadyToInstallGames === 'function') {
+            const readyGames = window.getCanonicalReadyToInstallGames();
+            if (Array.isArray(readyGames)) {
+                _renderAllGamesViewModeAware(readyGames);
+                return;
+            }
+        }
 
         _renderAllGamesViewModeAware(window._allGamesCache);
     } catch (err) {
@@ -1780,22 +1919,25 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
     window._allGamesLibraryListenerAttached = true;
     window.electronAPI.onLibraryUpdated(async () => {
         const view = document.getElementById('allGamesView');
-        if (!view || view.style.display !== 'block') return;
+        const viewVisible = view && view.style.display === 'block';
 
-        // ── FIX: Don't full-rebuild (which resets filters). Instead, silently
-        // refresh the cache in the background then re-apply current filters. ──
-        console.log('[AllGames] Library updated — refreshing data without resetting filters...');
-
-        // Rebuild cache silently (no loading spinner, no innerHTML wipe)
+        // Always rebuild cache so canonical ready state stays current,
+        // regardless of which view is open.
         try {
             if (window._agNoLinkedAccounts) {
-                // Games may have just arrived after account link — do a full rebuild.
-                await renderAllGamesView();
+                if (viewVisible) await renderAllGamesView();
                 return;
             }
             const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
             const isEpicLinked = status?.epic === true;
             const isSteamLinked = status?.steam === true;
+
+            if (!isEpicLinked && !isSteamLinked) {
+                _agMarkReadyToInstallNotReady('no-linked-accounts');
+                return;
+            }
+
+            console.log('[AllGames] Library updated — refreshing cache' + (viewVisible ? ' and view' : ' (background)'));
 
             let rawGames = [];
             const accountNameByKey = new Map();
@@ -1838,15 +1980,14 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                 }
             });
 
-            // Preserve existing asset URLs so images don't flash away on refresh
             let newCache = Array.from(mergedGamesMap.values());
             const oldById = new Map((window._allGamesCache || []).map(g => [String(g.id ?? g.appName ?? g.title), g]));
             newCache.forEach(g => {
                 const key = String(g.id ?? g.appName ?? g.title);
                 const old = oldById.get(key);
-                if (old?.coverUrl)            g.coverUrl            = old.coverUrl;
-                if (old?.heroUrl)             g.heroUrl             = old.heroUrl;
-                if (old?.logoUrl)             g.logoUrl             = old.logoUrl;
+                if (old?.coverUrl)             g.coverUrl             = old.coverUrl;
+                if (old?.heroUrl)              g.heroUrl              = old.heroUrl;
+                if (old?.logoUrl)              g.logoUrl              = old.logoUrl;
                 if (old?._agCoverPipelineDone) g._agCoverPipelineDone = old._agCoverPipelineDone;
                 if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
             });
@@ -1855,6 +1996,15 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
 
             window._allGamesRawCache = newCache;
             window._allGamesCache    = _agGetUserLibraryGames(newCache);
+
+            // Publish canonical ready state — this is the single authoritative update.
+            const _rtiGames = _agComputeReadyToInstallGamesFromCache();
+            if (_rtiGames !== null) {
+                _agPublishReadyToInstallState(_rtiGames, 'library-updated');
+            }
+
+            // DOM updates only when the all-games view is visible.
+            if (!viewVisible) return;
 
             if (window._allGamesCache.length > 0) {
                 window._agNoLinkedAccounts = false;
@@ -1872,7 +2022,6 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
             const scroller = document.getElementById('mainContentArea');
             const keepScrollTop = scroller ? scroller.scrollTop : 0;
 
-            // Background sync refresh: do NOT reset scroll
             _applyAgFilters({ resetScroll: false });
 
             if (scroller) {
@@ -3013,10 +3162,31 @@ function _agIsInstalled(game) {
 }
 
 function _applyAgFilters(options = {}) {
+    // RTI guard: canonical state not ready — do not render stale pre-sync cache.
+    if (window.agReadyOnly
+        && typeof window.isCanonicalReadyToInstallReady === 'function'
+        && !window.isCanonicalReadyToInstallReady()) {
+        console.log('[ReadyCount] _applyAgFilters blocked RTI render; canonical not ready');
+        _agRenderReadyToInstallLoading();
+        return;
+    }
+
+    // RTI canonical: use canonical list as the base pool to ensure consistent count.
+    // Falls back to _allGamesCache if canonical is unavailable (should not happen post-guard).
+    const useCanonical = window.agReadyOnly
+        && typeof window.getCanonicalReadyToInstallGames === 'function'
+        && window.isCanonicalReadyToInstallReady?.() === true;
+    const canonicalGames = useCanonical ? window.getCanonicalReadyToInstallGames() : null;
+    if (useCanonical && Array.isArray(canonicalGames)) {
+        console.log('[ReadyCount] _applyAgFilters using canonical ready count=', canonicalGames.length);
+    }
+
     // Always filter the cache to user-library games before rendering, so that
     // auto-scanned installed-only records (Xbox, MS Store, etc.) never appear
     // in All Games even if they were pushed into _allGamesCache by app.js patches.
-    const cache = _agGetUserLibraryGames(window._allGamesCache || []);
+    const cache = (useCanonical && Array.isArray(canonicalGames))
+        ? canonicalGames
+        : _agGetUserLibraryGames(window._allGamesCache || []);
     if (cache.length === 0 && window._agNoLinkedAccounts) {
         _agSetEmptyPageMode(true);
         _agSetToolbarVisible(false);
@@ -3049,8 +3219,8 @@ function _applyAgFilters(options = {}) {
         pool = pool.filter(g => _agIsInstalled(g));
     }
 
-    // 3b. ready-to-install filter — exclude anything already installed locally
-    if (window.agReadyOnly) {
+    // 3b. ready-to-install filter — skip when canonical already represents RTI list.
+    if (window.agReadyOnly && !useCanonical) {
         pool = pool.filter(g => !_agIsInstalled(g));
     }
 
@@ -3070,11 +3240,9 @@ function _applyAgFilters(options = {}) {
         pool.sort((a, b) => b.platforms.length - a.platforms.length || a.title.localeCompare(b.title));
     }
 
-    // When showing Ready to Install, persist the exact rendered list as the
-    // canonical count so the sidebar badge always matches the page.
+    // Keep _readyToInstallRenderedGames for view-state use only (not as canonical count source).
     if (window.agReadyOnly && !window._agState?.search?.trim()) {
         window._readyToInstallRenderedGames = pool;
-        try { updateSmartSidebarCounts(); } catch (_) {}
     } else if (!window.agReadyOnly) {
         window._readyToInstallRenderedGames = null;
     }

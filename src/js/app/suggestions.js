@@ -1160,10 +1160,13 @@ async function renderSyncedSuggestions() {
 
     _show(body, 'grid');
 
-    const freshCount = _suggAllGames.filter(g => !g._cacheStale).length;
     const staleCount = _suggAllGames.filter(g =>  g._cacheStale).length;
+    const _rtiCount = typeof window.getCanonicalReadyToInstallCount === 'function'
+        ? window.getCanonicalReadyToInstallCount()
+        : null;
     if (stats) {
-        let countHtml = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green">${freshCount}</span></div>`;
+        const _rtiDisplay = _rtiCount !== null ? String(_rtiCount) : '…';
+        let countHtml = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green">${_rtiDisplay}</span></div>`;
         if (staleCount > 0) {
             countHtml += `<div class="synced-count-inline" title="From a previous sync that had errors — may not be current"><span class="sci-label">CACHED</span><span class="sci-num" style="color:#f59e0b;">${staleCount}</span></div>`;
         }
@@ -1196,7 +1199,8 @@ window.suggInstall = function(platform, gameId) {
     }
 };
 
-// Hook for accounts.js to call after a sync completes:
+// Called by app.js after onLibraryUpdated fires.
+// Re-renders the home suggestions section to pick up updated counts and cards.
 window._onSyncLibraryUpdated = function() {
     if (typeof currentView !== 'undefined' && currentView === 'home') {
         _suggStopRotation();
@@ -1204,3 +1208,24 @@ window._onSyncLibraryUpdated = function() {
     }
 };
 window.renderSyncedSuggestions = renderSyncedSuggestions;
+
+// Refresh the home Ready to Install stat whenever canonical count changes.
+try {
+    window.addEventListener('baddel:ready-install-updated', () => {
+        const statsEl = document.getElementById('syncedSuggStats');
+        if (!statsEl || typeof currentView === 'undefined' || currentView !== 'home') return;
+        const rtiCount = typeof window.getCanonicalReadyToInstallCount === 'function'
+            ? window.getCanonicalReadyToInstallCount()
+            : null;
+        const staleGames = Array.isArray(window._suggAllGames)
+            ? window._suggAllGames.filter(g => g._cacheStale)
+            : [];
+        const display = rtiCount !== null ? String(rtiCount) : '…';
+        let html = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green">${display}</span></div>`;
+        if (staleGames.length > 0) {
+            html += `<div class="synced-count-inline" title="From a previous sync that had errors — may not be current"><span class="sci-label">CACHED</span><span class="sci-num" style="color:#f59e0b;">${staleGames.length}</span></div>`;
+        }
+        statsEl.innerHTML = html;
+        console.log(`[ReadyCount] home consumed count=${rtiCount}`);
+    });
+} catch (_) {}

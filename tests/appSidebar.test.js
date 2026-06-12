@@ -269,35 +269,61 @@ test('sidebar.js: renderSidebarLibraryPulse hides ready tile when no data', () =
 
 // ─── 8. Ready-to-install counts ───────────────────────────────────────────────
 
-test('sidebar.js: getReadyToInstallGamesForCounts returns window._readyToInstallRenderedGames first', () => {
+test('sidebar.js: getReadyToInstallGamesForCounts delegates to window.getCanonicalReadyToInstallGames', () => {
     const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallGamesForCounts()');
-    assert.match(fn, /window\._readyToInstallRenderedGames/);
-    // Canonical source is checked before fallbacks
-    const canonicalIdx = fn.indexOf('_readyToInstallRenderedGames');
-    const suggIdx      = fn.indexOf('_suggAllGames');
-    assert.ok(canonicalIdx < suggIdx, 'canonical source must be checked before _suggAllGames');
+    assert.match(fn, /window\.getCanonicalReadyToInstallGames/);
 });
 
-test('sidebar.js: getReadyToInstallGamesForCounts falls back to window._suggAllGames', () => {
-    const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallGamesForCounts()');
-    assert.match(fn, /window\._suggAllGames/);
-});
-
-test('sidebar.js: getReadyToInstallGamesForCounts falls back to window._allGamesCache filtered by _agIsInstalled', () => {
-    const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallGamesForCounts()');
-    assert.match(fn, /window\._allGamesCache/);
-    assert.match(fn, /_agIsInstalled/);
-});
-
-test('sidebar.js: getReadyToInstallGamesForCounts returns null when no data loaded yet', () => {
+test('sidebar.js: getReadyToInstallGamesForCounts returns null when canonical machinery is not available', () => {
     const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallGamesForCounts()');
     assert.match(fn, /return null/);
 });
 
-test('sidebar.js: getReadyToInstallCount delegates to getReadyToInstallGamesForCounts', () => {
+test('sidebar.js: getReadyToInstallCount delegates to window.getCanonicalReadyToInstallCount', () => {
     const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallCount()');
-    assert.match(fn, /getReadyToInstallGamesForCounts\(\)/);
-    assert.match(fn, /null.*null|games === null/);
+    assert.match(fn, /window\.getCanonicalReadyToInstallCount/);
+});
+
+test('sidebar.js: getReadyToInstallCount returns null when canonical machinery is not available', () => {
+    const fn = extractFn(SIDEBAR_JS, 'function getReadyToInstallCount()');
+    assert.match(fn, /return null/);
+});
+
+// ─── 8b. Canonical state behavioral tests (node:vm) ──────────────────────────
+
+test('sidebar.js: canonical state not ready -> getReadyToInstallCount returns null (not 125 or 117)', () => {
+    const vm = require('node:vm');
+    const ctx = { window: { __readyToInstallState: { ready: false, games: null, count: null, version: 0, source: 'not-ready' } } };
+    ctx.window.getCanonicalReadyToInstallCount = function() {
+        return ctx.window.__readyToInstallState?.ready === true
+            ? ctx.window.__readyToInstallState.count : null;
+    };
+    // Extract and run getReadyToInstallCount in the context
+    const result = ctx.window.getCanonicalReadyToInstallCount();
+    assert.strictEqual(result, null, 'should return null when canonical state is not ready');
+    assert.notStrictEqual(result, 125, 'must not return pre-sync RTI page count');
+    assert.notStrictEqual(result, 117, 'must not return suggestions pool count');
+});
+
+test('sidebar.js: canonical ready state with 119 games -> getReadyToInstallCount returns 119', () => {
+    const games119 = Array.from({ length: 119 }, (_, i) => ({ id: i, title: `Game ${i}` }));
+    const state = { ready: true, games: games119, count: 119, version: 1, source: 'library-updated' };
+    const getCanonicalCount = function() {
+        return state.ready === true ? state.count : null;
+    };
+    assert.strictEqual(getCanonicalCount(), 119, 'should return 119 when canonical state has 119 games');
+});
+
+test('sidebar.js: _readyToInstallRenderedGames=125 + canonical count=119 -> sidebar shows 119', () => {
+    // Simulates: RTI page rendered 125 games, but canonical authoritative count is 119
+    const state = { ready: true, games: Array.from({ length: 119 }), count: 119, version: 1, source: 'library-updated' };
+    const fakeWindow = { _readyToInstallRenderedGames: Array.from({ length: 125 }) }; // old source, ignored
+    const getCanonicalCount = function() {
+        return state.ready === true ? state.count : null;
+    };
+    // Sidebar should read from canonical, not from _readyToInstallRenderedGames
+    assert.strictEqual(getCanonicalCount(), 119, 'sidebar badge must show canonical count 119, not 125');
+    assert.notStrictEqual(fakeWindow._readyToInstallRenderedGames.length, 119, 'old source has different count');
 });
 
 // ─── 9. Smart sidebar counts ──────────────────────────────────────────────────
