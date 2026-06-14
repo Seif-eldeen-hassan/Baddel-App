@@ -30,6 +30,31 @@ const { fileURLToPath } = require('url');
 const safeLauncher  = require('./services/safeLauncher');
 const ipcValidation = require('./services/ipcValidation');
 
+// ── Production build detection ────────────────────────────────────────────────
+// Returns true when running from a packaged (installed) build.
+// Set BADDEL_ENABLE_DEVTOOLS=1 in the environment to re-enable DevTools even in
+// a packaged build (useful for diagnosing release-only issues locally).
+function isProductionBuild() {
+    return app.isPackaged && process.env.BADDEL_ENABLE_DEVTOOLS !== '1';
+}
+
+// Input-event handler attached to every webContents in production to block DevTools shortcuts.
+// Blocks Ctrl+Shift+I, Ctrl+Shift+J, Ctrl+Shift+C, and F12.
+function _blockDevToolsInput(event, input) {
+    const ctrl = input.control || input.meta;
+    const key  = input.key.toLowerCase();
+    if (
+        (ctrl && input.shift && (key === 'i' || key === 'j' || key === 'c')) ||
+        input.key === 'F12'
+    ) {
+        event.preventDefault();
+    }
+}
+
+// Remove the native application menu in production (hides the DevTools menu item).
+if (isProductionBuild()) {
+    Menu.setApplicationMenu(null);
+}
 
 // One achievement fetch at a time - avoids overlapping authenticate/get_achievements on the single Python bridge.
 let _achievementIpcChain = Promise.resolve();
@@ -1367,6 +1392,7 @@ function createWindow() {
             preload:                    path.join(__dirname, 'preload.js'),
             contextIsolation:           true,
             nodeIntegration:            false,
+            devTools:                   !isProductionBuild(),
             webSecurity:                true,   // re-enabled; CDN scripts removed (see dashboard.html)
             webviewTag:                 true,   // renderer uses <webview> for YouTube trailers
             allowRunningInsecureContent: false,
@@ -1462,6 +1488,11 @@ function createWindow() {
 // -- Webview security: navigation + popup hardening for all new webContents --
 // Runs for every WebContents including <webview> instances in the renderer.
 app.on('web-contents-created', (_event, contents) => {
+    // Production DevTools lockdown: covers main window, overlay, and all webviews.
+    if (isProductionBuild()) {
+        contents.on('before-input-event', _blockDevToolsInput);
+        contents.on('devtools-opened', () => contents.closeDevTools());
+    }
     if (contents.getType() !== 'webview') return;
 
     const _YT_NAV_ALLOWED = /^https:\/\/(www\.)?(youtube(-nocookie)?\.com|youtu\.be|ytimg\.com|googlevideo\.com|gstatic\.com|google\.com)\//;

@@ -1,0 +1,67 @@
+{
+  "appId": "com.baddel.launcher.beta",
+  "productName": "Baddel Launcher Beta",
+  "extends": null,
+  "asar": true,
+  "compression": "maximum",
+  "asarUnpack": [
+    "node_modules/ps-list/**/*",
+    "node_modules/sharp/**/*",
+    "node_modules/keytar/**/*"
+  ],
+  "artifactName": "${name}-Setup-${version}.${ext}",
+  "removePackageScripts": true,
+  "directories": {
+    "app": ".protected-build/app",
+    "output": "dist"
+  },
+  "files": [
+    "**/*",
+    "!.git/**/*",
+    "!.vscode/**/*"
+  ],
+  "extraResources": [
+    {
+      "from": "steam-runtime",
+      "to": "steam-runtime",
+      "filter": [
+        "baddel_bridge.exe"
+      ]
+    }
+  ],
+  "publish": [
+    {
+      "provider": "github",
+      "owner": "Seif-eldeen-hassan",
+      "repo": "Baddel-Releases",
+      "releaseType": "release"
+    }
+  ],
+  "win": {
+    "target": [
+      {
+        "target": "nsis",
+        "arch": [
+          "x64"
+        ]
+      }
+    ],
+    "icon": "Logo.ico",
+    "requestedExecutionLevel": "asInvoker",
+    "signingHashAlgorithms": [
+      "sha256"
+    ],
+    "timeStampServer": "http://timestamp.digicert.com"
+  },
+  "nsis": {
+    "oneClick": true,
+    "perMachine": false,
+    "deleteAppDataOnUninstall": false,
+    "createDesktopShortcut": true,
+    "createStartMenuShortcut": true,
+    "installerIcon": "Logo.ico",
+    "uninstallerIcon": "Logo.ico",
+    "differentialPackage": false,
+    "include": "build/installer.nsh"
+  }
+}

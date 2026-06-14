@@ -174,7 +174,7 @@ test('main.js: app web-contents-created blocks webview navigation to non-YouTube
     assert.match(mainJs, /web-contents-created/,
         'main.js must register app.on("web-contents-created") for webview security hardening');
     const handlerIdx = mainJs.indexOf('web-contents-created');
-    const section = mainJs.slice(handlerIdx, handlerIdx + 900);
+    const section = mainJs.slice(handlerIdx, handlerIdx + 1200);
     assert.match(section, /will-navigate/,
         'web-contents-created handler must set up will-navigate guard on webview webContents');
     assert.match(section, /event\.preventDefault/,
