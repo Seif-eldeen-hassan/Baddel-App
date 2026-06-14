@@ -1,0 +1,154 @@
+/* ============================================================ */
+/* BADDEL - ADD ACCOUNT MODAL CSS (addAccountModal.css)       */
+/* ============================================================ */
+@import url('./fonts.css');
+
+/* ============================================================ */
+/* 1. MODAL OVERLAY SCROLLBAR                                   */
+/* ============================================================ */
+
+#addAccountModalOverlay > div::-webkit-scrollbar {
+    width: 4px;
+}
+#addAccountModalOverlay > div::-webkit-scrollbar-track {
+    background: transparent;
+}
+#addAccountModalOverlay > div::-webkit-scrollbar-thumb {
+    background: rgba(255,255,255,0.1);
+    border-radius: 4px;
+}
+
+/* ============================================================ */
+/* 2. BUTTON PROCESSING STATE (للأزرار اللي بتنتظر)            */
+/* ============================================================ */
+
+/* لما أي acc-btn أو acc-switch-btn يبقى processing،
+   نمنع التأثيرات المرئية التانية */
+
+.acc-btn[disabled],
+.acc-switch-btn[disabled],
+.acc-btn-primary[disabled],
+.acc-btn-secondary[disabled] {
+    cursor: not-allowed !important;
+    pointer-events: none;
+    opacity: 0.6 !important;
+    transform: none !important;
+}
+
+/* ============================================================ */
+/* 3. ACCOUNTS HERO SECTION - IMPROVED                          */
+/* ============================================================ */
+
+/* تحسين الـ hero عشان يبان أحسن مع الـ badge الجديدة */
+.accounts-hero-actions {
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+/* ============================================================ */
+/* 4. SAVE CURRENT BADGE (Riot Special Indicator)              */
+/* ============================================================ */
+
+/* Badge بيظهر على زرار Save Current لـ Riot يوضح إن محتاج تقفل الـ tray */
+.riot-tray-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.5px;
+    color: #ff4655;
+    background: rgba(255, 70, 85, 0.12);
+    border: 1px solid rgba(255, 70, 85, 0.25);
+    border-radius: 4px;
+    padding: 2px 6px;
+    text-transform: uppercase;
+    margin-left: 4px;
+}
+
+/* ============================================================ */
+/* 5. ACCOUNTS VIEW - INFO BANNER (لما تفتح accounts أول مرة)  */
+/* ============================================================ */
+
+.accounts-info-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 40px 20px;
+    padding: 12px 16px;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+    border-radius: 10px;
+    font-size: 0.76rem;
+    color: #666;
+    line-height: 1.5;
+}
+
+.accounts-info-banner svg {
+    flex-shrink: 0;
+    margin-top: 1px;
+    color: #444;
+}
+
+/* ============================================================ */
+/* 6. PREVENT SIGNOUT REMINDER (في أسفل الـ accounts view)     */
+/* ============================================================ */
+
+.accounts-signout-reminder {
+    margin: 16px 40px 0;
+    padding: 10px 14px;
+    background: rgba(255, 59, 48, 0.05);
+    border: 1px solid rgba(255, 59, 48, 0.12);
+    border-radius: 8px;
+    font-size: 0.72rem;
+    color: #664;
+    color: rgba(255, 100, 80, 0.7);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.accounts-signout-reminder svg {
+    flex-shrink: 0;
+    color: rgba(255, 59, 48, 0.5);
+}
+
+/* ============================================================ */
+/* 7. ACCOUNT CARD - ACTIVE/CURRENT INDICATOR                  */
+/* ============================================================ */
+
+/* لو عايز تضيف حاجة زي "Current" badge على الـ card الحالي */
+.account-card.is-current {
+    border-color: rgba(255, 255, 255, 0.15);
+    background: rgba(255, 255, 255, 0.05);
+}
+
+.acc-current-badge {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: 4px;
+    background: rgba(255, 255, 255, 0.1);
+    color: rgba(255, 255, 255, 0.5);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* ============================================================ */
+/* 8. PROCESSING OVERLAY (optional, لو عايز يعمي الـ card)     */
+/* ============================================================ */
+
+.account-card.is-processing {
+    pointer-events: none;
+    opacity: 0.7;
+    position: relative;
+}
+
+.account-card.is-processing::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: 12px;
+    background: rgba(0, 0, 0, 0.3);
+}

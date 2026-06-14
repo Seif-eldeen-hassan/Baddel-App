@@ -1,0 +1,661 @@
+/* ============================================================
+   ADD GAME MODAL — UNIFIED
+   ============================================================ */
+@import url('./fonts.css');
+
+.ag-modal {
+    width: 640px;
+    max-width: 95vw;
+    padding: 0;
+    overflow: hidden;
+    border-radius: 16px;
+    display: flex;
+    flex-direction: column;
+    max-height: 82vh;
+    background: #111;
+    border: 1px solid rgba(255,255,255,0.08);
+}
+
+/* Header */
+.ag-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 22px 0;
+    flex-shrink: 0;
+}
+
+.ag-title {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: var(--font-heading);
+    font-weight: 700;
+    font-size: 1rem;
+    color: #fff;
+    letter-spacing: 0.5px;
+}
+
+.ag-close-btn {
+    background: transparent;
+    border: none;
+    color: #555;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 6px;
+    transition: color 0.15s, background 0.15s;
+}
+.ag-close-btn:hover { color: #fff; background: rgba(255,255,255,0.07); }
+
+/* Tabs */
+.ag-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 16px 22px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+    flex-shrink: 0;
+}
+
+.ag-tab {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: transparent;
+    border: none;
+    color: #555;
+    font-size: 0.78rem;
+    font-weight: 600;
+    font-family: var(--font-main);
+    padding: 8px 14px;
+    border-radius: 8px 8px 0 0;
+    cursor: pointer;
+    transition: color 0.15s, background 0.15s;
+    letter-spacing: 0.3px;
+    position: relative;
+    bottom: -1px;
+}
+
+.ag-tab:hover { color: #aaa; }
+
+.ag-tab.active {
+    color: #fff;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-bottom-color: #111; /* يمشي مع الـ border-bottom للـ tabs */
+}
+
+/* Panels */
+.ag-panel {
+    flex: 1;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+}
+
+/* Browse panel header */
+.ag-picker-header {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 12px 16px;
+    background: #0d0d0d;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    flex-shrink: 0;
+}
+
+.ag-nav-btn {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.07);
+    color: #888;
+    padding: 6px 8px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: 0.15s;
+    display: flex;
+    align-items: center;
+}
+.ag-nav-btn:hover { background: rgba(255,255,255,0.1); color: #fff; }
+
+.ag-path-text {
+    font-size: 0.72rem;
+    color: #555;
+    font-family: var(--font-code);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex: 1;
+}
+
+/* Dir list */
+.ag-dir-list {
+    flex: 1;
+    overflow-y: auto;
+    padding: 6px 8px;
+}
+
+.ag-placeholder {
+    padding: 30px;
+    text-align: center;
+    color: #333;
+    font-size: 0.82rem;
+}
+
+.ag-dir-item {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 0.12s;
+    user-select: none;
+}
+.ag-dir-item:hover    { background: rgba(255,255,255,0.05); }
+.ag-dir-item.selected { background: rgba(48, 209, 88, 0.1); }
+
+.ag-item-icon {
+    width: 22px;
+    height: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    font-size: 16px;
+}
+.ag-item-icon svg { width: 18px; height: 18px; }
+
+.ag-item-text {
+    flex: 1;
+    font-size: 0.82rem;
+    color: #ccc;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.ag-item-badge {
+    font-size: 0.65rem;
+    font-weight: 700;
+    color: #0a84ff;
+    background: rgba(10, 132, 255, 0.1);
+    padding: 2px 6px;
+    border-radius: 4px;
+    letter-spacing: 0.5px;
+    flex-shrink: 0;
+}
+
+/* Path panel */
+.ag-path-panel {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    padding: 28px 24px;
+    gap: 14px;
+}
+
+.ag-hint {
+    font-size: 0.82rem;
+    color: #555;
+    text-align: center;
+}
+.ag-hint strong { color: #888; }
+
+.ag-path-input-row {
+    display: flex;
+    gap: 10px;
+    width: 100%;
+}
+
+.ag-path-field {
+    flex: 1;
+    font-family: var(--font-code);
+    font-size: 0.82rem;
+}
+
+.ag-use-btn {
+    background: rgba(255,255,255,0.08);
+    border: 1px solid rgba(255,255,255,0.12);
+    color: #fff;
+    padding: 0 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.8rem;
+    font-weight: 600;
+    transition: 0.15s;
+    white-space: nowrap;
+}
+.ag-use-btn:hover:not(:disabled) { background: rgba(255,255,255,0.15); }
+.ag-use-btn:disabled { opacity: 0.3; cursor: default; }
+
+.ag-path-status { font-size: 0.78rem; }
+
+/* Drop panel */
+.ag-drop-zone {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    margin: 16px;
+    border: 2px dashed rgba(255,255,255,0.1);
+    border-radius: 16px;
+    gap: 10px;
+    transition: border-color 0.2s, background 0.2s;
+    cursor: default;
+    padding: 30px;
+}
+.ag-drop-zone.drag-over {
+    border-color: rgba(48,209,88,0.5);
+    background: rgba(48,209,88,0.04);
+}
+.ag-drop-zone.drop-success {
+    border-color: rgba(48,209,88,0.4);
+    background: rgba(48,209,88,0.04);
+}
+
+.ag-drop-icon { color: rgba(255,255,255,0.12); }
+
+.ag-drop-title {
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #ccc;
+    font-family: var(--font-heading);
+}
+.ag-drop-title span { color: #0a84ff; }
+
+.ag-drop-sub {
+    font-size: 0.78rem;
+    color: #444;
+    text-align: center;
+    max-width: 300px;
+    line-height: 1.6;
+}
+
+.ag-drop-feedback { font-size: 0.8rem; }
+
+/* Shared status colors */
+.ag-status-ok   { color: #30d158; }
+.ag-status-warn { color: #ff9f0a; }
+
+/* Path textarea */
+.ag-path-textarea {
+    resize: vertical;
+    min-height: 72px;
+    line-height: 1.6;
+}
+
+/* Checkmark icon on file rows — hidden until selected */
+.ag-item-check {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: transparent;
+    flex-shrink: 0;
+    opacity: 0;
+    transition: opacity 0.12s;
+    color: #30d158;
+}
+
+.ag-dir-item.selected .ag-item-check { opacity: 1; }
+.ag-dir-item.selected { background: rgba(48, 209, 88, 0.1); }
+.ag-dir-item.selected .ag-item-text { color: #fff; }
+
+/* Selected games section */
+.ag-selected-section {
+    border-top: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+    max-height: 220px;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    min-height: 0;
+}
+
+
+.ag-selected-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 8px 16px 4px;
+    flex-shrink: 0;
+}
+
+.ag-sel-count {
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #30d158;
+    letter-spacing: 0.3px;
+}
+
+.ag-clear-btn {
+    background: transparent;
+    border: none;
+    color: #555;
+    font-size: 0.72rem;
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: color 0.12s;
+}
+.ag-clear-btn:hover { color: #ff453a; }
+
+.ag-selected-games-list {
+    flex: 1;
+    min-height: 0;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 10px 8px;
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+/* Single game row inside review list */
+.ag-sel-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+}
+
+.ag-sel-filename {
+    font-size: 0.72rem;
+    font-family: var(--font-code);
+    color: #30d158;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    flex-shrink: 1;
+    max-width: 140px;
+}
+
+.ag-sel-name-input {
+    flex: 1;
+    padding: 5px 10px !important;
+    font-size: 0.78rem !important;
+    min-width: 0;
+}
+
+.ag-sel-remove {
+    background: transparent;
+    border: none;
+    color: #444;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 4px;
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+    transition: color 0.12s, background 0.12s;
+}
+.ag-sel-remove:hover { color: #ff453a; background: rgba(255,69,58,0.1); }
+
+/* Footer */
+.ag-footer {
+    display: flex;
+    gap: 10px;
+    justify-content: flex-end;
+    padding: 14px 16px;
+    border-top: 1px solid rgba(255,255,255,0.06);
+    flex-shrink: 0;
+}
+
+
+/* ============================================================
+   GAME SETTINGS MODAL — UPGRADED
+   ============================================================ */
+
+.gs-modal {
+    width: 700px;
+    max-width: 95vw;
+    padding: 28px;
+    max-height: 88vh;
+    overflow-y: auto;
+}
+
+.gs-modal-title {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+/* Images section: 3 columns */
+.gs-images-section {
+    display: grid;
+    grid-template-columns: 160px 1fr 160px;
+    gap: 16px;
+    margin-top: 18px;
+}
+
+.gs-image-block {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+
+.gs-image-label {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #666;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+}
+
+.gs-reset-btn {
+    opacity: 0;
+    pointer-events: none;
+    background: rgba(255, 255, 255, 0.08); /* لون رمادي شفاف هادي جداً */
+    color: rgba(255, 255, 255, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.12);
+    border-radius: 6px;
+    padding: 5px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.gs-image-block:hover .gs-reset-btn {
+    opacity: 1;
+    pointer-events: auto;
+}
+
+.gs-reset-btn:hover {
+    background: rgba(255, 255, 255, 0.15); /* ينور شوية لما تقف عليه */
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.25);
+    transform: translateY(-1px);
+}
+
+/* Preview wrapper base */
+.gs-preview-wrapper {
+    position: relative;
+    border-radius: 10px;
+    overflow: hidden;
+    background: #0d0d0d;
+    border: 1px solid rgba(255,255,255,0.07);
+    cursor: default;
+    width: 100%; /* ضيف دي عشان تضمن إن العرض مظبوط */
+}
+
+/* Hero/Banner: landscape */
+.gs-hero-wrapper {
+    aspect-ratio: 16 / 7;
+    cursor: grab;
+}
+
+.gs-hero-img {
+    object-fit: cover;
+    height: 100%;
+    width: auto;
+    min-width: 100%;
+    position: absolute; /* التعديل السحري: هيمنع الصورة من مط الـ Modal */
+    top: 0;             /* التثبيت لفوق */
+    left: 0;            /* التثبيت للشمال */
+    /* Pan handled via marginLeft JS */
+}
+
+/* Cover: portrait (2:3 approx) */
+.gs-cover-wrapper {
+    aspect-ratio: 2 / 3;
+    cursor: grab;
+}
+
+.gs-cover-wrapper:active { 
+    cursor: grabbing; 
+}
+
+.gs-cover-wrapper .gs-preview-img {
+    object-fit: cover;
+    object-position: center bottom;
+}
+
+.gs-hero-wrapper:active { cursor: grabbing; }
+
+.gs-hero-pan-hint {
+    position: absolute;
+    bottom: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-size: 0.62rem;
+    color: rgba(255,255,255,0.3);
+    background: rgba(0,0,0,0.5);
+    padding: 2px 8px;
+    border-radius: 10px;
+    pointer-events: none;
+    white-space: nowrap;
+    transition: opacity 0.3s;
+}
+
+/* Logo: square transparent-bg */
+.gs-logo-wrapper {
+    aspect-ratio: 1 / 1;
+}
+
+.gs-logo-bg-checker {
+    position: absolute;
+    inset: 0;
+    background-image:
+        linear-gradient(45deg, #1a1a1a 25%, transparent 25%),
+        linear-gradient(-45deg, #1a1a1a 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #1a1a1a 75%),
+        linear-gradient(-45deg, transparent 75%, #1a1a1a 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    background-color: #111;
+    opacity: 0.6;
+    pointer-events: none;
+}
+
+.gs-preview-img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+    transition: transform 0.2s;
+}
+
+.gs-logo-img {
+    object-fit: contain;
+    padding: 10%;
+    position: relative;
+    z-index: 1;
+}
+
+/* Empty logo placeholder */
+.gs-logo-empty {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    font-size: 0.72rem;
+    color: rgba(255,255,255,0.2);
+    z-index: 1;
+}
+
+/* Overlay actions (hover reveal) */
+.gs-overlay-actions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0,0,0,0);
+    opacity: 0;
+    transition: opacity 0.2s, background 0.2s;
+    z-index: 10;
+}
+
+.gs-preview-wrapper:hover .gs-overlay-actions {
+    opacity: 1;
+    background: rgba(0,0,0,0.55);
+}
+
+.gs-change-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.12);
+    backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.18);
+    color: #fff;
+    padding: 7px 14px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.78rem;
+    font-weight: 600;
+    transition: background 0.15s;
+}
+.gs-change-btn:hover { background: rgba(255,255,255,0.22); }
+
+/* ============================================================
+   RESPONSIVE: لو الشاشة ضيقة نحط الـ hero فوق والـ cover+logo تحت
+   ============================================================ */
+@media (max-width: 580px) {
+    .gs-images-section {
+        grid-template-columns: 1fr 1fr;
+        grid-template-rows: auto auto;
+    }
+    .gs-hero-block {
+        grid-column: 1 / -1;
+        order: -1;
+    }
+}
+
+/* لما زرار الـ Reset الصغير يتقفل */
+.gs-reset-btn:disabled {
+    opacity: 0.3; /* خافت */
+    background: rgba(255, 255, 255, 0.1); /* رمادي شفاف */
+    color: rgba(255, 255, 255, 0.4);
+    cursor: not-allowed;
+    pointer-events: none; 
+    filter: grayscale(1);
+    box-shadow: none;
+    transform: none;
+}
+
+/* لما زرار الـ Reset All الكبير يتقفل */
+#btn-reset-all:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    pointer-events: none;
+    filter: grayscale(1);
+}

@@ -37,7 +37,7 @@
     "cross-env": "^7.0.3",
     "electron": "^34.0.0",
     "electron-builder": "^24.13.3",
-    "javascript-obfuscator": "^4.1.1"
+    "javascript-obfuscator": "^4.2.2"
   },
   "build": {
     "appId": "com.baddel.launcher.beta",

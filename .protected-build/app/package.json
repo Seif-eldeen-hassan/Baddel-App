@@ -1,0 +1,23 @@
+{
+  "name": "baddel-launcher-beta",
+  "version": "1.1.4",
+  "description": "Baddel Launcher Beta - Every Launcher You Need, All in One Place",
+  "main": "main.js",
+  "author": "Baddel Team",
+  "dependencies": {
+    "axios": "^1.13.2",
+    "dashjs": "^5.1.1",
+    "discord-rpc": "^4.0.1",
+    "driver.js": "^1.4.0",
+    "electron-store": "^8.1.0",
+    "electron-updater": "^6.7.3",
+    "hls.js": "^1.6.16",
+    "keytar": "^7.9.0",
+    "ps-list": "^7.2.0",
+    "qrcode": "^1.5.4",
+    "sharp": "^0.33.5",
+    "sortablejs": "^1.15.7",
+    "steamgriddb": "^2.2.1",
+    "systeminformation": "^5.31.5"
+  }
+}

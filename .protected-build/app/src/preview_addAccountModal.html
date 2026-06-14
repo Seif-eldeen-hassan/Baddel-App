@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Add Account Modal Preview</title>
+<style>
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+    background: #0e0e0e; font-family: -apple-system, 'Segoe UI', sans-serif;
+    color: #fff; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 16px; padding: 40px 20px;
+}
+h1 { font-size: 0.7rem; letter-spacing: 2px; color: #333; text-transform: uppercase; margin-bottom: 8px; }
+.demo-buttons { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
+.demo-btn {
+    padding: 10px 18px; border-radius: 10px; border: 1px solid rgba(255,255,255,0.12);
+    background: rgba(255,255,255,0.06); color: #fff; font-size: 0.83rem;
+    font-weight: 600; cursor: pointer; transition: all 0.2s; font-family: inherit;
+    display: flex; align-items: center; gap: 8px;
+}
+.demo-btn svg { width: 16px; height: 16px; }
+.demo-btn:hover { background: rgba(255,255,255,0.12); transform: translateY(-1px); }
+
+@keyframes aamOverlayIn { from { opacity: 0; } to { opacity: 1; } }
+@keyframes aamBoxIn { from { opacity: 0; transform: scale(0.94) translateY(10px); } to { opacity: 1; transform: scale(1) translateY(0); } }
+@keyframes aamStepIn { from { opacity: 0; transform: translateX(10px); } to { opacity: 1; transform: translateX(0); } }
+.aam-step-item { animation: aamStepIn 0.3s ease both; }
+.aam-step-item:nth-child(1) { animation-delay: 0.05s; }
+.aam-step-item:nth-child(2) { animation-delay: 0.10s; }
+.aam-step-item:nth-child(3) { animation-delay: 0.15s; }
+.aam-step-item:nth-child(4) { animation-delay: 0.20s; }
+.aam-confirm-btn:active { transform: scale(0.97) !important; }
+</style>
+</head>
+<body>
+
+<h1>Add Account Modal — Preview</h1>
+<div class="demo-buttons">
+    <button class="demo-btn" onclick="showModal('steam')">Steam</button>
+    <button class="demo-btn" onclick="showModal('epic')">Epic Games</button>
+    <button class="demo-btn" onclick="showModal('ea')">EA App</button>
+    <button class="demo-btn" onclick="showModal('riot')">Riot Games</button>
+    <button class="demo-btn" onclick="showModal('ubisoft')">Ubisoft</button>
+    <button class="demo-btn" onclick="showModal('discord')">Discord</button>
+    <button class="demo-btn" onclick="resetDontAsk()" style="color:#666; border-color: rgba(255,255,255,0.05);">
+        <svg fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"></path><polyline points="3 3 3 8 8 8"></polyline></svg>
+        Reset "Don't Ask Again"
+    </button>
+</div>
+
+<script>
+const DONT_ASK_KEYS = { steam:'baddel_dontAsk_add_steam', epic:'baddel_dontAsk_add_epic', ea:'baddel_dontAsk_add_ea', riot:'baddel_dontAsk_add_riot', ubisoft:'baddel_dontAsk_add_ubisoft', discord:'baddel_dontAsk_add_discord' };
+
+const PLATFORM_CFG = {
+    steam:   { name:'Steam', accent:'#66c0f4', logo:`<img src="../assets/Steam.png" style="width:32px;height:32px;object-fit:contain;">` },
+    epic:    { name:'Epic Games', accent:'#ffffff', logo:`<img src="../assets/epic.svg" style="width:32px;height:32px;object-fit:contain;filter:brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));">` },
+    ea:      { name:'EA App', accent:'#ff6b35', logo:`<img src="../assets/ea.png" style="width:34px;height:34px;object-fit:contain;">` },
+    riot:    { name:'Riot Games', accent:'#ff4655', logo:`<img src="../assets/riot.png" style="width:34px;height:34px;object-fit:contain;">` },
+    ubisoft: { name:'Ubisoft', accent:'#00a8ff', logo:`<img src="../assets/ubisoft.png" style="width:32px;height:32px;object-fit:contain;filter:brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));">` },
+    discord: { name:'Discord', accent:'#5865F2', logo:`<svg width="32" height="32" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>` },
+};
+
+const STEPS_DATA = {
+    steam: {
+        accent:'#66c0f4', willSignOut:true, signOutNote:'Steam will sign you out of your current account before the login screen appears.', riotSpecial: false,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M11.979 0C5.678 0 .511 4.86.022 11.037l6.432 2.658c.545-.371 1.203-.59 1.912-.59.063 0 .125.004.188.006l2.861-4.142V8.91c0-2.495 2.028-4.524 4.524-4.524 2.494 0 4.524 2.029 4.524 4.527s-2.03 4.525-4.524 4.525h-.105l-4.076 2.911c0 .052.004.105.004.159 0 1.875-1.515 3.396-3.39 3.396-1.635 0-3.016-1.173-3.331-2.727L.436 15.27C1.862 20.307 6.486 24 11.979 24c6.627 0 11.999-5.373 11.999-12S18.607 0 11.979 0z"/></svg>`, title:'Steam Opens', desc:'Baddel will launch Steam. It will automatically sign out your current account and show the login screen.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Enter the credentials for the new account you want to add. Make sure to check "Remember Me".' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Save Current is Automatic', desc:"Once Steam opens and you're signed in, Baddel will detect and save the account for you. No extra steps needed!" },
+        ],
+        warning:`Do NOT sign out manually from Steam — Baddel handles everything. Signing out yourself may corrupt the saved session.`
+    },
+    epic: {
+        accent:'#ffffff', willSignOut:true, signOutNote:'Epic Games Launcher will sign you out of your current account.', riotSpecial: false,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M3 1.5v21L9 21V9h6v4.5h-3V16.5h3V21l6 1.5V1.5H3zm15 10.5h-3V7.5h3V12z"/></svg>`, title:'Epic Games Launcher Opens', desc:'Baddel will launch the Epic Games Launcher. It will open to the login screen after signing out.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Log in with the credentials for the new Epic account you want to save.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Come Back & Click "Save Current"', desc:"Once you're signed in and the launcher is open, come back to Baddel and click the \"Save Current\" button." },
+        ],
+        warning:`Do NOT sign out from Epic manually. Always use Baddel to switch accounts to avoid losing saved sessions.`
+    },
+    ea: {
+        accent:'#ff6b35', willSignOut:true, signOutNote:'EA App will sign you out of your current account.', riotSpecial: false,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M5.987 5.987A9.052 9.052 0 0 0 3 12a9 9 0 0 0 9 9 9.052 9.052 0 0 0 6.013-2.987L5.987 5.987zm1.006-1.006 13.02 13.02A9.052 9.052 0 0 0 21 12a9 9 0 0 0-9-9 9.052 9.052 0 0 0-6.007 2.981zM0 12C0 5.373 5.373 0 12 0s12 5.373 12 12-5.373 12-12 12S0 18.627 0 12z"/></svg>`, title:'EA App Opens', desc:'Baddel will launch the EA App and bring it to the login screen.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Enter your EA account credentials and log in.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Come Back & Click "Save Current"', desc:"Once you're logged in, return to Baddel and click \"Save Current\" to register this account." },
+        ],
+        warning:`Never manually sign out from EA App — use Baddel's switch feature to protect your saved sessions.`
+    },
+    riot: {
+        accent:'#ff4655', willSignOut:false, signOutNote:null, riotSpecial:true,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.534 21.77l-1.09-2.81 8.243.518L24 21.77H12.534zm-3.752-4.144L5.044 5.408 0 21.77h4.195l1.56-4.144h3.027zm2.868-7.37l1.704 4.326H9.945l1.705-4.326zM13.98 2.23l-1.98 5.06-1.981-5.06H5.862L12 18.19 18.138 2.23H13.98z"/></svg>`, title:'Riot Client Opens', desc:'Baddel will open the Riot Client and show the login screen.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Log in with the Riot account credentials you want to add.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>`, title:'Close Riot Client Completely', desc:'After logging in, you MUST fully close the Riot Client — including from the system tray (right-click → Quit). Do not leave it running.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Come Back & Click "Save Current"', desc:'Once Riot is fully closed, return to Baddel and click "Save Current" to save this account.' },
+        ],
+        warning:`Riot Client MUST be fully closed (including tray) before saving. If it's still running, the save will fail. Never sign out manually from Riot — always use Baddel.`
+    },
+    ubisoft: {
+        accent:'#00a8ff', willSignOut:true, signOutNote:'Ubisoft Connect will sign you out of your current account.', riotSpecial: false,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M12.003 0C6.813 0 2.247 3.237.633 8.187a1.016 1.016 0 0 0 .985 1.332c.43 0 .82-.272.963-.68 1.363-4.181 5.297-6.993 9.72-6.993 2.833 0 5.498 1.104 7.501 3.107 2.004 2.004 3.107 4.668 3.107 7.5 0 5.843-4.75 10.601-10.593 10.601-4.398 0-8.33-2.795-9.72-6.954a1.017 1.017 0 0 0-1.283-.657 1.017 1.017 0 0 0-.664 1.28C2.27 20.771 6.822 24 12.003 24c6.617 0 12-5.384 12-12.003 0-3.206-1.25-6.223-3.52-8.493C18.212 1.244 15.2 0 12.003 0z"/></svg>`, title:'Ubisoft Connect Opens', desc:'Baddel will launch Ubisoft Connect and sign you out to show the login screen.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Enter your Ubisoft credentials and complete the login.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Come Back & Click "Save Current"', desc:"Return to Baddel and click \"Save Current\" to store this Ubisoft account." },
+        ],
+        warning:`Don't sign out from Ubisoft Connect manually — let Baddel handle account switching to keep sessions intact.`
+    },
+    discord: {
+        accent:'#5865F2', willSignOut:true, signOutNote:'Discord will sign you out of your current account.', riotSpecial: false,
+        steps:[
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>`, title:'Discord Opens', desc:'Baddel will launch Discord and bring up the login screen.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`, title:'Sign In to New Account', desc:'Enter your Discord credentials and log in.' },
+            { icon:`<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></svg>`, title:'Come Back & Click "Save Current"', desc:"Return to Baddel and hit \"Save Current\" to store this Discord account." },
+        ],
+        warning:`Never sign out from Discord manually — Baddel's switch feature keeps your sessions safe.`
+    }
+};
+
+function showModal(platform) {
+    const dontAskKey = DONT_ASK_KEYS[platform];
+    if (localStorage.getItem(dontAskKey) === '1') {
+        alert(`"Don't ask again" is set for ${platform}. Click Reset to clear it.`);
+        return;
+    }
+
+    const cfg = PLATFORM_CFG[platform];
+    const stepCfg = STEPS_DATA[platform];
+    const accent = stepCfg.accent;
+    const isLight = accent === '#ffffff';
+    const btnTextColor = isLight ? '#000' : '#fff';
+
+    const stepsHTML = stepCfg.steps.map((step, i) => `
+        <div class="aam-step-item" style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);border-radius:10px;">
+            <div style="width:38px;height:38px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:${accent};">${step.icon}</div>
+            <div>
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:4px;">
+                    <span style="font-size:0.6rem;font-weight:700;letter-spacing:1px;color:${accent};opacity:0.8;text-transform:uppercase;">Step ${i+1}</span>
+                    <span style="font-size:0.86rem;font-weight:600;color:#fff;">${step.title}</span>
+                </div>
+                <p style="font-size:0.77rem;color:#777;line-height:1.55;margin:0;">${step.desc}</p>
+            </div>
+        </div>
+    `).join('');
+
+    const signOutBanner = stepCfg.willSignOut ? `
+        <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:rgba(245,197,24,0.07);border:1px solid rgba(245,197,24,0.2);border-radius:10px;margin-bottom:16px;">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#f5c518" stroke-width="2.5" style="flex-shrink:0;margin-top:1px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+            <div>
+                <div style="font-size:0.76rem;font-weight:700;color:#f5c518;margin-bottom:3px;">Sign-out Warning</div>
+                <div style="font-size:0.74rem;color:#999;line-height:1.5;">${stepCfg.signOutNote}</div>
+            </div>
+        </div>` : '';
+
+    const riotBanner = stepCfg.riotSpecial ? `
+        <div style="display:flex;gap:14px;align-items:flex-start;padding:14px 16px;background:linear-gradient(90deg, color-mix(in srgb, ${accent} 12%, transparent) 0%, transparent 100%);border-left:3px solid ${accent};border-radius:4px 10px 10px 4px;margin-bottom:18px;">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="${accent}" stroke-width="2.5" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            <div>
+                <div style="font-size:0.82rem;font-weight:700;color:#fff;margin-bottom:5px;letter-spacing:0.3px;">Important Action Required</div>
+                <div style="font-size:0.76rem;color:#aaa;line-height:1.6;">After logging in, right-click the Riot tray icon and select <span style="color:#fff;background:rgba(255,255,255,0.1);padding:2px 6px;border-radius:4px;border:1px solid rgba(255,255,255,0.1);font-weight:600;font-size:0.7rem;">Quit</span>. The app must be fully closed before saving will work.</div>
+            </div>
+        </div>` : '';
+
+    const overlay = document.createElement('div');
+    overlay.style.cssText = `position:fixed;inset:0;z-index:10000;background:rgba(0,0,0,0.85);display:flex;align-items:center;justify-content:center;backdrop-filter:blur(6px);animation:aamOverlayIn 0.2s ease;`;
+    overlay.innerHTML = `
+        <div style="background:#141414;border:1px solid rgba(255,255,255,0.08);border-radius:16px;width:480px;max-width:calc(100vw - 40px);max-height:calc(100vh - 60px);overflow-y:auto;padding:28px;box-shadow:0 24px 60px rgba(0,0,0,0.6);animation:aamBoxIn 0.25s cubic-bezier(0.34,1.56,0.64,1);font-family:-apple-system,sans-serif;scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.1) transparent;">
+            <div style="display:flex;align-items:center;gap:14px;margin-bottom:22px;">
+                <div style="width:44px;height:44px;flex-shrink:0;display:flex;align-items:center;justify-content:center;color:${accent};">${cfg.logo}</div>
+                <div>
+                    <h2 style="margin:0;font-size:1.05rem;font-weight:700;color:#fff;letter-spacing:-0.3px;">Add ${cfg.name} Account</h2>
+                    <p style="margin:3px 0 0;font-size:0.74rem;color:#555;">Follow the steps below — this takes about a minute.</p>
+                </div>
+                <button id="closeBtn" style="margin-left:auto;width:30px;height:30px;border-radius:8px;background:transparent;border:1px solid rgba(255,255,255,0.08);color:#555;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.2s;flex-shrink:0;" onmouseover="this.style.color='#fff';this.style.borderColor='rgba(255,255,255,0.2)'" onmouseout="this.style.color='#555';this.style.borderColor='rgba(255,255,255,0.08)'">
+                    <svg width="11" height="11" viewBox="0 0 12 12" fill="currentColor"><polygon points="11 1.576 6.583 6 11 10.424 10.424 11 6 6.583 1.576 11 1 10.424 5.417 6 1 1.576 1.576 1 6 5.417 10.424 1"/></svg>
+                </button>
+            </div>
+            ${signOutBanner}${riotBanner}
+            <div style="display:flex;flex-direction:column;gap:8px;margin-bottom:16px;">${stepsHTML}</div>
+            
+            <div style="display:flex;gap:10px;align-items:flex-start;padding:12px 14px;background:rgba(255,59,48,0.07);border:1px solid rgba(255,59,48,0.2);border-radius:10px;margin-top:4px;">
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="#ff3b30" stroke-width="2.5" style="flex-shrink:0;margin-top:1px;"><circle cx="12" cy="12" r="10"/><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"/></svg>
+                <p style="font-size:0.74rem;color:#888;line-height:1.5;margin:0;">${stepCfg.warning}</p>
+            </div>
+            
+            <label style="display:flex;align-items:center;gap:10px;margin:18px 0 20px;cursor:pointer;">
+                <input type="checkbox" id="dontAskChk" style="width:15px;height:15px;accent-color:${accent};cursor:pointer;">
+                <span style="font-size:0.77rem;color:#555;user-select:none;">Don't show this again for ${cfg.name}</span>
+            </label>
+            
+            <div style="display:flex;gap:10px;">
+                <button id="cancelBtn" style="flex:1;padding:11px;border-radius:10px;background:rgba(255,255,255,0.05);border:1px solid rgba(255,255,255,0.1);color:#888;cursor:pointer;font-size:0.84rem;font-weight:600;font-family:inherit;transition:all 0.2s;" onmouseover="this.style.background='rgba(255,255,255,0.09)';this.style.color='#fff'" onmouseout="this.style.background='rgba(255,255,255,0.05)';this.style.color='#888'">Cancel</button>
+                <button id="confirmBtn" class="aam-confirm-btn" style="flex:2;padding:11px;border-radius:10px;background:${accent};color:${btnTextColor};border:none;cursor:pointer;font-size:0.84rem;font-weight:700;font-family:inherit;transition:all 0.2s;display:flex;align-items:center;justify-content:center;gap:8px;" onmouseover="this.style.opacity='0.88';this.style.transform='translateY(-1px)'" onmouseout="this.style.opacity='1';this.style.transform='none'">
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>
+                    Got it, Let's Go!
+                </button>
+            </div>
+        </div>
+    `;
+
+    document.body.appendChild(overlay);
+    let confirmed = false;
+    const close = () => { overlay.style.opacity='0'; overlay.style.transition='opacity 0.15s'; setTimeout(()=>overlay.remove(), 150); };
+    overlay.querySelector('#closeBtn').onclick = close;
+    overlay.querySelector('#cancelBtn').onclick = close;
+    overlay.addEventListener('click', e => { if(e.target===overlay) close(); });
+    overlay.querySelector('#confirmBtn').onclick = () => {
+        if (confirmed) return;
+        confirmed = true;
+        if (overlay.querySelector('#dontAskChk').checked) localStorage.setItem(dontAskKey,'1');
+        close();
+        setTimeout(()=>alert(`Confirmed! "${cfg.name}" add-account flow would start now.`), 200);
+    };
+}
+
+function resetDontAsk() {
+    Object.values(DONT_ASK_KEYS).forEach(k => localStorage.removeItem(k));
+    alert('All "Don\'t Ask Again" preferences have been reset.');
+}
+</script>
+</body>
+</html>
