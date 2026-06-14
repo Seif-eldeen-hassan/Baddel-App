@@ -1073,7 +1073,7 @@ function _suggUpdatePills() {
     if (pe) pe.style.display = hasEpic  ? '' : 'none';
 }
 
-async function renderSyncedSuggestions() {
+async function _renderSyncedSuggestionsInner() {
     _suggStopRotation();
     const section  = document.getElementById('syncedSuggestionsSection');
     const loading  = document.getElementById('syncedSuggLoading');
@@ -1166,7 +1166,7 @@ async function renderSyncedSuggestions() {
         : null;
     if (stats) {
         const _rtiDisplay = _rtiCount !== null ? String(_rtiCount) : '…';
-        let countHtml = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green">${_rtiDisplay}</span></div>`;
+        let countHtml = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green" data-ready-count>${_rtiDisplay}</span></div>`;
         if (staleCount > 0) {
             countHtml += `<div class="synced-count-inline" title="From a previous sync that had errors — may not be current"><span class="sci-label">CACHED</span><span class="sci-num" style="color:#f59e0b;">${staleCount}</span></div>`;
         }
@@ -1177,6 +1177,20 @@ async function renderSyncedSuggestions() {
     _suggRenderFiltered();
 }
 
+async function renderSyncedSuggestions() {
+    if (typeof window._homeIsUserScrolled === 'function' && window._homeIsUserScrolled()) {
+        const _scrolledRtiCount = typeof window.getCanonicalReadyToInstallCount === 'function'
+            ? window.getCanonicalReadyToInstallCount() : null;
+        if (typeof window._updateHomeReadyCountTextOnly === 'function') {
+            window._updateHomeReadyCountTextOnly(_scrolledRtiCount);
+        }
+        if (typeof window._markHomeRefreshPending === 'function') {
+            window._markHomeRefreshPending('home-synced-suggestions-scrolled');
+        }
+        return;
+    }
+    return _renderSyncedSuggestionsInner();
+}
 
 window.setSyncedFilter = function(filter, btn) {
     _suggStopRotation();
@@ -1217,15 +1231,24 @@ try {
         const rtiCount = typeof window.getCanonicalReadyToInstallCount === 'function'
             ? window.getCanonicalReadyToInstallCount()
             : null;
+        if (typeof window._homeIsUserScrolled === 'function' && window._homeIsUserScrolled()) {
+            // Only patch the count text — no innerHTML, no layout mutations while scrolled.
+            if (typeof window._updateHomeReadyCountTextOnly === 'function') {
+                window._updateHomeReadyCountTextOnly(rtiCount);
+            }
+            if (typeof window._markHomeRefreshPending === 'function') {
+                window._markHomeRefreshPending('home-ready-count-text-only');
+            }
+            return;
+        }
         const staleGames = Array.isArray(window._suggAllGames)
             ? window._suggAllGames.filter(g => g._cacheStale)
             : [];
         const display = rtiCount !== null ? String(rtiCount) : '…';
-        let html = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green">${display}</span></div>`;
+        let html = `<div class="synced-count-inline"><span class="sci-label">READY TO INSTALL</span><span class="sci-num green" data-ready-count>${display}</span></div>`;
         if (staleGames.length > 0) {
             html += `<div class="synced-count-inline" title="From a previous sync that had errors — may not be current"><span class="sci-label">CACHED</span><span class="sci-num" style="color:#f59e0b;">${staleGames.length}</span></div>`;
         }
         statsEl.innerHTML = html;
-        console.log(`[ReadyCount] home consumed count=${rtiCount}`);
     });
 } catch (_) {}

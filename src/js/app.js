@@ -536,6 +536,11 @@ function navigateToHome() {
     document.getElementById('heroSection').style.display = 'flex';
     document.getElementById('libraryView').style.display = 'block';
 
+    // Intentional navigation resets scroll and clears any deferred refresh.
+    const _navHomeMain = document.getElementById('mainContentArea');
+    if (_navHomeMain) _navHomeMain.scrollTop = 0;
+    window._homeRefreshPending = false;
+
     currentFilters.collectionId = null;
     currentFilters.platform = 'all';
     currentFilters.search = '';
@@ -638,8 +643,9 @@ if (window.electronAPI.onPlaytimeUpdated) {
             if (playSessions)        allGamesData[gameIndex].playSessions         = playSessions;
         }
 
-        // Only re-render recently played if a qualified session changed the ranking
-        if (sessionQualified !== false) renderRecentlyPlayed();
+        // Re-render recently played when a qualified session changes the ranking, or
+        // when any counted playtime exists / lastPlayed is now set (short sessions).
+        if (sessionQualified !== false || totalMinutes > 0 || lastPlayed) renderRecentlyPlayed();
 
         if (currentFilters.collectionId === null && currentHeroGameId === String(gameId)) {
             updateHeroSection(gameId);
@@ -655,9 +661,17 @@ if (window.electronAPI.onPlaytimeUpdated) {
                 const m = totalMinutes % 60;
                 const timeStr = h > 0 ? `${h}h ${m}m` : `${m}m`;
                 const clockIcon = `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>`;
-                
+
                 timeEl.innerHTML = `${clockIcon} ${timeStr}`;
-                timeEl.classList.add('played'); 
+                timeEl.classList.add('played');
+            }
+
+            if (lastPlayed) {
+                const lpEl = card.querySelector('.gc-lastplayed');
+                if (lpEl) {
+                    const d = new Date(lastPlayed);
+                    lpEl.textContent = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
+                }
             }
         });
     });
@@ -666,6 +680,164 @@ if (window.electronAPI.onPlaytimeUpdated) {
 // ============================================================
 // REAL-TIME LIBRARY + IMAGE UPDATES FROM MAIN PROCESS
 // ============================================================
+
+// Walk a priority list of candidate scroll containers and return the first one
+// that is actually scrolled (scrollTop > 0). Falls back to the first element
+// that CAN scroll, so we never blindly assume mainContentArea is the scroller.
+function _getActiveScrollContainer() {
+    const candidates = [
+        { el: document.getElementById('mainContentArea'),   name: 'mainContentArea' },
+        { el: document.querySelector('.main-content'),      name: '.main-content' },
+        { el: document.querySelector('.content'),           name: '.content' },
+        { el: document.querySelector('.page-content'),      name: '.page-content' },
+        { el: document.querySelector('.dashboard-content'), name: '.dashboard-content' },
+        { el: document.scrollingElement,                    name: 'scrollingElement' },
+        { el: document.documentElement,                     name: 'documentElement' },
+        { el: document.body,                                name: 'body' },
+    ].filter(function(c) { return c.el != null; });
+
+    var scrolled = candidates.find(function(c) { return c.el.scrollTop > 0; });
+    if (scrolled) return scrolled;
+
+    if (window.scrollY > 0) return { el: null, name: 'window' };
+
+    var canScroll = candidates.find(function(c) { return c.el.scrollHeight > c.el.clientHeight + 1; });
+    if (canScroll) return canScroll;
+
+    return candidates[0] || { el: document.documentElement, name: 'documentElement' };
+}
+window._getActiveScrollContainer = _getActiveScrollContainer;
+
+// Saves the active scroll position, runs fn(), then restores it at five timing
+// points (after fn, rAF1, rAF2, 50 ms, 150 ms) so layout shifts from innerHTML
+// clearing and image loading cannot permanently clamp the user's position.
+// Intentional navigation (wheel/touchstart during the update) aborts restoration.
+// Only use this for background data updates — user navigation resets scroll normally.
+function _preserveActiveScrollDuring(reason, fn) {
+    var snapView = typeof currentView !== 'undefined' ? currentView : null;
+    var _sc = _getActiveScrollContainer();
+    var scrollEl   = _sc.el;
+    var scrollName = _sc.name;
+    var savedTop   = scrollEl ? scrollEl.scrollTop  : (window.scrollY || 0);
+    var savedLeft  = scrollEl ? scrollEl.scrollLeft : 0;
+
+    // Detect intentional user scroll via wheel/touchstart — do not fight the user.
+    var _userScrolled = false;
+    var _markUserScroll = function() { _userScrolled = true; };
+    var _targetEl = scrollEl || document.getElementById('mainContentArea');
+    if (_targetEl) {
+        _targetEl.addEventListener('wheel', _markUserScroll, { passive: true, capture: true });
+        _targetEl.addEventListener('touchstart', _markUserScroll, { passive: true, capture: true });
+    }
+
+    var _cleanup = function() {
+        if (_targetEl) {
+            _targetEl.removeEventListener('wheel', _markUserScroll, { capture: true });
+            _targetEl.removeEventListener('touchstart', _markUserScroll, { capture: true });
+        }
+    };
+
+    var _restore = function() {
+        var nowView = typeof currentView !== 'undefined' ? currentView : null;
+        if (nowView !== snapView) { _cleanup(); return; }
+        if (_userScrolled && savedTop > 0) { _cleanup(); return; }
+        if (scrollEl) {
+            scrollEl.scrollTop  = savedTop;
+            scrollEl.scrollLeft = savedLeft;
+        } else {
+            window.scrollTo(0, savedTop);
+        }
+        if (typeof window._vsRender === 'function') window._vsRender(false);
+    };
+
+    var result = fn();
+
+    if (result && typeof result.then === 'function') {
+        result.then(
+            function() {
+                _restore();
+                requestAnimationFrame(function() {
+                    _restore();
+                    requestAnimationFrame(function() {
+                        _restore();
+                        setTimeout(function() {
+                            _restore();
+                            setTimeout(function() { _restore(); _cleanup(); }, 100);
+                        }, 50);
+                    });
+                });
+            },
+            function() { _restore(); _cleanup(); }
+        );
+    } else {
+        requestAnimationFrame(function() {
+            _restore();
+            requestAnimationFrame(function() {
+                _restore();
+                setTimeout(function() {
+                    _restore();
+                    setTimeout(function() { _restore(); _cleanup(); }, 100);
+                }, 50);
+            });
+        });
+    }
+
+    return result;
+}
+window._preserveActiveScrollDuring = _preserveActiveScrollDuring;
+
+// ── Home deferred refresh ─────────────────────────────────────────────────────
+// When the user is scrolled down on Home, background syncs skip structural DOM
+// mutations (innerHTML clears collapse container height and clamp scrollTop to 0).
+// The Ready to Install count is still updated via textContent-only patching on
+// the existing element. A full refresh is deferred until intentional navigation.
+
+function _homeIsUserScrolled() {
+    const main = document.getElementById('mainContentArea');
+    return typeof currentView !== 'undefined'
+        && currentView === 'home'
+        && !!main
+        && main.scrollTop > 40;
+}
+window._homeIsUserScrolled = _homeIsUserScrolled;
+
+window._homeRefreshPending = false;
+window._homeRefreshPendingReason = '';
+function _markHomeRefreshPending(reason) {
+    const main = document.getElementById('mainContentArea');
+    window._homeRefreshPending = true;
+    window._homeRefreshPendingReason = reason || 'background-update';
+    console.log('[HomeRefresh] deferred reason=' + (reason || 'background-update') + ' scrollTop=' + (main ? main.scrollTop : 0));
+}
+window._markHomeRefreshPending = _markHomeRefreshPending;
+
+function _flushPendingHomeRefreshIfSafe(reason) {
+    if (!window._homeRefreshPending) return;
+    if (_homeIsUserScrolled()) return;
+    window._homeRefreshPending = false;
+    console.log('[HomeRefresh] flushed reason=' + (reason || 'unknown'));
+    if (typeof renderRecentlyPlayed === 'function') renderRecentlyPlayed();
+    if (typeof renderExploreCarousel === 'function') renderExploreCarousel();
+    if (typeof applyHeroForHome === 'function') applyHeroForHome();
+    if (typeof renderSyncedSuggestions === 'function') renderSyncedSuggestions();
+}
+window._flushPendingHomeRefreshIfSafe = _flushPendingHomeRefreshIfSafe;
+
+// Updates only the Ready to Install count text on the existing Home count element.
+// Safe to call while the user is scrolled — does not use innerHTML, does not
+// create elements, and does not change any display styles or layout.
+function _updateHomeReadyCountTextOnly(count) {
+    if (typeof currentView === 'undefined' || currentView !== 'home') return false;
+    const statsEl = document.getElementById('syncedSuggStats');
+    if (!statsEl) return false;
+    const countEl =
+        statsEl.querySelector('[data-ready-count]') ||
+        statsEl.querySelector('.synced-count-inline .sci-num.green');
+    if (!countEl) return false;
+    countEl.textContent = count == null ? '…' : String(count);
+    return true;
+}
+window._updateHomeReadyCountTextOnly = _updateHomeReadyCountTextOnly;
 
 // Full library refresh (background scan completed)
 if (window.electronAPI.onLibraryUpdated) {
@@ -695,16 +867,30 @@ if (window.electronAPI.onLibraryUpdated) {
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
         window._readyToInstallRenderedGames = null; // invalidate stale RTI page count
+
+        // Sidebar is always safe — it lives outside the main scroll container.
         renderSidebar();
+
         if (currentView === 'home') {
-            renderRecentlyPlayed();
-            renderExploreCarousel();
-            renderSyncedSuggestions(); // also rebuilds _suggAllGames + updates sidebar count
-            applyHeroForHome();
-        } else {
-            applyFilters();
-            // Silently rebuild suggestions pool so the sidebar badge reflects post-sync counts.
+            if (_homeIsUserScrolled()) {
+                // User has scrolled down — skip all Home DOM mutations to prevent
+                // innerHTML clears from clamping scrollTop to 0. Flush when safe.
+                _markHomeRefreshPending('library-updated-home-scrolled');
+            } else {
+                renderRecentlyPlayed();
+                renderExploreCarousel();
+                applyHeroForHome();
+                renderSyncedSuggestions();
+            }
+        } else if (currentView === 'all-games') {
+            // All Games background updates are owned by accounts.js onLibraryUpdated.
+            // Do not run the Installed Games applyFilters() while All Games is active.
             if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
+        } else {
+            _preserveActiveScrollDuring('library-updated', () => {
+                applyFilters();
+                if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
+            });
         }
     });
 }

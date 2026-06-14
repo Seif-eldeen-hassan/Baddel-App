@@ -14,6 +14,11 @@ try {
     console.warn('[Preload] Could not resolve image cache URL:', err && err.message);
 }
 
+// Multi-subscriber fanout for library-updated — lets app.js and accounts.js
+// both receive the event without one registration evicting the other.
+const _libraryUpdatedCallbacks = new Set();
+let _libraryUpdatedListenerAttached = false;
+
 contextBridge.exposeInMainWorld('electronAPI', {
 
     // ---- Library ----
@@ -29,8 +34,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
     restoreSpecificGames:   (ids)                     => ipcRenderer.invoke('restore-specific-games', ids),
     deleteGamePermanently:  (id)                      => ipcRenderer.invoke('delete-game-permanently', id),
     onLibraryUpdated:       (cb)                      => {
-        ipcRenderer.removeAllListeners('library-updated');
-        ipcRenderer.on('library-updated', (_, games) => cb(games));
+        _libraryUpdatedCallbacks.add(cb);
+        if (!_libraryUpdatedListenerAttached) {
+            _libraryUpdatedListenerAttached = true;
+            ipcRenderer.on('library-updated', (_, games) => {
+                _libraryUpdatedCallbacks.forEach(fn => { try { fn(games); } catch (_e) {} });
+            });
+        }
     },
     onGameImageUpdated:     (cb)                      => ipcRenderer.on('game-image-updated', (_, game) => cb(game)),
     onGameDeletedPermanently: (cb)                    => {

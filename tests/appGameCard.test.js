@@ -30,6 +30,7 @@ const path   = require('node:path');
 const ROOT               = path.resolve(__dirname, '..');
 const APP_JS             = fs.readFileSync(path.join(ROOT, 'src/js/app.js'),                      'utf8');
 const GAME_CARD_JS       = fs.readFileSync(path.join(ROOT, 'src/js/app/game-card.js'),            'utf8');
+const HERO_JS            = fs.readFileSync(path.join(ROOT, 'src/js/app/hero.js'),                 'utf8');
 const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'),                 'utf8');
 const DOM_UTILS_JS       = fs.readFileSync(path.join(ROOT, 'src/js/domUtils.js'),                 'utf8');
 const GAME_CONTEXT_JS    = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
@@ -363,9 +364,9 @@ test('_agFieldGameId: falls back through gameId, slug, title', () => {
     assert.match(body, /game\?\.title/);
 });
 
-test('_agFieldPlaytimeMinutes: reads playtimeData by game id', () => {
+test('_agFieldPlaytimeMinutes: uses _agResolvePlaytimeRecordForGame for playtime lookup', () => {
     const body = extractFn(GAME_CARD_JS, 'function _agFieldPlaytimeMinutes(');
-    assert.match(body, /playtimeData\?/);
+    assert.match(body, /_agResolvePlaytimeRecordForGame\s*\(\s*game\s*\)/);
     assert.match(body, /totalMinutes/);
 });
 
@@ -691,6 +692,142 @@ test('getPlatformClass: returns "pm" as default', () => {
     test('_jbiHasRealQualifiedSession reads from game.playSessions when d has none', () => {
         const game = { playSessions: [{ qualified: true }] };
         assert.equal(_jbiHasRealQualifiedSession(game, {}), true);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 8b — Behavioral: _jbiGetRecentTimestamp (short/unqualified sessions)
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    const hasSrc = extractFn(GAME_CARD_JS, 'function _jbiHasRealQualifiedSession(');
+    // eslint-disable-next-line no-new-func
+    const _jbiHasRealQualifiedSession = new Function(`return (${hasSrc.trim()})`)();
+
+    const tsSrc = extractFn(GAME_CARD_JS, 'function _jbiGetRecentTimestamp(');
+
+    function makeTimestamp(game, playtimeOverride) {
+        const playtimeData = playtimeOverride || {};
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(
+            'playtimeData', '_jbiHasRealQualifiedSession',
+            `return (${tsSrc.trim()})`
+        )(playtimeData, _jbiHasRealQualifiedSession);
+        return fn(game);
+    }
+
+    const now = Date.now();
+
+    test('_jbiGetRecentTimestamp: returns lastQualifiedPlayed when present', () => {
+        const game = { id: 'g1', playSessions: [] };
+        const result = makeTimestamp(game, { g1: { lastQualifiedPlayed: now } });
+        assert.equal(result, now);
+    });
+
+    test('_jbiGetRecentTimestamp: short unqualified counted session returns lastPlayed', () => {
+        const game = {
+            id: 'g2',
+            playSessions: [{ qualified: false, countedMinutes: 1, endedAt: now }],
+        };
+        const result = makeTimestamp(game, { g2: { totalMinutes: 1, lastPlayed: now } });
+        assert.equal(result, now);
+    });
+
+    test('_jbiGetRecentTimestamp: unqualified session with zero countedMinutes and no lastPlayed returns 0', () => {
+        const game = {
+            id: 'g3',
+            playSessions: [{ qualified: false, countedMinutes: 0, endedAt: now }],
+        };
+        const result = makeTimestamp(game, { g3: { totalMinutes: 0, lastPlayed: null } });
+        assert.equal(result, 0);
+    });
+
+    test('_jbiGetRecentTimestamp: unqualified session falls back to endedAt of counted session when no lastPlayed', () => {
+        const game = {
+            id: 'g4',
+            playSessions: [{ qualified: false, countedMinutes: 1, endedAt: now }],
+        };
+        // Simulate pre-fix data where lastPlayed was never written
+        const result = makeTimestamp(game, { g4: { totalMinutes: 1, lastPlayed: null } });
+        assert.equal(result, now);
+    });
+
+    test('_jbiGetRecentTimestamp: legacy game with no sessions returns lastPlayed', () => {
+        const game = { id: 'g5', playSessions: [] };
+        const result = makeTimestamp(game, { g5: { totalMinutes: 60, lastPlayed: now } });
+        assert.equal(result, now);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 8c — Behavioral: _agFieldLastPlayed (session endedAt fallback)
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    const idSrc       = extractFn(GAME_CARD_JS, 'function _agFieldGameId(');
+    const resolverSrc = extractFn(GAME_CARD_JS, 'function _agResolvePlaytimeRecordForGame(');
+    const lpSrc       = extractFn(GAME_CARD_JS, 'function _agFieldLastPlayed(');
+    // eslint-disable-next-line no-new-func
+    const _agFieldGameId = new Function(`return (${idSrc.trim()})`)();
+
+    const now = Date.now();
+
+    function makeLastPlayed(game, playtimeOverride) {
+        const playtimeData = playtimeOverride || {};
+        // eslint-disable-next-line no-new-func
+        const _agResolvePlaytimeRecordForGame = new Function(
+            'playtimeData', '_agFieldGameId',
+            `return (${resolverSrc.trim()})`
+        )(playtimeData, _agFieldGameId);
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(
+            'playtimeData', '_agFieldGameId', '_agResolvePlaytimeRecordForGame',
+            `return (${lpSrc.trim()})`
+        )(playtimeData, _agFieldGameId, _agResolvePlaytimeRecordForGame);
+        return fn(game);
+    }
+
+    test('_agFieldLastPlayed: returns playtimeData.lastQualifiedPlayed first', () => {
+        const game = { id: 'x', lastQualifiedPlayed: now - 1000 };
+        assert.equal(makeLastPlayed(game, { x: { lastQualifiedPlayed: now } }), now);
+    });
+
+    test('_agFieldLastPlayed: falls back to game.lastQualifiedPlayed', () => {
+        const game = { id: 'x', lastQualifiedPlayed: now };
+        assert.equal(makeLastPlayed(game, {}), now);
+    });
+
+    test('_agFieldLastPlayed: falls back to playtimeData.lastPlayed when no qualified', () => {
+        const game = { id: 'x' };
+        assert.equal(makeLastPlayed(game, { x: { lastPlayed: now } }), now);
+    });
+
+    test('_agFieldLastPlayed: falls back to game.lastPlayed when no qualified', () => {
+        const game = { id: 'x', lastPlayed: now };
+        assert.equal(makeLastPlayed(game, {}), now);
+    });
+
+    test('_agFieldLastPlayed: returns endedAt of latest counted session when totalMinutes > 0 and no lastPlayed', () => {
+        const game = {
+            id: 'x',
+            totalPlaytime: 1,
+            playSessions: [{ countedMinutes: 1, endedAt: now }],
+        };
+        assert.equal(makeLastPlayed(game, { x: { totalMinutes: 1 } }), now);
+    });
+
+    test('_agFieldLastPlayed: returns null when totalMinutes=0 and no timestamps', () => {
+        const game = { id: 'x', totalPlaytime: 0 };
+        assert.equal(makeLastPlayed(game, {}), null);
+    });
+
+    test('_agFieldLastPlayed: returns null when session has countedMinutes=0 and no lastPlayed', () => {
+        const game = {
+            id: 'x',
+            totalPlaytime: 0,
+            playSessions: [{ countedMinutes: 0, endedAt: now }],
+        };
+        assert.equal(makeLastPlayed(game, { x: { totalMinutes: 0 } }), null);
     });
 }
 
@@ -1135,6 +1272,220 @@ test('hygiene: game-card.js contains no mojibake sequences', () => {
 test('hygiene: game-card.js starts with "use strict"', () => {
     assert.match(GAME_CARD_JS, /^'use strict';/);
 });
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 20 — _agResolveLastPlayedTimestamp: source-text and behavioral tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+test('resolver: _agResolveLastPlayedTimestamp is defined in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /function _agResolveLastPlayedTimestamp\s*\(/);
+});
+
+test('resolver: window._agResolveLastPlayedTimestamp is exported in game-card.js', () => {
+    assert.match(GAME_CARD_JS, /window\._agResolveLastPlayedTimestamp\s*=\s*_agResolveLastPlayedTimestamp/);
+});
+
+test('resolver: _agResolveLastPlayedTimestamp checks lastQualifiedPlayed before lastPlayed', () => {
+    const body = extractFn(GAME_CARD_JS, 'function _agResolveLastPlayedTimestamp(');
+    assert.match(body, /lastQualifiedPlayed/);
+    assert.match(body, /lastPlayed/);
+});
+
+test('resolver: _agResolveLastPlayedTimestamp handles endTime in addition to endedAt', () => {
+    const body = extractFn(GAME_CARD_JS, 'function _agResolveLastPlayedTimestamp(');
+    assert.match(body, /endTime/);
+    assert.match(body, /endedAt/);
+});
+
+test('createRecentCard: uses _agResolveLastPlayedTimestamp for the last-played label', () => {
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
+    assert.match(body, /_agResolveLastPlayedTimestamp\s*\(\s*game\s*\)/);
+});
+
+test('hero: updateHeroSection uses _agResolveLastPlayedTimestamp for last-played display', () => {
+    const body = extractFn(HERO_JS, 'function updateHeroSection(');
+    assert.match(body, /_agResolveLastPlayedTimestamp/);
+});
+
+test('hero: updateHeroSection guards _agResolveLastPlayedTimestamp with typeof check', () => {
+    const body = extractFn(HERO_JS, 'function updateHeroSection(');
+    assert.match(body, /typeof _agResolveLastPlayedTimestamp\s*===\s*['"]function['"]/);
+});
+
+{
+    const idSrc          = extractFn(GAME_CARD_JS, 'function _agFieldGameId(');
+    const crossIdSrc     = extractFn(GAME_CARD_JS, 'function _agResolvePlaytimeRecordForGame(');
+    const resolverSrc    = extractFn(GAME_CARD_JS, 'function _agResolveLastPlayedTimestamp(');
+    // eslint-disable-next-line no-new-func
+    const _agFieldGameId = new Function(`return (${idSrc.trim()})`)();
+
+    const now = Date.now();
+
+    function makeResolver(game, playtimeOverride) {
+        const playtimeData = playtimeOverride || {};
+        // eslint-disable-next-line no-new-func
+        const _agResolvePlaytimeRecordForGame = new Function(
+            'playtimeData', '_agFieldGameId',
+            `return (${crossIdSrc.trim()})`
+        )(playtimeData, _agFieldGameId);
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(
+            'playtimeData', '_agFieldGameId', '_agResolvePlaytimeRecordForGame',
+            `return (${resolverSrc.trim()})`
+        )(playtimeData, _agFieldGameId, _agResolvePlaytimeRecordForGame);
+        return fn(game);
+    }
+
+    test('_agResolveLastPlayedTimestamp: prefers lastQualifiedPlayed over lastPlayed', () => {
+        const game = { id: 'r1', lastPlayed: now - 5000 };
+        const result = makeResolver(game, { r1: { lastQualifiedPlayed: now, lastPlayed: now - 5000 } });
+        assert.equal(result, now);
+    });
+
+    test('_agResolveLastPlayedTimestamp: falls back to lastPlayed when no qualified', () => {
+        const game = { id: 'r2' };
+        const result = makeResolver(game, { r2: { lastPlayed: now } });
+        assert.equal(result, now);
+    });
+
+    test('_agResolveLastPlayedTimestamp: falls back to counted session endedAt when lastPlayed is null', () => {
+        const game = {
+            id: 'r3',
+            playSessions: [{ countedMinutes: 1, endedAt: now }],
+        };
+        const result = makeResolver(game, { r3: { totalMinutes: 1, lastPlayed: null } });
+        assert.equal(result, now);
+    });
+
+    test('_agResolveLastPlayedTimestamp: ignores sessions with countedMinutes === 0', () => {
+        const game = {
+            id: 'r4',
+            playSessions: [{ countedMinutes: 0, endedAt: now }],
+        };
+        const result = makeResolver(game, { r4: { totalMinutes: 0, lastPlayed: null } });
+        assert.equal(result, null);
+    });
+
+    test('_agResolveLastPlayedTimestamp: falls back to endTime when endedAt absent', () => {
+        const game = {
+            id: 'r5',
+            playSessions: [{ countedMinutes: 1, endTime: now }],
+        };
+        const result = makeResolver(game, { r5: { totalMinutes: 1, lastPlayed: null } });
+        assert.equal(result, now);
+    });
+
+    test('_agResolveLastPlayedTimestamp: returns latest endedAt when multiple counted sessions', () => {
+        const older = now - 86400000;
+        const game = {
+            id: 'r6',
+            playSessions: [
+                { countedMinutes: 1, endedAt: older },
+                { countedMinutes: 2, endedAt: now },
+            ],
+        };
+        const result = makeResolver(game, { r6: { totalMinutes: 3, lastPlayed: null } });
+        assert.equal(result, now);
+    });
+
+    test('_agResolveLastPlayedTimestamp: returns null when no timestamps and no totalMinutes', () => {
+        const game = { id: 'r7' };
+        const result = makeResolver(game, {});
+        assert.equal(result, null);
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SECTION 21 — Game Details: last-played uses _agResolveLastPlayedTimestamp
+// ─────────────────────────────────────────────────────────────────────────────
+
+const GAME_DETAILS_JS = fs.readFileSync(path.join(ROOT, 'src/js/game-details.js'), 'utf8');
+
+test('game-details: gdLastPlayed element uses _agResolveLastPlayedTimestamp, not pData.lastPlayed directly', () => {
+    // Find the block that writes to gdLastPlayed
+    const idx = GAME_DETAILS_JS.indexOf('gdLastPlayed');
+    assert.ok(idx !== -1, 'gdLastPlayed not found in game-details.js');
+    // The 300 chars before the write must contain the resolver call
+    const window = GAME_DETAILS_JS.slice(Math.max(0, idx - 400), idx + 200);
+    assert.match(window, /_agResolveLastPlayedTimestamp/);
+});
+
+test('game-details: gdLastPlayed write uses typeof guard for resolver', () => {
+    const idx = GAME_DETAILS_JS.indexOf('gdLastPlayed');
+    assert.ok(idx !== -1, 'gdLastPlayed not found in game-details.js');
+    const context = GAME_DETAILS_JS.slice(Math.max(0, idx - 400), idx + 200);
+    assert.match(context, /typeof _agResolveLastPlayedTimestamp\s*===\s*['"]function['"]/);
+});
+
+test('game-details: details panel Last Played row uses _agResolveLastPlayedTimestamp', () => {
+    // The second call site: add('Last Played', lpStr) — find its context
+    const idx = GAME_DETAILS_JS.indexOf("add('Last Played'");
+    assert.ok(idx !== -1, "'add Last Played' not found in game-details.js");
+    const context = GAME_DETAILS_JS.slice(Math.max(0, idx - 500), idx + 50);
+    assert.match(context, /_agResolveLastPlayedTimestamp/);
+});
+
+test('game-details: details panel Last Played uses typeof guard for resolver', () => {
+    const idx = GAME_DETAILS_JS.indexOf("add('Last Played'");
+    assert.ok(idx !== -1, "'add Last Played' not found in game-details.js");
+    const context = GAME_DETAILS_JS.slice(Math.max(0, idx - 500), idx + 50);
+    assert.match(context, /typeof _agResolveLastPlayedTimestamp\s*===\s*['"]function['"]/);
+});
+
+{
+    // Behavioral: resolver must return the same timestamp regardless of call site
+    const idSrc          = extractFn(GAME_CARD_JS, 'function _agFieldGameId(');
+    const crossIdSrc     = extractFn(GAME_CARD_JS, 'function _agResolvePlaytimeRecordForGame(');
+    const resolverSrc    = extractFn(GAME_CARD_JS, 'function _agResolveLastPlayedTimestamp(');
+    // eslint-disable-next-line no-new-func
+    const _agFieldGameId = new Function(`return (${idSrc.trim()})`)();
+
+    const now = Date.now();
+
+    function makeResolver(game, playtimeOverride) {
+        const playtimeData = playtimeOverride || {};
+        // eslint-disable-next-line no-new-func
+        const _agResolvePlaytimeRecordForGame = new Function(
+            'playtimeData', '_agFieldGameId',
+            `return (${crossIdSrc.trim()})`
+        )(playtimeData, _agFieldGameId);
+        // eslint-disable-next-line no-new-func
+        const fn = new Function(
+            'playtimeData', '_agFieldGameId', '_agResolvePlaytimeRecordForGame',
+            `return (${resolverSrc.trim()})`
+        )(playtimeData, _agFieldGameId, _agResolvePlaytimeRecordForGame);
+        return fn(game);
+    }
+
+    test('game-details resolver: same timestamp as Jump Back In for game with counted session and null lastPlayed', () => {
+        const game = {
+            id: 'gd1',
+            playSessions: [{ countedMinutes: 1, endedAt: now }],
+        };
+        const playtime = { gd1: { totalMinutes: 1, lastPlayed: null } };
+        // Both use the same resolver — result must be non-null
+        const result = makeResolver(game, playtime);
+        assert.ok(result !== null, 'resolver must return a timestamp, not null');
+        assert.equal(result, now);
+    });
+
+    test('game-details resolver: zero-minute session with null lastPlayed returns null', () => {
+        const game = {
+            id: 'gd2',
+            playSessions: [{ countedMinutes: 0, endedAt: now }],
+        };
+        const playtime = { gd2: { totalMinutes: 0, lastPlayed: null } };
+        const result = makeResolver(game, playtime);
+        assert.equal(result, null);
+    });
+
+    test('game-details resolver: returns same result for game with lastPlayed set', () => {
+        const game = { id: 'gd3' };
+        const playtime = { gd3: { totalMinutes: 5, lastPlayed: now } };
+        const result = makeResolver(game, playtime);
+        assert.equal(result, now);
+    });
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Helpers

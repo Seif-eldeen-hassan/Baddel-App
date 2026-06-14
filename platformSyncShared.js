@@ -409,6 +409,14 @@ function isEpicPositiveGameEntry(entry) {
  *   'keep'    — positive proof it is a game
  *   'reject'  — positive proof it is not a game (asset/tool/marketplace)
  *   'unknown' — neither proven game nor proven non-game → dropped by default
+ *
+ * Priority order:
+ *   1. Hard denylist → always reject (even if Epic tags the entry as "games").
+ *   2. Epic category path includes "games" → keep; broad keyword heuristics must
+ *      not override what Epic's own catalog says about the entry type.
+ *   3. Broad keyword/structural non-game heuristics → reject.
+ *   4. Remaining positive game signals (executable, offline mode, …) → keep.
+ *   5. No signal either way → unknown (dropped by the public gate).
  */
 function classifyEpicEntry(entry) {
     if (!entry || typeof entry !== 'object') {
@@ -419,12 +427,39 @@ function classifyEpicEntry(entry) {
     if (!appName || !title) {
         return { decision: 'reject', reason: 'missing_app_name_or_title' };
     }
+
+    // Step 1 — hard denylist wins unconditionally.
+    const titleNorm   = normToken(title);
+    const appNameNorm = normToken(appName);
+    const nsNorm      = normToken(
+        entry.namespace ||
+        entry?.metadata?.namespace ||
+        Object.values(entry?.asset_infos || {})[0]?.namespace
+    );
+    if (EPIC_NON_GAME_TITLE_DENYLIST.has(titleNorm)   ||
+        EPIC_NON_GAME_TITLE_DENYLIST.has(appNameNorm) ||
+        EPIC_NON_GAME_TITLE_DENYLIST.has(nsNorm)) {
+        return { decision: 'reject', reason: 'non_game_asset_or_marketplace_item' };
+    }
+
+    // Step 2 — Epic's own category data is the strongest positive signal available.
+    // Trust it over broad keyword heuristics; games like Fortnite carry UEFN/editor
+    // references in their metadata that would otherwise trigger false rejections.
+    const catPaths = _extractEpicCategories(entry);
+    if (catPaths.some(c => c.startsWith('games') || c === 'game')) {
+        return { decision: 'keep', reason: 'epic_games_category_signal' };
+    }
+
+    // Step 3 — broad keyword and structural heuristics to catch marketplace assets.
     if (isEpicNonGameAssetEntry(entry)) {
         return { decision: 'reject', reason: 'non_game_asset_or_marketplace_item' };
     }
+
+    // Step 4 — remaining positive signals (executable, cloud-save, offline mode, …).
     if (isEpicPositiveGameEntry(entry)) {
         return { decision: 'keep', reason: 'positive_game_signal' };
     }
+
     return { decision: 'unknown', reason: 'no_positive_game_signal' };
 }
 

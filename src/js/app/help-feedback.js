@@ -114,6 +114,8 @@ async function sendFeedback() {
 // ============================================================
 
 const BETA_FEEDBACK_BANNER_KEY = 'baddel.betaFeedbackBanner.dismissed.v1';
+const BETA_FEEDBACK_BANNER_STATE_KEY = 'baddel.betaFeedbackBanner.state.v2';
+const _BANNER_DELAY_MS = 3 * 24 * 60 * 60 * 1000; // 3 days from first install
 
 function shouldShowBetaFeedbackBanner() {
     return localStorage.getItem(BETA_FEEDBACK_BANNER_KEY) !== '1';
@@ -121,6 +123,32 @@ function shouldShowBetaFeedbackBanner() {
 
 function markBetaFeedbackBannerDismissed() {
     localStorage.setItem(BETA_FEEDBACK_BANNER_KEY, '1');
+}
+
+function _loadBannerState() {
+    try {
+        const raw = localStorage.getItem(BETA_FEEDBACK_BANNER_STATE_KEY);
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        if (typeof parsed !== 'object' || parsed === null) return null;
+        return parsed;
+    } catch (_) {
+        return null;
+    }
+}
+
+function _saveBannerState(state) {
+    try {
+        localStorage.setItem(BETA_FEEDBACK_BANNER_STATE_KEY, JSON.stringify(state));
+    } catch (_) {}
+}
+
+function _markBannerDismissedForVersion(version) {
+    if (!version) return;
+    const state = _loadBannerState() || { firstSeenAt: Date.now(), lastSeenVersion: version, dismissedVersions: [] };
+    if (!Array.isArray(state.dismissedVersions)) state.dismissedVersions = [];
+    if (!state.dismissedVersions.includes(version)) state.dismissedVersions.push(version);
+    _saveBannerState(state);
 }
 
 function showBetaFeedbackBanner() {
@@ -136,7 +164,10 @@ function showBetaFeedbackBanner() {
 }
 
 function hideBetaFeedbackBanner(persist = false) {
-    if (persist) markBetaFeedbackBannerDismissed();
+    if (persist) {
+        markBetaFeedbackBannerDismissed();
+        _markBannerDismissedForVersion(window._betaFeedbackBannerVersion || null);
+    }
     const banner = document.getElementById('betaFeedbackBanner');
     if (banner) banner.hidden = true;
     document.body.classList.remove('has-beta-feedback-banner');
@@ -151,6 +182,62 @@ function openBetaFeedbackFromBanner() {
         openHelpModal('feedback');
     } else if (typeof handleHelpDropdownAction === 'function') {
         handleHelpDropdownAction(null, 'bug');
+    }
+}
+
+async function initBetaFeedbackBanner() {
+    try {
+        let version = null;
+        if (window.electronAPI?.getAppVersion) {
+            try { version = await window.electronAPI.getAppVersion(); } catch (_) {}
+        }
+        window._betaFeedbackBannerVersion = version;
+
+        let state = _loadBannerState();
+        const now = Date.now();
+        let shouldShow = false;
+
+        if (!state) {
+            // First launch: show immediately only if an update was just applied.
+            let isUpdate = false;
+            if (version && window.electronAPI?.getPendingUpdateNotes) {
+                try {
+                    const result = await window.electronAPI.getPendingUpdateNotes();
+                    if (result?.status === 'success' && result.notes?.version) isUpdate = true;
+                } catch (_) {}
+            }
+            state = { firstSeenAt: now, lastSeenVersion: version, dismissedVersions: [] };
+            _saveBannerState(state);
+            shouldShow = isUpdate;
+        } else if (version && state.lastSeenVersion !== version) {
+            // App was updated since last seen: show unless already dismissed for this version.
+            state.lastSeenVersion = version;
+            _saveBannerState(state);
+            const dismissed = Array.isArray(state.dismissedVersions) && state.dismissedVersions.includes(version);
+            shouldShow = !dismissed;
+        } else {
+            // Same version as last seen: hide if dismissed, else show after 3-day delay.
+            const dismissed = version && Array.isArray(state.dismissedVersions) && state.dismissedVersions.includes(version);
+            if (dismissed) {
+                shouldShow = false;
+            } else {
+                shouldShow = (now - (state.firstSeenAt || now)) >= _BANNER_DELAY_MS;
+            }
+        }
+
+        const banner = document.getElementById('betaFeedbackBanner');
+        if (shouldShow) {
+            if (banner) {
+                banner.hidden = false;
+                document.body.classList.add('has-beta-feedback-banner');
+            }
+        } else {
+            if (banner) banner.hidden = true;
+            document.body.classList.remove('has-beta-feedback-banner');
+        }
+    } catch (err) {
+        console.error('[BetaBanner] initBetaFeedbackBanner error:', err);
+        showBetaFeedbackBanner();
     }
 }
 
@@ -499,6 +586,7 @@ async function checkAndShowUpdateNotes() {
 }
 
 function showUpdateNotesModal(notes) {
+    if (notes.type === 'feature-tour') { _renderFeatureTour(notes); return; }
     _pendingUpdateNotesVersion = notes.version || null;
     const titleEl    = document.getElementById('updateNotesTitle');
     const subtitleEl = document.getElementById('updateNotesSubtitle');
@@ -512,26 +600,83 @@ function showUpdateNotesModal(notes) {
     if (listEl) {
         listEl.innerHTML = '';
         const items = Array.isArray(notes.items) ? notes.items : [];
-        items.forEach(item => {
-            const div = document.createElement('div');
-            div.className = 'update-notes-item';
-            const titleP = document.createElement('p');
-            titleP.className = 'update-notes-item-title';
-            titleP.textContent = item.title || '';
-            const descP = document.createElement('p');
-            descP.className = 'update-notes-item-desc';
-            descP.textContent = item.description || '';
-            div.appendChild(titleP);
-            div.appendChild(descP);
-            listEl.appendChild(div);
-        });
+        const featuredItems = items.filter(i => i.featured);
+
+        if (featuredItems.length > 0) {
+            // Two-zone layout: large highlighted cards for primary features,
+            // then a grid of smaller cards for the rest.
+            const regularItems = items.filter(i => !i.featured);
+
+            const featuredRow = document.createElement('div');
+            featuredRow.className = 'update-notes-featured-row';
+            featuredItems.forEach(item => {
+                featuredRow.appendChild(_buildUpdateNoteCard(item, 'update-notes-item update-notes-featured-card'));
+            });
+            listEl.appendChild(featuredRow);
+
+            if (regularItems.length > 0) {
+                const grid = document.createElement('div');
+                grid.className = 'update-notes-grid';
+                regularItems.forEach(item => {
+                    grid.appendChild(_buildUpdateNoteCard(item, 'update-notes-item update-notes-grid-card'));
+                });
+                listEl.appendChild(grid);
+            }
+        } else {
+            // Legacy flat list for release notes that have no featured cards.
+            items.forEach(item => {
+                const div = document.createElement('div');
+                div.className = 'update-notes-item';
+                const titleP = document.createElement('p');
+                titleP.className = 'update-notes-item-title';
+                titleP.textContent = item.title || '';
+                const descP = document.createElement('p');
+                descP.className = 'update-notes-item-desc';
+                descP.textContent = item.description || '';
+                div.appendChild(titleP);
+                div.appendChild(descP);
+                listEl.appendChild(div);
+            });
+        }
     }
 
     const modal = document.getElementById('updateNotesModal');
     if (modal) modal.classList.add('active');
 }
 
+function _buildUpdateNoteCard(item, className) {
+    const card = document.createElement('div');
+    card.className = className;
+    const titleP = document.createElement('p');
+    titleP.className = 'update-notes-item-title';
+    titleP.textContent = item.title || '';
+    card.appendChild(titleP);
+    if (item.headline) {
+        const hlEl = document.createElement('p');
+        hlEl.className = 'update-notes-item-headline';
+        hlEl.textContent = item.headline;
+        card.appendChild(hlEl);
+    }
+    const descP = document.createElement('p');
+    descP.className = 'update-notes-item-desc';
+    descP.textContent = item.description || '';
+    card.appendChild(descP);
+    if (item.helper) {
+        const helperEl = document.createElement('p');
+        helperEl.className = 'update-notes-item-helper';
+        helperEl.textContent = item.helper;
+        card.appendChild(helperEl);
+    }
+    return card;
+}
+
 async function closeUpdateNotesModal() {
+    if (_tourKeyListener) {
+        window.removeEventListener('keydown', _tourKeyListener);
+        _tourKeyListener = null;
+    }
+    const dialog = document.querySelector('.update-notes-dialog');
+    if (dialog) dialog.classList.remove('tour-mode');
     const modal = document.getElementById('updateNotesModal');
     if (modal) modal.classList.remove('active');
     if (_pendingUpdateNotesVersion && window.electronAPI?.markUpdateNotesShown) {
@@ -542,6 +687,203 @@ async function closeUpdateNotesModal() {
         }
         _pendingUpdateNotesVersion = null;
     }
+    // Restore elements that were hidden during tour mode
+    ['updateNotesTitle', 'updateNotesSubtitle', 'updateNotesFooter'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.hidden = false;
+    });
+    const tourStaticIcon = document.querySelector('.update-notes-icon');
+    if (tourStaticIcon) tourStaticIcon.hidden = false;
+    const tourPrimaryBtn = document.querySelector('.update-notes-primary-btn');
+    if (tourPrimaryBtn) tourPrimaryBtn.hidden = false;
+}
+
+// ── Feature tour slider ────────────────────────────────────────────────────────
+
+let _tourCurrentSlide = 0;
+let _tourSlides = [];
+let _tourKeyListener = null;
+
+function _renderFeatureTour(notes) {
+    _pendingUpdateNotesVersion = notes.version || null;
+    _tourSlides = Array.isArray(notes.slides) ? notes.slides : [];
+    _tourCurrentSlide = 0;
+
+    const dialog = document.querySelector('.update-notes-dialog');
+    if (dialog) dialog.classList.add('tour-mode');
+
+    // Populate the tour header with version-specific title and subtitle.
+    const tourTitleEl = document.getElementById('unTourTitle');
+    if (tourTitleEl) tourTitleEl.textContent = notes.title || "What's New";
+    const tourSubtitleEl = document.getElementById('unTourSubtitle');
+    if (tourSubtitleEl) tourSubtitleEl.textContent = notes.subtitle || '';
+
+    // Hide the static card-layout elements; the tour injects its own content.
+    ['updateNotesTitle', 'updateNotesSubtitle', 'updateNotesFooter'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.hidden = true;
+    });
+    const icon = document.querySelector('.update-notes-icon');
+    if (icon) icon.hidden = true;
+    const primaryBtn = document.querySelector('.update-notes-primary-btn');
+    if (primaryBtn) primaryBtn.hidden = true;
+
+    const listEl = document.getElementById('updateNotesList');
+    if (!listEl) return;
+    listEl.className = 'un-tour';
+    listEl.innerHTML = '';
+
+    // Slide stack
+    const slidesEl = document.createElement('div');
+    slidesEl.className = 'un-tour-slides';
+    _tourSlides.forEach((slide, i) => slidesEl.appendChild(_buildTourSlide(slide, i)));
+    listEl.appendChild(slidesEl);
+
+    // Navigation bar
+    const navEl = document.createElement('div');
+    navEl.className = 'un-tour-nav';
+    listEl.appendChild(navEl);
+
+    const dotsEl = document.createElement('div');
+    dotsEl.className = 'un-tour-dots';
+    _tourSlides.forEach((_, i) => {
+        const dot = document.createElement('span');
+        dot.className = 'un-tour-dot' + (i === 0 ? ' active' : '');
+        dot.dataset.index = String(i);
+        dot.addEventListener('click', () => _updateTourState(i));
+        dotsEl.appendChild(dot);
+    });
+    navEl.appendChild(dotsEl);
+
+    const ctrlEl = document.createElement('div');
+    ctrlEl.className = 'un-tour-controls';
+    navEl.appendChild(ctrlEl);
+
+    const counterEl = document.createElement('span');
+    counterEl.className = 'un-tour-counter';
+    counterEl.id = 'unTourCounter';
+    ctrlEl.appendChild(counterEl);
+
+    const btnGroup = document.createElement('div');
+    btnGroup.className = 'un-tour-btn-group';
+    ctrlEl.appendChild(btnGroup);
+
+    const backBtn = document.createElement('button');
+    backBtn.type = 'button';
+    backBtn.className = 'un-tour-back';
+    backBtn.id = 'unTourBack';
+    backBtn.textContent = 'Back';
+    backBtn.addEventListener('click', () => _navigateTour(-1));
+    btnGroup.appendChild(backBtn);
+
+    const nextBtn = document.createElement('button');
+    nextBtn.type = 'button';
+    nextBtn.className = 'un-tour-next';
+    nextBtn.id = 'unTourNext';
+    nextBtn.addEventListener('click', () => {
+        if (_tourCurrentSlide === _tourSlides.length - 1) closeUpdateNotesModal();
+        else _navigateTour(1);
+    });
+    btnGroup.appendChild(nextBtn);
+
+    // Keyboard: right = next, left = back
+    if (_tourKeyListener) window.removeEventListener('keydown', _tourKeyListener);
+    _tourKeyListener = (e) => {
+        if (!document.getElementById('updateNotesModal')?.classList.contains('active')) return;
+        if (e.key === 'ArrowRight') _navigateTour(1);
+        else if (e.key === 'ArrowLeft') _navigateTour(-1);
+    };
+    window.addEventListener('keydown', _tourKeyListener);
+
+    _updateTourState(0);
+
+    const modal = document.getElementById('updateNotesModal');
+    if (modal) modal.classList.add('active');
+}
+
+function _buildTourSlide(slide, index) {
+    const el = document.createElement('div');
+    el.className = 'un-tour-slide';
+    el.dataset.index = String(index);
+
+    // Text column
+    const textEl = document.createElement('div');
+    textEl.className = 'un-tour-text';
+
+    const labelEl = document.createElement('span');
+    labelEl.className = 'un-tour-label';
+    labelEl.textContent = slide.label || '';
+    textEl.appendChild(labelEl);
+
+    const headlineEl = document.createElement('h3');
+    headlineEl.className = 'un-tour-headline';
+    headlineEl.textContent = slide.headline || '';
+    textEl.appendChild(headlineEl);
+
+    const descEl = document.createElement('p');
+    descEl.className = 'un-tour-desc';
+    descEl.textContent = slide.description || '';
+    textEl.appendChild(descEl);
+
+    if (slide.badge) {
+        const badgeEl = document.createElement('span');
+        badgeEl.className = 'un-tour-badge';
+        badgeEl.textContent = slide.badge;
+        textEl.appendChild(badgeEl);
+    }
+
+    if (slide.helper) {
+        const helperEl = document.createElement('p');
+        helperEl.className = 'un-tour-helper';
+        helperEl.textContent = slide.helper;
+        textEl.appendChild(helperEl);
+    }
+
+    // Image column
+    const imgColEl = document.createElement('div');
+    imgColEl.className = 'un-tour-image';
+
+    if (slide.image) {
+        const img = document.createElement('img');
+        img.src = slide.image;
+        img.alt = slide.label || '';
+        img.className = 'un-tour-img';
+        img.onerror = function() {
+            this.style.display = 'none';
+            const ph = document.createElement('div');
+            ph.className = 'un-tour-img-placeholder';
+            imgColEl.appendChild(ph);
+        };
+        imgColEl.appendChild(img);
+    } else {
+        const ph = document.createElement('div');
+        ph.className = 'un-tour-img-placeholder';
+        imgColEl.appendChild(ph);
+    }
+
+    el.appendChild(textEl);
+    el.appendChild(imgColEl);
+    return el;
+}
+
+function _navigateTour(delta) {
+    _updateTourState(Math.max(0, Math.min(_tourSlides.length - 1, _tourCurrentSlide + delta)));
+}
+
+function _updateTourState(index) {
+    _tourCurrentSlide = index;
+    const total = _tourSlides.length;
+
+    document.querySelectorAll('.un-tour-slide').forEach((el, i) => el.classList.toggle('active', i === index));
+    document.querySelectorAll('.un-tour-dot').forEach((el, i) => el.classList.toggle('active', i === index));
+
+    const counter = document.getElementById('unTourCounter');
+    if (counter) counter.textContent = `${index + 1} / ${total}`;
+
+    const backBtn = document.getElementById('unTourBack');
+    if (backBtn) backBtn.disabled = (index === 0);
+
+    const nextBtn = document.getElementById('unTourNext');
+    if (nextBtn) nextBtn.textContent = (index === total - 1) ? 'Continue' : 'Next';
 }
 
 // ── Community Hub ──────────────────────────────────────────────────────────────
@@ -568,7 +910,7 @@ async function openCommunityLink(url) {
 }
 
 // ── DOMContentLoaded setup ────────────────────────────────────────────────────
-document.addEventListener('DOMContentLoaded', () => { showBetaFeedbackBanner(); });
+document.addEventListener('DOMContentLoaded', () => { initBetaFeedbackBanner(); });
 document.addEventListener('DOMContentLoaded', () => setTimeout(checkAndShowUpdateNotes, 900));
 
 // ── Expose _updateState and _setSettingsUpdateRow for openSettingsModal in app.js ──

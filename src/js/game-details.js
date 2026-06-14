@@ -1286,18 +1286,26 @@ window.openGameDetails = async function(gameId) {
         if (installedMatch) {
             game = {
                 ...game,
-                path:            installedMatch.path            || game.path,
-                command:         installedMatch.command         || game.command,
-                launchCommand:   installedMatch.launchCommand   || game.launchCommand,
-                executablePath:  installedMatch.executablePath  || game.executablePath,
-                platform:        installedMatch.platform        || game.platform,
-                scannerPlatform: installedMatch.scannerPlatform || game.scannerPlatform,
-                installedId:     installedMatch.id              || game.installedId,
-                launcherGameId:  installedMatch.launcherGameId  || game.launcherGameId,
-                appName:         installedMatch.appName         || game.appName,
-                namespace:       installedMatch.namespace       || game.namespace,
-                catalogItemId:   installedMatch.catalogItemId   || game.catalogItemId,
-                allIds:          installedMatch.allIds          || game.allIds,
+                path:                 installedMatch.path                 || game.path,
+                command:              installedMatch.command              || game.command,
+                launchCommand:        installedMatch.launchCommand        || game.launchCommand,
+                executablePath:       installedMatch.executablePath       || game.executablePath,
+                platform:             installedMatch.platform             || game.platform,
+                scannerPlatform:      installedMatch.scannerPlatform      || game.scannerPlatform,
+                installedId:          installedMatch.id                   || game.installedId,
+                launcherGameId:       installedMatch.launcherGameId       || game.launcherGameId,
+                appName:              installedMatch.appName              || game.appName,
+                namespace:            installedMatch.namespace            || game.namespace,
+                catalogItemId:        installedMatch.catalogItemId        || game.catalogItemId,
+                allIds:               installedMatch.allIds               || game.allIds,
+                // Playtime fields — carry the local installed record's tracked data so
+                // game-details resolvers can find it even when game.id is a sync ID.
+                localGameId:          installedMatch.id                   ?? game.localGameId,
+                totalPlaytime:        installedMatch.totalPlaytime        ?? game.totalPlaytime,
+                lastPlayed:           installedMatch.lastPlayed           ?? game.lastPlayed,
+                lastQualifiedPlayed:  installedMatch.lastQualifiedPlayed  ?? game.lastQualifiedPlayed,
+                playSessions:         installedMatch.playSessions         ?? game.playSessions,
+                timeTrackingEnabled:  installedMatch.timeTrackingEnabled  ?? game.timeTrackingEnabled,
             };
         }
     }
@@ -2350,6 +2358,31 @@ function _gdResetUI() {
 
 }
 
+// Cross-ID playtime resolver for Game Details. Delegates to the shared window
+// helper from game-card.js when loaded; otherwise applies the same priority chain
+// locally so game-details works even when loaded standalone.
+function _gdResolvePlaytimeForGame(game) {
+    if (typeof window._agResolvePlaytimeRecordForGame === 'function') {
+        return window._agResolvePlaytimeRecordForGame(game);
+    }
+    if (!game) return { key: null, data: null, localGame: null };
+    const pd = typeof playtimeData !== 'undefined' ? playtimeData : {};
+    const hit = (k) => {
+        const key = k != null ? String(k) : null;
+        return (key && pd[key]) ? { key, data: pd[key], localGame: null } : null;
+    };
+    const direct = hit(game.id) || hit(game.installedId) || hit(game.localGameId);
+    if (direct) return direct;
+    try {
+        const localGame = (typeof _gdFindInstalledLocalMatch === 'function')
+            ? _gdFindInstalledLocalMatch(game) : null;
+        if (localGame?.id && pd[String(localGame.id)]) {
+            return { key: String(localGame.id), data: pd[String(localGame.id)], localGame };
+        }
+    } catch {}
+    return { key: null, data: null, localGame: null };
+}
+
 // ──────────────────────────────────────────
 //  BASIC DATA (no API needed)
 // ──────────────────────────────────────────
@@ -2408,15 +2441,19 @@ function _gdPopulateBasic(game) {
     document.getElementById('gdCoverInitials').textContent =
         game.name ? game.name.substring(0, 2).toUpperCase() : '??';
 
-    // Playtime stats
-    const pData = (typeof playtimeData !== 'undefined' && playtimeData[game.id])
-        ? playtimeData[game.id]
-        : { totalMinutes: 0, lastPlayed: null };
+    // Playtime stats — use cross-ID resolver so synced All Games entries find the
+    // local installed record (which may have a different game.id).
+    const _gdPResolved = _gdResolvePlaytimeForGame(game);
+    const pData = _gdPResolved.data || { totalMinutes: 0, lastPlayed: null };
+
+    const gdLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
+        ? _agResolveLastPlayedTimestamp(game)
+        : pData.lastPlayed;
 
     document.getElementById('gdPlaytime').textContent  =
         (typeof formatPlaytime === 'function') ? formatPlaytime(pData.totalMinutes) : `${Math.floor((pData.totalMinutes||0)/60)}h`;
     document.getElementById('gdLastPlayed').textContent =
-        (typeof formatLastPlayed === 'function') ? formatLastPlayed(pData.lastPlayed) : 'Never';
+        (typeof formatLastPlayed === 'function') ? formatLastPlayed(gdLastPlayedTs) : 'Never';
 
     // Time-tracking toggle badge
     _gdRenderTimeTrackingToggle(game);
@@ -6391,11 +6428,15 @@ function _gdBuildDetailList(game, meta) {
         `);
     };
 
-    const pData = (typeof playtimeData !== 'undefined' && playtimeData[game.id])
-        ? playtimeData[game.id] : { totalMinutes: 0, lastPlayed: null };
+    const _gdDPResolved = _gdResolvePlaytimeForGame(game);
+    const pData = _gdDPResolved.data || { totalMinutes: 0, lastPlayed: null };
+
+    const gdDetailsLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
+        ? _agResolveLastPlayedTimestamp(game)
+        : pData.lastPlayed;
 
     const ptStr = (typeof formatPlaytime === 'function') ? formatPlaytime(pData.totalMinutes) : '0h';
-    const lpStr = (typeof formatLastPlayed === 'function') ? formatLastPlayed(pData.lastPlayed) : 'Never';
+    const lpStr = (typeof formatLastPlayed === 'function') ? formatLastPlayed(gdDetailsLastPlayedTs) : 'Never';
 
     add('Playtime',       ptStr);
     add('Last Played',    lpStr);

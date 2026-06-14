@@ -441,6 +441,36 @@ test('saveQualifiedSession: unqualified session does NOT set lastQualifiedPlayed
     const game = engine.dbCache[0];
     assert.equal(game.lastQualifiedPlayed, undefined, 'must not set lastQualifiedPlayed for unqualified session');
     assert.equal(game.totalPlaytime, 0, 'must not increment totalPlaytime when countedMinutes=0');
+    assert.equal(game.lastPlayed, undefined, 'must not set lastPlayed when countedMinutes=0');
+});
+
+test('saveQualifiedSession: unqualified but counted session sets lastPlayed, not lastQualifiedPlayed', async () => {
+    const engine = makeEngine();
+    const beforeTs = Date.now();
+    engine.dbCache = [{ id: 'g-short', name: 'Fall Guys', totalPlaytime: 0 }];
+    const result = await engine.saveQualifiedSession('g-short', {
+        countedMinutes:      1,
+        totalCountedMinutes: 1,
+        rawRuntimeMinutes:   1,
+        idleMinutes:         0,
+        backgroundMinutes:   0,
+        foregroundSeen:      true,
+        confidence:          'medium',
+        endReason:           'process_gone',
+        startedAt:           beforeTs - 60_000,
+        endedAt:             beforeTs,
+        isQualified:         false,
+    });
+    assert.equal(result.status, 'success');
+    assert.equal(result.totalPlaytime, 1, 'totalPlaytime must increase by countedMinutes');
+    assert.ok(result.lastPlayed, 'result must carry lastPlayed');
+    assert.equal(result.lastQualifiedPlayed, undefined, 'result must NOT carry lastQualifiedPlayed');
+    assert.equal(result.sessionQualified, false);
+    const game = engine.dbCache[0];
+    assert.equal(game.totalPlaytime, 1);
+    assert.ok(game.lastPlayed, 'game.lastPlayed must be set for counted session');
+    assert.equal(game.lastQualifiedPlayed, undefined, 'game.lastQualifiedPlayed must stay unset');
+    assert.equal(game.playSessions[0].qualified, false);
 });
 
 test('setTimeTrackingEnabled: sets and reads back the flag', async () => {

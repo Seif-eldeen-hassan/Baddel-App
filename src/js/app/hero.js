@@ -74,9 +74,12 @@ function updateHeroSection(gameId) {
     }
 
     const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
+    const heroLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
+        ? _agResolveLastPlayedTimestamp(game)
+        : pData.lastPlayed;
     statsDiv.innerHTML = `
         <span class="stat-badge playtime-stat"><span id="heroPlaytime">${formatPlaytime(pData.totalMinutes)}</span></span>
-        <span class="stat-badge">Last Played: <span id="heroLastPlayed">${formatLastPlayed(pData.lastPlayed)}</span></span>
+        <span class="stat-badge">Last Played: <span id="heroLastPlayed">${formatLastPlayed(heroLastPlayedTs)}</span></span>
     `;
 
     statsDiv.style.display = 'flex';

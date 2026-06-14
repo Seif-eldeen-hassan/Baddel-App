@@ -43,15 +43,27 @@ function _jbiGetRecentTimestamp(game) {
         Array.isArray(game.playSessions) ? game.playSessions :
         [];
 
-    // If all recent sessions are unqualified, exclude from Jump Back In
-    // Prevents false detection caused by overlapping titles (e.g. Little Nightmares I vs II)
+    const totalMinutes = Number(d.totalMinutes || game.totalPlaytime || 0);
+    const lp = Number(d.lastPlayed || game.lastPlayed || 0);
+
     if (sessions.length > 0 && !_jbiHasRealQualifiedSession(game, d)) {
-        return 0;
+        // Exclude suspicious detections that accumulated no real playtime and have
+        // no confirmed activity timestamp (prevents false-positive Jump Back In entries).
+        if (totalMinutes <= 0 && lp <= 0) return 0;
+
+        // A short but genuine session: use lastPlayed (set whenever countedMinutes > 0)
+        // or the endedAt of the latest session that actually accumulated time.
+        if (lp > 0) return lp;
+
+        const latestCounted = sessions
+            .filter(s => s && (s.countedMinutes > 0 || s.minutes > 0) && s.endedAt)
+            .reduce((best, s) => (!best || s.endedAt > best.endedAt) ? s : best, null);
+
+        return latestCounted ? Number(latestCounted.endedAt) : 0;
     }
 
     // Legacy fallback for data predating the qualified-session system
-    const legacy = Number(d.lastPlayed || game.lastPlayed || 0);
-    return legacy > 0 ? legacy : 0;
+    return lp > 0 ? lp : 0;
 }
 
 function getRecentGames() {
@@ -122,27 +134,139 @@ function _agFieldGameId(game) {
     return String(game?.id || game?.gameId || game?.slug || game?.title || '');
 }
 
+// Cross-ID playtime resolver. All Games synced entries have a platform-sync ID
+// (e.g. Epic appName, Steam appid string) that may differ from the local installed
+// DB record which owns the playtime data. This helper tries each identity field in
+// priority order before falling back to an installed-match lookup.
+// Returns { key, data, localGame } where data is the playtime record or null.
+function _agResolvePlaytimeRecordForGame(game) {
+    if (!game) return { key: null, data: null, localGame: null };
+    const pd = typeof playtimeData !== 'undefined' ? playtimeData : {};
+
+    const hit = (k) => {
+        const key = k != null ? String(k) : null;
+        return (key && pd[key]) ? { key, data: pd[key], localGame: null } : null;
+    };
+
+    const primaryId = _agFieldGameId(game);
+
+    // Priorities 1–4: direct ID fields on the game object (no DOM access)
+    const direct = hit(primaryId)
+        || hit(game.installedId)
+        || hit(game.localGameId)
+        || (game.gameId !== primaryId ? hit(game.gameId) : null);
+    if (direct) return direct;
+
+    // Priority 5: installed-match lookup (browser-only; gracefully skipped in Node.js)
+    if (typeof window !== 'undefined' && typeof window._agFindInstalledLocalMatch === 'function') {
+        try {
+            const localGame = window._agFindInstalledLocalMatch(game);
+            if (localGame) {
+                const fromRecord = hit(localGame.id);
+                if (fromRecord) return { ...fromRecord, localGame };
+                // Local match found but no playtime record yet — synthesize from localGame fields.
+                const merged = {
+                    totalMinutes:        Number(localGame.totalPlaytime || game.totalPlaytime || 0) || 0,
+                    lastPlayed:          localGame.lastPlayed         ?? game.lastPlayed         ?? null,
+                    lastQualifiedPlayed: localGame.lastQualifiedPlayed ?? game.lastQualifiedPlayed ?? null,
+                    playSessions: Array.isArray(localGame.playSessions) ? localGame.playSessions
+                                : Array.isArray(game.playSessions)     ? game.playSessions : [],
+                };
+                return { key: null, data: merged, localGame };
+            }
+        } catch {}
+    }
+
+    return { key: null, data: null, localGame: null };
+}
+
 function _agFieldPlaytimeMinutes(game) {
-    const id = _agFieldGameId(game);
+    const _pResolved = _agResolvePlaytimeRecordForGame(game);
+    const _pMinutes = _pResolved.data?.totalMinutes;
 
     return Number(
         game?.playtime ||
         game?.totalPlaytime ||
-        playtimeData?.[id]?.totalMinutes ||
+        _pMinutes ||
         0
     ) || 0;
 }
 
-function _agFieldLastPlayed(game) {
-    const id = _agFieldGameId(game);
+// Canonical last-played resolver. Returns the best available timestamp for a
+// game using a priority chain that handles pre-fix data where lastPlayed was
+// never written despite counted playtime existing. Uses the cross-ID resolver
+// so synced All Games entries fall through to the local installed record.
+function _agResolveLastPlayedTimestamp(game) {
+    const _pResolved = _agResolvePlaytimeRecordForGame(game);
+    const d = _pResolved.data || {};
+    const localGame = _pResolved.localGame;
 
-    return (
-        game?.lastQualifiedPlayed ||
-        game?.lastPlayed ||
-        playtimeData?.[id]?.lastQualifiedPlayed ||
-        playtimeData?.[id]?.lastPlayed ||
-        null
-    );
+    if (d.lastQualifiedPlayed) return d.lastQualifiedPlayed;
+    if (game?.lastQualifiedPlayed) return game.lastQualifiedPlayed;
+    if (localGame?.lastQualifiedPlayed) return localGame.lastQualifiedPlayed;
+    if (d.lastPlayed) return d.lastPlayed;
+    if (game?.lastPlayed) return game.lastPlayed;
+    if (localGame?.lastPlayed) return localGame.lastPlayed;
+
+    const totalMinutes = Number(d.totalMinutes || game?.totalPlaytime || 0);
+    const sessions = Array.isArray(d.playSessions) ? d.playSessions
+                   : Array.isArray(game?.playSessions) ? game.playSessions
+                   : [];
+
+    // Latest session with counted playtime (endedAt or endTime)
+    const latestCounted = sessions
+        .filter(s => s && (s.countedMinutes > 0 || s.minutes > 0) && (s.endedAt || s.endTime))
+        .reduce((best, s) => {
+            if (!best) return s;
+            const ts = s.endedAt || s.endTime;
+            const bestTs = best.endedAt || best.endTime;
+            return ts > bestTs ? s : best;
+        }, null);
+    if (latestCounted) return latestCounted.endedAt || latestCounted.endTime;
+
+    // Last resort: any session timestamp when totalMinutes proves real activity
+    if (totalMinutes > 0) {
+        const latestAny = sessions
+            .filter(s => s != null)
+            .reduce((best, s) => {
+                const ts = s.endedAt || s.endTime;
+                if (!ts) return best;
+                if (!best) return s;
+                const bestTs = best.endedAt || best.endTime;
+                return ts > bestTs ? s : best;
+            }, null);
+        if (latestAny) return latestAny.endedAt || latestAny.endTime;
+    }
+
+    return null;
+}
+
+function _agFieldLastPlayed(game) {
+    const _pResolved = _agResolvePlaytimeRecordForGame(game);
+    const d = _pResolved.data || {};
+    const localGame = _pResolved.localGame;
+
+    if (d.lastQualifiedPlayed) return d.lastQualifiedPlayed;
+    if (game?.lastQualifiedPlayed) return game.lastQualifiedPlayed;
+    if (localGame?.lastQualifiedPlayed) return localGame.lastQualifiedPlayed;
+    if (d.lastPlayed) return d.lastPlayed;
+    if (game?.lastPlayed) return game.lastPlayed;
+    if (localGame?.lastPlayed) return localGame.lastPlayed;
+
+    // Final fallback: latest session with counted time, used when the persistence
+    // layer predates the lastPlayed-for-counted-sessions fix.
+    const totalMinutes = Number(d.totalMinutes || game?.totalPlaytime || 0);
+    if (totalMinutes > 0) {
+        const sessions = Array.isArray(d.playSessions) ? d.playSessions
+                       : Array.isArray(game?.playSessions) ? game.playSessions
+                       : [];
+        const latestCounted = sessions
+            .filter(s => s && (s.countedMinutes > 0 || s.minutes > 0) && s.endedAt)
+            .reduce((best, s) => (!best || s.endedAt > best.endedAt) ? s : best, null);
+        if (latestCounted) return latestCounted.endedAt;
+    }
+
+    return null;
 }
 
 function _agFieldIsInstalled(game) {
@@ -252,8 +376,9 @@ function createGameCard(game, isRecent = false) {
     }
 
     let lastPlayedStr = '';
-    if (pData.lastPlayed) {
-        const d = new Date(pData.lastPlayed);
+    const _gcResolvedTs = _agResolveLastPlayedTimestamp(game);
+    if (_gcResolvedTs) {
+        const d = new Date(_gcResolvedTs);
         lastPlayedStr = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' });
     }
 
@@ -472,8 +597,8 @@ function createRecentCard(game, isFeatured = false) {
     // Cover image — hero artwork first for the cinematic 16:9 look
     const displayImg = _getRecentDisplayImage(game);
 
-    // Labels
-    const lastPlayedLabel = formatLastPlayed(pData.lastPlayed);
+    // Labels — use the resolver so pre-fix data with null lastPlayed still shows a date
+    const lastPlayedLabel = formatLastPlayed(_agResolveLastPlayedTimestamp(game));
     const playtimeLabel   = formatPlaytime(pData.totalMinutes);
 
     // Progress bar heuristic (cap at 100%)
@@ -577,3 +702,7 @@ window.getPlatformClass                = getPlatformClass;
 window._jbiHasRealQualifiedSession     = _jbiHasRealQualifiedSession;
 window._jbiGetRecentTimestamp          = _jbiGetRecentTimestamp;
 window._getRecentDisplayImage          = _getRecentDisplayImage;
+window._agResolveLastPlayedTimestamp      = _agResolveLastPlayedTimestamp;
+window._agResolvePlaytimeRecordForGame    = _agResolvePlaytimeRecordForGame;
+window._agFieldPlaytimeMinutes            = _agFieldPlaytimeMinutes;
+window._agFieldLastPlayed                 = _agFieldLastPlayed;

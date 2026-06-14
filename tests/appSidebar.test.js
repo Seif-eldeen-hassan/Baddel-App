@@ -995,3 +995,213 @@ test('dashboard.html: sidebar.js loads before accounts/platform-panels.js', () =
     assert.ok(sbIdx !== -1 && ppIdx !== -1, 'both script tags must exist');
     assert.ok(sbIdx < ppIdx, 'sidebar.js must load before platform-panels.js');
 });
+
+// ─── RTI navigation race regression (Bug 2) ──────────────────────────────────
+
+const ACCOUNTS_JS = fs.readFileSync(path.join(ROOT, 'src/js/accounts.js'), 'utf8');
+
+function extractFnLong(src, sig) {
+    const idx = src.indexOf(sig);
+    if (idx === -1) return null;
+    return src.slice(idx, idx + 20000);
+}
+
+// ── navigateToReadyToInstall guards ────────────────────────────────────────
+
+test('navigateToReadyToInstall: has in-flight guard (_agRtiNavInFlight)', () => {
+    const fn = extractFn(SIDEBAR_JS, 'async function navigateToReadyToInstall()');
+    assert.ok(fn, 'function must exist');
+    assert.match(fn, /_agRtiNavInFlight/);
+});
+
+test('navigateToReadyToInstall: sets _agRtiNavInFlight = true before navigation', () => {
+    const fn = extractFn(SIDEBAR_JS, 'async function navigateToReadyToInstall()');
+    assert.match(fn, /window\._agRtiNavInFlight\s*=\s*true/);
+});
+
+test('navigateToReadyToInstall: resets _agRtiNavInFlight in finally block', () => {
+    const fn = extractFn(SIDEBAR_JS, 'async function navigateToReadyToInstall()');
+    // The reset must be inside a finally block
+    const finallyIdx = fn.indexOf('finally');
+    assert.ok(finallyIdx !== -1, 'finally block must exist');
+    assert.match(fn.slice(finallyIdx), /_agRtiNavInFlight\s*=\s*false/);
+});
+
+test('navigateToReadyToInstall: has idempotency guard for already-in-RTI-view case', () => {
+    const fn = extractFn(SIDEBAR_JS, 'async function navigateToReadyToInstall()');
+    // Must check currentView === 'all-games' AND agReadyOnly before navigating
+    assert.match(fn, /all-games/);
+    assert.match(fn, /agReadyOnly/);
+});
+
+test('navigateToReadyToInstall: logs [AGROUTE] ignored/coalesced when debug enabled', () => {
+    const fn = extractFn(SIDEBAR_JS, 'async function navigateToReadyToInstall()');
+    assert.match(fn, /\[AGROUTE\].*ignored\/coalesced/);
+});
+
+// ── navigateToAllGames route version token ─────────────────────────────────
+
+test('navigateToAllGames: increments window._agRouteVersion at start', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    assert.ok(fn, 'function must exist');
+    assert.match(fn, /_agRouteVersion/);
+    assert.match(fn, /\+\+.*_agRouteVersion|_agRouteVersion.*\+\s*1/);
+});
+
+test('navigateToAllGames: captures _myRouteToken from _agRouteVersion', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    assert.match(fn, /_myRouteToken/);
+    assert.match(fn, /_myRouteToken\s*=.*_agRouteVersion/);
+});
+
+test('navigateToAllGames: checks stale token after first await (platformSyncStatus)', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    const awaitIdx = fn.indexOf('await window.electronAPI.platformSyncStatus');
+    assert.ok(awaitIdx !== -1, 'platformSyncStatus await must exist');
+    const afterAwait = fn.slice(awaitIdx, awaitIdx + 300);
+    assert.match(afterAwait, /_agRouteVersion.*_myRouteToken|_myRouteToken.*_agRouteVersion/);
+});
+
+test('navigateToAllGames: logs [AGROUTE] stale token skipped', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    assert.match(fn, /\[AGROUTE\].*stale token skipped/);
+});
+
+test('navigateToAllGames: logs [AGROUTE] start token=', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    assert.match(fn, /\[AGROUTE\].*start token=/);
+});
+
+test('navigateToAllGames: logs [AGROUTE] finish token= in finally', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    assert.match(fn, /\[AGROUTE\].*finish token=/);
+});
+
+test('navigateToAllGames: guards _agEndAllGamesRoute with token check in finally', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'async function navigateToAllGames(');
+    const finallyIdx = fn.indexOf('} finally {');
+    assert.ok(finallyIdx !== -1, '} finally { block must exist');
+    const finallyBlock = fn.slice(finallyIdx, finallyIdx + 500);
+    // _agEndAllGamesRoute must only be called when token matches
+    assert.match(finallyBlock, /_myRouteToken/);
+    assert.match(finallyBlock, /_agEndAllGamesRoute/);
+});
+
+// ── _agRenderReadyToInstallLoading listener deduplication ──────────────────
+
+test('accounts.js: _agRenderReadyToInstallLoading accepts routeToken parameter', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'function _agRenderReadyToInstallLoading(');
+    assert.ok(fn, 'function must exist');
+    assert.match(fn, /routeToken/);
+});
+
+test('accounts.js: _agRenderReadyToInstallLoading removes previous listener before adding new one', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'function _agRenderReadyToInstallLoading(');
+    // Must remove old listener via _agRtiLoadingListener reference
+    assert.match(fn, /window\._agRtiLoadingListener/);
+    assert.match(fn, /removeEventListener.*_agRtiLoadingListener|_agRtiLoadingListener.*removeEventListener/);
+});
+
+test('accounts.js: _agRenderReadyToInstallLoading stores listener reference on window', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'function _agRenderReadyToInstallLoading(');
+    assert.match(fn, /window\._agRtiLoadingListener\s*=\s*_onCanonicalReady/);
+});
+
+test('accounts.js: _onCanonicalReady checks routeToken before calling _applyAgFilters', () => {
+    const fn = extractFnLong(ACCOUNTS_JS, 'function _agRenderReadyToInstallLoading(');
+    const onReadyIdx = fn.indexOf('function _onCanonicalReady');
+    assert.ok(onReadyIdx !== -1, '_onCanonicalReady must exist inside the function');
+    const onReadyBody = fn.slice(onReadyIdx, onReadyIdx + 600);
+    assert.match(onReadyBody, /routeToken.*_agRouteVersion|_agRouteVersion.*routeToken/);
+});
+
+// ── Behavioral simulation: route token staleness ────────────────────────────
+
+{
+    test('simulation: stale token check prevents older render from winning', () => {
+        // Simulate: token 1 starts, token 2 starts, token 1 resumes and checks
+        let _agRouteVersion = 0;
+        function startRoute() {
+            _agRouteVersion++;
+            return _agRouteVersion; // myToken
+        }
+        function isStale(myToken) {
+            return _agRouteVersion !== myToken;
+        }
+
+        const token1 = startRoute(); // 1
+        const token2 = startRoute(); // 2 — token1 is now stale
+
+        assert.ok(isStale(token1), 'token 1 must be detected as stale after token 2 starts');
+        assert.ok(!isStale(token2), 'token 2 must NOT be stale — it is the current route');
+    });
+
+    test('simulation: in-flight guard blocks second RTI call', () => {
+        let _agRtiNavInFlight = false;
+        let navigateCalls = 0;
+
+        async function fakeNavigateToReadyToInstall() {
+            if (_agRtiNavInFlight) return; // guard
+            _agRtiNavInFlight = true;
+            try {
+                navigateCalls++;
+                // simulate async work
+                await Promise.resolve();
+            } finally {
+                _agRtiNavInFlight = false;
+            }
+        }
+
+        // First call starts; second call runs while first is still in-flight
+        const p1 = fakeNavigateToReadyToInstall();
+        // At this point _agRtiNavInFlight is true synchronously (set before first await)
+        const p2 = fakeNavigateToReadyToInstall(); // must be blocked
+
+        return Promise.all([p1, p2]).then(() => {
+            assert.equal(navigateCalls, 1, 'navigation must run exactly once when guard is active');
+        });
+    });
+
+    test('simulation: in-flight guard resets after navigation completes', () => {
+        let _agRtiNavInFlight = false;
+        let navigateCalls = 0;
+
+        async function fakeNavigateToReadyToInstall() {
+            if (_agRtiNavInFlight) return;
+            _agRtiNavInFlight = true;
+            try {
+                navigateCalls++;
+                await Promise.resolve();
+            } finally {
+                _agRtiNavInFlight = false;
+            }
+        }
+
+        return fakeNavigateToReadyToInstall().then(() => {
+            assert.equal(_agRtiNavInFlight, false, 'guard must be false after navigation completes');
+            // Second call after first completes must succeed
+            return fakeNavigateToReadyToInstall();
+        }).then(() => {
+            assert.equal(navigateCalls, 2, 'second call after guard reset must run');
+        });
+    });
+
+    test('simulation: in-flight guard resets even when navigation throws', () => {
+        let _agRtiNavInFlight = false;
+
+        async function fakeNavigateToReadyToInstall() {
+            if (_agRtiNavInFlight) return;
+            _agRtiNavInFlight = true;
+            try {
+                await Promise.resolve();
+                throw new Error('simulated failure');
+            } finally {
+                _agRtiNavInFlight = false;
+            }
+        }
+
+        return fakeNavigateToReadyToInstall().catch(() => {
+            assert.equal(_agRtiNavInFlight, false, 'guard must reset even after navigation error');
+        });
+    });
+}

@@ -645,12 +645,12 @@ test('suggestions.js: _suggUpdatePills shows/hides Epic pill based on presence i
 // ── 25. renderSyncedSuggestions behaviour ────────────────────────────────────
 
 test('suggestions.js: renderSyncedSuggestions calls _suggStopRotation at entry', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 200);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 200);
     assert.match(fn, /_suggStopRotation\s*\(\)/);
 });
 
 test('suggestions.js: renderSyncedSuggestions uses all expected section DOM IDs', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 600);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 600);
     assert.match(fn, /syncedSuggestionsSection/);
     assert.match(fn, /syncedSuggLoading/);
     assert.match(fn, /syncedSuggEmpty/);
@@ -660,12 +660,12 @@ test('suggestions.js: renderSyncedSuggestions uses all expected section DOM IDs'
 });
 
 test('suggestions.js: renderSyncedSuggestions calls electronAPI.platformSyncGetAccounts per platform', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 1000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 1000);
     assert.match(fn, /electronAPI\.platformSyncGetAccounts\s*\(/);
 });
 
 test('suggestions.js: renderSyncedSuggestions calls _buildSyncedSuggestions after account check', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 2300);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 2300);
     const accountIdx = fn.indexOf('platformSyncGetAccounts');
     const buildIdx   = fn.indexOf('_buildSyncedSuggestions()');
     assert.ok(accountIdx > -1, 'platformSyncGetAccounts must be called');
@@ -905,7 +905,7 @@ test('suggestions.js: _suggBuildPool does not call quick-switcher internals', ()
 });
 
 test('suggestions.js: renderSyncedSuggestions does not call system-stats internals', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 3000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 3000);
     assert.doesNotMatch(fn, /initSystemStats|_hudInterval|checkAndManagePolling/);
 });
 
@@ -920,7 +920,7 @@ test('suggestions.js: _renderSyncedRail does not call context menu internals', (
 });
 
 test('suggestions.js: renderSyncedSuggestions does not call account display preference internals', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 3000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 3000);
     assert.doesNotMatch(fn, /renderPlatformPanels|updateDisplayPrefs|applyDisplayPreferences/);
 });
 
@@ -954,7 +954,7 @@ test('app.js: does not redeclare _suggFilter', () => {
 // ── 36. Canonical RTI state behavioral tests ─────────────────────────────────
 
 test('suggestions.js: renderSyncedSuggestions stats block uses getCanonicalReadyToInstallCount (not _suggAllGames.length)', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 5000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 5000);
     assert.match(fn, /getCanonicalReadyToInstallCount/, 'must call getCanonicalReadyToInstallCount for the stat display');
     // Verify it does not use _suggAllGames.length as the stat value directly
     // (it may still use staleCount from _suggAllGames, but not for the main count)
@@ -965,7 +965,7 @@ test('suggestions.js: renderSyncedSuggestions stats block uses getCanonicalReady
 });
 
 test('suggestions.js: home stat shows "..." when canonical count is null (not ready)', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions()', 5000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(', 5000);
     // The stat display must handle null count with a loading indicator
     assert.match(fn, /\.\.\.|…/, 'must show loading indicator when canonical count is null');
 });
@@ -1087,4 +1087,29 @@ test('suggestions.js: window.suggInstall is exported', () => {
 
 test('suggestions.js: window._onSyncLibraryUpdated is exported', () => {
     assert.match(SUGGESTIONS_JS, /window\._onSyncLibraryUpdated\s*=/);
+});
+
+// ── Deferred Home refresh in suggestions.js ──────────────────────────────────
+
+test('suggestions.js: _renderSyncedSuggestionsInner is defined as the inner async body', () => {
+    assert.match(SUGGESTIONS_JS, /async function _renderSyncedSuggestionsInner\s*\(/);
+});
+
+test('suggestions.js: renderSyncedSuggestions calls text-only count update and marks pending when scrolled', () => {
+    const body = extractFn(SUGGESTIONS_JS, 'async function renderSyncedSuggestions(', 750);
+    assert.match(body, /window\._homeIsUserScrolled/);
+    assert.match(body, /window\._updateHomeReadyCountTextOnly/);
+    assert.match(body, /window\._markHomeRefreshPending/);
+    assert.match(body, /home-synced-suggestions-scrolled/);
+    assert.match(body, /_renderSyncedSuggestionsInner/);
+});
+
+test('suggestions.js: baddel:ready-install-updated listener calls text-only update when Home is scrolled', () => {
+    const idx = SUGGESTIONS_JS.indexOf('baddel:ready-install-updated');
+    assert.ok(idx !== -1, 'baddel:ready-install-updated listener not found');
+    const slice = SUGGESTIONS_JS.slice(idx, idx + 900);
+    assert.match(slice, /window\._homeIsUserScrolled/);
+    assert.match(slice, /window\._updateHomeReadyCountTextOnly/);
+    assert.match(slice, /window\._markHomeRefreshPending/);
+    assert.match(slice, /home-ready-count-text-only/);
 });

@@ -338,6 +338,9 @@ window._allGamesCache = [];
 window.__readyToInstallState = {
     ready: false, games: null, count: null, version: 0, source: 'not-ready',
 };
+// Signature of the last pool passed to _renderAllGamesViewModeAware.
+// Used by the background-update path to skip re-renders when nothing changed.
+window._agLastRenderedPoolSignature = '';
 
 function _agMetadataHints(game) {
     const platforms = Array.isArray(game.platforms) && game.platforms.length
@@ -701,15 +704,19 @@ function _agRenderAccountFilterOptions(games) {
         });
     });
 
-    const currentValue = window._agState?.account || 'all';
+    const previousAccount = window._agState?.account || 'all';
     menu.innerHTML = Array.from(optionMap.entries())
         .map(([value, label]) => `<div class="dropdown-item" onclick="setAgAccountFilter('${_escapePlatformSyncHtml(value)}', decodeURIComponent('${encodeURIComponent(label)}'))">${_escapePlatformSyncHtml(label)}</div>`)
         .join('');
 
-    const resolvedValue = optionMap.has(currentValue) ? currentValue : 'all';
-    selectedText.innerText = optionMap.get(resolvedValue) || 'All Accounts';
+    // Keep the selected account if it still exists; fall back to 'all' if removed by sync.
+    const resolvedAccount = optionMap.has(previousAccount) ? previousAccount : 'all';
+    if (resolvedAccount !== previousAccount) {
+        console.log(`[AGFILTER] account '${previousAccount}' dropped from options — reset to All Accounts`);
+    }
+    selectedText.innerText = optionMap.get(resolvedAccount) || 'All Accounts';
     if (window._agState) {
-        window._agState.account = resolvedValue;
+        window._agState.account = resolvedAccount;
     }
 }
 
@@ -1290,6 +1297,32 @@ window.isCanonicalReadyToInstallReady = function() {
 };
 
 async function navigateToAllGames(opts = {}) {
+    // Route version token: each navigation captures its own token.
+    // After every await, stale callers check the token and exit without touching the DOM.
+    window._agRouteVersion = (window._agRouteVersion || 0) + 1;
+    const _myRouteToken = window._agRouteVersion;
+    const _rdbg = typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1';
+    if (_rdbg) console.log('[AGROUTE] start token=' + _myRouteToken);
+
+    // ── 0. Filter preservation (sync-complete / background refresh callers) ────────
+    // When preserveFilters is set, capture state before anything resets it and
+    // treat it as the restoreState so the normal restore path picks it up.
+    if (opts.preserveFilters && !opts.restoreState) {
+        const _snap = _agSnapshotFilterState();
+        opts = {
+            ...opts,
+            _keepReadyMode: true,
+            restoreState: {
+                platform:      _snap.state.platform,
+                sort:          _snap.state.sort,
+                search:        _snap.state.search,
+                account:       _snap.state.account,
+                accountLabel:  _snap.selectedAccountText,
+                scrollTop:     _snap.scrollTop,
+            },
+        };
+    }
+
     // ── 1. Mode flags (synchronous) ──────────────────────────────────────────────
     if (!opts._keepReadyMode) {
         window.agReadyOnly = false;
@@ -1370,6 +1403,10 @@ async function navigateToAllGames(opts = {}) {
         // Must come BEFORE inspecting the cache so removing all accounts while the
         // cache is populated correctly resets to the empty/onboarding state.
         const _syncSt = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
+        if (window._agRouteVersion !== _myRouteToken) {
+            if (_rdbg) console.log('[AGROUTE] stale token skipped token=' + _myRouteToken);
+            return;
+        }
         const _hasLinked = _syncSt?.steam === true || _syncSt?.epic === true;
         if (!_hasLinked) {
             window._allGamesCache    = [];
@@ -1402,7 +1439,7 @@ async function navigateToAllGames(opts = {}) {
                 if (window.agReadyOnly
                     && typeof window.isCanonicalReadyToInstallReady === 'function'
                     && !window.isCanonicalReadyToInstallReady()) {
-                    _agRenderReadyToInstallLoading();
+                    _agRenderReadyToInstallLoading(_myRouteToken);
                     return; // finally → _agEndAllGamesRoute(); listener re-renders when ready
                 }
 
@@ -1415,23 +1452,36 @@ async function navigateToAllGames(opts = {}) {
                     requestAnimationFrame(() => requestAnimationFrame(() => {
                         const el = document.getElementById('mainContentArea');
                         if (el) el.scrollTop = opts.restoreState.scrollTop;
-                        if (typeof window._vsRender === 'function') window._vsRender(false);
+                        if (typeof window._vsRender === 'function') window._vsRender(false, 'scroll-restore');
                     }));
                 }
                 return; // finally → _agEndAllGamesRoute()
             }
             // Cache only had installed-only games — treat as empty for onboarding.
             if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames-existing-cache')) return;
+            if (window._agRouteVersion !== _myRouteToken) {
+                if (_rdbg) console.log('[AGROUTE] stale token skipped token=' + _myRouteToken);
+                return;
+            }
         }
 
         if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames')) return;
+        if (window._agRouteVersion !== _myRouteToken) {
+            if (_rdbg) console.log('[AGROUTE] stale token skipped token=' + _myRouteToken);
+            return;
+        }
 
         // ── 10. Full rebuild ──────────────────────────────────────────────────────
         // suppressInitialLoading: keep our route skeleton until real data is ready.
         await renderAllGamesView({ stableLayout: true, suppressInitialLoading: true });
 
     } finally {
-        _agEndAllGamesRoute();
+        if (_rdbg) console.log('[AGROUTE] finish token=' + _myRouteToken + ' current=' + (window._agRouteVersion || 0));
+        // Tear down route lock only for the most recent navigation; a stale caller
+        // must not remove the pending state that the still-running current call needs.
+        if (window._agRouteVersion === _myRouteToken) {
+            _agEndAllGamesRoute();
+        }
     }
 }
 
@@ -1440,7 +1490,7 @@ async function navigateToAllGames(opts = {}) {
 // inside the same parent section so the panel is not constrained by the grid's
 // column layout or justify-content:start alignment.
 // DOM updates are idempotent; the event listener registers only once.
-function _agRenderReadyToInstallLoading() {
+function _agRenderReadyToInstallLoading(routeToken) {
     _agSetToolbarVisible(false);
     const countEl = document.getElementById('agResultCount');
     if (countEl) countEl.textContent = '…';
@@ -1468,12 +1518,21 @@ function _agRenderReadyToInstallLoading() {
         section.appendChild(wrap);
     }
 
-    if (window._agRtiLoadingListenerActive) return;
+    // Remove any previously registered listener before adding a new one.
+    // This prevents a stale listener from calling _applyAgFilters after a newer
+    // RTI navigation has already rendered the correct result.
+    if (window._agRtiLoadingListener) {
+        window.removeEventListener('baddel:ready-install-updated', window._agRtiLoadingListener);
+        window._agRtiLoadingListener = null;
+    }
     window._agRtiLoadingListenerActive = true;
 
     function _onCanonicalReady(evt) {
         window._agRtiLoadingListenerActive = false;
+        window._agRtiLoadingListener = null;
         window.removeEventListener('baddel:ready-install-updated', _onCanonicalReady);
+        // Stale route guard: a newer navigation has superseded this one.
+        if (routeToken !== undefined && window._agRouteVersion !== routeToken) return;
         // Remove loading wrapper and restore grid visibility before re-rendering.
         document.querySelector('.ag-rti-loading-wrap')?.remove();
         const g = document.getElementById('allGamesGrid');
@@ -1482,8 +1541,9 @@ function _agRenderReadyToInstallLoading() {
         if (typeof currentView !== 'undefined' && currentView !== 'all-games') return;
         if (!evt?.detail?.count && evt?.detail?.count !== 0) return;
         _agSetToolbarVisible(true);
-        _applyAgFilters({ resetScroll: true });
+        _applyAgFilters({ resetScroll: false }); // loading overlay was shown → scroll was 0; keep position if not
     }
+    window._agRtiLoadingListener = _onCanonicalReady;
     window.addEventListener('baddel:ready-install-updated', _onCanonicalReady);
 }
 
@@ -1503,20 +1563,25 @@ function _agHideEpicBanner() {
 }
 
 // ── All Games: reset grid back to normal game-card layout ────────────────────
-function _agResetAllGamesGridMode() {
+// Pass { preserveVirtualGrid: true } to skip clearing display/height/minHeight
+// when the virtual scroller has live rows that must stay anchored.
+function _agResetAllGamesGridMode(options = {}) {
     const grid = document.getElementById('allGamesGrid');
     if (!grid) return;
     grid.classList.remove('ag-empty-mode');
-    // Clear any inline overrides set during empty-state rendering
-    grid.style.display       = '';
     grid.style.flexDirection = '';
     grid.style.alignItems    = '';
     grid.style.width         = '';
-    grid.style.height        = '';
-    grid.style.minHeight     = '';
+    if (!options.preserveVirtualGrid) {
+        grid.style.display   = '';
+        grid.style.height    = '';
+        grid.style.minHeight = '';
+    }
 }
 
-function _agExitEmptyPageMode() {
+// Pass { preserveVirtualGrid: true } to skip clearing grid's layout styles when
+// the virtual scroller has live rows — prevents orphaning position:absolute wrappers.
+function _agExitEmptyPageMode(options = {}) {
     window._agNoLinkedAccounts = false;
     const main = document.getElementById('mainContentArea');
     const view = document.getElementById('allGamesView');
@@ -1526,18 +1591,41 @@ function _agExitEmptyPageMode() {
     if (view) view.classList.remove('ag-empty-page');
     if (grid) {
         grid.classList.remove('ag-empty-mode');
-        grid.style.display       = '';
-        grid.style.flexDirection = '';
-        grid.style.alignItems    = '';
-        grid.style.justifyContent = '';
-        grid.style.width         = '';
-        grid.style.height        = '';
-        grid.style.minHeight     = '';
-        grid.style.padding       = '';
-        grid.style.overflow      = '';
-        grid.style.position      = '';
+        if (!options.preserveVirtualGrid) {
+            grid.style.display        = '';
+            grid.style.flexDirection  = '';
+            grid.style.alignItems     = '';
+            grid.style.justifyContent = '';
+            grid.style.width          = '';
+            grid.style.height         = '';
+            grid.style.minHeight      = '';
+            grid.style.padding        = '';
+            grid.style.overflow       = '';
+            grid.style.position       = '';
+        }
     }
     if (list) list.style.display = '';
+}
+
+// Idempotent repair helper: restores the grid's position/display/height if the
+// virtual scroller has live rows but DOM styles were cleared prematurely. Only
+// called in the background-skip path — never removes rows or clears cardPool.
+function _agEnsureVirtualGridIntegrity(reason) {
+    const vs = window._vs;
+    if (!vs || !Array.isArray(vs.items) || vs.items.length === 0) return;
+    if (!(vs.cardPool instanceof Map) || vs.cardPool.size === 0) return;
+    const grid = document.getElementById('allGamesGrid');
+    if (!grid) return;
+    if (!grid.style.position || grid.style.position === '') {
+        grid.style.position = 'relative';
+    }
+    if (!grid.style.display || grid.style.display === '') {
+        grid.style.display = 'block';
+    }
+    if (vs.totalHeight != null && (!grid.style.height || grid.style.height === '')) {
+        grid.style.height = vs.totalHeight + 'px';
+    }
+    console.log(`[AllGames] _agEnsureVirtualGridIntegrity(${reason}): pos=${grid.style.position} h=${grid.style.height}`);
 }
 
 // ── Layout-lock helpers — prevent the grid collapsing to zero during nav ─────
@@ -1879,7 +1967,10 @@ window.renderAllGamesView = async function(options = {}) {
         if (allGamesCount) {
             allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
         }
+        // Snapshot filters before account option rebuild may reset _agState.account.
+        const _ravFilterSnap = options.preserveFilters ? _agSnapshotFilterState() : null;
         _agRenderAccountFilterOptions(window._allGamesCache);
+        if (_ravFilterSnap) _agRestoreFilterState(_ravFilterSnap, { validateAccount: true });
 
         if (await _agMaybeRenderEmptyOnboarding('renderAllGamesView')) return;
 
@@ -1889,6 +1980,13 @@ window.renderAllGamesView = async function(options = {}) {
             && !window.isCanonicalReadyToInstallReady()) {
             console.log('[ReadyCount] renderAllGamesView blocked raw RTI render; waiting canonical');
             _agRenderReadyToInstallLoading();
+            return;
+        }
+
+        // When preserving filters, use _applyAgFilters so the existing platform/
+        // sort/account/installedOnly state is applied rather than rendering raw cache.
+        if (options.preserveFilters) {
+            _applyAgFilters({ resetScroll: false, reason: 'renderAllGamesView-preserve-filters' });
             return;
         }
 
@@ -1912,131 +2010,300 @@ window.renderAllGamesView = async function(options = {}) {
     }
 };
 
+// ── Filter state snapshot / restore ─────────────────────────────────────────
+// These three helpers are used by the background library-updated handler so
+// that a sync refresh never clobbers the user's active filters.
+
+function _agSnapshotFilterState() {
+    return {
+        state: {
+            platform: window._agState?.platform || 'all',
+            sort:     window._agState?.sort     || 'title_asc',
+            search:   window._agState?.search   || '',
+            account:  window._agState?.account  || 'all',
+        },
+        agInstalledOnly:     !!window.agInstalledOnly,
+        agReadyOnly:         !!window.agReadyOnly,
+        searchInputValue:    document.getElementById('allGamesSearch')?.value || '',
+        selectedAccountText: document.getElementById('selectedAgAccountText')?.innerText || 'All Accounts',
+        scrollTop:           document.getElementById('mainContentArea')?.scrollTop || 0,
+    };
+}
+
+// Sync the toolbar DOM to match the current window._agState / agInstalledOnly /
+// agReadyOnly values.  Pure DOM write — does not call _applyAgFilters.
+function _agSyncFilterUiFromState(snapshot) {
+    const state     = window._agState || {};
+    const sortLabels = { title_asc: 'A → Z', title_desc: 'Z → A', playtime_desc: 'Most Played', multi_first: 'Multi-Platform First' };
+
+    // Platform pills
+    document.querySelectorAll('.ag-pill').forEach(p => p.classList.remove('active'));
+    const activePill = document.querySelector(`.ag-pill[data-platform="${state.platform || 'all'}"]`);
+    if (activePill) activePill.classList.add('active');
+
+    // Sort label + active item
+    const sortLabelEl = document.getElementById('agSortLabel');
+    if (sortLabelEl) sortLabelEl.textContent = sortLabels[state.sort] || 'A → Z';
+    document.querySelectorAll('.ag-sort-item').forEach(i => {
+        i.classList.toggle('active', i.dataset.value === (state.sort || 'title_asc'));
+    });
+
+    // Account dropdown label
+    const accountTextEl = document.getElementById('selectedAgAccountText');
+    if (accountTextEl) {
+        if (state.account === 'all') {
+            accountTextEl.innerText = 'All Accounts';
+        } else if (snapshot?.selectedAccountText) {
+            accountTextEl.innerText = snapshot.selectedAccountText;
+        }
+    }
+
+    // Installed toggle button
+    const installedBtn = document.getElementById('agInstalledToggle');
+    if (installedBtn) installedBtn.classList.toggle('active', !!window.agInstalledOnly);
+
+    // Body class used for RTI-mode styling
+    document.body.classList.toggle('ag-ready-mode', !!window.agReadyOnly);
+}
+
+// Restore _agState + booleans from a snapshot, then sync the toolbar DOM.
+// options.validateAccount: if true, verify the account still appears in the
+// current account option map before restoring (falls back to 'all' if gone).
+function _agRestoreFilterState(snapshot, options = {}) {
+    if (!snapshot) return;
+    if (!window._agState) {
+        window._agState = { platform: 'all', sort: 'title_asc', search: '', account: 'all' };
+    }
+
+    window._agState.platform = snapshot.state.platform;
+    window._agState.sort     = snapshot.state.sort;
+    window._agState.search   = snapshot.state.search;
+    window.agInstalledOnly   = snapshot.agInstalledOnly;
+    window.agReadyOnly       = snapshot.agReadyOnly;
+
+    // Validate account: only restore if the key still appears in the option menu.
+    if (options.validateAccount) {
+        const menu = document.getElementById('agAccountMenu');
+        const accountKeys = menu
+            ? Array.from(menu.querySelectorAll('.dropdown-item'))
+                .map(el => {
+                    const m = el.getAttribute('onclick')?.match(/setAgAccountFilter\('([^']+)'/);
+                    return m ? m[1] : null;
+                })
+                .filter(Boolean)
+            : [];
+        const accountStillExists = snapshot.state.account === 'all'
+            || accountKeys.includes(snapshot.state.account);
+        window._agState.account = accountStillExists ? snapshot.state.account : 'all';
+        if (!accountStillExists) {
+            console.log(`[AGFILTER] account '${snapshot.state.account}' no longer available — reset to All Accounts`);
+        }
+    } else {
+        window._agState.account = snapshot.state.account;
+    }
+
+    // Restore search input value
+    const searchEl = document.getElementById('allGamesSearch');
+    if (searchEl) searchEl.value = snapshot.searchInputValue || snapshot.state.search || '';
+    if (typeof window._agUpdateSearchClear === 'function') window._agUpdateSearchClear();
+
+    _agSyncFilterUiFromState(snapshot);
+}
+
 // ── Refresh grid when library updates from main process ────────
 // Guard: register only once — navigating back and forth would stack listeners
 // and trigger multiple concurrent re-renders per event.
 if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttached) {
     window._allGamesLibraryListenerAttached = true;
     window.electronAPI.onLibraryUpdated(async () => {
-        const view = document.getElementById('allGamesView');
-        const viewVisible = view && view.style.display === 'block';
+        // Use the scroll-preserve helper from app.js; fall back to a no-op wrapper
+        // if it is not yet available (should not happen in normal load order).
+        const _preserve = typeof window._preserveActiveScrollDuring === 'function'
+            ? window._preserveActiveScrollDuring
+            : (reason, fn) => fn();
 
-        // Always rebuild cache so canonical ready state stays current,
-        // regardless of which view is open.
-        try {
-            if (window._agNoLinkedAccounts) {
-                if (viewVisible) await renderAllGamesView();
-                return;
-            }
-            const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
-            const isEpicLinked = status?.epic === true;
-            const isSteamLinked = status?.steam === true;
+        return _preserve('accounts-library-updated', async () => {
+            const view = document.getElementById('allGamesView');
+            const viewVisible = view && view.style.display === 'block';
 
-            if (!isEpicLinked && !isSteamLinked) {
-                _agMarkReadyToInstallNotReady('no-linked-accounts');
-                return;
-            }
-
-            console.log('[AllGames] Library updated — refreshing cache' + (viewVisible ? ' and view' : ' (background)'));
-
-            let rawGames = [];
-            const accountNameByKey = new Map();
-
-            if (isEpicLinked) {
-                const epicAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('epic');
-                (epicAccountsRes?.accounts || []).forEach(acc => {
-                    accountNameByKey.set(_agComposeAccountKey('epic', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-                });
-                const epicRes = await window.electronAPI.platformSyncGetCached?.('epic');
-                if (epicRes?.games) rawGames.push(...epicRes.games);
-            }
-            if (isSteamLinked) {
-                const steamAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('steam');
-                (steamAccountsRes?.accounts || []).forEach(acc => {
-                    accountNameByKey.set(_agComposeAccountKey('steam', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-                });
-                const steamRes = await window.electronAPI.platformSyncGetCached?.('steam');
-                if (steamRes?.games) rawGames.push(...steamRes.games);
-            }
-
-            const mergedGamesMap = new Map();
-            rawGames.forEach(game => {
-                const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                if (mergedGamesMap.has(cleanTitle)) {
-                    const existingGame = mergedGamesMap.get(cleanTitle);
-                    if (!existingGame.platforms.includes(game.platform)) existingGame.platforms.push(game.platform);
-                    existingGame.allIds[game.platform] = game.id;
-                    existingGame._agSource     = 'platform-sync';
-                    existingGame.librarySource = 'synced-account';
-                    _agMergeAccountMeta(existingGame, game, accountNameByKey);
-                } else {
-                    const newGame = { ...game };
-                    newGame.platforms     = [game.platform];
-                    newGame.allIds        = { [game.platform]: game.id };
-                    newGame._agSource     = 'platform-sync';
-                    newGame.librarySource = 'synced-account';
-                    _agMergeAccountMeta(newGame, game, accountNameByKey);
-                    mergedGamesMap.set(cleanTitle, newGame);
+            // Always rebuild cache so canonical ready state stays current,
+            // regardless of which view is open.
+            try {
+                if (window._agNoLinkedAccounts) {
+                    if (viewVisible) await renderAllGamesView({ preserveFilters: true, reason: 'sync-complete-no-accounts' });
+                    return;
                 }
-            });
+                const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
+                const isEpicLinked = status?.epic === true;
+                const isSteamLinked = status?.steam === true;
 
-            let newCache = Array.from(mergedGamesMap.values());
-            const oldById = new Map((window._allGamesCache || []).map(g => [String(g.id ?? g.appName ?? g.title), g]));
-            newCache.forEach(g => {
-                const key = String(g.id ?? g.appName ?? g.title);
-                const old = oldById.get(key);
-                if (old?.coverUrl)             g.coverUrl             = old.coverUrl;
-                if (old?.heroUrl)              g.heroUrl              = old.heroUrl;
-                if (old?.logoUrl)              g.logoUrl              = old.logoUrl;
-                if (old?._agCoverPipelineDone) g._agCoverPipelineDone = old._agCoverPipelineDone;
-                if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
-            });
-            newCache = await _agApplyInstalledCreatorOverrides(newCache);
-            if (window._vs?.cardCache) window._vs.cardCache.clear();
+                if (!isEpicLinked && !isSteamLinked) {
+                    _agMarkReadyToInstallNotReady('no-linked-accounts');
+                    return;
+                }
 
-            window._allGamesRawCache = newCache;
-            window._allGamesCache    = _agGetUserLibraryGames(newCache);
+                console.log('[AllGames] Library updated — refreshing cache' + (viewVisible ? ' and view' : ' (background)'));
 
-            // Publish canonical ready state — this is the single authoritative update.
-            const _rtiGames = _agComputeReadyToInstallGamesFromCache();
-            if (_rtiGames !== null) {
-                _agPublishReadyToInstallState(_rtiGames, 'library-updated');
-            }
+                let rawGames = [];
+                const accountNameByKey = new Map();
 
-            // DOM updates only when the all-games view is visible.
-            if (!viewVisible) return;
+                if (isEpicLinked) {
+                    const epicAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('epic');
+                    (epicAccountsRes?.accounts || []).forEach(acc => {
+                        accountNameByKey.set(_agComposeAccountKey('epic', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
+                    });
+                    const epicRes = await window.electronAPI.platformSyncGetCached?.('epic');
+                    if (epicRes?.games) rawGames.push(...epicRes.games);
+                }
+                if (isSteamLinked) {
+                    const steamAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('steam');
+                    (steamAccountsRes?.accounts || []).forEach(acc => {
+                        accountNameByKey.set(_agComposeAccountKey('steam', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
+                    });
+                    const steamRes = await window.electronAPI.platformSyncGetCached?.('steam');
+                    if (steamRes?.games) rawGames.push(...steamRes.games);
+                }
 
-            if (window._allGamesCache.length > 0) {
-                window._agNoLinkedAccounts = false;
-                _agSetEmptyPageMode(false);
-                _agSetToolbarVisible(true);
-                _agResetAllGamesGridMode();
-            }
-
-            await _agHydrateCachedCoversIntoAllGames();
-
-            const allGamesCount = document.getElementById('allGamesCount');
-            if (allGamesCount) allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
-
-            _agRenderAccountFilterOptions(window._allGamesCache);
-            const scroller = document.getElementById('mainContentArea');
-            const keepScrollTop = scroller ? scroller.scrollTop : 0;
-
-            _applyAgFilters({ resetScroll: false });
-
-            if (scroller) {
-                requestAnimationFrame(() => {
-                    scroller.scrollTop = keepScrollTop;
-                    if (typeof window._vsRender === 'function') {
-                        window._vsRender(false);
+                const mergedGamesMap = new Map();
+                rawGames.forEach(game => {
+                    const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+                    if (mergedGamesMap.has(cleanTitle)) {
+                        const existingGame = mergedGamesMap.get(cleanTitle);
+                        if (!existingGame.platforms.includes(game.platform)) existingGame.platforms.push(game.platform);
+                        existingGame.allIds[game.platform] = game.id;
+                        existingGame._agSource     = 'platform-sync';
+                        existingGame.librarySource = 'synced-account';
+                        _agMergeAccountMeta(existingGame, game, accountNameByKey);
+                    } else {
+                        const newGame = { ...game };
+                        newGame.platforms     = [game.platform];
+                        newGame.allIds        = { [game.platform]: game.id };
+                        newGame._agSource     = 'platform-sync';
+                        newGame.librarySource = 'synced-account';
+                        _agMergeAccountMeta(newGame, game, accountNameByKey);
+                        mergedGamesMap.set(cleanTitle, newGame);
                     }
                 });
-            } else if (typeof window._vsRender === 'function') {
-                window._vsRender(false);
+
+                let newCache = Array.from(mergedGamesMap.values());
+                const oldById = new Map((window._allGamesCache || []).map(g => [String(g.id ?? g.appName ?? g.title), g]));
+                newCache.forEach(g => {
+                    const key = String(g.id ?? g.appName ?? g.title);
+                    const old = oldById.get(key);
+                    if (old?.coverUrl)             g.coverUrl             = old.coverUrl;
+                    if (old?.heroUrl)              g.heroUrl              = old.heroUrl;
+                    if (old?.logoUrl)              g.logoUrl              = old.logoUrl;
+                    if (old?._agCoverPipelineDone) g._agCoverPipelineDone = old._agCoverPipelineDone;
+                    if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
+                });
+                newCache = await _agApplyInstalledCreatorOverrides(newCache);
+
+                window._allGamesRawCache = newCache;
+                window._allGamesCache    = _agGetUserLibraryGames(newCache);
+
+                // Publish canonical ready state — this is the single authoritative update.
+                const _rtiGames = _agComputeReadyToInstallGamesFromCache();
+                if (_rtiGames !== null) {
+                    _agPublishReadyToInstallState(_rtiGames, 'library-updated');
+                }
+
+                // DOM updates only when the all-games view is visible.
+                if (!viewVisible) return;
+
+                // Capture filter state before any cache/DOM mutations. Rebuilding
+                // the account option list can silently reset _agState.account when
+                // account keys arrive in a slightly different order from sync, which
+                // leaves the toolbar visually correct but the pool unfiltered.
+                const filterSnapshot = _agSnapshotFilterState();
+                if (window.baddel_debug_vs) {
+                    console.log('[AGFILTER] snapshot before sync-refresh', JSON.stringify(filterSnapshot.state),
+                        'installedOnly=' + filterSnapshot.agInstalledOnly,
+                        'readyOnly=' + filterSnapshot.agReadyOnly);
+                }
+
+                // Compute the new visible pool BEFORE any DOM mutations so we know
+                // whether a re-render is actually needed. Clearing grid styles
+                // (position/display/height) when the pool is unchanged would orphan
+                // the virtual scroller's position:absolute row wrappers.
+                const _bgUseCanonical = window.agReadyOnly
+                    && typeof window.getCanonicalReadyToInstallGames === 'function'
+                    && window.isCanonicalReadyToInstallReady?.() === true;
+                const _bgBase = (_bgUseCanonical && typeof window.getCanonicalReadyToInstallGames === 'function')
+                    ? window.getCanonicalReadyToInstallGames()
+                    : _agGetUserLibraryGames(window._allGamesCache || []);
+                const _bgPool = _agBuildFilteredPool({ cache: _bgBase, useCanonical: _bgUseCanonical });
+                const _bgSig  = _agComputePoolSignature(_bgPool);
+                const _bgPoolUnchanged = !!window._agLastRenderedPoolSignature
+                    && _bgSig === window._agLastRenderedPoolSignature;
+
+                if (_bgPoolUnchanged) {
+                    // Visible pool is identical — skip all DOM resets. Only patch
+                    // covers and update non-layout UI so row wrappers stay anchored.
+                    await _agHydrateCachedCoversIntoAllGames();
+                    const _countEl = document.getElementById('allGamesCount');
+                    if (_countEl) _countEl.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
+                    _agRenderAccountFilterOptions(window._allGamesCache);
+                    // Restore filter state — _agRenderAccountFilterOptions may have
+                    // silently reset _agState.account if account keys changed during sync.
+                    _agRestoreFilterState(filterSnapshot, { validateAccount: true });
+                    _agEnsureVirtualGridIntegrity('background-skip');
+                    return;
+                }
+
+                // Pool changed — safe to reset DOM and run a full re-render.
+                if (window._allGamesCache.length > 0) {
+                    window._agNoLinkedAccounts = false;
+                    _agSetEmptyPageMode(false);
+                    _agSetToolbarVisible(true);
+                    _agResetAllGamesGridMode();
+                }
+
+                await _agHydrateCachedCoversIntoAllGames();
+
+                const allGamesCount = document.getElementById('allGamesCount');
+                if (allGamesCount) allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
+
+                _agRenderAccountFilterOptions(window._allGamesCache);
+
+                // Restore filters after account option rebuild — must happen before
+                // _applyAgFilters so the correct pool is built on the first pass.
+                _agRestoreFilterState(filterSnapshot, { validateAccount: true });
+
+                if (window.baddel_debug_vs) {
+                    console.log('[AGFILTER] restored before apply', JSON.stringify({
+                        platform: window._agState?.platform,
+                        sort:     window._agState?.sort,
+                        account:  window._agState?.account,
+                        installedOnly: window.agInstalledOnly,
+                    }));
+                }
+
+                const scroller = document.getElementById('mainContentArea');
+                const keepScrollTop = scroller ? scroller.scrollTop : 0;
+
+                const _rendered = _applyAgFilters({ resetScroll: false, reason: 'background-library-updated-preserve-filters' });
+
+                if (window.baddel_debug_vs) {
+                    const _dbgPool = _agBuildFilteredPool({ cache: _agGetUserLibraryGames(window._allGamesCache || []), useCanonical: false });
+                    console.log('[AGFILTER] apply result count=' + _dbgPool.length);
+                }
+
+                if (_rendered !== false) {
+                    if (scroller) {
+                        requestAnimationFrame(() => {
+                            scroller.scrollTop = keepScrollTop;
+                            if (typeof window._vsRender === 'function') {
+                                window._vsRender(false, 'background-update');
+                            }
+                        });
+                    } else if (typeof window._vsRender === 'function') {
+                        window._vsRender(false, 'background-update');
+                    }
+                }
+            } catch (err) {
+                console.warn('[AllGames] Silent refresh failed:', err.message);
             }
-        } catch (err) {
-            console.warn('[AllGames] Silent refresh failed:', err.message);
-        }
+        });
     });
 }
 
@@ -2456,6 +2723,30 @@ function _vsBuildCard(game) {
         if (typeof openGameDetails === 'function') openGameDetails(safeId);
     });
 
+    // For installed synced entries, stamp the local DB ID onto the game object so
+    // the playtime resolver can locate the correct playtimeData record without a
+    // global ID replacement. Only performed when the game has no local IDs yet.
+    if (_agIsInstalled(game)
+        && !game.localGameId
+        && !game.installedId
+        && typeof window._agFindInstalledLocalMatch === 'function'
+    ) {
+        try {
+            const localMatch = window._agFindInstalledLocalMatch(game);
+            if (localMatch?.id) {
+                game = {
+                    ...game,
+                    installedId:         localMatch.id,
+                    localGameId:         localMatch.id,
+                    totalPlaytime:       localMatch.totalPlaytime        ?? game.totalPlaytime,
+                    lastPlayed:          localMatch.lastPlayed           ?? game.lastPlayed,
+                    lastQualifiedPlayed: localMatch.lastQualifiedPlayed  ?? game.lastQualifiedPlayed,
+                    playSessions:        localMatch.playSessions         ?? game.playSessions,
+                };
+            }
+        } catch {}
+    }
+
     // Attach the display overlay so Show Fields checkboxes (title, playtime,
     // lastPlayed, installed) work.  _agDecorateAllGamesCardFields is defined in
     // app.js and always available by the time this function is first called.
@@ -2548,25 +2839,31 @@ if (_agIsCreatorArtworkGame(g)) {
     const changedCache = patchList(window._allGamesCache);
     const changedItems = patchList(window._vs?.items);
 
-    console.log(`[AllGamesUI] hydrated cached covers cache=${changedCache}, items=${changedItems}`);
+    // Patch cardCache cards in-place. cardCache holds the exact same DOM nodes
+    // referenced by the mounted row wrappers, so patches are immediately visible
+    // in the grid without any _vsRender call.
+    let patchedCards = 0;
+    if ((changedCache || changedItems) && window._vs?.cardCache instanceof Map && Array.isArray(window._vs.items)) {
+        window._vs.items.forEach(game => {
+            const gameId = String(game.id || game.appName || game.title || '');
+            const card = window._vs.cardCache.get(gameId);
+            if (card && game.coverUrl) {
+                _vsApplyCoverToCard(card, game, true);
+                window._vs._coverQueued.add(gameId);
+                patchedCards++;
+            }
+        });
+    }
 
-    if (changedCache || changedItems) {
-        if (window._vs?.cardCache instanceof Map && Array.isArray(window._vs.items)) {
-            window._vs.items.forEach(game => {
-                const gameId = String(game.id || game.appName || game.title || '');
-                const card = window._vs.cardCache.get(gameId);
+    console.log(`[AllGamesUI] hydrated cached covers cache=${changedCache}, items=${changedItems}, cards=${patchedCards}`);
 
-                if (card && game.coverUrl) {
-                    _vsApplyCoverToCard(card, game, true);
-                    window._vs._coverQueued.add(gameId);
-                }
-            });
-        }
-
-        if (typeof window._vsRender === 'function') {
-            // true هنا مش هيرجع السكرول فوق، دي remeasure/render فقط
-            window._vsRender(true);
-        }
+    // Never call _vsRender(true) after cover hydration — forced remeasure tears
+    // down all row wrappers and causes a visible grid jump. Fall back to a soft
+    // repaint only when data changed but no card was reachable in cardCache yet.
+    // Ensure grid styles are intact before the repaint so row wrappers are anchored.
+    if ((changedCache || changedItems) && patchedCards === 0 && typeof window._vsRender === 'function') {
+        _agEnsureVirtualGridIntegrity('cover-patch-fallback');
+        window._vsRender(false, 'cover-patch-fallback');
     }
 }
 
@@ -2624,7 +2921,19 @@ function _agCanQueueCover(game, gameId) {
 }
 
 /** Main render function — called on every scroll tick */
-function _vsRender(forceRemeasure = false) {
+function _vsRender(forceRemeasure = false, reason = 'unknown') {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
+        const _dbgGrid     = document.getElementById('allGamesGrid');
+        const _dbgScroller = _vs.scroller || document.getElementById('mainContentArea');
+        console.log(
+            `[VSDBG] _vsRender force=${forceRemeasure} reason=${reason}`,
+            `view=${typeof currentView !== 'undefined' ? currentView : '?'}`,
+            `rti=${window.agReadyOnly || false} installedOnly=${window.agInstalledOnly || false}`,
+            `scrollTop=${_dbgScroller?.scrollTop ?? '?'}`,
+            `gridRectTop=${_dbgGrid?.getBoundingClientRect().top ?? '?'}`,
+            '\n' + (new Error().stack?.split('\n').slice(1, 6).join('\n') || '')
+        );
+    }
     const grid = document.getElementById('allGamesGrid');
     const scroller = _vs.scroller || document.getElementById('mainContentArea');
     if (!grid || !scroller || _vs.items.length === 0) return;
@@ -2889,7 +3198,7 @@ function _vsOnScroll() {
     if (_vs.raf) return;
     _vs.raf = requestAnimationFrame(() => {
         _vs.raf = null;
-        _vsRender();
+        _vsRender(false, 'scroll');
     });
 }
 
@@ -2936,7 +3245,7 @@ function _vsInit(items, resetScroll = true) {
         window.addEventListener('resize', () => {
             // On resize, invalidate cached gridTop and remeasure
             _vs._gridTopDirty = true;
-            if (_vs.items.length > 0) _vsRender(true);
+            if (_vs.items.length > 0) _vsRender(true, 'window-resize');
         });
         _vs._scrollBound = true;
     }
@@ -2944,13 +3253,19 @@ function _vsInit(items, resetScroll = true) {
     if (resetScroll) scroller.scrollTop = 0;
 
     // Initial render
-    _vsRender(true);
+    _vsRender(true, 'vs-init');
 }
 
 /** The main entry point — replaces old _renderAllGamesGrid */
 function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
     const grid = document.getElementById('allGamesGrid');
     if (!grid) return;
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
+        console.log(
+            `[VSDBG] _renderAllGamesGrid games=${games?.length ?? 0} resetScroll=${resetScroll} fullReset=${fullReset}`,
+            '\n' + (new Error().stack?.split('\n').slice(1, 6).join('\n') || '')
+        );
+    }
 
     // Capture current rendered height before resetting so we can hold a floor
     // and prevent the grid collapsing to zero during the innerHTML swap.
@@ -3161,7 +3476,86 @@ function _agIsInstalled(game) {
     return false;
 }
 
+// Pure filter/sort helper — no DOM writes. Accepts the base cache and whether
+// the caller is already operating on the canonical RTI list so that RTI
+// de-duplication is not applied twice.
+function _agBuildFilteredPool({ cache, useCanonical }) {
+    const { platform, sort, search, account } = window._agState || {};
+    let pool = [...(Array.isArray(cache) ? cache : [])];
+
+    if (platform !== 'all') {
+        pool = pool.filter(g => Array.isArray(g.platforms) && g.platforms.includes(platform));
+    }
+    if (account && account !== 'all') {
+        pool = pool.filter(g => Array.isArray(g.accountKeys) && g.accountKeys.includes(account));
+    }
+    if (window.agInstalledOnly) {
+        pool = pool.filter(g => _agIsInstalled(g));
+    }
+    if (window.agReadyOnly && !useCanonical) {
+        pool = pool.filter(g => !_agIsInstalled(g));
+    }
+    const searchTrim = (search || '').trim();
+    if (searchTrim) {
+        pool = pool.filter(g => (g.title || '').toLowerCase().includes(searchTrim));
+    }
+    if (sort === 'title_asc') {
+        pool.sort((a, b) => (a.title || '').localeCompare(b.title || ''));
+    } else if (sort === 'title_desc') {
+        pool.sort((a, b) => (b.title || '').localeCompare(a.title || ''));
+    } else if (sort === 'playtime_desc') {
+        const playtimeOf = (game) => {
+            if (typeof window._agFieldPlaytimeMinutes === 'function') {
+                return Number(window._agFieldPlaytimeMinutes(game)) || 0;
+            }
+            return Number(game?.playtime || game?.totalPlaytime || 0) || 0;
+        };
+        const lastPlayedOf = (game) => {
+            if (typeof window._agResolveLastPlayedTimestamp === 'function') {
+                return Number(window._agResolveLastPlayedTimestamp(game)) || 0;
+            }
+            if (typeof window._agFieldLastPlayed === 'function') {
+                return Number(window._agFieldLastPlayed(game)) || 0;
+            }
+            return Number(game?.lastQualifiedPlayed || game?.lastPlayed || 0) || 0;
+        };
+        pool.sort((a, b) => {
+            const ptDiff = playtimeOf(b) - playtimeOf(a);
+            if (ptDiff !== 0) return ptDiff;
+            const lpDiff = lastPlayedOf(b) - lastPlayedOf(a);
+            if (lpDiff !== 0) return lpDiff;
+            return String(a.title || a.name || '').localeCompare(String(b.title || b.name || ''));
+        });
+    } else if (sort === 'multi_first') {
+        pool.sort((a, b) =>
+            (b.platforms?.length || 0) - (a.platforms?.length || 0) ||
+            (a.title || '').localeCompare(b.title || ''));
+    }
+    return pool;
+}
+
+// Returns a stable string that uniquely describes the current rendered pool:
+// mode, active filters, and the ordered game-ID list. Cover URLs are excluded
+// because they are patched in-place and do not require a grid remount.
+function _agComputePoolSignature(pool) {
+    const mode = window.agReadyOnly ? 'rti' : 'all';
+    const { platform, sort, search, account } = window._agState || {};
+    const installedOnly = window.agInstalledOnly ? '1' : '0';
+    const ids = Array.isArray(pool)
+        ? pool.map(g => String(g.id ?? g.appName ?? g.title)).join(',')
+        : '';
+    return `${mode}|${platform ?? ''}|${sort ?? ''}|${search ?? ''}|${account ?? ''}|${installedOnly}|${ids}`;
+}
+
 function _applyAgFilters(options = {}) {
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
+        console.log(
+            `[VSDBG] _applyAgFilters reason=${options.reason || 'user-action'} resetScroll=${options.resetScroll}`,
+            `view=${typeof currentView !== 'undefined' ? currentView : '?'}`,
+            `rti=${window.agReadyOnly || false}`,
+            '\n' + (new Error().stack?.split('\n').slice(1, 6).join('\n') || '')
+        );
+    }
     // RTI guard: canonical state not ready — do not render stale pre-sync cache.
     if (window.agReadyOnly
         && typeof window.isCanonicalReadyToInstallReady === 'function'
@@ -3201,44 +3595,7 @@ function _applyAgFilters(options = {}) {
         _agInstalledMapSrc = null;
     }
 
-    const { platform, sort, search, account } = window._agState;
-    let pool = [...cache];
-
-    // 1. platform filter
-    if (platform !== 'all') {
-        pool = pool.filter(g => g.platforms.includes(platform));
-    }
-
-    // 2. account filter
-    if (account && account !== 'all') {
-        pool = pool.filter((g) => Array.isArray(g.accountKeys) && g.accountKeys.includes(account));
-    }
-
-    // 3. installed only filter
-    if (window.agInstalledOnly) {
-        pool = pool.filter(g => _agIsInstalled(g));
-    }
-
-    // 3b. ready-to-install filter — skip when canonical already represents RTI list.
-    if (window.agReadyOnly && !useCanonical) {
-        pool = pool.filter(g => !_agIsInstalled(g));
-    }
-
-    // 4. search
-    if (search.trim()) {
-        pool = pool.filter(g => (g.title || '').toLowerCase().includes(search));
-    }
-
-    // 5. sort
-    if (sort === 'title_asc') {
-        pool.sort((a, b) => a.title.localeCompare(b.title));
-    } else if (sort === 'title_desc') {
-        pool.sort((a, b) => b.title.localeCompare(a.title));
-    } else if (sort === 'playtime_desc') {
-        pool.sort((a, b) => (b.playtime || 0) - (a.playtime || 0));
-    } else if (sort === 'multi_first') {
-        pool.sort((a, b) => b.platforms.length - a.platforms.length || a.title.localeCompare(b.title));
-    }
+    const pool = _agBuildFilteredPool({ cache, useCanonical });
 
     // Keep _readyToInstallRenderedGames for view-state use only (not as canonical count source).
     if (window.agReadyOnly && !window._agState?.search?.trim()) {
@@ -3247,7 +3604,17 @@ function _applyAgFilters(options = {}) {
         window._readyToInstallRenderedGames = null;
     }
 
+    // Skip rerender when a background sync fires with an unchanged visible pool.
+    const _newSig = _agComputePoolSignature(pool);
+    if (options.reason === 'background-library-updated'
+        && _newSig === window._agLastRenderedPoolSignature) {
+        console.log('[AllGames] background update skipped visible rerender: signature unchanged');
+        return false;
+    }
+    window._agLastRenderedPoolSignature = _newSig;
+
     _renderAllGamesViewModeAware(pool, resetScroll);
+    return true;
 }
 
 // Display preference functions (AG_DISPLAY_DEFAULTS, _agLoadDisplayPrefs,
@@ -3388,13 +3755,23 @@ function _renderAllGamesList(games) {
                 : `<span style="font-size:0.6rem;color:#555">${m.label}</span>`;
         }).join('');
 
-        // Playtime string
-        const pt = game.playtime || 0;
-        const ptStr = pt > 0 ? (pt >= 60 ? `${Math.floor(pt/60)}h ${pt%60}m` : `${pt}m`) : '—';
+        // Playtime — use cross-ID resolver so synced All Games entries reach the local record.
+        const pt = (typeof window._agFieldPlaytimeMinutes === 'function')
+            ? window._agFieldPlaytimeMinutes(game)
+            : Number(game.playtime || game.totalPlaytime || 0) || 0;
+        const ptStr = (typeof formatPlaytime === 'function')
+            ? (pt > 0 ? formatPlaytime(pt) : '—')
+            : (pt > 0 ? (pt >= 60 ? `${Math.floor(pt/60)}h ${pt%60}m` : `${pt}m`) : '—');
 
-        // Last played
-        const lp = game.lastPlayed || game.last_played;
-        const lpStr = lp ? new Date(lp).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—';
+        // Last played — use resolver so synced entries see the real lastPlayed.
+        const lp = (typeof window._agResolveLastPlayedTimestamp === 'function')
+            ? window._agResolveLastPlayedTimestamp(game)
+            : (typeof window._agFieldLastPlayed === 'function')
+                ? window._agFieldLastPlayed(game)
+                : (game.lastQualifiedPlayed || game.lastPlayed || game.last_played || null);
+        const lpStr = (typeof formatLastPlayed === 'function')
+            ? (lp ? formatLastPlayed(lp) : '—')
+            : (lp ? new Date(lp).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—');
 
         // Cover
         const cover = game.coverUrl ? _agAttrUrl(game.coverUrl) : '';
@@ -3547,10 +3924,17 @@ window.igSelectPlatform = function(value, label) {
     document.getElementById('igPlatformMenu')?.classList.remove('active');
     if (typeof currentFilters !== 'undefined') {
         currentFilters.platform = value || 'all';
-        currentFilters.collectionId = null;
+        // Keep collection scope when filtering inside Favorites or a custom collection.
+        // Only clear collectionId when in the plain Installed view.
+        if (typeof currentView === 'undefined' || currentView === 'installed') {
+            currentFilters.collectionId = null;
+        }
     }
 
-    _igSaveFilterState();
+    // Persist filter state for the Installed view only — not Favorites or collections.
+    if (typeof currentView === 'undefined' || currentView === 'installed') {
+        _igSaveFilterState();
+    }
     try {
         if (typeof applyFilters === 'function') applyFilters();
         window._igApplyDisplayPrefs?.();

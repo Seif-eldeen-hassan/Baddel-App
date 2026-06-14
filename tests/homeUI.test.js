@@ -993,9 +993,10 @@ test('_gdFindInstalledLocalMatch: Epic appName match uses _gdCanMergeInstalledRe
 
 test('step 4 merge spreads launchCommand, executablePath, scannerPlatform onto game', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    // The merge block appears near _gdFindInstalledLocalMatch call — search around it
-    const mergeIdx = js.indexOf('_gdFindInstalledLocalMatch(game)');
-    const mergeBlock = js.slice(mergeIdx, mergeIdx + 600);
+    // Anchor on 'scannerPlatform:' inside the openGameDetails installedMatch spread
+    const mergeIdx = js.indexOf('scannerPlatform:');
+    assert.ok(mergeIdx !== -1, "'scannerPlatform:' not found in game-details.js");
+    const mergeBlock = js.slice(Math.max(0, mergeIdx - 400), mergeIdx + 400);
     assert.match(mergeBlock, /launchCommand/);
     assert.match(mergeBlock, /executablePath/);
     assert.match(mergeBlock, /scannerPlatform/);

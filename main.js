@@ -123,6 +123,51 @@ function getUpdateNotesForVersion(version) {
                 }
             ],
             footer: 'Thanks for using Baddel. More improvements are coming.'
+        },
+        '1.1.4': {
+            version:  '1.1.4',
+            type:     'feature-tour',
+            title:    "What's New in Baddel 1.1.4",
+            subtitle: 'A faster way to switch accounts, organize your library, and reach your games.',
+            slides: [
+                {
+                    image:       'assets/update-notes/1.1.4/feature1.png',
+                    label:       'Quick Switch Overlay',
+                    headline:    'Switch From Anywhere',
+                    description: 'Press Ctrl + Alt + B to open your account switcher overlay anywhere — on desktop, in-game, or while using another app.',
+                    badge:       'Ctrl + Alt + B',
+                    helper:      'Your accounts are now one shortcut away, even when Baddel is not open in front of you.',
+                },
+                {
+                    image:       'assets/update-notes/1.1.4/feature2.png',
+                    label:       'Keybind for Every Account',
+                    headline:    'Switch Accounts Without Opening Baddel',
+                    description: 'Assign a custom shortcut to any account and switch instantly without opening the main Baddel window.',
+                    helper:      'Perfect for players who use multiple Steam, Epic, Riot, or other platform accounts.',
+                },
+                {
+                    image:       'assets/update-notes/1.1.4/feature3.png',
+                    label:       'Ready to Install Tab',
+                    headline:    'Find Uninstalled Games Faster',
+                    description: "Games you own but haven't installed yet now have their own dedicated tab, so you can find and install them faster.",
+                    helper:      'Rediscover games already in your library without searching through everything.',
+                },
+                {
+                    image:       'assets/update-notes/1.1.4/feature4.png',
+                    label:       'Improved Collections',
+                    headline:    'Organize Your Library Your Way',
+                    description: 'Manage collections from one place, view more details, add games, rename collections, and customize collection covers.',
+                    helper:      'Build collections for favorites, backlog, genres, platforms, or any setup you like.',
+                },
+                {
+                    image:       'assets/update-notes/1.1.4/feature5.png',
+                    label:       'Smarter Sidebar',
+                    headline:    'Everything Important, Closer',
+                    description: 'The sidebar has been redesigned to give you faster access to your library, accounts, collections, and important sections.',
+                    helper:      'Less digging through menus. More direct access.',
+                },
+            ],
+            footer: 'Thanks for using Baddel — more improvements are on the way.',
         }
     };
 

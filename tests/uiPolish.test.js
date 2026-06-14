@@ -363,7 +363,7 @@ test('Task G: _vsBuildCard calls _agDecorateAllGamesCardFields', () => {
     // Find _vsBuildCard body (from function declaration to the matching return)
     const fnStart = ACC_JS.indexOf('function _vsBuildCard(');
     assert.ok(fnStart !== -1, '_vsBuildCard not found in accounts.js');
-    const fnSlice = ACC_JS.slice(fnStart, fnStart + 4000);
+    const fnSlice = ACC_JS.slice(fnStart, fnStart + 5500);
     assert.match(
         fnSlice,
         /_agDecorateAllGamesCardFields/,
@@ -454,7 +454,7 @@ test('accounts.js: _applyAgFilters shows onboarding when cache empty and _agNoLi
 
 test('accounts.js: navigateToAllGames calls _agMaybeRenderEmptyOnboarding before renderAllGamesView', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 8500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 10000);
     assert.match(fn, /_agMaybeRenderEmptyOnboarding/, '_agMaybeRenderEmptyOnboarding called in navigateToAllGames');
     // Must appear before renderAllGamesView call
     const maybeIdx  = fn.indexOf('_agMaybeRenderEmptyOnboarding');
@@ -474,7 +474,8 @@ test('accounts.js: renderAllGamesView calls _agMaybeRenderEmptyOnboarding after 
 
 test('accounts.js: onLibraryUpdated clears empty mode when games arrive', () => {
     const listenerStart = ACC_JS.indexOf('onLibraryUpdated(async ()');
-    const block = ACC_JS.slice(listenerStart, listenerStart + 7000);
+    // The handler is large — use a generous window to cover the full changed-pool path.
+    const block = ACC_JS.slice(listenerStart, listenerStart + 10000);
     assert.match(block, /window\._allGamesCache\.length > 0/, 'checks _allGamesCache.length after filter');
     assert.match(block, /_agSetEmptyPageMode\(false\)/, '_agSetEmptyPageMode(false) called when games arrive');
     assert.match(block, /_agResetAllGamesGridMode\(\)/, '_agResetAllGamesGridMode called when games arrive');
@@ -574,7 +575,7 @@ test('accounts.js: _agIsUserLibraryGame rejects manual games (product rule: manu
 
 test('accounts.js: _agIsUserLibraryGame accepts steam and epic with synced evidence', () => {
     const fnStart = ACC_JS.indexOf('function _agIsUserLibraryGame');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     // isSteamOrEpic uses these checks
     assert.match(fn, /platform === 'steam'/, "steam platform check must exist");
     assert.match(fn, /platform === 'epic'/,  "epic platform check must exist");
@@ -602,7 +603,7 @@ test('accounts.js: navigateToAllGames uses _agGetUserLibraryGames before skippin
 
 test('accounts.js: navigateToAllGames checks platformSyncStatus BEFORE using cache (no-account gate)', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 5500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
     // Must call platformSyncStatus
     assert.match(fn, /platformSyncStatus/, 'must call platformSyncStatus');
     // Must clear caches and show onboarding when no accounts linked
@@ -637,12 +638,14 @@ test('accounts.js: _agMaybeRenderEmptyOnboarding uses _allGamesRawCache and libr
 
 test('accounts.js: _applyAgFilters uses _agGetUserLibraryGames to filter pool', () => {
     const fnStart = ACC_JS.indexOf('function _applyAgFilters');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
     assert.match(fn, /_agGetUserLibraryGames\(window\._allGamesCache/, 'must filter cache with _agGetUserLibraryGames');
-    // pool must use the filtered cache, not the raw window._allGamesCache
+    // pool must use the filtered cache — now delegated to _agBuildFilteredPool
     const filterIdx = fn.indexOf('_agGetUserLibraryGames(window._allGamesCache');
-    const poolIdx   = fn.indexOf('let pool =');
-    assert.ok(filterIdx < poolIdx, '_agGetUserLibraryGames must run before pool is built');
+    const poolIdx   = fn.indexOf('_agBuildFilteredPool(');
+    assert.ok(filterIdx !== -1, '_agGetUserLibraryGames(window._allGamesCache call must be present');
+    assert.ok(poolIdx   !== -1, '_agBuildFilteredPool call must be present');
+    assert.ok(filterIdx < poolIdx, '_agGetUserLibraryGames must run before _agBuildFilteredPool');
 });
 
 test('accounts.js: Installed Games (allGamesData) is not affected by library filter', () => {
@@ -928,7 +931,7 @@ test('accounts.js: _agIsUserLibraryGame exposed on window', () => {
 
 test('accounts.js: _agIsUserLibraryGame requires synced-account evidence for Steam/Epic', () => {
     const fnStart = ACC_JS.indexOf('function _agIsUserLibraryGame');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /hasSyncedAccountEvidence/, 'must use hasSyncedAccountEvidence');
     assert.match(fn, /isSteamOrEpic.*hasSyncedAccountEvidence|hasSyncedAccountEvidence.*isSteamOrEpic/s,
         'must gate Steam/Epic on hasSyncedAccountEvidence');
@@ -936,7 +939,7 @@ test('accounts.js: _agIsUserLibraryGame requires synced-account evidence for Ste
 
 test('accounts.js: _agIsUserLibraryGame rejects Xbox installed-only (no synced evidence)', () => {
     const fnStart = ACC_JS.indexOf('function _agIsUserLibraryGame');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     // Xbox with no accounts/owners/librarySource should fall through to false
     assert.doesNotMatch(fn, /scanner\s*===\s*'xbox'.*return\s*true/, 'must NOT accept xbox scanner blindly');
 });
@@ -950,7 +953,8 @@ test('accounts.js: renderAllGamesView marks synced records with _agSource and li
 
 test('accounts.js: onLibraryUpdated background refresh marks synced records', () => {
     const listenerStart = ACC_JS.indexOf('onLibraryUpdated(async ()');
-    const fn = ACC_JS.slice(listenerStart, listenerStart + 3200);
+    // Handler body grew with scroll-preserve wrapper; use a generous slice
+    const fn = ACC_JS.slice(listenerStart, listenerStart + 5000);
     assert.match(fn, /_agSource\s*=\s*'platform-sync'/, 'onLibraryUpdated must set _agSource');
     assert.match(fn, /librarySource\s*=\s*'synced-account'/, 'onLibraryUpdated must set librarySource');
 });
@@ -1088,7 +1092,7 @@ test('accounts.js: navigateToAllGames resets scrollTop before _hideAllViews (bef
 
 test('accounts.js: navigateToAllGames calls _agBeginAllGamesRoute before renderAllGamesView (full path)', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 8500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 10000);
     const beginIdx  = fn.indexOf('_agBeginAllGamesRoute');
     const renderIdx = fn.lastIndexOf('renderAllGamesView');
     assert.ok(beginIdx  > -1, '_agBeginAllGamesRoute must appear in navigateToAllGames');
@@ -1218,7 +1222,7 @@ test('sidebar.js: updateSidebarActiveState uses DOM visibility for allGames bran
 
 test('app.js: navigateToHome calls updateSidebarActiveState instead of manual nav clearing', () => {
     const fnStart = APP_JS.indexOf('function navigateToHome');
-    const fn = APP_JS.slice(fnStart, fnStart + 600);
+    const fn = APP_JS.slice(fnStart, fnStart + 800);
     assert.match(fn, /updateSidebarActiveState\(\)/, 'navigateToHome must call updateSidebarActiveState');
 });
 
@@ -1261,7 +1265,7 @@ test('accounts.js: selectAccountPlatform clears currentFilters.collectionId', ()
 
 test('accounts.js: navigateToAllGames clears currentFilters.collectionId for normal navigation', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 2700);
     assert.match(fn, /currentFilters\.collectionId\s*=\s*null/, 'must clear collectionId');
     assert.match(fn, /!opts\.restoreState/, 'must guard by !opts.restoreState');
 });
@@ -1421,7 +1425,7 @@ test('accounts.js: refreshAllGamesView uses local cache without calling platform
 
 test('accounts.js: navigateToAllGames toggles ag-ready-mode class on body', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 600);
+    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
     assert.match(fn, /ag-ready-mode/, 'must toggle ag-ready-mode class on body');
     assert.match(fn, /classList\.toggle\('ag-ready-mode'/, 'must use classList.toggle for ag-ready-mode');
 });
@@ -1578,8 +1582,8 @@ test('help-feedback.js: sendFeedback success branch calls hideBetaFeedbackBanner
     assert.ok(hideIdx > successIdx, 'hideBetaFeedbackBanner call must be inside the success branch');
 });
 
-test('help-feedback.js: DOMContentLoaded handler calls showBetaFeedbackBanner', () => {
-    assert.match(HELP_JS, /DOMContentLoaded.*showBetaFeedbackBanner|showBetaFeedbackBanner.*DOMContentLoaded/, 'showBetaFeedbackBanner must be wired to DOMContentLoaded');
+test('help-feedback.js: DOMContentLoaded handler wires banner initializer', () => {
+    assert.match(HELP_JS, /DOMContentLoaded[\s\S]*?initBetaFeedbackBanner\(\)/, 'initBetaFeedbackBanner must be wired to DOMContentLoaded');
 });
 
 test('css: .beta-feedback-banner has correct structure', () => {
@@ -1657,7 +1661,7 @@ test('sidebar.js: handleSidebarContextBtn handles favorites context by navigatin
 
 test('app.js: navigateToHome calls syncSidebarActionButton after updateSidebarActiveState', () => {
     const fnStart = APP_JS.indexOf('function navigateToHome');
-    const fn = APP_JS.slice(fnStart, fnStart + 800);
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
     assert.match(fn, /syncSidebarActionButton\(\)/, 'navigateToHome must call syncSidebarActionButton');
     const activeIdx = fn.indexOf('updateSidebarActiveState');
     const syncIdx   = fn.indexOf('syncSidebarActionButton');
@@ -1675,7 +1679,7 @@ test('app.js: navigateToInstalled calls syncSidebarActionButton after updateSide
 
 test('accounts.js: navigateToAllGames calls syncSidebarActionButton after view is shown', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2300);
+    const fn = ACC_JS.slice(fnStart, fnStart + 4500);
     assert.match(fn, /syncSidebarActionButton/, 'navigateToAllGames must call syncSidebarActionButton');
     // The call must come AFTER display = 'block'
     const showIdx = fn.indexOf("view.style.display = 'block'");
@@ -1736,7 +1740,7 @@ test('sidebar.js: syncSidebarActionButton default fallback is "Link Accounts"', 
 
 test('accounts.js: navigateToAllGames sets currentView to all-games before syncing button', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 4200);
     assert.match(fn, /currentView\s*=\s*'all-games'/, "must set currentView = 'all-games'");
     // Must appear before the first syncSidebarActionButton call
     const cvIdx   = fn.indexOf("currentView = 'all-games'");
@@ -1971,7 +1975,7 @@ test('Phase 2.4: window.renderAllGamesView definition is unchanged', () => {
 test('Phase 2.4: direct renderAllGamesView calls inside navigateToAllGames are preserved', () => {
     // navigateToAllGames is past the definition so the direct call is safe without a guard
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 8000);
+    const fn = ACC_JS.slice(fnStart, fnStart + 9500);
     assert.match(fn, /await renderAllGamesView\(/,
         'navigateToAllGames must still call renderAllGamesView directly (no guard needed)');
 });
@@ -1979,38 +1983,38 @@ test('Phase 2.4: direct renderAllGamesView calls inside navigateToAllGames are p
 // ── Ready to Install page: startup loading behavior ───────────────────────────
 
 test('accounts.js: _agRenderReadyToInstallLoading function exists', () => {
-    assert.match(ACC_JS, /function _agRenderReadyToInstallLoading\s*\(\s*\)/,
+    assert.match(ACC_JS, /function _agRenderReadyToInstallLoading\s*\(/,
         '_agRenderReadyToInstallLoading must be defined');
 });
 
 test('accounts.js: _agRenderReadyToInstallLoading sets agResultCount to ellipsis', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /agResultCount/, 'must reference agResultCount element');
     assert.match(fn, /…|\.\.\./, 'must set loading ellipsis text');
 });
 
 test('accounts.js: _agRenderReadyToInstallLoading hides toolbar', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /_agSetToolbarVisible\s*\(\s*false\s*\)/, 'must hide toolbar while loading');
 });
 
 test('accounts.js: _agRenderReadyToInstallLoading registers baddel:ready-install-updated listener', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /addEventListener\s*\(\s*['"]baddel:ready-install-updated['"]/, 'must listen for canonical state event');
 });
 
 test('accounts.js: _agRenderReadyToInstallLoading listener calls _applyAgFilters when canonical fires', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /_applyAgFilters/, 'listener must call _applyAgFilters to re-render with canonical data');
 });
 
 test('accounts.js: _agRenderReadyToInstallLoading listener removes itself after first fire', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /removeEventListener/, 'listener must remove itself to avoid duplicate renders');
 });
 
@@ -2038,7 +2042,7 @@ test('accounts.js: navigateToAllGames RTI guard only blocks when agReadyOnly is 
 
 test('accounts.js: _agRenderReadyToInstallLoading listener guards against non-RTI view', () => {
     const fnStart = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2200);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3200);
     assert.match(fn, /agReadyOnly/, 'listener must check agReadyOnly before re-rendering');
 });
 
@@ -2138,13 +2142,15 @@ test('accounts.js: renderAllGamesView has debug log when blocking raw RTI render
 
 test('accounts.js: _applyAgFilters has RTI guard that blocks when canonical not ready', () => {
     const fnStart = ACC_JS.indexOf('function _applyAgFilters');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3000);
     assert.match(fn, /agReadyOnly/, 'must check agReadyOnly');
     assert.match(fn, /isCanonicalReadyToInstallReady/, 'must check canonical readiness');
     assert.match(fn, /_agRenderReadyToInstallLoading/, 'must call loading helper when canonical not ready');
-    // Guard must precede the cache pool assignment
+    // Guard must precede the pool construction
     const guardIdx = fn.indexOf('_agRenderReadyToInstallLoading');
-    const cacheIdx = fn.indexOf('let pool =');
+    const cacheIdx = fn.indexOf('_agBuildFilteredPool(');
+    assert.ok(guardIdx !== -1, '_agRenderReadyToInstallLoading must be present');
+    assert.ok(cacheIdx !== -1, '_agBuildFilteredPool must be present');
     assert.ok(guardIdx < cacheIdx, 'RTI guard must appear before pool is built');
 });
 
@@ -2225,4 +2231,572 @@ test('_applyAgFilters All Games: agReadyOnly=false -> uses _allGamesCache normal
     const useCanonical = agReadyOnly && isReady();
     const pool = useCanonical ? [...getCanonical()] : [...rawCache];
     assert.strictEqual(pool.length, 300, 'All Games route must use raw cache, not canonical');
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Scroll preservation during background library updates
+// ─────────────────────────────────────────────────────────────────────────────
+
+// ── _getActiveScrollContainer source-text tests ───────────────────────────────
+
+test('scroll: _getActiveScrollContainer is defined in app.js', () => {
+    assert.match(APP_JS, /function _getActiveScrollContainer\s*\(/);
+});
+
+test('scroll: _getActiveScrollContainer is exported on window', () => {
+    assert.match(APP_JS, /window\._getActiveScrollContainer\s*=\s*_getActiveScrollContainer/);
+});
+
+test('scroll: _getActiveScrollContainer checks multiple candidate containers', () => {
+    const body = extractFnFromSource(APP_JS, 'function _getActiveScrollContainer(');
+    assert.match(body, /mainContentArea/);
+    assert.match(body, /scrollingElement/);
+    assert.match(body, /documentElement/);
+    assert.match(body, /document\.body/);
+});
+
+test('scroll: _getActiveScrollContainer prefers element with scrollTop > 0', () => {
+    const body = extractFnFromSource(APP_JS, 'function _getActiveScrollContainer(');
+    assert.match(body, /scrollTop\s*>\s*0/);
+});
+
+test('scroll: _getActiveScrollContainer checks window.scrollY as fallback', () => {
+    const body = extractFnFromSource(APP_JS, 'function _getActiveScrollContainer(');
+    assert.match(body, /window\.scrollY\s*>\s*0/);
+});
+
+// ── _preserveActiveScrollDuring source-text tests ────────────────────────────
+
+test('scroll: _preserveActiveScrollDuring is defined in app.js', () => {
+    assert.match(APP_JS, /function _preserveActiveScrollDuring\s*\(/);
+});
+
+test('scroll: _preserveActiveScrollDuring is exported on window', () => {
+    assert.match(APP_JS, /window\._preserveActiveScrollDuring\s*=\s*_preserveActiveScrollDuring/);
+});
+
+test('scroll: _preserveActiveScrollDuring saves and restores scrollTop and scrollLeft', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /scrollTop/);
+    assert.match(body, /scrollLeft/);
+    assert.match(body, /savedTop/);
+    assert.match(body, /savedLeft/);
+});
+
+test('scroll: _preserveActiveScrollDuring supports async fn via .then()', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /\.then\s*\(/);
+});
+
+test('scroll: _preserveActiveScrollDuring uses rAF chain for deferred layout settle', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /requestAnimationFrame/);
+});
+
+test('scroll: _preserveActiveScrollDuring includes timeout restores at 50ms and 150ms', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /setTimeout/);
+});
+
+test('scroll: _preserveActiveScrollDuring restores scrollTop and scrollLeft', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /scrollTop\s*=\s*savedTop/);
+    assert.match(body, /scrollLeft\s*=\s*savedLeft/);
+});
+
+test('scroll: _preserveActiveScrollDuring detects user scroll via wheel event', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /wheel/);
+    assert.match(body, /_userScrolled/);
+    assert.match(body, /_markUserScroll/);
+});
+
+test('scroll: _preserveActiveScrollDuring skips restore when user scrolled during update', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /_userScrolled\s*&&\s*savedTop\s*>\s*0/);
+});
+
+test('scroll: _preserveActiveScrollDuring skips restore when currentView changed', () => {
+    const body = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    assert.match(body, /nowView\s*!==\s*snapView/);
+});
+
+// ── onLibraryUpdated handler source-text tests ───────────────────────────────
+
+test('scroll: onLibraryUpdated calls renderSidebar unconditionally then guards Home branch', () => {
+    // Anchor on the line just before renderSidebar() which is after the data merge
+    const anchor = APP_JS.indexOf('invalidate stale RTI page count');
+    assert.ok(anchor !== -1, 'RTI invalidation comment not found in onLibraryUpdated handler');
+    const handler = APP_JS.slice(anchor, anchor + 600);
+    assert.match(handler, /renderSidebar\s*\(\s*\)/);
+    assert.match(handler, /_homeIsUserScrolled\s*\(\s*\)/);
+    assert.match(handler, /_markHomeRefreshPending/);
+});
+
+test('scroll: onLibraryUpdated non-home branch still uses _preserveActiveScrollDuring', () => {
+    const idx = APP_JS.indexOf("'library-updated'");
+    assert.ok(idx !== -1, 'library-updated label not found in app.js');
+    const context = APP_JS.slice(Math.max(0, idx - 60), idx + 200);
+    assert.match(context, /_preserveActiveScrollDuring/);
+});
+
+test('scroll: accounts.js onLibraryUpdated background path uses resetScroll:false', () => {
+    // The background-sync re-render must not reset the user scroll position
+    const idx = ACC_JS.indexOf('_applyAgFilters({ resetScroll: false })');
+    assert.ok(idx !== -1, 'resetScroll:false not found in accounts.js');
+});
+
+test('scroll: accounts.js onLibraryUpdated uses window._preserveActiveScrollDuring', () => {
+    const idx = ACC_JS.indexOf('window._allGamesLibraryListenerAttached');
+    assert.ok(idx !== -1, 'library listener guard not found in accounts.js');
+    const handlerBlock = ACC_JS.slice(idx, idx + 500);
+    assert.match(handlerBlock, /window\._preserveActiveScrollDuring/);
+});
+
+test('scroll: accounts.js preserve wrapper uses accounts-library-updated reason', () => {
+    assert.match(ACC_JS, /accounts-library-updated/);
+});
+
+test('scroll: accounts.js preserve wrapper surrounds cache rebuild and RTI publish', () => {
+    const idx = ACC_JS.indexOf('accounts-library-updated');
+    assert.ok(idx !== -1, 'accounts-library-updated label not found in accounts.js');
+    // The preserve wrapper async fn is several hundred lines long; use a generous slice
+    const afterLabel = ACC_JS.slice(idx, idx + 10000);
+    assert.match(afterLabel, /_agPublishReadyToInstallState/);
+    assert.match(afterLabel, /_applyAgFilters/);
+});
+
+test('scroll: _onCanonicalReady uses resetScroll:false to preserve user position', () => {
+    // _onCanonicalReady is a nested function — find its definition inside _agRenderReadyToInstallLoading
+    const outerIdx = ACC_JS.indexOf('function _agRenderReadyToInstallLoading');
+    assert.ok(outerIdx !== -1, '_agRenderReadyToInstallLoading not found in accounts.js');
+    const outerBody = ACC_JS.slice(outerIdx, outerIdx + 4000);
+    const innerIdx = outerBody.indexOf('function _onCanonicalReady');
+    assert.ok(innerIdx !== -1, '_onCanonicalReady not found inside _agRenderReadyToInstallLoading');
+    const body = outerBody.slice(innerIdx, innerIdx + 1200);
+    assert.match(body, /resetScroll:\s*false/);
+    assert.doesNotMatch(body, /resetScroll:\s*true/);
+});
+
+test('scroll: navigateToAllGames still resets scroll to 0 for intentional navigation', () => {
+    // User-driven navigation must reset scroll; only background updates preserve it
+    const idx = ACC_JS.indexOf('function navigateToAllGames(');
+    assert.ok(idx !== -1, 'navigateToAllGames not found in accounts.js');
+    const body = ACC_JS.slice(idx, idx + 3200);
+    assert.match(body, /scrollTop\s*=\s*0/);
+});
+
+test('scroll: accounts.js background re-render saves scrollTop before rendering', () => {
+    // The onLibraryUpdated handler in accounts.js must capture scrollTop
+    const idx = ACC_JS.indexOf('keepScrollTop');
+    assert.ok(idx !== -1, 'keepScrollTop variable not found in accounts.js');
+    // Must be used to restore scroll in a rAF
+    const context = ACC_JS.slice(idx, idx + 700);
+    assert.match(context, /scroller\.scrollTop\s*=\s*keepScrollTop/);
+});
+
+// ── preload.js multi-subscriber onLibraryUpdated tests ───────────────────────
+
+test('preload.js: onLibraryUpdated does NOT call removeAllListeners', () => {
+    const idx = PRELOAD_JS.indexOf('onLibraryUpdated');
+    assert.ok(idx !== -1, 'onLibraryUpdated not found in preload.js');
+    const slice = PRELOAD_JS.slice(idx, idx + 300);
+    assert.doesNotMatch(slice, /removeAllListeners/, 'must not evict previous registrations');
+});
+
+test('preload.js: onLibraryUpdated uses a Set for multi-subscriber fanout', () => {
+    assert.match(PRELOAD_JS, /_libraryUpdatedCallbacks\s*=\s*new Set/);
+});
+
+test('preload.js: onLibraryUpdated attaches a single IPC listener and fans out to all callbacks', () => {
+    assert.match(PRELOAD_JS, /_libraryUpdatedListenerAttached/);
+    assert.match(PRELOAD_JS, /_libraryUpdatedCallbacks\.forEach/);
+});
+
+test('preload.js: onLibraryUpdated adds callback to the Set', () => {
+    const idx = PRELOAD_JS.indexOf('onLibraryUpdated:');
+    assert.ok(idx !== -1, 'onLibraryUpdated: not found');
+    const slice = PRELOAD_JS.slice(idx, idx + 400);
+    assert.match(slice, /_libraryUpdatedCallbacks\.add\s*\(\s*cb\s*\)/);
+});
+
+// ── suggestions.js deferred Home refresh tests ───────────────────────────────
+
+test('suggestions.js: _renderSyncedSuggestionsInner contains the original render body', () => {
+    assert.match(SUGGESTIONS_JS, /async function _renderSyncedSuggestionsInner\s*\(/);
+    const body = extractFnFromSource(SUGGESTIONS_JS, 'async function _renderSyncedSuggestionsInner(');
+    assert.match(body, /_buildSyncedSuggestions/);
+    assert.match(body, /_rtia_hydrateAll/);
+});
+
+test('suggestions.js: renderSyncedSuggestions skips DOM when Home is scrolled', () => {
+    const body = extractFnFromSource(SUGGESTIONS_JS, 'async function renderSyncedSuggestions(');
+    assert.match(body, /window\._homeIsUserScrolled/);
+    assert.match(body, /window\._markHomeRefreshPending/);
+    assert.match(body, /_renderSyncedSuggestionsInner/);
+});
+
+test('suggestions.js: renderSyncedSuggestions marks home-synced-suggestions-scrolled when deferred', () => {
+    const body = extractFnFromSource(SUGGESTIONS_JS, 'async function renderSyncedSuggestions(');
+    assert.match(body, /home-synced-suggestions-scrolled/);
+});
+
+test('suggestions.js: baddel:ready-install-updated listener uses text-only update when Home is scrolled', () => {
+    const idx = SUGGESTIONS_JS.indexOf('baddel:ready-install-updated');
+    assert.ok(idx !== -1, 'baddel:ready-install-updated not found in suggestions.js');
+    const slice = SUGGESTIONS_JS.slice(idx, idx + 900);
+    assert.match(slice, /window\._homeIsUserScrolled/);
+    assert.match(slice, /window\._updateHomeReadyCountTextOnly/);
+    assert.match(slice, /window\._markHomeRefreshPending/);
+    assert.match(slice, /home-ready-count-text-only/);
+});
+
+// ── app.js Home deferred refresh helpers ─────────────────────────────────────
+
+test('app.js: _homeIsUserScrolled is defined', () => {
+    assert.match(APP_JS, /function _homeIsUserScrolled\s*\(/);
+    assert.match(APP_JS, /window\._homeIsUserScrolled\s*=\s*_homeIsUserScrolled/);
+});
+
+test('app.js: _homeIsUserScrolled checks currentView === home and scrollTop > 40', () => {
+    const body = extractFnFromSource(APP_JS, 'function _homeIsUserScrolled(');
+    assert.match(body, /currentView.*home|home.*currentView/);
+    assert.match(body, /scrollTop\s*>\s*40/);
+});
+
+test('app.js: _markHomeRefreshPending sets the pending flag and logs a deferred message', () => {
+    assert.match(APP_JS, /function _markHomeRefreshPending\s*\(/);
+    const body = extractFnFromSource(APP_JS, 'function _markHomeRefreshPending(');
+    assert.match(body, /window\._homeRefreshPending\s*=\s*true/);
+    assert.match(body, /\[HomeRefresh\].*deferred/);
+});
+
+test('app.js: _flushPendingHomeRefreshIfSafe guards on _homeIsUserScrolled and calls Home renders', () => {
+    assert.match(APP_JS, /function _flushPendingHomeRefreshIfSafe\s*\(/);
+    const body = extractFnFromSource(APP_JS, 'function _flushPendingHomeRefreshIfSafe(');
+    assert.match(body, /_homeIsUserScrolled/);
+    assert.match(body, /renderRecentlyPlayed/);
+    assert.match(body, /renderSyncedSuggestions/);
+    assert.match(body, /\[HomeRefresh\].*flushed/);
+});
+
+test('app.js: onLibraryUpdated skips Home DOM when user is scrolled', () => {
+    const idx = APP_JS.indexOf('library-updated-home-scrolled');
+    assert.ok(idx !== -1, 'library-updated-home-scrolled label not found in app.js');
+    const context = APP_JS.slice(Math.max(0, idx - 400), idx + 100);
+    assert.match(context, /_homeIsUserScrolled/);
+    assert.match(context, /_markHomeRefreshPending/);
+});
+
+test('app.js: onLibraryUpdated still renders sidebar even when Home is scrolled', () => {
+    const idx = APP_JS.indexOf('library-updated-home-scrolled');
+    assert.ok(idx !== -1);
+    // renderSidebar must appear before the _homeIsUserScrolled check
+    const beforeCheck = APP_JS.slice(Math.max(0, idx - 500), idx);
+    assert.match(beforeCheck, /renderSidebar/);
+});
+
+test('app.js: navigateToHome resets mainContentArea scrollTop and clears pending flag', () => {
+    const body = extractFnFromSource(APP_JS, 'function navigateToHome(');
+    assert.match(body, /mainContentArea/);
+    assert.match(body, /scrollTop\s*=\s*0/);
+    assert.match(body, /window\._homeRefreshPending\s*=\s*false/);
+});
+
+test('app.js: scroll lock system has been removed — no _restoreProtectedHomeScroll', () => {
+    assert.doesNotMatch(APP_JS, /function _restoreProtectedHomeScroll\s*\(/);
+    assert.doesNotMatch(APP_JS, /HomeScrollLock/);
+    assert.doesNotMatch(APP_JS, /_homeProtectedScrollTop/);
+});
+
+test('app.js: _updateHomeReadyCountTextOnly is defined and exposed on window', () => {
+    assert.match(APP_JS, /function _updateHomeReadyCountTextOnly\s*\(/);
+    assert.match(APP_JS, /window\._updateHomeReadyCountTextOnly\s*=/);
+});
+
+test('app.js: _updateHomeReadyCountTextOnly uses textContent only — no innerHTML', () => {
+    const body = extractFnFromSource(APP_JS, 'function _updateHomeReadyCountTextOnly(');
+    assert.match(body, /\.textContent\s*=/);
+    assert.doesNotMatch(body, /\.innerHTML\s*=/);
+    assert.match(body, /data-ready-count/);
+});
+
+test('suggestions.js: baddel:ready-install-updated when scrolled calls _updateHomeReadyCountTextOnly', () => {
+    const idx = SUGGESTIONS_JS.indexOf('baddel:ready-install-updated');
+    assert.ok(idx !== -1, 'listener not found');
+    const slice = SUGGESTIONS_JS.slice(idx, idx + 900);
+    assert.match(slice, /_updateHomeReadyCountTextOnly/);
+    assert.match(slice, /_homeIsUserScrolled/);
+    assert.match(slice, /_markHomeRefreshPending/);
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Behavioral: _getActiveScrollContainer runtime tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    const getContainerSrc = extractFnFromSource(APP_JS, 'function _getActiveScrollContainer(');
+
+    function buildGetContainerFn(mockDoc, mockWin) {
+        // eslint-disable-next-line no-new-func
+        return new Function(
+            'document', 'window',
+            `${getContainerSrc}\nreturn _getActiveScrollContainer;`
+        )(mockDoc, mockWin);
+    }
+
+    test('_getActiveScrollContainer: returns element with scrollTop > 0', () => {
+        const scrolled   = { scrollTop: 600, scrollHeight: 3000, clientHeight: 800 };
+        const unscrolled = { scrollTop: 0,   scrollHeight: 1000, clientHeight: 800 };
+        const mockDoc = {
+            getElementById: (id) => id === 'mainContentArea' ? unscrolled : null,
+            querySelector:  (sel) => sel === '.main-content' ? scrolled : null,
+            scrollingElement: unscrolled,
+            documentElement:  unscrolled,
+            body:             unscrolled,
+        };
+        const result = buildGetContainerFn(mockDoc, { scrollY: 0 })();
+        assert.strictEqual(result.el, scrolled, 'must pick the scrolled element');
+    });
+
+    test('_getActiveScrollContainer: prefers mainContentArea when it is scrolled', () => {
+        const main = { scrollTop: 400, scrollHeight: 2000, clientHeight: 700 };
+        const mockDoc = {
+            getElementById: (id) => id === 'mainContentArea' ? main : null,
+            querySelector:  () => null,
+            scrollingElement: null,
+            documentElement: { scrollTop: 0, scrollHeight: 700, clientHeight: 700 },
+            body:            { scrollTop: 0, scrollHeight: 700, clientHeight: 700 },
+        };
+        const result = buildGetContainerFn(mockDoc, { scrollY: 0 })();
+        assert.strictEqual(result.el, main);
+        assert.strictEqual(result.name, 'mainContentArea');
+    });
+
+    test('_getActiveScrollContainer: falls back to element that can scroll when none scrolled', () => {
+        const main = { scrollTop: 0, scrollHeight: 3000, clientHeight: 800 };
+        const mockDoc = {
+            getElementById: (id) => id === 'mainContentArea' ? main : null,
+            querySelector:  () => null,
+            scrollingElement: null,
+            documentElement: { scrollTop: 0, scrollHeight: 800, clientHeight: 800 },
+            body:            { scrollTop: 0, scrollHeight: 800, clientHeight: 800 },
+        };
+        const result = buildGetContainerFn(mockDoc, { scrollY: 0 })();
+        assert.strictEqual(result.el, main, 'fall back to element that can scroll');
+    });
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Behavioral: _preserveActiveScrollDuring runtime tests
+// ─────────────────────────────────────────────────────────────────────────────
+
+{
+    const preserveSrc    = extractFnFromSource(APP_JS, 'function _preserveActiveScrollDuring(');
+    const containerSrc   = extractFnFromSource(APP_JS, 'function _getActiveScrollContainer(');
+
+    function makeScroller(scrollTop = 800) {
+        return {
+            scrollTop,
+            scrollLeft:   0,
+            scrollHeight: 3000,
+            clientHeight: 700,
+            _handlers:    {},
+            addEventListener(evt, h) { this._handlers[evt] = h; },
+            removeEventListener(evt) { delete this._handlers[evt]; },
+        };
+    }
+
+    function buildPreserveFn(scroller, initialView) {
+        const rafCbs     = [];
+        const timeoutCbs = [];
+        const mockDoc = {
+            getElementById: () => scroller,
+            querySelector:  () => null,
+            scrollingElement: null,
+            documentElement: { scrollTop: 0 },
+            body:            { scrollTop: 0 },
+        };
+        const mockWin    = { scrollY: 0, scrollTo() {} };
+        const mockRAF    = (cb) => { rafCbs.push(cb); };
+        const mockTO     = (cb) => { timeoutCbs.push(cb); return 0; };
+        const viewStr    = initialView != null ? JSON.stringify(initialView) : 'undefined';
+
+        // eslint-disable-next-line no-new-func
+        const preserve = new Function(
+            'document', 'window', 'requestAnimationFrame', 'setTimeout',
+            `var currentView = ${viewStr};
+             ${containerSrc}
+             return (${preserveSrc});`
+        )(mockDoc, mockWin, mockRAF, mockTO);
+
+        return { preserve, rafCbs, timeoutCbs };
+    }
+
+    test('_preserveActiveScrollDuring: async fn — restores after resolve then rAF chain', async () => {
+        const scroller = makeScroller(500);
+        const { preserve, rafCbs, timeoutCbs } = buildPreserveFn(scroller, 'home');
+
+        let resolveAsync;
+        preserve('test-async', () => new Promise(res => { resolveAsync = res; }));
+        scroller.scrollTop = 0;
+
+        assert.equal(scroller.scrollTop, 0, 'clamped before resolve');
+
+        resolveAsync();
+        await Promise.resolve();
+        assert.equal(scroller.scrollTop, 500, 'restored after fn resolves');
+
+        scroller.scrollTop = 0;
+        rafCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 500, 'restored after rAF1');
+
+        scroller.scrollTop = 0;
+        rafCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 500, 'restored after rAF2');
+
+        scroller.scrollTop = 0;
+        timeoutCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 500, 'restored after timeout50');
+
+        scroller.scrollTop = 0;
+        timeoutCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 500, 'restored after timeout150');
+    });
+
+    test('_preserveActiveScrollDuring: sync fn — restores via rAF chain', () => {
+        const scroller = makeScroller(300);
+        const { preserve, rafCbs } = buildPreserveFn(scroller, 'installed');
+
+        preserve('test-sync', () => { scroller.scrollTop = 0; });
+
+        assert.equal(scroller.scrollTop, 0, 'clamped before rAF fires');
+
+        rafCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 300, 'restored after rAF1');
+
+        scroller.scrollTop = 0;
+        rafCbs.shift()?.();
+        assert.equal(scroller.scrollTop, 300, 'restored after rAF2');
+    });
+
+    test('_preserveActiveScrollDuring: wheel event skips restore to avoid fighting user', async () => {
+        const scroller = makeScroller(700);
+        const { preserve } = buildPreserveFn(scroller, 'home');
+
+        let resolveAsync;
+        preserve('test-wheel', () => new Promise(res => { resolveAsync = res; }));
+
+        scroller._handlers['wheel']?.();
+        scroller.scrollTop = 200;
+
+        resolveAsync();
+        await Promise.resolve();
+
+        assert.equal(scroller.scrollTop, 200, 'must not restore over intentional user scroll');
+    });
+
+    test('_preserveActiveScrollDuring: wheel guard inactive when savedTop is 0', async () => {
+        const scroller = makeScroller(0);
+        const { preserve } = buildPreserveFn(scroller, 'home');
+
+        let resolveAsync;
+        preserve('test-zero', () => new Promise(res => { resolveAsync = res; }));
+
+        scroller._handlers['wheel']?.();
+        scroller.scrollTop = 0;
+
+        resolveAsync();
+        await Promise.resolve();
+
+        assert.equal(scroller.scrollTop, 0, 'savedTop was 0 so no restore needed regardless of wheel');
+    });
+}
+
+// Helper — extract a complete function body from source text
+function extractFnFromSource(src, signature) {
+    const idx = src.indexOf(signature);
+    if (idx === -1) return '';
+    let depth = 0;
+    let i = idx;
+    while (i < src.length) {
+        if (src[i] === '{') depth++;
+        else if (src[i] === '}') { depth--; if (depth === 0) return src.slice(idx, i + 1); }
+        i++;
+    }
+    return src.slice(idx);
+}
+
+// ── All Games background-sync flicker fix ────────────────────────────────────
+
+test('accounts.js: _agLastRenderedPoolSignature state variable is declared', () => {
+    assert.match(ACC_JS, /window\._agLastRenderedPoolSignature\s*=\s*['"]{2}/);
+});
+
+test('accounts.js: _agComputePoolSignature function is defined', () => {
+    assert.match(ACC_JS, /function _agComputePoolSignature\s*\(/);
+});
+
+test('accounts.js: _agComputePoolSignature includes mode, filters, and ordered IDs', () => {
+    const body = extractFnFromSource(ACC_JS, 'function _agComputePoolSignature(');
+    assert.match(body, /agReadyOnly/);
+    assert.match(body, /platform/);
+    assert.match(body, /sort/);
+    assert.match(body, /search/);
+    assert.match(body, /account/);
+    assert.match(body, /\.map\s*\(.*\bid\b/);
+    assert.match(body, /\.join\s*\(\s*['"],['"]\s*\)/);
+});
+
+test('accounts.js: _applyAgFilters returns false and logs skip when background signature unchanged', () => {
+    // Use direct source search — extractFnFromSource breaks on default-param {} in signature.
+    assert.match(ACC_JS, /background-library-updated/);
+    assert.match(ACC_JS, /_agLastRenderedPoolSignature/);
+    assert.match(ACC_JS, /return\s+false/);
+    assert.match(ACC_JS, /\[AllGames\] background update skipped visible rerender: signature unchanged/);
+});
+
+test('accounts.js: _applyAgFilters updates _agLastRenderedPoolSignature before each real render', () => {
+    assert.match(ACC_JS, /window\._agLastRenderedPoolSignature\s*=\s*_newSig/);
+});
+
+test('accounts.js: onLibraryUpdated passes background-library-updated reason to _applyAgFilters', () => {
+    const idx = ACC_JS.indexOf('background-library-updated');
+    assert.ok(idx !== -1, 'background-library-updated string not found');
+    const slice = ACC_JS.slice(idx - 50, idx + 100);
+    assert.match(slice, /_applyAgFilters|reason/);
+});
+
+test('accounts.js: onLibraryUpdated does NOT clear cardCache on background update', () => {
+    const idx = ACC_JS.indexOf('_allGamesLibraryListenerAttached');
+    assert.ok(idx !== -1, 'listener guard not found');
+    const slice = ACC_JS.slice(idx, idx + 3000);
+    assert.doesNotMatch(slice, /cardCache\s*\.\s*clear\s*\(\s*\)/);
+});
+
+test('accounts.js: onLibraryUpdated skips scroll restore when render was skipped', () => {
+    assert.match(ACC_JS, /_rendered\s*!==\s*false/);
+});
+
+test('app.js: onLibraryUpdated does NOT call applyFilters when currentView === all-games', () => {
+    // The all-games branch must exist as a separate else-if, keeping applyFilters in the else branch.
+    assert.match(APP_JS, /else\s+if\s*\(\s*currentView\s*===\s*['"]all-games['"]\s*\)/);
+    // The all-games branch must NOT call applyFilters() (only _onSyncLibraryUpdated is allowed).
+    const agIdx = APP_JS.indexOf("else if (currentView === 'all-games')");
+    assert.ok(agIdx !== -1);
+    // Extract the branch body (up to the next } else { closer).
+    const elseIdx = APP_JS.indexOf('} else {', agIdx);
+    if (elseIdx !== -1) {
+        // Strip // comments before checking to avoid false positives.
+        const branchText = APP_JS.slice(agIdx, elseIdx).replace(/\/\/[^\n]*/g, '');
+        assert.doesNotMatch(branchText, /\bapplyFilters\s*\(\s*\)/);
+    }
+});
+
+test('accounts.js: onAllGamesCoverCached listener does not call _renderAllGamesGrid', () => {
+    const idx = ACC_JS.indexOf('onAllGamesCoverCached');
+    assert.ok(idx !== -1, 'onAllGamesCoverCached listener not found');
+    const body = ACC_JS.slice(idx, idx + 3000);
+    assert.doesNotMatch(body, /_renderAllGamesGrid\s*\(/);
+    assert.doesNotMatch(body, /_applyAgFilters\s*\(/);
 });

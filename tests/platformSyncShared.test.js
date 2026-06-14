@@ -483,7 +483,7 @@ test('classifyEpicEntry: null/missing entry returns reject', () => {
     assert.equal(classifyEpicEntry({}).decision,        'reject');
 });
 
-test('classifyEpicEntry: Control with categories [games] returns keep', () => {
+test('classifyEpicEntry: Control with categories [games] returns keep with epic_games_category_signal', () => {
     const entry = {
         app_name:  'calluna',
         app_title: 'Control',
@@ -491,7 +491,7 @@ test('classifyEpicEntry: Control with categories [games] returns keep', () => {
     };
     const result = classifyEpicEntry(entry);
     assert.equal(result.decision, 'keep');
-    assert.equal(result.reason,   'positive_game_signal');
+    assert.equal(result.reason,   'epic_games_category_signal');
 });
 
 test('classifyEpicEntry: Fortnite with productType game returns keep', () => {
@@ -513,6 +513,118 @@ test('classifyEpicEntry: third-party Mass Effect returns keep', () => {
     };
     const result = classifyEpicEntry(entry);
     assert.equal(result.decision, 'keep');
+});
+
+// ─── Fortnite regression tests ────────────────────────────────────────────────
+// Fortnite's metadata includes UEFN/Creative references that previously triggered
+// the broad non-game keyword heuristics before the "games" category was checked.
+
+test('classifyEpicEntry: Fortnite with namespace fn and categories [games, applications] is kept', () => {
+    const entry = {
+        app_name:  'Fortnite',
+        app_title: 'Fortnite',
+        namespace: 'fn',
+        metadata:  {
+            namespace:   'fn',
+            // Simulate real Legendary metadata: description contains UEFN/creative terms
+            // that triggered false rejection before the category check was prioritised.
+            description: 'Fortnite is a game. Play Battle Royale, Creative, and UEFN.',
+            categories:  [{ path: 'games' }, { path: 'applications' }],
+        },
+    };
+    const result = classifyEpicEntry(entry);
+    assert.equal(result.decision, 'keep',                      'Fortnite must be kept');
+    assert.equal(result.reason,   'epic_games_category_signal', 'kept via games category, not keyword path');
+});
+
+test('classifyEpicEntry: Fortnite is not rejected even when metadata text contains "uefn" and "content"', () => {
+    const entry = {
+        app_name:  'Fortnite',
+        app_title: 'Fortnite',
+        namespace: 'fn',
+        metadata:  {
+            description: 'Build using uefn unreal editor. Download content packs and editor tools.',
+            categories:  [{ path: 'games' }, { path: 'applications' }],
+        },
+    };
+    const result = classifyEpicEntry(entry);
+    assert.notEqual(result.decision, 'reject', 'Fortnite must not be rejected regardless of UEFN text in metadata');
+    assert.equal(result.decision,    'keep');
+});
+
+test('classifyEpicEntry: Fortnite decision is keep so it is not passed to removeEpicNonGameEntries', () => {
+    const entries = [
+        { app_name: 'Fortnite', app_title: 'Fortnite', namespace: 'fn',
+          metadata: { categories: [{ path: 'games' }, { path: 'applications' }] } },
+        { app_name: 'Fortnite', app_title: 'Fortnite', namespace: 'fn',
+          metadata: { categories: [{ path: 'games' }, { path: 'applications' }] } },
+        { app_name: 'fab',      app_title: 'Fab',       namespace: 'fab', metadata: {} },
+    ];
+    const rejected = entries.filter(e => classifyEpicEntry(e).decision === 'reject');
+    const rejectedNames = rejected.map(e => e.app_name);
+    assert.ok(!rejectedNames.includes('Fortnite'), 'Fortnite must not appear in rejected entries');
+    assert.ok(rejectedNames.includes('fab'),       'Fab must still be rejected');
+});
+
+test('classifyEpicEntry: UEFN denylist entry is still rejected even with categories [games]', () => {
+    // "uefn" is explicitly hard-denylisted; the denylist must win over category data.
+    const result = classifyEpicEntry({
+        app_name:  'uefn',
+        app_title: 'UEFN',
+        namespace: 'uefn',
+        metadata:  { categories: [{ path: 'games' }] },
+    });
+    assert.equal(result.decision, 'reject');
+    assert.equal(result.reason,   'non_game_asset_or_marketplace_item');
+});
+
+test('classifyEpicEntry: Fab is still rejected even with categories [games]', () => {
+    const result = classifyEpicEntry({
+        app_name:  'fab',
+        app_title: 'Fab',
+        namespace: 'fab',
+        metadata:  { categories: [{ path: 'games' }] },
+    });
+    assert.equal(result.decision, 'reject');
+    assert.equal(result.reason,   'non_game_asset_or_marketplace_item');
+});
+
+test('classifyEpicEntry: Unreal Engine is still rejected even with categories [games]', () => {
+    const result = classifyEpicEntry({
+        app_name:  'UnrealEngineEditor',
+        app_title: 'Unreal Engine',
+        namespace: 'ue',
+        metadata:  { categories: [{ path: 'games' }] },
+    });
+    assert.equal(result.decision, 'reject');
+});
+
+test('classifyEpicEntry: marketplace plugin with categories [content] and no games category is rejected', () => {
+    const result = classifyEpicEntry({
+        app_name:  'SomePlugin',
+        app_title: 'Advanced AI Plugin',
+        namespace: 'ue',
+        metadata:  {
+            description: 'An unreal engine plugin with assets and blueprints.',
+            categories:  [{ path: 'content' }, { path: 'plugin' }],
+        },
+    });
+    assert.equal(result.decision, 'reject');
+});
+
+test('classifyEpicEntry: game with categories [games, applications] and "content" in metadata is kept', () => {
+    // Regression: "content" appearing in description must not block a game-category entry.
+    const result = classifyEpicEntry({
+        app_name:  'SomeGame',
+        app_title: 'Some Game',
+        namespace: 'somegame',
+        metadata:  {
+            description: 'Download free content updates and in-game content packs.',
+            categories:  [{ path: 'games' }, { path: 'applications' }],
+        },
+    });
+    assert.equal(result.decision, 'keep',                       'games-category entry must be kept');
+    assert.equal(result.reason,   'epic_games_category_signal', 'reason must reflect category signal');
 });
 
 // ─── isEpicPositiveGameEntry tests ────────────────────────────────────────────

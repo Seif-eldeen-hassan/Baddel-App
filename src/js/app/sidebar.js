@@ -156,11 +156,27 @@ function renderSidebarLibraryPulse() {
 }
 
 async function navigateToReadyToInstall() {
+    const _rdbg = typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1';
+    // Idempotency: already in the RTI view — do not rebuild the page.
+    if (typeof currentView !== 'undefined' && currentView === 'all-games' && window.agReadyOnly) {
+        if (_rdbg) console.log('[AGROUTE] ready-click ignored/coalesced — already in RTI view');
+        return;
+    }
+    // In-flight guard: prevent concurrent RTI navigations from racing and corrupting the DOM.
+    if (window._agRtiNavInFlight) {
+        if (_rdbg) console.log('[AGROUTE] ready-click ignored/coalesced — navigation in-flight');
+        return;
+    }
+    window._agRtiNavInFlight = true;
     // agReadyOnly is set BEFORE navigateToAllGames so it can apply correct
     // title + nav active state before the first render (no two-pass flash).
     window.agInstalledOnly = false;
     window.agReadyOnly     = true;
-    await navigateToAllGames({ _keepReadyMode: true });
+    try {
+        await navigateToAllGames({ _keepReadyMode: true });
+    } finally {
+        window._agRtiNavInFlight = false;
+    }
     // Title and nav-ready active state are now set inside navigateToAllGames.
 }
 

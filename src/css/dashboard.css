@@ -3744,6 +3744,12 @@ img.invert-on-dark {
 
 .sci-num.green { color: #12ce18; }
 
+[data-ready-count] {
+    display: inline-block;
+    min-width: 2.5ch;
+    text-align: right;
+}
+
 /* .sc, .sc .k, .sc .v — migrated to .synced-count-inline / .sci-* */
 .sc .v.green { color: #12ce18; }
 .sugg-stat { display: none; }
@@ -5778,7 +5784,7 @@ img.invert-on-dark {
 }
 .update-notes-modal.active { display: flex; }
 .update-notes-dialog {
-    width: min(520px, calc(100vw - 32px));
+    width: min(660px, calc(100vw - 32px));
     background: #151515; border: 1px solid rgba(255,255,255,0.12);
     border-radius: 22px; padding: 36px 32px 32px;
     box-shadow: 0 24px 80px rgba(0,0,0,0.58);
@@ -5835,6 +5841,190 @@ img.invert-on-dark {
     outline: 2px solid #22c55e;
 }
 .update-notes-primary-btn:active { transform: scale(0.98); }
+
+/* Featured two-card row (primary features) */
+.update-notes-featured-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+/* Smaller feature cards grid (secondary features) */
+.update-notes-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+/* Large highlighted card — overrides .update-notes-item base */
+.update-notes-featured-card {
+    border-color: rgba(34, 197, 94, 0.3); background: rgba(34, 197, 94, 0.06); padding: 18px;
+}
+/* Smaller card — tighter padding than base .update-notes-item */
+.update-notes-grid-card {
+    padding: 12px 14px;
+}
+/* Eyebrow label on featured cards — small, muted, uppercase */
+.update-notes-featured-card .update-notes-item-title {
+    font-size: 0.72rem; font-weight: 600; color: rgba(255,255,255,0.4);
+    text-transform: uppercase; letter-spacing: 0.07em; margin: 0 0 5px;
+}
+/* Feature headline — the main benefit statement */
+.update-notes-item-headline {
+    font-size: 0.95rem; font-weight: 700; color: #22c55e;
+    margin: 0 0 6px; line-height: 1.3;
+}
+/* Description in featured cards — slightly brighter than base */
+.update-notes-featured-card .update-notes-item-desc {
+    font-size: 0.82rem; color: rgba(255,255,255,0.6);
+}
+/* Helper / best-for line */
+.update-notes-item-helper {
+    font-size: 0.72rem; color: rgba(255,255,255,0.28);
+    margin: 8px 0 0; line-height: 1.4; font-style: italic;
+}
+/* Stack cards on narrow screens */
+@media (max-width: 560px) {
+    .update-notes-featured-row,
+    .update-notes-grid { grid-template-columns: 1fr; }
+}
+
+/* ── Feature tour slider (type: feature-tour) ───────────────────────────────── */
+.update-notes-dialog.tour-mode {
+    width: min(880px, calc(100vw - 32px));
+    padding: 0; overflow: hidden; text-align: left;
+}
+.update-notes-dialog.tour-mode .modal-close {
+    z-index: 10; background: rgba(0,0,0,0.4);
+    border-radius: 50%; width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+}
+.un-tour { display: flex; flex-direction: column; margin: 0; gap: 0; }
+.un-tour-slides { position: relative; }
+.un-tour-slide {
+    display: none; flex-direction: row; min-height: 360px;
+}
+.un-tour-slide.active { display: flex; }
+.un-tour-text {
+    flex: 0 0 42%; padding: 36px 36px 32px 36px;
+    display: flex; flex-direction: column; justify-content: center;
+}
+.un-tour-image {
+    flex: 0 0 58%; background: #0e0e0e;
+    border-left: 1px solid rgba(255,255,255,0.07);
+    display: flex; align-items: center; justify-content: center;
+    overflow: hidden;
+}
+.un-tour-img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+}
+.un-tour-img-placeholder {
+    width: 100%; height: 100%; min-height: 360px;
+    background: linear-gradient(135deg, #1c1c1c 0%, #101010 100%);
+}
+.un-tour-label {
+    font-size: 0.68rem; font-weight: 700; color: #22c55e;
+    text-transform: uppercase; letter-spacing: 0.1em;
+    display: block; margin-bottom: 10px;
+}
+.un-tour-headline {
+    font-size: 1.5rem; font-weight: 800; color: #fff;
+    margin: 0 0 12px; line-height: 1.2;
+}
+.un-tour-desc {
+    font-size: 0.875rem; color: rgba(255,255,255,0.62);
+    margin: 0 0 16px; line-height: 1.6;
+}
+.un-tour-badge {
+    display: inline-block;
+    background: rgba(34,197,94,0.12); border: 1px solid rgba(34,197,94,0.35);
+    color: #22c55e; font-size: 0.8rem; font-weight: 600; font-family: monospace;
+    padding: 5px 12px; border-radius: 7px; margin-bottom: 16px;
+    letter-spacing: 0.03em;
+}
+.un-tour-helper {
+    font-size: 0.78rem; color: rgba(255,255,255,0.32);
+    margin: 0; line-height: 1.5; font-style: italic;
+}
+.un-tour-nav {
+    border-top: 1px solid rgba(255,255,255,0.08);
+    padding: 14px 24px 18px;
+    background: #0f0f0f; border-radius: 0 0 22px 22px;
+    display: flex; flex-direction: column; gap: 10px;
+}
+.un-tour-dots {
+    display: flex; gap: 7px; justify-content: center; align-items: center;
+}
+.un-tour-dot {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: rgba(255,255,255,0.15); cursor: pointer;
+    transition: background 0.2s, transform 0.2s; border: none;
+    display: inline-block;
+}
+.un-tour-dot.active { background: #22c55e; transform: scale(1.35); }
+.un-tour-controls {
+    display: flex; align-items: center; justify-content: space-between;
+}
+.un-tour-counter {
+    font-size: 0.75rem; color: rgba(255,255,255,0.28);
+    font-variant-numeric: tabular-nums;
+}
+.un-tour-btn-group { display: flex; gap: 8px; }
+.un-tour-back {
+    background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1);
+    color: rgba(255,255,255,0.55); font-size: 0.85rem; font-weight: 500;
+    padding: 8px 22px; border-radius: 9px; cursor: pointer;
+    transition: background 0.15s, color 0.15s;
+}
+.un-tour-back:hover:not(:disabled) { background: rgba(255,255,255,0.1); color: #fff; }
+.un-tour-back:disabled { opacity: 0.28; cursor: default; }
+.un-tour-next {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    box-shadow: 0 0 18px rgba(34,197,94,0.22);
+    border: none; color: #fff; font-size: 0.85rem; font-weight: 600;
+    padding: 8px 26px; border-radius: 9px; cursor: pointer;
+    transition: background 0.2s, box-shadow 0.2s;
+    min-width: 96px;
+}
+.un-tour-next:hover {
+    background: linear-gradient(135deg, #34d399, #22c55e);
+    box-shadow: 0 0 26px rgba(34,197,94,0.32);
+}
+.un-tour-next:active { transform: scale(0.98); }
+@media (max-width: 640px) {
+    .un-tour-slide { flex-direction: column-reverse; min-height: auto; }
+    .un-tour-text { flex: none; padding: 28px 24px 18px; }
+    .un-tour-image { flex: none; min-height: 200px; border-left: none;
+        border-top: 1px solid rgba(255,255,255,0.07); }
+    .un-tour-img-placeholder { min-height: 200px; }
+    .un-tour-headline { font-size: 1.2rem; }
+}
+
+/* Tour header — icon + title + subtitle above the slide area */
+.un-tour-header {
+    display: none;
+    align-items: center;
+    gap: 14px;
+    padding: 18px 52px 16px 22px; /* right: 52px clears the X close button */
+    border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.update-notes-dialog.tour-mode .un-tour-header { display: flex; }
+.un-tour-header-icon {
+    flex-shrink: 0;
+    width: 40px; height: 40px;
+    border-radius: 10px;
+    background: rgba(34,197,94,0.1);
+    border: 1px solid rgba(34,197,94,0.22);
+    display: flex; align-items: center; justify-content: center;
+}
+.un-tour-header-title {
+    font-size: 0.95rem; font-weight: 700; color: #fff;
+    margin: 0 0 3px; line-height: 1.3;
+}
+.un-tour-header-subtitle {
+    font-size: 0.73rem; color: rgba(255,255,255,0.38);
+    margin: 0; line-height: 1.4;
+}
+/* Hide old card-layout elements in tour mode (belt-and-suspenders alongside JS) */
+.update-notes-dialog.tour-mode .update-notes-icon,
+.update-notes-dialog.tour-mode #updateNotesTitle,
+.update-notes-dialog.tour-mode #updateNotesSubtitle,
+.update-notes-dialog.tour-mode #updateNotesFooter,
+.update-notes-dialog.tour-mode .update-notes-primary-btn { display: none !important; }
 
 /* ================================================================ */
 /* SIDEBAR v2 — Glass panels redesign                               */

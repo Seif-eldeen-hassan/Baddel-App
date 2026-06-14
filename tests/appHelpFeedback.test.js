@@ -377,13 +377,184 @@ test('help-feedback.js: showBetaFeedbackBanner calls shouldShowBetaFeedbackBanne
     assert.match(fn, /shouldShowBetaFeedbackBanner\(\)/);
 });
 
-test('help-feedback.js: DOMContentLoaded listener calls showBetaFeedbackBanner', () => {
-    assert.match(HELP_JS, /DOMContentLoaded.*showBetaFeedbackBanner\(\)/);
+test('help-feedback.js: DOMContentLoaded listener wires initBetaFeedbackBanner', () => {
+    assert.match(HELP_JS, /DOMContentLoaded[\s\S]*?initBetaFeedbackBanner\(\)/);
+    assert.doesNotMatch(HELP_JS, /DOMContentLoaded[^\n]*showBetaFeedbackBanner\(\)/);
 });
 
 test('help-feedback.js: DOMContentLoaded listener registers checkAndShowUpdateNotes with setTimeout', () => {
     assert.match(HELP_JS, /setTimeout\(checkAndShowUpdateNotes,\s*900\)/);
 });
+
+// ─── 5b. Versioned banner state (v2) ─────────────────────────────────────────
+
+test('help-feedback.js: defines BETA_FEEDBACK_BANNER_STATE_KEY', () => {
+    assert.match(HELP_JS, /const BETA_FEEDBACK_BANNER_STATE_KEY\s*=/);
+});
+
+test('help-feedback.js: BETA_FEEDBACK_BANNER_STATE_KEY uses state.v2 key', () => {
+    assert.match(HELP_JS, /BETA_FEEDBACK_BANNER_STATE_KEY\s*=\s*'baddel\.betaFeedbackBanner\.state\.v2'/);
+});
+
+test('help-feedback.js: defines _BANNER_DELAY_MS constant for 3-day delay', () => {
+    assert.match(HELP_JS, /const _BANNER_DELAY_MS\s*=/);
+    assert.match(HELP_JS, /3 \* 24 \* 60 \* 60 \* 1000/);
+});
+
+test('help-feedback.js: defines function _loadBannerState', () => {
+    assert.match(HELP_JS, /function _loadBannerState\s*\(/);
+});
+
+test('help-feedback.js: _loadBannerState reads from BETA_FEEDBACK_BANNER_STATE_KEY', () => {
+    const fn = extractFnSource(HELP_JS, '_loadBannerState');
+    assert.match(fn, /localStorage\.getItem\(BETA_FEEDBACK_BANNER_STATE_KEY\)/);
+});
+
+test('help-feedback.js: _loadBannerState returns null on broken JSON', () => {
+    const fn = extractFnSource(HELP_JS, '_loadBannerState');
+    assert.match(fn, /catch/);
+    assert.match(fn, /return null/);
+});
+
+test('help-feedback.js: defines function _saveBannerState', () => {
+    assert.match(HELP_JS, /function _saveBannerState\s*\(/);
+});
+
+test('help-feedback.js: _saveBannerState writes to BETA_FEEDBACK_BANNER_STATE_KEY', () => {
+    const fn = extractFnSource(HELP_JS, '_saveBannerState');
+    assert.match(fn, /localStorage\.setItem\(BETA_FEEDBACK_BANNER_STATE_KEY/);
+    assert.match(fn, /JSON\.stringify/);
+});
+
+test('help-feedback.js: defines function _markBannerDismissedForVersion', () => {
+    assert.match(HELP_JS, /function _markBannerDismissedForVersion\s*\(/);
+});
+
+test('help-feedback.js: _markBannerDismissedForVersion guards against null version', () => {
+    const fn = extractFnSource(HELP_JS, '_markBannerDismissedForVersion');
+    assert.match(fn, /if \(!version\) return/);
+});
+
+test('help-feedback.js: _markBannerDismissedForVersion pushes version into dismissedVersions', () => {
+    const fn = extractFnSource(HELP_JS, '_markBannerDismissedForVersion');
+    assert.match(fn, /dismissedVersions/);
+    assert.match(fn, /\.push\(version\)/);
+});
+
+test('help-feedback.js: hideBetaFeedbackBanner with persist calls _markBannerDismissedForVersion', () => {
+    const fn = extractFnSource(HELP_JS, 'hideBetaFeedbackBanner');
+    assert.match(fn, /_markBannerDismissedForVersion/);
+});
+
+test('help-feedback.js: defines async function initBetaFeedbackBanner', () => {
+    assert.match(HELP_JS, /async function initBetaFeedbackBanner\s*\(/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner calls getAppVersion', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /getAppVersion/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner loads versioned state', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /_loadBannerState/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner checks getPendingUpdateNotes for fresh install', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /getPendingUpdateNotes/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner saves new state on first launch', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /_saveBannerState/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner compares lastSeenVersion to detect updates', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /lastSeenVersion/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner checks dismissedVersions array', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /dismissedVersions/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner applies _BANNER_DELAY_MS for fresh-install wait', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /_BANNER_DELAY_MS/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner falls back to showBetaFeedbackBanner on error', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /showBetaFeedbackBanner\(\)/);
+    assert.match(fn, /catch/);
+});
+
+test('help-feedback.js: initBetaFeedbackBanner sets window._betaFeedbackBannerVersion', () => {
+    const fn = extractFnSource(HELP_JS, 'initBetaFeedbackBanner');
+    assert.match(fn, /window\._betaFeedbackBannerVersion\s*=/);
+});
+
+// Behavioral simulation: decision logic mirrors initBetaFeedbackBanner
+{
+    const DELAY_MS = 3 * 24 * 60 * 60 * 1000;
+
+    function bannerDecision({ state, version, now, isUpdate }) {
+        if (!state) return isUpdate;
+        if (version && state.lastSeenVersion !== version) {
+            const dismissed = Array.isArray(state.dismissedVersions) && state.dismissedVersions.includes(version);
+            return !dismissed;
+        }
+        const dismissed = version && Array.isArray(state.dismissedVersions) && state.dismissedVersions.includes(version);
+        if (dismissed) return false;
+        return (now - (state.firstSeenAt || now)) >= DELAY_MS;
+    }
+
+    const V = '1.2.0';
+    const OLD_V = '1.1.0';
+
+    test('banner decision: fresh install without update notes hides banner before 3 days', () => {
+        const now = Date.now();
+        const state = { firstSeenAt: now - 1000, lastSeenVersion: V, dismissedVersions: [] };
+        assert.equal(bannerDecision({ state, version: V, now, isUpdate: false }), false);
+    });
+
+    test('banner decision: fresh install shows banner after 3-day delay', () => {
+        const now = Date.now();
+        const state = { firstSeenAt: now - DELAY_MS - 1000, lastSeenVersion: V, dismissedVersions: [] };
+        assert.equal(bannerDecision({ state, version: V, now, isUpdate: false }), true);
+    });
+
+    test('banner decision: no state and update detected shows banner immediately', () => {
+        assert.equal(bannerDecision({ state: null, version: V, now: Date.now(), isUpdate: true }), true);
+    });
+
+    test('banner decision: no state without update hides banner on first launch', () => {
+        assert.equal(bannerDecision({ state: null, version: V, now: Date.now(), isUpdate: false }), false);
+    });
+
+    test('banner decision: version change shows banner immediately', () => {
+        const state = { firstSeenAt: Date.now() - 100, lastSeenVersion: OLD_V, dismissedVersions: [OLD_V] };
+        assert.equal(bannerDecision({ state, version: V, now: Date.now(), isUpdate: false }), true);
+    });
+
+    test('banner decision: dismissed current version hides banner', () => {
+        const now = Date.now();
+        const state = { firstSeenAt: now - DELAY_MS - 1000, lastSeenVersion: V, dismissedVersions: [V] };
+        assert.equal(bannerDecision({ state, version: V, now, isUpdate: false }), false);
+    });
+
+    test('banner decision: dismissing old version does not block newer version', () => {
+        const state = { firstSeenAt: Date.now() - 100, lastSeenVersion: OLD_V, dismissedVersions: [OLD_V] };
+        assert.equal(bannerDecision({ state, version: V, now: Date.now(), isUpdate: false }), true);
+    });
+
+    test('banner decision: dismissed same new version after update is respected', () => {
+        const state = { firstSeenAt: Date.now() - DELAY_MS - 1000, lastSeenVersion: V, dismissedVersions: [V] };
+        assert.equal(bannerDecision({ state, version: V, now: Date.now(), isUpdate: false }), false);
+    });
+}
 
 // ─── 6. Function body logic: update system ───────────────────────────────────
 
@@ -414,14 +585,14 @@ test('help-feedback.js: installUpdate calls window.electronAPI.sendRestartUpdate
 
 test('help-feedback.js: closeUpdateNotesModal removes "active" from updateNotesModal', () => {
     const fnStart = HELP_JS.indexOf('async function closeUpdateNotesModal');
-    const fn = HELP_JS.slice(fnStart, fnStart + 400);
+    const fn = HELP_JS.slice(fnStart, fnStart + 700);
     assert.match(fn, /updateNotesModal/);
     assert.match(fn, /classList\.remove\('active'\)/);
 });
 
 test('help-feedback.js: closeUpdateNotesModal calls electronAPI.markUpdateNotesShown', () => {
     const fnStart = HELP_JS.indexOf('async function closeUpdateNotesModal');
-    const fn = HELP_JS.slice(fnStart, fnStart + 400);
+    const fn = HELP_JS.slice(fnStart, fnStart + 700);
     assert.match(fn, /markUpdateNotesShown/);
     assert.match(fn, /_pendingUpdateNotesVersion/);
 });

@@ -1472,8 +1472,13 @@ if ('logo' in metadata) {
         // but do NOT let unqualified/false-positive detections affect Jump Back In.
         game.lastDetectedPlayed = endedAt;
 
-        if (isQualified) {
+        // lastPlayed tracks any real activity (counted playtime > 0), so cards and
+        // Recently Played are never stuck at "Never" after a short genuine session.
+        // lastQualifiedPlayed is reserved for high-confidence sessions only.
+        if (countedMinutes > 0) {
             game.lastPlayed = endedAt;
+        }
+        if (isQualified) {
             game.lastQualifiedPlayed = endedAt;
         }
 

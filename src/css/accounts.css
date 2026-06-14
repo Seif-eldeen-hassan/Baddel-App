@@ -926,12 +926,13 @@
     border-bottom: 1px solid transparent;
     padding: 12px 0 10px;
     margin-bottom: 16px;
-    transition: border-color 0.2s ease, padding 0.2s ease, box-shadow 0.2s ease;
+    /* padding intentionally excluded from transition — height change causes visible jump */
+    transition: border-color 0.2s ease, box-shadow 0.2s ease;
 }
 .ag-toolbar-sticky.is-stuck {
     border-bottom-color: rgba(255, 255, 255, 0.06);
-    padding: 7px 0 6px;
     box-shadow: 0 4px 24px rgba(0, 0, 0, 0.45);
+    /* padding kept identical to avoid layout height change when is-stuck toggles */
 }
 
 /* ── Toolbar (search + filters + sort) ─────────────────────── */
