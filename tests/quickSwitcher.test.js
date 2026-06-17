@@ -23,23 +23,28 @@ const _electronStub = {
             workArea: { x: 0, y: 0, width: 1920, height: 1040 },
         }),
     },
+    ipcMain: {
+        on: () => {},
+        handle: () => {},
+    },
     BrowserWindow: class {
         constructor() {
             this._visible = false;
             this._destroyed = false;
             this.webContents = { once: () => {}, send: () => {} };
         }
-        loadFile()   {}
-        show()       { this._visible = true; }
-        hide()       { this._visible = false; }
-        focus()      {}
-        destroy()    { this._destroyed = true; }
-        isDestroyed(){ return this._destroyed; }
-        isVisible()  { return this._visible; }
-        isFocused()  { return false; }
-        getSize()    { return [460, 560]; }
-        setBounds()  {}
-        on(ev, cb)   { if (ev === 'closed') this._onClosed = cb; }
+        loadFile()              {}
+        show()                  { this._visible = true; }
+        hide()                  { this._visible = false; }
+        focus()                 {}
+        destroy()               { this._destroyed = true; }
+        isDestroyed()           { return this._destroyed; }
+        isVisible()             { return this._visible; }
+        isFocused()             { return false; }
+        getSize()               { return [460, 560]; }
+        setBounds()             {}
+        setIgnoreMouseEvents()  {}
+        on(ev, cb)              { if (ev === 'closed') this._onClosed = cb; }
     },
     ipcRenderer: {
         invoke: () => Promise.resolve({}),
@@ -760,4 +765,71 @@ test('accountShortcuts.js: getAll() returns an array (no wrapper object)', () =>
     assert.match(fnSrc, /return\s+(\[\]|shortcuts|data|parsed)/);
     // It must NOT return an object like { shortcuts: [...] }
     assert.ok(!fnSrc.includes('return {'), 'getAll must not return a wrapper object');
+});
+
+// ── Release cleanliness: no debug artifacts ───────────────────────────────────
+
+test('quickSwitcher service: debug hotkey Ctrl+Shift+Alt+B is not registered', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    assert.ok(!src.includes('Ctrl+Shift+Alt+B'), 'debug hotkey not present in release');
+    assert.ok(!src.includes('_registerDebugHotkey'), 'debug hotkey registration function not present');
+    assert.ok(!src.includes('_debugHotkeyAccelerator'), 'debug hotkey accelerator variable not present');
+});
+
+test('quickSwitcher service: devTools is explicitly false in BrowserWindow config', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    const winSrc = src.slice(src.indexOf('new BrowserWindow'), src.indexOf('new BrowserWindow') + 600);
+    assert.ok(winSrc.includes('devTools: false'), 'devTools: false in BrowserWindow webPreferences');
+});
+
+test('preload.js: debugSnapshot IPC is not exposed in release', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
+    assert.ok(!src.includes('debugSnapshot'), 'debugSnapshot not in preload');
+    assert.ok(!src.includes('quick-switcher-debug-snapshot'), 'debug snapshot IPC channel not exposed');
+});
+
+test('quick-switcher.js: no debug CSS injected at runtime', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    assert.ok(!src.includes('outline: red') && !src.includes('outline: lime'), 'no debug outline colors injected');
+    assert.ok(!src.includes('document.createElement(\'style\')'), 'no injected style elements');
+});
+
+test('quick-switcher.js: no renderer console.log debug spam', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    assert.ok(!src.includes("console.log('[QS Renderer]"), 'no QS Renderer debug logs');
+});
+
+test('quickSwitcher service: visible-ready timeout does not abort show (window stays visible)', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    // After vrOk timeout, code must not return early — look for the timeout comment/log
+    const vrSrc = src.slice(src.indexOf('visibleReadyPromise'), src.indexOf('visibleReadyPromise') + 600);
+    assert.ok(vrSrc.includes('already shown') || vrSrc.includes('continuing'), 'vr timeout is informational, not a gate');
+    // The hide() call must not appear after the visibleReadyPromise await
+    assert.ok(!vrSrc.includes('_win.hide()'), 'hide() not called on vr timeout');
+});
+
+test('quick-switcher.js: renderer sends visibleReady on every qs:show', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    const onShowSrc = src.slice(src.indexOf('api.onShow('), src.indexOf('api.onShow(') + 1200);
+    assert.ok(onShowSrc.includes('api.visibleReady('), 'visibleReady called inside every onShow');
+});
+
+test('quickSwitcher service: _showing is reset in finally block', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    const showSrc = src.slice(src.indexOf('async function showQuickSwitcherOverlay'), src.indexOf('async function showQuickSwitcherOverlay') + 500);
+    assert.ok(showSrc.includes('finally'), 'finally block present in showQuickSwitcherOverlay');
+    assert.ok(showSrc.includes('_showing = false'), '_showing reset in finally');
+});
+
+test('quickSwitcher service: protected path resolution uses app.getAppPath()', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    assert.ok(src.includes('app.getAppPath'), 'uses app.getAppPath for protected path resolution');
+    assert.ok(src.includes('preload.bundle.cjs'), 'looks for preload.bundle.cjs in protected build');
+    assert.ok(src.includes('quick-switcher.html'), 'looks for quick-switcher.html in protected build');
+});
+
+test('quickSwitcher service: fails closed when HTML or preload path is missing', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'services', 'quickSwitcher.js'), 'utf8');
+    assert.ok(src.includes('html path missing; aborting show'), 'aborts if HTML missing');
+    assert.ok(src.includes('preload path missing; aborting show'), 'aborts if preload missing');
 });

@@ -1458,6 +1458,20 @@ function createWindow() {
 
     mainWindow.maximize();
     mainWindow.loadFile(path.join(__dirname, 'src', 'dashboard.html'));
+
+    // In packaged builds, mirror all renderer console output to a log file.
+    // This makes post-install diagnosis possible without DevTools.
+    if (isProductionBuild()) {
+        const _logPath = require('path').join(app.getPath('userData'), 'protected-renderer-runtime.log');
+        const _logFs   = require('fs');
+        const _levels  = ['verbose', 'info', 'warning', 'error'];
+        mainWindow.webContents.on('console-message', (_ev, level, message, line, sourceId) => {
+            const entry = '[' + new Date().toISOString() + '] [' + (_levels[level] || 'info') + '] ' +
+                          message + ' (' + sourceId + ':' + line + ')\n';
+            try { _logFs.appendFileSync(_logPath, entry); } catch (_) {}
+        });
+    }
+
     mainWindow.once('ready-to-show', () => {
         if (isStartupLaunch) {
             // Boot-time launch: stay hidden in tray, do not steal focus.
@@ -1515,6 +1529,17 @@ app.on('web-contents-created', (_event, contents) => {
 require('./handlers/windowHandlers').register(ipcMain, {
     getMainWindow: () => mainWindow,
     app,
+});
+
+// ── Runtime diagnostics IPC handler ──────────────────────────────────────────
+// Receives log-runtime-error from the renderer (via preload logRuntimeError) and
+// appends the message to protected-renderer-runtime.log in userData.  Only active
+// in packaged builds so development noise is not written to disk.
+ipcMain.handle('log-runtime-error', (_event, message) => {
+    if (!isProductionBuild()) return;
+    const logPath = require('path').join(app.getPath('userData'), 'protected-renderer-runtime.log');
+    const line = '[' + new Date().toISOString() + '] ' + String(message) + '\n';
+    try { require('fs').appendFileSync(logPath, line); } catch (_) {}
 });
 
 // ============================================================

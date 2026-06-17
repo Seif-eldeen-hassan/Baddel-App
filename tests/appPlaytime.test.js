@@ -23,41 +23,43 @@ function extractFnSource(src, name) {
 }
 
 // ─── Runtime-eval: formatPlaytime ────────────────────────────────────────────
+// Internal implementation is now baddelPlaytimeFormat to avoid hoisting
+// collisions when concatenated with app.js in the protected bundle.
 const formatPlaytime = new Function(
-    `${extractFnSource(PLAYTIME_JS, 'formatPlaytime')}; return formatPlaytime;`
+    `${extractFnSource(PLAYTIME_JS, 'baddelPlaytimeFormat')}; return baddelPlaytimeFormat;`
 )();
 
 // ─── Runtime-eval: formatLastPlayed ──────────────────────────────────────────
 const formatLastPlayed = new Function(
-    `${extractFnSource(PLAYTIME_JS, 'formatLastPlayed')}; return formatLastPlayed;`
+    `${extractFnSource(PLAYTIME_JS, 'baddelPlaytimeFormatLastPlayed')}; return baddelPlaytimeFormatLastPlayed;`
 )();
 
 // ─── Runtime-eval: buildPlaytimeCache ────────────────────────────────────────
 // playtime.js version returns the cache object — no injected state needed.
 const buildPlaytimeCache = new Function(
-    `${extractFnSource(PLAYTIME_JS, 'buildPlaytimeCache')}; return buildPlaytimeCache;`
+    `${extractFnSource(PLAYTIME_JS, 'baddelPlaytimeBuildCache')}; return baddelPlaytimeBuildCache;`
 )();
 
 // ─── Source-presence: playtime.js owns the implementations ───────────────────
 
-test('playtime.js: defines function formatPlaytime', () => {
-    assert.match(PLAYTIME_JS, /function formatPlaytime\s*\(/);
+test('playtime.js: defines implementation function baddelPlaytimeFormat', () => {
+    assert.match(PLAYTIME_JS, /function baddelPlaytimeFormat\s*\(/);
 });
 
-test('playtime.js: defines function formatLastPlayed', () => {
-    assert.match(PLAYTIME_JS, /function formatLastPlayed\s*\(/);
+test('playtime.js: defines implementation function baddelPlaytimeFormatLastPlayed', () => {
+    assert.match(PLAYTIME_JS, /function baddelPlaytimeFormatLastPlayed\s*\(/);
 });
 
-test('playtime.js: defines function buildPlaytimeCache', () => {
-    assert.match(PLAYTIME_JS, /function buildPlaytimeCache\s*\(/);
+test('playtime.js: defines implementation function baddelPlaytimeBuildCache', () => {
+    assert.match(PLAYTIME_JS, /function baddelPlaytimeBuildCache\s*\(/);
 });
 
-test('playtime.js: defines async function savePlaytimeData', () => {
-    assert.match(PLAYTIME_JS, /async function savePlaytimeData\s*\(/);
+test('playtime.js: defines async implementation function baddelPlaytimeSave', () => {
+    assert.match(PLAYTIME_JS, /async function baddelPlaytimeSave\s*\(/);
 });
 
-test('playtime.js: defines async function migratePlaytimeFromLocalStorage', () => {
-    assert.match(PLAYTIME_JS, /async function migratePlaytimeFromLocalStorage\s*\(/);
+test('playtime.js: defines async implementation function baddelPlaytimeMigrate', () => {
+    assert.match(PLAYTIME_JS, /async function baddelPlaytimeMigrate\s*\(/);
 });
 
 test('playtime.js: exposes window.BaddelPlaytime namespace', () => {
@@ -73,22 +75,22 @@ test('playtime.js: BaddelPlaytime includes all five functions', () => {
     assert.match(block, /migratePlaytimeFromLocalStorage/);
 });
 
-test('playtime.js: buildPlaytimeCache returns a cache object (does not mutate)', () => {
+test('playtime.js: baddelPlaytimeBuildCache returns a cache object (does not mutate)', () => {
     // Should contain `return cache` and use a local `const cache = {}`
-    const fn = extractFnSource(PLAYTIME_JS, 'buildPlaytimeCache');
+    const fn = extractFnSource(PLAYTIME_JS, 'baddelPlaytimeBuildCache');
     assert.match(fn, /const cache\s*=\s*\{\}/);
     assert.match(fn, /return cache/);
 });
 
-test('playtime.js: savePlaytimeData accepts deps as first argument', () => {
+test('playtime.js: baddelPlaytimeSave accepts deps as first argument', () => {
     // Destructuring signature: ({ playtimeData, allGamesData }, gameId, ...)
-    const fnStart = PLAYTIME_JS.indexOf('async function savePlaytimeData');
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeSave');
     const header  = PLAYTIME_JS.slice(fnStart, fnStart + 80);
     assert.match(header, /\{\s*playtimeData,\s*allGamesData\s*\}/);
 });
 
-test('playtime.js: migratePlaytimeFromLocalStorage accepts deps as first argument', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('playtime.js: baddelPlaytimeMigrate accepts deps as first argument', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const header  = PLAYTIME_JS.slice(fnStart, fnStart + 80);
     assert.match(header, /\{\s*playtimeData\s*\}/);
 });
@@ -301,59 +303,59 @@ test('buildPlaytimeCache: handles multiple games', () => {
 // ─── savePlaytimeData source structure ───────────────────────────────────────
 // Runtime test not possible (requires window.electronAPI). Verify source structure.
 
-test('savePlaytimeData: calls window.electronAPI.updatePlaytime', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function savePlaytimeData');
+test('baddelPlaytimeSave: calls window.electronAPI.updatePlaytime', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeSave');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /window\.electronAPI\.updatePlaytime\(gameId, playedMinutes\)/);
 });
 
-test('savePlaytimeData: updates playtimeData[gameId].totalMinutes on success', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function savePlaytimeData');
+test('baddelPlaytimeSave: updates playtimeData[gameId].totalMinutes on success', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeSave');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /playtimeData\[gameId\]\.totalMinutes\s*=\s*result\.totalPlaytime/);
 });
 
-test('savePlaytimeData: updates allGamesData entry on success', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function savePlaytimeData');
+test('baddelPlaytimeSave: updates allGamesData entry on success', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeSave');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 900);
     assert.match(fn, /allGamesData\[gameIndex\]\.totalPlaytime\s*=\s*result\.totalPlaytime/);
 });
 
-test('savePlaytimeData: initializes missing playtimeData[gameId] before writing', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function savePlaytimeData');
+test('baddelPlaytimeSave: initializes missing playtimeData[gameId] before writing', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeSave');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /if \(!playtimeData\[gameId\]\)/);
 });
 
-// ─── migratePlaytimeFromLocalStorage source structure ────────────────────────
+// ─── baddelPlaytimeMigrate source structure ───────────────────────────────────
 
-test('migratePlaytimeFromLocalStorage: checks baddel_playtime_migrated flag', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('baddelPlaytimeMigrate: checks baddel_playtime_migrated flag', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /baddel_playtime_migrated/);
     assert.match(fn, /localStorage\.getItem/);
 });
 
-test('migratePlaytimeFromLocalStorage: reads old data from baddel_playtime key', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('baddelPlaytimeMigrate: reads old data from baddel_playtime key', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /baddel_playtime['"]/);
 });
 
-test('migratePlaytimeFromLocalStorage: sets migration flag after completion', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('baddelPlaytimeMigrate: sets migration flag after completion', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /localStorage\.setItem\('baddel_playtime_migrated'/);
 });
 
-test('migratePlaytimeFromLocalStorage: calls updatePlaytime for each entry', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('baddelPlaytimeMigrate: calls updatePlaytime for each entry', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /window\.electronAPI\.updatePlaytime\(/);
 });
 
-test('migratePlaytimeFromLocalStorage: skips migration when flag already set (early return)', () => {
-    const fnStart = PLAYTIME_JS.indexOf('async function migratePlaytimeFromLocalStorage');
+test('baddelPlaytimeMigrate: skips migration when flag already set (early return)', () => {
+    const fnStart = PLAYTIME_JS.indexOf('async function baddelPlaytimeMigrate');
     const fn = PLAYTIME_JS.slice(fnStart, fnStart + 600);
     assert.match(fn, /if \(migrationDone\) return/);
 });

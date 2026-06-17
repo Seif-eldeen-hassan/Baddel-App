@@ -8,6 +8,25 @@
 // ============================================================
 window._stopSplashCanvas = () => { /* no-op: no canvas in this version */ };
 
+// ── Runtime error capture ─────────────────────────────────────────────────────
+// In packaged builds these forward unhandled errors to the main process which
+// writes them to protected-renderer-runtime.log in userData for post-install
+// diagnosis.
+
+window.onerror = function (msg, src, line, col, err) {
+    const text = '[onerror] ' + msg + ' at ' + src + ':' + line + ':' + col +
+                 (err ? ' — ' + (err.stack || err) : '');
+    console.error(text);
+    try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(text); } catch (_) {}
+};
+
+window.onunhandledrejection = function (ev) {
+    const reason = ev.reason;
+    const text = '[unhandledrejection] ' + (reason && reason.stack ? reason.stack : String(reason));
+    console.error(text);
+    try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(text); } catch (_) {}
+};
+
 // ============================================================
 // SPLASH AUDIO — Cinematic swell, 2-3 seconds.
 // Built entirely with Web Audio oscillators + reverb convolution.
@@ -415,6 +434,51 @@ async function migratePlaytimeFromLocalStorage() {
 // ============================================================
 // 1. SYSTEM STARTUP & NAVIGATION
 // ============================================================
+
+// Logs each startup step to the console so the runtime log captures exactly
+// where initialisation stalls or throws in a packaged build.
+function traceStartupStep(name, fn) {
+    console.log('[Startup]', name, 'start');
+    try {
+        const result = fn();
+        if (result && typeof result.then === 'function') {
+            return result
+                .then(r  => { console.log('[Startup]', name, 'ok'); return r; })
+                .catch(err => { console.error('[Startup]', name, 'failed:', err); throw err; });
+        }
+        console.log('[Startup]', name, 'ok');
+        return result;
+    } catch (err) {
+        console.error('[Startup]', name, 'failed:', err);
+        throw err;
+    }
+}
+
+// Like traceStartupStep but swallows errors — one failing home section must not
+// prevent the rest of the home view from rendering.
+function traceHomeStep(name, fn) {
+    console.log('[Home]', name, 'start');
+    try {
+        const result = fn();
+        if (result && typeof result.then === 'function') {
+            result
+                .then(()  => console.log('[Home]', name, 'ok'))
+                .catch(err => {
+                    const msg = '[Home] ' + name + ' failed: ' + (err && err.stack ? err.stack : String(err));
+                    console.error(msg);
+                    try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(msg); } catch (_) {}
+                });
+            return result;
+        }
+        console.log('[Home]', name, 'ok');
+        return result;
+    } catch (err) {
+        const msg = '[Home] ' + name + ' failed: ' + (err && err.stack ? err.stack : String(err));
+        console.error(msg);
+        try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(msg); } catch (_) {}
+    }
+}
+
 async function initSystem() {
     // Dev-only font readiness check — gated on NODE_ENV so it is silent in production
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
@@ -469,9 +533,9 @@ async function initSystem() {
         buildPlaytimeCache(games);
         await migratePlaytimeFromLocalStorage();
 
-        renderSidebar();
-        navigateToHome();
-        initSortable();
+        await traceStartupStep('renderSidebar',    () => renderSidebar());
+        await traceStartupStep('navigateToHome',   () => navigateToHome());
+        await traceStartupStep('initSortable',     () => initSortable());
 
         hideSplash(loader, grid);
 
@@ -549,13 +613,13 @@ function navigateToHome() {
     syncSidebarActionButton();
     requestAnimationFrame(() => { syncSidebarActionButton(); });
 
-    renderRecentlyPlayed();
-    renderExploreCarousel();
-    renderSyncedSuggestions();
-    applyHeroForHome();
-    if (typeof window.renderAccountShortcuts === 'function') window.renderAccountShortcuts();
-    updateFooterStats();
-    
+    traceHomeStep('renderRecentlyPlayed',    () => renderRecentlyPlayed());
+    traceHomeStep('renderExploreCarousel',   () => renderExploreCarousel());
+    traceHomeStep('renderSyncedSuggestions', () => renderSyncedSuggestions());
+    traceHomeStep('applyHeroForHome',        () => applyHeroForHome());
+    if (typeof window.renderAccountShortcuts === 'function') traceHomeStep('renderAccountShortcuts', () => window.renderAccountShortcuts());
+    traceHomeStep('updateFooterStats',       () => updateFooterStats());
+
     if (typeof checkAndManagePolling === 'function') checkAndManagePolling();
 }
 

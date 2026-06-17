@@ -1700,7 +1700,7 @@ test('game-card.js: getRecentGames sorts by lastQualifiedPlayed', () => {
 
 test('playtime.js: buildPlaytimeCache includes lastQualifiedPlayed', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'playtime.js'), 'utf8');
-    const fnStart = js.indexOf('function buildPlaytimeCache');
+    const fnStart = js.indexOf('function baddelPlaytimeBuildCache');
     const fn = js.slice(fnStart, fnStart + 400);
     assert.match(fn, /lastQualifiedPlayed/);
 });

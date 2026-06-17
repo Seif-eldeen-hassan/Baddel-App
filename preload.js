@@ -305,6 +305,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
         switchAccount:  (payload) => ipcRenderer.invoke('quick-switcher:switch-account', payload),
         hide:           ()        => ipcRenderer.invoke('quick-switcher:hide'),
         toggle:         ()        => ipcRenderer.invoke('quick-switcher:toggle'),
-        onShow: (cb) => ipcRenderer.on('qs:show', (_, data) => cb(data)),
+        onShow:        (cb)    => ipcRenderer.on('qs:show', (_, data) => cb(data)),
+        onHide:        (cb)    => ipcRenderer.on('qs:hide', (_, data) => cb(data)),
+        rendererReady: ()      => ipcRenderer.send('qs:renderer-ready'),
+        visibleReady:  (data)  => ipcRenderer.send('qs:visible-ready', data),
     },
+
+    // ---- Runtime diagnostics ----
+    logRuntimeError: (message) => ipcRenderer.invoke('log-runtime-error', message),
 });

@@ -525,9 +525,14 @@ function _init() {
         }
     });
 
-    api.onShow(({ closeAfterSwitch }) => {
-        // Hide immediately so the window is transparent while accounts reload.
-        overlayEl.classList.remove('is-open');
+    api.onShow(async (payload) => {
+        const { closeAfterSwitch, showSeq } = payload || {};
+
+        // Remove any stale closing state and make overlay visible immediately.
+        // Do not wait for account loading — the window is already shown by main.
+        overlayEl.classList.remove('is-closing');
+        overlayEl.classList.add('is-open');
+
         _closeAfterSwitch  = closeAfterSwitch !== false;
         _platformFilter    = 'all';
         _platformFocusIdx  = 0;
@@ -535,15 +540,25 @@ function _init() {
         _isSwitching       = false;
         _hideSwitchStatus();
         searchEl.value = '';
-        _loadAccounts().then(() => {
-            // One rAF ensures the freshly rendered DOM is painted before the
-            // reveal animation starts, preventing a flash of unstyled content.
-            requestAnimationFrame(() => {
-                overlayEl.classList.add('is-open');
-                _setFocusZone('accounts');
-            });
-        });
+
+        // Signal main immediately after is-open — do not block on rAF or account loading.
+        // Hidden BrowserWindow may not fire requestAnimationFrame reliably after first hide.
+        try { api.visibleReady({ showSeq }); } catch (err) {
+            console.warn('[QS Renderer] visibleReady failed', err);
+        }
+
+        // Load accounts after signaling ready — spinner is visible while loading.
+        await _loadAccounts();
+        _setFocusZone('accounts');
     });
+
+    api.onHide(() => {
+        overlayEl.classList.remove('is-open');
+        overlayEl.classList.remove('is-closing');
+    });
+
+    // Signal main process: IPC listeners are registered, safe to send qs:show.
+    try { api.rendererReady(); } catch (_) {}
 }
 
 _init();

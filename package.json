@@ -37,6 +37,7 @@
     "cross-env": "^7.0.3",
     "electron": "^34.0.0",
     "electron-builder": "^24.13.3",
+    "esbuild": "^0.25.12",
     "javascript-obfuscator": "^4.2.2"
   },
   "build": {
