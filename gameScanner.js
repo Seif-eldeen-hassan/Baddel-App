@@ -50,6 +50,7 @@ const {
     withTimeout,
     _hashShort,
 } = require('./src/features/games/infrastructure/scanner/GameScannerCore');
+const { JsonGameRepository } = require('./src/features/games/infrastructure/repositories/JsonGameRepository');
 
 
 // ============================================================
@@ -62,106 +63,44 @@ class BaddelEngine {
         this.dbFolder = options.dbFolder || app.getPath('userData');
         this.dbPath = path.join(this.dbFolder, 'games-db.json');
         this.officialPaths = new Set();
-        this.dbCache = [];
-        this._saveTimer = null;
+        this._saveTimer = null; // retained for compatibility; timer is now owned by JsonGameRepository
         this._currentScanReports = {};
         this._skipMetadataServerSync = !!options.skipMetadataServerSync;
         this._testDriveRoots = options.driveRoots || null;
         this._riotSearchRoots = options.riotSearchRoots || null;
         this.__core = null; // lazy — created on first scan (after module-level mrm/baddelApi are initialized)
-        this.initDatabase();
+        this._jsonGameRepository = new JsonGameRepository({
+            fs: fsSync,
+            path,
+            crypto,
+            databasePath: this.dbPath,
+        });
+        // dbCache is a get/set proxy to this._jsonGameRepository._dbCache
     }
+
+    // ─── dbCache get/set proxy ───────────────────────────────────────────────
+    // All BaddelEngine methods share the single array owned by JsonGameRepository.
+    // Delegated methods (init/save/rename/etc.) go through the repository directly;
+    // non-delegated methods (upsertGame, scan, metadata, playtime) read/write through
+    // this proxy and therefore always see the same underlying array.
+    get dbCache()    { return this._jsonGameRepository._dbCache; }
+    set dbCache(arr) { this._jsonGameRepository._dbCache = arr; }
 
     // ============================================================
     // DATABASE
     // ============================================================
-    generateStableId(game) {
-        const str = (game.command || game.name).toLowerCase().replace(/"/g, '').trim();
-        return crypto.createHash('md5').update(str).digest('hex').substring(0, 16);
-    }
+    generateStableId(game) { return this._jsonGameRepository.generateStableId(game); }
 
-    initDatabase() {
-        try {
-            if (!fsSync.existsSync(this.dbFolder)) fsSync.mkdirSync(this.dbFolder, { recursive: true });
-            if (!fsSync.existsSync(this.dbPath)) fsSync.writeFileSync(this.dbPath, '[]', 'utf8');
-            const raw = fsSync.readFileSync(this.dbPath, 'utf8');
-            try {
-                this.dbCache = JSON.parse(raw);
-            } catch {
-                console.error('[DB] Corrupted — resetting.');
-                this.dbCache = [];
-                this.saveDatabase();
-            }
-        } catch (err) {
-            console.error('[DB] Init error:', err);
-            this.dbCache = [];
-        }
-        this._migrateLnkRecords();
-    }
+    initDatabase() { this._jsonGameRepository.initDatabase(); }
 
-    // Fix manual .lnk records written by the broken patch that stored the
-    // .lnk path as game.path instead of the real install directory.
-    _migrateLnkRecords() {
-        let changed = false;
-        for (const game of this.dbCache) {
-            const isManual = game.scannerPlatform === 'manual' || game.platform === 'Manual';
-            const cmdIsLnk = (game.command || '').toLowerCase().endsWith('.lnk');
-            if (!isManual || !cmdIsLnk || !game.executablePath) continue;
+    // _migrateLnkRecords is now owned by JsonGameRepository.initDatabase.
+    // Kept as a no-op so any external callers do not throw during migration.
+    _migrateLnkRecords() {}
 
-            // path should be the install folder, not the .lnk file
-            const expectedPath = path.dirname(game.executablePath);
-            if (game.path !== expectedPath) {
-                game.path = expectedPath;
-                changed = true;
-            }
-            if (!game.shortcutPath) {
-                game.shortcutPath = game.command;
-                changed = true;
-            }
-            const expectedFolder = path.basename(path.dirname(game.executablePath));
-            if (!game.folderName || game.folderName !== expectedFolder) {
-                game.folderName = expectedFolder;
-                changed = true;
-            }
-            const expectedExeName = path.parse(game.executablePath).name;
-            if (!game.exeName || game.exeName !== expectedExeName) {
-                game.exeName = expectedExeName;
-                changed = true;
-            }
-        }
-        if (changed) {
-            console.log('[DB] Migrated broken .lnk records to use install directory as path.');
-            this.saveDatabase();
-        }
-    }
+    async flushDatabase() { return this._jsonGameRepository.flushDatabase(); }
 
-    async flushDatabase() {
-        if (this._saveTimer) {
-            clearTimeout(this._saveTimer);
-            this._saveTimer = null;
-        }
-        try {
-            const data = JSON.stringify(this.dbCache, null, 2);
-            await fs.writeFile(this.dbPath, data, 'utf8');
-        } catch (err) {
-            console.error('[DB] Save failed:', err);
-            try {
-                const backup = path.join(path.dirname(this.dbPath), 'games-db-backup.json');
-                await fs.writeFile(backup, JSON.stringify(this.dbCache, null, 2), 'utf8');
-            } catch (backupErr) {
-                console.error('[DB] Backup also failed:', backupErr);
-            }
-        }
-    }
-
-    // Async write with 500ms debounce to avoid blocking the main thread
-    saveDatabase() {
-        if (this._saveTimer) clearTimeout(this._saveTimer);
-        this._saveTimer = setTimeout(async () => {
-            this._saveTimer = null;
-            await this.flushDatabase();
-        }, 500);
-    }
+    // Async write with 500ms debounce — delegated to JsonGameRepository
+    saveDatabase() { return this._jsonGameRepository.saveDatabase(); }
 
     // ============================================================
     // UPSERT
@@ -252,64 +191,17 @@ class BaddelEngine {
     // ============================================================
     // CRUD OPERATIONS
     // ============================================================
-    async renameGame(gameId, newName) {
-    const index = this.dbCache.findIndex(g => String(g.id) === String(gameId));
-    if (index === -1) return { status: 'error', message: 'Game not found' };
+    async renameGame(gameId, newName) { return this._jsonGameRepository.renameGame(gameId, newName); }
 
-    const game = this.dbCache[index];
-    const oldName = game.name || game.title || '';
+    async removeGame(gameId) { return this._jsonGameRepository.removeGame(gameId); }
 
-    if (!game.originalName && oldName && oldName !== newName) {
-        game.originalName = oldName;
-    }
+    async unhideAllGames() { return this._jsonGameRepository.unhideAllGames(); }
 
-    game.name = newName;
-    game.title = newName;
-
-    // Manual title override, separate from artwork lock
-    game.customTitle = newName;
-    game.customTitleLocked = true;
-    game.titleSource = 'creator';
-    game.titleUpdatedAt = Date.now();
-
-    this.saveDatabase();
-
-    return {
-        status: 'success',
-        newName,
-        customTitleLocked: true,
-        titleSource: 'creator',
-        titleUpdatedAt: game.titleUpdatedAt
-    };
-}
-
-    async removeGame(gameId) {
-        const index = this.dbCache.findIndex(g => String(g.id) === String(gameId));
-        if (index === -1) return { status: 'error', message: 'Game not found' };
-        this.dbCache[index].isHidden = true;
-        this.saveDatabase();
-        return { status: 'success' };
-    }
-
-    async unhideAllGames() {
-        let count = 0;
-        this.dbCache.forEach(g => { if (g.isHidden) { g.isHidden = false; count++; } });
-        if (count > 0) { this.saveDatabase(); return { status: 'success', restoredCount: count }; }
-        return { status: 'no_hidden' };
-    }
-
-    getStoredGames() { return this.dbCache.filter(g => !g.isHidden && g.isInstalled !== false); }
-    getHiddenGames() { return this.dbCache.filter(g => g.isHidden); }
+    getStoredGames()           { return this._jsonGameRepository.getStoredGames(); }
+    getHiddenGames()           { return this._jsonGameRepository.getHiddenGames(); }
     getMissingInstalledGames() { return this.dbCache.filter(g => g.installSource === 'scanner' && g.isInstalled === false); }
 
-    async restoreSpecificGames(gameIds) {
-        let count = 0;
-        this.dbCache.forEach(g => {
-            if (gameIds.includes(String(g.id))) { g.isHidden = false; count++; }
-        });
-        if (count > 0) { this.saveDatabase(); return { status: 'success', count }; }
-        return { status: 'error', message: 'Nothing restored' };
-    }
+    async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 
     async deleteGamePermanently(gameId) {
         const before = this.dbCache.length;
@@ -959,22 +851,7 @@ if ('logo' in metadata) {
     // ============================================================
     // REORDER
     // ============================================================
-    async reorderLibrary(newOrderedIds) {
-        try {
-            const gameMap = new Map(this.dbCache.map(g => [g.id, g]));
-            const ordered = newOrderedIds.filter(id => gameMap.has(id)).map(id => {
-                const g = gameMap.get(id);
-                gameMap.delete(id);
-                return g;
-            });
-            this.dbCache = [...ordered, ...gameMap.values()];
-            this.saveDatabase();
-            return { status: 'success' };
-        } catch (err) {
-            console.error('[Reorder]', err);
-            return { status: 'error' };
-        }
-    }
+    async reorderLibrary(newOrderedIds) { return this._jsonGameRepository.reorderLibrary(newOrderedIds); }
 
     // ============================================================
     // MANUAL ADD
