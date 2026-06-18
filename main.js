@@ -29,6 +29,7 @@ const steamBridge = require('./steamBridge');
 const { fileURLToPath } = require('url');
 const safeLauncher  = require('./services/safeLauncher');
 const ipcValidation = require('./services/ipcValidation');
+const gamesIpc = require('./src/features/games/infrastructure/ipc/games.ipc');
 
 // ── Production build detection ────────────────────────────────────────────────
 // Returns true when running from a packaged (installed) build.
@@ -392,14 +393,8 @@ function setupAutoUpdater() {
     }
 }
 
-// ---- Image/cache handlers (moved to handlers/imageHandlers.js) ----
+// Image cache grace period — passed as dep into imageHandlers via gamesIpc (Phase 3.3)
 const IMAGE_CACHE_PRUNE_GRACE_MS = 24 * 60 * 60 * 1000;
-require('./handlers/imageHandlers').register(ipcMain, {
-    app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
-    getSavedGames, getMainWindow: () => mainWindow,
-    _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
-    IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, resetGameImage,
-});
 
 // -- IPC: start download - handle (invoke) so renderer gets immediate feedback --
 // -- Auto-Update IPC (moved to handlers/autoUpdateHandlers.js) --
@@ -1592,24 +1587,20 @@ app.whenReady().then(async () => {
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
 
-    // -- Installed Games IPC (moved to handlers/installedGamesHandlers.js) --
-    // installedGamesState is declared here (inside whenReady) so its lifetime
-    // matches the app session and it is passed by reference into the handler.
+    // -- Games feature IPC — primary registration via games adapter (Phase 3.3) --
+    // All four legacy handler groups (installedGames, gameLibrary, image, localMetadata)
+    // are now registered through gamesIpc.register, which delegates to them internally.
+    // imageHandlers moved here from module-level: safe because createWindow() is called
+    // at line ~1990, well after this block, so the renderer cannot send IPC before then.
+    // Shadow routing for get-game-by-id and get-hidden-games is preserved from Phase 3.2.
+    // Rollback: restore the four individual .register() calls and the pre-whenReady imageHandlers block.
     const installedGamesState = { backgroundScanInProgress: false };
-    require('./handlers/installedGamesHandlers').register(ipcMain, {
-        getSavedGames,
-        scanAllGames,
+    const _gamesDeps = {
+        // installedGamesHandlers
         refetchMissingImages,
         runBackgroundMetadataPipeline,
-        getMainWindow: () => mainWindow,
         installedGamesState,
-    });
-
-    // -- Game Library IPC (moved to handlers/gameLibraryHandlers.js) --
-    require('./handlers/gameLibraryHandlers').register(ipcMain, {
-        ipcValidation,
-        getSavedGames,
-        scanAllGames,
+        // gameLibraryHandlers
         removeGame,
         renameGame,
         unhideAllGames,
@@ -1619,21 +1610,32 @@ app.whenReady().then(async () => {
         reorderLibrary,
         getDynamicGameExes,
         _detectPlatform,
-        analytics,
-        shell,
-        path,
         addManualGame,
-        getMainWindow: () => mainWindow,
-    });
-    // -- Local Metadata IPC (moved to handlers/localMetadataHandlers.js) --
-    require('./handlers/localMetadataHandlers').register(ipcMain, {
-        ipcValidation,
-        getSavedGames,
+        // imageHandlers
+        app,
+        dialog,
+        imageWebpCache,
+        fileURLToPath,
+        _collectImageCacheIdsFromGame,
+        _readReadyToInstallProtectedImageIds,
+        IMAGE_CACHE_PRUNE_GRACE_MS,
+        updateGameImage,
+        resetGameImage,
+        // localMetadataHandlers
         updateGameMetadata,
         saveFullMetadata,
         loadFullMetadata,
+        // shared across all four handler groups
+        ipcValidation,
+        getSavedGames,
+        scanAllGames,
+        analytics,
+        shell,
+        path,
+        fs,
         getMainWindow: () => mainWindow,
-    });
+    };
+    gamesIpc.register(ipcMain, _gamesDeps);
     // -- Playtime IPC (moved to handlers/playtimeHandlers.js) --
     require('./handlers/playtimeHandlers').register(ipcMain, {
         updatePlaytime,

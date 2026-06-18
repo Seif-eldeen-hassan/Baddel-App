@@ -30,10 +30,14 @@ test('installedGamesState is declared in main.js with backgroundScanInProgress: 
 });
 
 test('installedGamesState is passed to installedGamesHandlers register call in main.js', () => {
-    const registerIdx = MAIN_JS.indexOf("require('./handlers/installedGamesHandlers').register");
-    assert.ok(registerIdx !== -1, 'installedGamesHandlers register call must exist in main.js');
-    const registerBlock = MAIN_JS.slice(registerIdx, registerIdx + 400);
-    assert.match(registerBlock, /installedGamesState/);
+    // Phase 4.1: shadow removed; gamesIpc.register(ipcMain, _gamesDeps) is the sole registration.
+    // Verify installedGamesState is included in the _gamesDeps bag passed to it.
+    const gamesIpcIdx = MAIN_JS.lastIndexOf('gamesIpc.register(ipcMain');
+    assert.ok(gamesIpcIdx !== -1, 'gamesIpc.register must be the primary games registration in main.js');
+    const depsBagIdx = MAIN_JS.lastIndexOf('const _gamesDeps', gamesIpcIdx);
+    assert.ok(depsBagIdx !== -1, '_gamesDeps must be declared before gamesIpc.register');
+    const depsBag = MAIN_JS.slice(depsBagIdx, gamesIpcIdx);
+    assert.match(depsBag, /installedGamesState/, 'installedGamesState must be included in _gamesDeps');
 });
 
 // ─── 2. Concurrent-scan guard ─────────────────────────────────────────────────
