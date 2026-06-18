@@ -85,6 +85,9 @@ class BaddelEngine {
     // this proxy and therefore always see the same underlying array.
     get dbCache()    { return this._jsonGameRepository._dbCache; }
     set dbCache(arr) { this._jsonGameRepository._dbCache = arr; }
+    // Migration bridge: exposes the single JsonGameRepository owned by BaddelEngine.
+    // Do not instantiate repositories elsewhere.
+    getJsonGameRepository() { return this._jsonGameRepository; }
 
     // ============================================================
     // DATABASE
@@ -1924,6 +1927,8 @@ module.exports = {
     resetGameImage:        (id, type) => engine.resetGameImage(id, type),
     updateGameMetadata:    (id, meta, opts) => engine.updateGameMetadata(id, meta, opts),
     reorderLibrary:        (ids) => engine.reorderLibrary(ids),
+    // Migration bridge — used by main.js to thread the repository into games.ipc.js.
+    getJsonGameRepository: () => engine.getJsonGameRepository(),
     updatePlaytime:        (id, minutes) => engine.updatePlaytime(id, minutes),
     saveQualifiedSession:  (id, sessionData) => engine.saveQualifiedSession(id, sessionData),
     setTimeTrackingEnabled: (id, enabled) => engine.setTimeTrackingEnabled(id, enabled),

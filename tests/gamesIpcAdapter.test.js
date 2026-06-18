@@ -23,10 +23,14 @@ function makeFakeIpc() {
 
 // Minimal deps that satisfy every handler's destructuring without crashing.
 // All values are either no-op functions or safe primitives.
+//
+// jsonGameRepository is built as a thin proxy over the individual stub functions
+// so per-test overrides (e.g. makeDeps({ reorderLibrary: spy })) automatically
+// propagate into the repository injection path used by GamesRepositoryImpl.
 function makeDeps(overrides = {}) {
     const noop = () => {};
     const noopArr = () => [];
-    return {
+    const d = {
         getSavedGames:                        noopArr,
         getHiddenGames:                       noopArr,
         scanAllGames:                         noopArr,
@@ -62,6 +66,20 @@ function makeDeps(overrides = {}) {
         getMainWindow:                        () => null,
         ...overrides,
     };
+    // Build jsonGameRepository after applying overrides so per-test spy functions
+    // are visible inside the proxy. Only built if not directly overridden.
+    if (!d.jsonGameRepository) {
+        d.jsonGameRepository = {
+            getSavedGames:        ()           => d.getSavedGames(),
+            getHiddenGames:       ()           => d.getHiddenGames(),
+            reorderLibrary:       (ids)        => d.reorderLibrary(ids),
+            unhideAllGames:       ()           => d.unhideAllGames(),
+            renameGame:           (id, name)   => d.renameGame(id, name),
+            restoreSpecificGames: (ids)        => d.restoreSpecificGames(ids),
+            removeGame:           (id)         => d.removeGame(id),
+        };
+    }
+    return d;
 }
 
 // ── registration: channel presence ───────────────────────────────────────────

@@ -63,13 +63,7 @@ const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games', 'reorder-libr
 module.exports.register = function registerGamesIpc(ipcMain, deps) {
     // ── Repository + use cases ────────────────────────────────────────────────
     const gamesRepository = new GamesRepositoryImpl({
-        getSavedGames:        deps.getSavedGames,
-        getHiddenGames:       deps.getHiddenGames,
-        reorderLibrary:       deps.reorderLibrary,
-        unhideAllGames:       deps.unhideAllGames,
-        renameGame:           deps.renameGame,
-        restoreSpecificGames: deps.restoreSpecificGames,
-        removeGame:           deps.removeGame,
+        jsonGameRepository: deps.jsonGameRepository,
     });
 
     const getGameByIdUseCase          = new GetGameByIdUseCase(gamesRepository);

@@ -4,29 +4,51 @@ const { GamesRepository } = require('../../domain/repositories/GamesRepository')
 
 // ─── GamesRepositoryImpl — Legacy Bridge ─────────────────────────────────────
 //
-// Infrastructure implementation of GamesRepository that delegates to the
-// legacy gameScanner functions during the Strangler Fig migration.
+// Infrastructure implementation of GamesRepository.
 //
-// Data flow:
-//   Use case → GamesRepositoryImpl → getSavedGames() / getHiddenGames()
-//                                      └─ engine.dbCache (in-memory, synchronous)
+// Supports two injection paths (in order of preference):
 //
-// Both wrapped functions are synchronous — no I/O occurs at call time.
+//   1. jsonGameRepository (Step 13.4+):
+//      A JsonGameRepository instance injected from BaddelEngine via main.js.
+//      Methods delegate directly — no intermediate gameScanner wrapper hop.
+//
+//   2. Legacy function delegates (pre-13.4 / rollback):
+//      Individual functions destructured from gameScanner module.exports.
+//      Retained as fallback so tests and a rollback can still pass individual
+//      functions without a JsonGameRepository instance.
+//
+// Only one path should be active in production at any time.
+// When jsonGameRepository is provided it takes precedence for every method.
 //
 // This class contains NO business logic. It exists only to satisfy the
 // domain contract while the legacy system remains the source of truth.
-// Once gameScanner is replaced by a proper persistence layer this class
-// will be swapped out without touching any use case or IPC code.
 
 class GamesRepositoryImpl extends GamesRepository {
     /**
      * @param {{
-     *   getSavedGames:  () => object[],
-     *   getHiddenGames: () => object[],
+     *   jsonGameRepository?:   import('./JsonGameRepository').JsonGameRepository,
+     *   getSavedGames?:        () => object[],
+     *   getHiddenGames?:       () => object[],
+     *   reorderLibrary?:       (ids: string[]) => object,
+     *   unhideAllGames?:       () => object,
+     *   renameGame?:           (id: string, name: string) => object,
+     *   restoreSpecificGames?: (ids: string[]) => Promise<object>,
+     *   removeGame?:           (id: string) => Promise<object>,
      * }} deps
      */
-    constructor({ getSavedGames, getHiddenGames, reorderLibrary, unhideAllGames, renameGame, restoreSpecificGames, removeGame }) {
+    constructor({
+        jsonGameRepository,
+        getSavedGames,
+        getHiddenGames,
+        reorderLibrary,
+        unhideAllGames,
+        renameGame,
+        restoreSpecificGames,
+        removeGame,
+    } = {}) {
         super();
+        this._jsonGameRepository   = jsonGameRepository   || null;
+        // Legacy function delegates — kept as fallback for tests / rollback only.
         this._getSavedGames        = getSavedGames;
         this._getHiddenGames       = getHiddenGames;
         this._reorderLibrary       = reorderLibrary;
@@ -49,7 +71,9 @@ class GamesRepositoryImpl extends GamesRepository {
      */
     getGameById(id) {
         try {
-            const stored = this._getSavedGames();
+            const stored = this._jsonGameRepository
+                ? this._jsonGameRepository.getSavedGames()
+                : this._getSavedGames();
             return stored.find(g => String(g.id) === String(id)) || null;
         } catch (err) {
             console.warn('[GamesRepositoryImpl] getGameById error:', err.message);
@@ -57,68 +81,33 @@ class GamesRepositoryImpl extends GamesRepository {
         }
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('get-hidden-games', () => getHiddenGames())
-     *
-     * @returns {object[]}
-     */
     getHiddenGames() {
+        if (this._jsonGameRepository) return this._jsonGameRepository.getHiddenGames();
         return this._getHiddenGames();
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('reorder-library', (_, ids) => reorderLibrary(ids))
-     *
-     * @param   {string[]} ids
-     * @returns {object}
-     */
     reorderLibrary(ids) {
+        if (this._jsonGameRepository) return this._jsonGameRepository.reorderLibrary(ids);
         return this._reorderLibrary(ids);
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('unhide-all-games', () => unhideAllGames())
-     *
-     * @returns {object}
-     */
     unhideAllGames() {
+        if (this._jsonGameRepository) return this._jsonGameRepository.unhideAllGames();
         return this._unhideAllGames();
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('rename-game', (_, id, name) => renameGame(id, name))
-     *
-     * @param   {string} gameId
-     * @param   {string} newName
-     * @returns {object}
-     */
     renameGame(gameId, newName) {
+        if (this._jsonGameRepository) return this._jsonGameRepository.renameGame(gameId, newName);
         return this._renameGame(gameId, newName);
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('restore-specific-games', (_, ids) => restoreSpecificGames(ids))
-     *
-     * @param   {string[]} ids
-     * @returns {Promise<object>}
-     */
     restoreSpecificGames(ids) {
+        if (this._jsonGameRepository) return this._jsonGameRepository.restoreSpecificGames(ids);
         return this._restoreSpecificGames(ids);
     }
 
-    /**
-     * Direct delegation — no transformation.
-     * Mirrors: ipcMain.handle('remove-game', (_, id) => removeGame(id))
-     *
-     * @param   {string} gameId
-     * @returns {Promise<object>}
-     */
     removeGame(gameId) {
+        if (this._jsonGameRepository) return this._jsonGameRepository.removeGame(gameId);
         return this._removeGame(gameId);
     }
 }

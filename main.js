@@ -13,7 +13,7 @@ const {
     restoreSpecificGames, deleteGamePermanently, reorderLibrary,
     updateGameMetadata, saveFullMetadata, loadFullMetadata,
     updatePlaytime, setTimeTrackingEnabled, getTimeTrackingEnabled,
-    refetchMissingImages, runBackgroundMetadataPipeline,
+    refetchMissingImages, runBackgroundMetadataPipeline, getJsonGameRepository,
 } = require('./gameScanner');
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
@@ -1629,6 +1629,7 @@ app.whenReady().then(async () => {
         ipcValidation,
         getSavedGames,
         scanAllGames,
+        jsonGameRepository: getJsonGameRepository(),
         analytics,
         shell,
         path,
