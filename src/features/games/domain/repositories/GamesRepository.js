@@ -29,6 +29,37 @@ class GamesRepository {
     getHiddenGames() {
         throw new Error(`${this.constructor.name} must implement getHiddenGames()`);
     }
+
+    /**
+     * Persist a new display order for the game library.
+     *
+     * @param   {string[]} ids  Ordered array of game IDs
+     * @returns {object}        { status: 'success' } or { status: 'error' }
+     */
+    reorderLibrary(ids) {
+        throw new Error(`${this.constructor.name} must implement reorderLibrary(ids)`);
+    }
+
+    /**
+     * Clear the hidden flag on every game in the library.
+     *
+     * @returns {object}  { status: 'success', restoredCount } or { status: 'no_hidden' }
+     */
+    unhideAllGames() {
+        throw new Error(`${this.constructor.name} must implement unhideAllGames()`);
+    }
+
+    /**
+     * Rename a game and lock the title as creator-sourced.
+     *
+     * @param   {string} gameId
+     * @param   {string} newName
+     * @returns {object}  { status, newName, customTitleLocked, titleSource, titleUpdatedAt }
+     *                    or { status: 'error', message }
+     */
+    renameGame(gameId, newName) {
+        throw new Error(`${this.constructor.name} must implement renameGame(gameId, newName)`);
+    }
 }
 
 module.exports = { GamesRepository };

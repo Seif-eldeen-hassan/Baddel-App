@@ -46,8 +46,11 @@ const localMetadataHandlers  = require('../../../../../handlers/localMetadataHan
 const { GamesRepositoryImpl }    = require('../repositories/GamesRepositoryImpl');
 const { GetGameByIdUseCase }     = require('../../application/useCases/GetGameByIdUseCase');
 const { GetHiddenGamesUseCase }  = require('../../application/useCases/GetHiddenGamesUseCase');
+const { ReorderLibraryUseCase }  = require('../../application/useCases/ReorderLibraryUseCase');
+const { UnhideAllGamesUseCase }  = require('../../application/useCases/UnhideAllGamesUseCase');
+const { RenameGameUseCase }      = require('../../application/useCases/RenameGameUseCase');
 
-const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games']);
+const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games', 'reorder-library', 'unhide-all-games', 'rename-game']);
 
 /**
  * Register all games-feature IPC handlers.
@@ -58,12 +61,18 @@ const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games']);
 module.exports.register = function registerGamesIpc(ipcMain, deps) {
     // ── Repository + use cases ────────────────────────────────────────────────
     const gamesRepository = new GamesRepositoryImpl({
-        getSavedGames:  deps.getSavedGames,
-        getHiddenGames: deps.getHiddenGames,
+        getSavedGames:   deps.getSavedGames,
+        getHiddenGames:  deps.getHiddenGames,
+        reorderLibrary:  deps.reorderLibrary,
+        unhideAllGames:  deps.unhideAllGames,
+        renameGame:      deps.renameGame,
     });
 
     const getGameByIdUseCase    = new GetGameByIdUseCase(gamesRepository);
     const getHiddenGamesUseCase = new GetHiddenGamesUseCase(gamesRepository);
+    const reorderLibraryUseCase = new ReorderLibraryUseCase(gamesRepository);
+    const unhideAllGamesUseCase = new UnhideAllGamesUseCase(gamesRepository);
+    const renameGameUseCase     = new RenameGameUseCase(gamesRepository);
 
     // ── Capture map: channel → legacy handler (for shadow comparison) ─────────
     const legacyHandlers = {};
@@ -130,5 +139,31 @@ module.exports.register = function registerGamesIpc(ipcMain, deps) {
         }
 
         return newResult;
+    });
+
+    // reorder-library is mutating; legacy shadow comparison is intentionally disabled
+    // to avoid double writes — running legacy after the use case would reorder and
+    // persist the DB a second time with identical data, causing unnecessary I/O and
+    // making the operation non-idempotent from a timing perspective.
+    ipcMain.handle('reorder-library', async (_, ids) => {
+        return reorderLibraryUseCase.execute(ids);
+    });
+
+    // unhide-all-games is mutating; legacy shadow comparison is intentionally disabled
+    // to avoid double writes — running legacy after the use case would clear hidden flags
+    // and persist the DB a second time unnecessarily.
+    ipcMain.handle('unhide-all-games', async () => {
+        return unhideAllGamesUseCase.execute();
+    });
+
+    // rename-game is mutating; legacy shadow comparison is intentionally disabled
+    // to avoid double writes — running legacy after the use case would rename/save twice.
+    ipcMain.handle('rename-game', async (_, gameId, newName) => {
+        // Validation preserved verbatim from legacy gameLibraryHandlers
+        try {
+            deps.ipcValidation.assertSafeId(gameId, 'id');
+            deps.ipcValidation.assertString(newName, 'name', 256);
+        } catch (e) { return deps.ipcValidation.sanitizeErrorForRenderer(e); }
+        return renameGameUseCase.execute(gameId, newName);
     });
 };

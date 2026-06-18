@@ -25,10 +25,13 @@ class GamesRepositoryImpl extends GamesRepository {
      *   getHiddenGames: () => object[],
      * }} deps
      */
-    constructor({ getSavedGames, getHiddenGames }) {
+    constructor({ getSavedGames, getHiddenGames, reorderLibrary, unhideAllGames, renameGame }) {
         super();
-        this._getSavedGames  = getSavedGames;
-        this._getHiddenGames = getHiddenGames;
+        this._getSavedGames   = getSavedGames;
+        this._getHiddenGames  = getHiddenGames;
+        this._reorderLibrary  = reorderLibrary;
+        this._unhideAllGames  = unhideAllGames;
+        this._renameGame      = renameGame;
     }
 
     /**
@@ -60,6 +63,39 @@ class GamesRepositoryImpl extends GamesRepository {
      */
     getHiddenGames() {
         return this._getHiddenGames();
+    }
+
+    /**
+     * Direct delegation — no transformation.
+     * Mirrors: ipcMain.handle('reorder-library', (_, ids) => reorderLibrary(ids))
+     *
+     * @param   {string[]} ids
+     * @returns {object}
+     */
+    reorderLibrary(ids) {
+        return this._reorderLibrary(ids);
+    }
+
+    /**
+     * Direct delegation — no transformation.
+     * Mirrors: ipcMain.handle('unhide-all-games', () => unhideAllGames())
+     *
+     * @returns {object}
+     */
+    unhideAllGames() {
+        return this._unhideAllGames();
+    }
+
+    /**
+     * Direct delegation — no transformation.
+     * Mirrors: ipcMain.handle('rename-game', (_, id, name) => renameGame(id, name))
+     *
+     * @param   {string} gameId
+     * @param   {string} newName
+     * @returns {object}
+     */
+    renameGame(gameId, newName) {
+        return this._renameGame(gameId, newName);
     }
 }
 
