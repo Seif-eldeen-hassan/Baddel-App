@@ -6,7 +6,8 @@ const path   = require('path');
 
 const MAIN_JS          = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                              'utf8');
 const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'), 'utf8');
-const SCANNER_JS       = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                   'utf8');
+const SCANNER_JS       = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'scanner', 'GameScannerCore.js'), 'utf8') +
+                         fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                   'utf8');
 
 // ── _parseLaunchCommand: helper existence ─────────────────────────────────────
 
