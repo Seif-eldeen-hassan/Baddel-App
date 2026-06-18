@@ -25,13 +25,15 @@ class GamesRepositoryImpl extends GamesRepository {
      *   getHiddenGames: () => object[],
      * }} deps
      */
-    constructor({ getSavedGames, getHiddenGames, reorderLibrary, unhideAllGames, renameGame }) {
+    constructor({ getSavedGames, getHiddenGames, reorderLibrary, unhideAllGames, renameGame, restoreSpecificGames, removeGame }) {
         super();
-        this._getSavedGames   = getSavedGames;
-        this._getHiddenGames  = getHiddenGames;
-        this._reorderLibrary  = reorderLibrary;
-        this._unhideAllGames  = unhideAllGames;
-        this._renameGame      = renameGame;
+        this._getSavedGames        = getSavedGames;
+        this._getHiddenGames       = getHiddenGames;
+        this._reorderLibrary       = reorderLibrary;
+        this._unhideAllGames       = unhideAllGames;
+        this._renameGame           = renameGame;
+        this._restoreSpecificGames = restoreSpecificGames;
+        this._removeGame           = removeGame;
     }
 
     /**
@@ -96,6 +98,28 @@ class GamesRepositoryImpl extends GamesRepository {
      */
     renameGame(gameId, newName) {
         return this._renameGame(gameId, newName);
+    }
+
+    /**
+     * Direct delegation — no transformation.
+     * Mirrors: ipcMain.handle('restore-specific-games', (_, ids) => restoreSpecificGames(ids))
+     *
+     * @param   {string[]} ids
+     * @returns {Promise<object>}
+     */
+    restoreSpecificGames(ids) {
+        return this._restoreSpecificGames(ids);
+    }
+
+    /**
+     * Direct delegation — no transformation.
+     * Mirrors: ipcMain.handle('remove-game', (_, id) => removeGame(id))
+     *
+     * @param   {string} gameId
+     * @returns {Promise<object>}
+     */
+    removeGame(gameId) {
+        return this._removeGame(gameId);
     }
 }
 

@@ -6,7 +6,9 @@ const { GetGameByIdUseCase }    = require('../src/features/games/application/use
 const { GetHiddenGamesUseCase } = require('../src/features/games/application/useCases/GetHiddenGamesUseCase');
 const { ReorderLibraryUseCase }  = require('../src/features/games/application/useCases/ReorderLibraryUseCase');
 const { UnhideAllGamesUseCase }  = require('../src/features/games/application/useCases/UnhideAllGamesUseCase');
-const { RenameGameUseCase }      = require('../src/features/games/application/useCases/RenameGameUseCase');
+const { RenameGameUseCase }             = require('../src/features/games/application/useCases/RenameGameUseCase');
+const { RestoreSpecificGamesUseCase }   = require('../src/features/games/application/useCases/RestoreSpecificGamesUseCase');
+const { RemoveGameUseCase }             = require('../src/features/games/application/useCases/RemoveGameUseCase');
 
 // ── GetGameByIdUseCase ────────────────────────────────────────────────────────
 
@@ -124,4 +126,50 @@ test('RenameGameUseCase: execute propagates error result from repository', () =>
     const repo = { renameGame: () => ({ status: 'error', message: 'Game not found' }) };
     const uc = new RenameGameUseCase(repo);
     assert.deepEqual(uc.execute('missing', 'X'), { status: 'error', message: 'Game not found' });
+});
+
+// ── RestoreSpecificGamesUseCase ───────────────────────────────────────────────
+
+test('RestoreSpecificGamesUseCase: execute delegates ids to repository.restoreSpecificGames', async () => {
+    let receivedIds;
+    const repo = { restoreSpecificGames: async (ids) => { receivedIds = ids; return { status: 'success', count: ids.length }; } };
+    const uc = new RestoreSpecificGamesUseCase(repo);
+    await uc.execute(['g1', 'g2']);
+    assert.deepEqual(receivedIds, ['g1', 'g2']);
+});
+
+test('RestoreSpecificGamesUseCase: execute returns repository result unchanged', async () => {
+    const legacyResult = { status: 'success', count: 3 };
+    const repo = { restoreSpecificGames: async () => legacyResult };
+    const uc = new RestoreSpecificGamesUseCase(repo);
+    assert.equal(await uc.execute(['g1', 'g2', 'g3']), legacyResult);
+});
+
+test('RestoreSpecificGamesUseCase: execute propagates error result from repository', async () => {
+    const repo = { restoreSpecificGames: async () => ({ status: 'error', message: 'Nothing restored' }) };
+    const uc = new RestoreSpecificGamesUseCase(repo);
+    assert.deepEqual(await uc.execute([]), { status: 'error', message: 'Nothing restored' });
+});
+
+// ── RemoveGameUseCase ─────────────────────────────────────────────────────────
+
+test('RemoveGameUseCase: execute delegates gameId to repository.removeGame', async () => {
+    let receivedId;
+    const repo = { removeGame: async (id) => { receivedId = id; return { status: 'success' }; } };
+    const uc = new RemoveGameUseCase(repo);
+    await uc.execute('g77');
+    assert.equal(receivedId, 'g77');
+});
+
+test('RemoveGameUseCase: execute returns repository result unchanged', async () => {
+    const legacyResult = { status: 'success' };
+    const repo = { removeGame: async () => legacyResult };
+    const uc = new RemoveGameUseCase(repo);
+    assert.equal(await uc.execute('g1'), legacyResult);
+});
+
+test('RemoveGameUseCase: execute propagates error result from repository', async () => {
+    const repo = { removeGame: async () => ({ status: 'error', message: 'Game not found' }) };
+    const uc = new RemoveGameUseCase(repo);
+    assert.deepEqual(await uc.execute('missing'), { status: 'error', message: 'Game not found' });
 });

@@ -9,9 +9,11 @@ const { GamesRepositoryImpl } = require('../src/features/games/infrastructure/re
 function makeRepo({
     saved = [],
     hidden = [],
-    reorderLibrary  = () => ({ status: 'success' }),
-    unhideAllGames  = () => ({ status: 'success' }),
-    renameGame      = () => ({ status: 'success' }),
+    reorderLibrary       = () => ({ status: 'success' }),
+    unhideAllGames       = () => ({ status: 'success' }),
+    renameGame           = () => ({ status: 'success' }),
+    restoreSpecificGames = async () => ({ status: 'success', count: 0 }),
+    removeGame           = async () => ({ status: 'success' }),
 } = {}) {
     return new GamesRepositoryImpl({
         getSavedGames:  () => saved,
@@ -19,6 +21,8 @@ function makeRepo({
         reorderLibrary,
         unhideAllGames,
         renameGame,
+        restoreSpecificGames,
+        removeGame,
     });
 }
 
@@ -107,4 +111,36 @@ test('GamesRepositoryImpl: renameGame returns legacy result unchanged', () => {
     const legacyResult = { status: 'success', newName: 'New Title', customTitleLocked: true, titleSource: 'creator', titleUpdatedAt: 12345 };
     const repo = makeRepo({ renameGame: () => legacyResult });
     assert.equal(repo.renameGame('g1', 'New Title'), legacyResult);
+});
+
+// ── restoreSpecificGames ──────────────────────────────────────────────────────
+
+test('GamesRepositoryImpl: restoreSpecificGames delegates to legacy with same ids', async () => {
+    let receivedIds;
+    const repo = makeRepo({ restoreSpecificGames: async (ids) => { receivedIds = ids; return { status: 'success', count: ids.length }; } });
+    await repo.restoreSpecificGames(['g1', 'g2', 'g3']);
+    assert.deepEqual(receivedIds, ['g1', 'g2', 'g3']);
+});
+
+test('GamesRepositoryImpl: restoreSpecificGames returns legacy result unchanged', async () => {
+    const legacyResult = { status: 'success', count: 2 };
+    const repo = makeRepo({ restoreSpecificGames: async () => legacyResult });
+    const result = await repo.restoreSpecificGames(['g1', 'g2']);
+    assert.equal(result, legacyResult);
+});
+
+// ── removeGame ────────────────────────────────────────────────────────────────
+
+test('GamesRepositoryImpl: removeGame delegates to legacy removeGame with same id', async () => {
+    let receivedId;
+    const repo = makeRepo({ removeGame: async (id) => { receivedId = id; return { status: 'success' }; } });
+    await repo.removeGame('g99');
+    assert.equal(receivedId, 'g99');
+});
+
+test('GamesRepositoryImpl: removeGame returns legacy result unchanged', async () => {
+    const legacyResult = { status: 'success' };
+    const repo = makeRepo({ removeGame: async () => legacyResult });
+    const result = await repo.removeGame('g1');
+    assert.equal(result, legacyResult);
 });

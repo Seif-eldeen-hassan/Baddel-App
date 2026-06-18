@@ -48,9 +48,11 @@ const { GetGameByIdUseCase }     = require('../../application/useCases/GetGameBy
 const { GetHiddenGamesUseCase }  = require('../../application/useCases/GetHiddenGamesUseCase');
 const { ReorderLibraryUseCase }  = require('../../application/useCases/ReorderLibraryUseCase');
 const { UnhideAllGamesUseCase }  = require('../../application/useCases/UnhideAllGamesUseCase');
-const { RenameGameUseCase }      = require('../../application/useCases/RenameGameUseCase');
+const { RenameGameUseCase }             = require('../../application/useCases/RenameGameUseCase');
+const { RestoreSpecificGamesUseCase }   = require('../../application/useCases/RestoreSpecificGamesUseCase');
+const { RemoveGameUseCase }             = require('../../application/useCases/RemoveGameUseCase');
 
-const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games', 'reorder-library', 'unhide-all-games', 'rename-game']);
+const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games', 'reorder-library', 'unhide-all-games', 'rename-game', 'restore-specific-games', 'remove-game']);
 
 /**
  * Register all games-feature IPC handlers.
@@ -61,18 +63,22 @@ const INTERCEPTED = new Set(['get-game-by-id', 'get-hidden-games', 'reorder-libr
 module.exports.register = function registerGamesIpc(ipcMain, deps) {
     // ── Repository + use cases ────────────────────────────────────────────────
     const gamesRepository = new GamesRepositoryImpl({
-        getSavedGames:   deps.getSavedGames,
-        getHiddenGames:  deps.getHiddenGames,
-        reorderLibrary:  deps.reorderLibrary,
-        unhideAllGames:  deps.unhideAllGames,
-        renameGame:      deps.renameGame,
+        getSavedGames:        deps.getSavedGames,
+        getHiddenGames:       deps.getHiddenGames,
+        reorderLibrary:       deps.reorderLibrary,
+        unhideAllGames:       deps.unhideAllGames,
+        renameGame:           deps.renameGame,
+        restoreSpecificGames: deps.restoreSpecificGames,
+        removeGame:           deps.removeGame,
     });
 
-    const getGameByIdUseCase    = new GetGameByIdUseCase(gamesRepository);
-    const getHiddenGamesUseCase = new GetHiddenGamesUseCase(gamesRepository);
-    const reorderLibraryUseCase = new ReorderLibraryUseCase(gamesRepository);
-    const unhideAllGamesUseCase = new UnhideAllGamesUseCase(gamesRepository);
-    const renameGameUseCase     = new RenameGameUseCase(gamesRepository);
+    const getGameByIdUseCase          = new GetGameByIdUseCase(gamesRepository);
+    const getHiddenGamesUseCase       = new GetHiddenGamesUseCase(gamesRepository);
+    const reorderLibraryUseCase       = new ReorderLibraryUseCase(gamesRepository);
+    const unhideAllGamesUseCase       = new UnhideAllGamesUseCase(gamesRepository);
+    const renameGameUseCase           = new RenameGameUseCase(gamesRepository);
+    const restoreSpecificGamesUseCase = new RestoreSpecificGamesUseCase(gamesRepository);
+    const removeGameUseCase           = new RemoveGameUseCase(gamesRepository);
 
     // ── Capture map: channel → legacy handler (for shadow comparison) ─────────
     const legacyHandlers = {};
@@ -165,5 +171,32 @@ module.exports.register = function registerGamesIpc(ipcMain, deps) {
             deps.ipcValidation.assertString(newName, 'name', 256);
         } catch (e) { return deps.ipcValidation.sanitizeErrorForRenderer(e); }
         return renameGameUseCase.execute(gameId, newName);
+    });
+
+    // restore-specific-games is mutating; legacy shadow comparison is intentionally disabled
+    // to avoid double writes — running legacy after the use case would un-hide games twice.
+    // Analytics preserved verbatim from legacy handler at IPC boundary (not in use case / repo).
+    ipcMain.handle('restore-specific-games', async (_, ids) => {
+        const result = await restoreSpecificGamesUseCase.execute(ids);
+        if (result && result.status === 'success') {
+            deps.analytics.logGameRestored(ids.length).catch(() => {});
+        }
+        return result;
+    });
+
+    // remove-game is mutating; legacy shadow comparison is intentionally disabled to avoid
+    // double writes — running legacy after the use case would hide/save the game record twice.
+    // getSavedGames + _detectPlatform are used at the IPC boundary only for analytics;
+    // they do not belong in the use case or repository.
+    // Analytics fires unconditionally after removeGame (not conditioned on result.status),
+    // preserving exact legacy behavior.
+    ipcMain.handle('remove-game', async (_, id) => {
+        try { deps.ipcValidation.assertSafeId(id, 'id'); } catch (e) { return deps.ipcValidation.sanitizeErrorForRenderer(e); }
+        const games = await deps.getSavedGames();
+        const game = games.find(g => g.id === id);
+        const platform = deps._detectPlatform(game && game.command);
+        const result = await removeGameUseCase.execute(id);
+        deps.analytics.logGameRemoved(platform).catch(() => {});
+        return result;
     });
 };

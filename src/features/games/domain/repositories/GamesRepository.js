@@ -60,6 +60,26 @@ class GamesRepository {
     renameGame(gameId, newName) {
         throw new Error(`${this.constructor.name} must implement renameGame(gameId, newName)`);
     }
+
+    /**
+     * Un-hide a specific set of games by ID.
+     *
+     * @param   {string[]} ids
+     * @returns {object}  { status: 'success', count } or { status: 'error', message }
+     */
+    restoreSpecificGames(ids) {
+        throw new Error(`${this.constructor.name} must implement restoreSpecificGames(ids)`);
+    }
+
+    /**
+     * Hide (soft-remove) a game from the library by ID.
+     *
+     * @param   {string} gameId
+     * @returns {Promise<object>}  legacy removeGame result
+     */
+    removeGame(gameId) {
+        throw new Error(`${this.constructor.name} must implement removeGame(gameId)`);
+    }
 }
 
 module.exports = { GamesRepository };

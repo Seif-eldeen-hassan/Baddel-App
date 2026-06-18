@@ -52,7 +52,7 @@ function makeDeps(overrides = {}) {
         _readReadyToInstallProtectedImageIds: noopArr,
         IMAGE_CACHE_PRUNE_GRACE_MS:           60000,
         ipcValidation:                        { assertPathLike: noop, assertSafeId: noop, assertString: noop, assertArrayOfStrings: noop, sanitizeErrorForRenderer: noop },
-        analytics:                            { track: noop },
+        analytics:                            { track: noop, logGameRestored: async () => {}, logGameRemoved: async () => {} },
         app:                                  { getPath: () => '' },
         dialog:                               { showOpenDialog: noop },
         shell:                                { openPath: noop },
@@ -241,12 +241,163 @@ test('games.ipc: rename-game returns sanitized error when newName fails assertSt
     assert.equal(result, sanitized);
 });
 
-// ── proxy interception: non-target channels still register ───────────────────
+// ── restore-specific-games ────────────────────────────────────────────────────
 
-test('games.ipc: remove-game is registered (non-target channel passes through)', () => {
+test('games.ipc: restore-specific-games is registered exactly once', () => {
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps());
+    assert.ok(ipc.handles.has('restore-specific-games'), 'restore-specific-games not registered');
+    assert.equal(typeof ipc.handles.get('restore-specific-games'), 'function');
+});
+
+test('games.ipc: restore-specific-games handler returns use case / repository result', async () => {
+    const expected = { status: 'success', count: 2 };
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ restoreSpecificGames: async () => expected }));
+    const result = await ipc.handles.get('restore-specific-games')({}, ['g1', 'g2']);
+    assert.equal(result, expected);
+});
+
+test('games.ipc: restore-specific-games passes ids through to legacy', async () => {
+    let receivedIds;
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ restoreSpecificGames: async (ids) => { receivedIds = ids; return { status: 'success', count: ids.length }; } }));
+    await ipc.handles.get('restore-specific-games')({}, ['g3', 'g4']);
+    assert.deepEqual(receivedIds, ['g3', 'g4']);
+});
+
+test('games.ipc: restore-specific-games calls legacy restoreSpecificGames exactly once (no shadow)', async () => {
+    let callCount = 0;
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ restoreSpecificGames: async () => { callCount++; return { status: 'success', count: 1 }; } }));
+    await ipc.handles.get('restore-specific-games')({}, ['g1']);
+    assert.equal(callCount, 1, 'restoreSpecificGames must be called exactly once (no shadow)');
+});
+
+test('games.ipc: restore-specific-games fires analytics on success', async () => {
+    let analyticsCount = 0;
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRestored: async (n) => { analyticsCount++; }, track: () => {} };
+    gamesIpc.register(ipc, makeDeps({ restoreSpecificGames: async () => ({ status: 'success', count: 3 }), analytics }));
+    await ipc.handles.get('restore-specific-games')({}, ['g1', 'g2', 'g3']);
+    // give fire-and-forget a tick to run
+    await new Promise(r => setImmediate(r));
+    assert.equal(analyticsCount, 1, 'logGameRestored must be called once on success');
+});
+
+test('games.ipc: restore-specific-games does NOT fire analytics on error result', async () => {
+    let analyticsCount = 0;
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRestored: async () => { analyticsCount++; }, track: () => {} };
+    gamesIpc.register(ipc, makeDeps({ restoreSpecificGames: async () => ({ status: 'error', message: 'Nothing restored' }), analytics }));
+    await ipc.handles.get('restore-specific-games')({}, []);
+    await new Promise(r => setImmediate(r));
+    assert.equal(analyticsCount, 0, 'logGameRestored must NOT be called on error');
+});
+
+// ── remove-game ───────────────────────────────────────────────────────────────
+
+test('games.ipc: remove-game is registered exactly once', () => {
     const ipc = makeFakeIpc();
     gamesIpc.register(ipc, makeDeps());
     assert.ok(ipc.handles.has('remove-game'), 'remove-game not registered');
+    assert.equal(typeof ipc.handles.get('remove-game'), 'function');
+});
+
+test('games.ipc: remove-game handler returns use case / repository result', async () => {
+    const expected = { status: 'success' };
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ removeGame: async () => expected }));
+    const result = await ipc.handles.get('remove-game')({}, 'g1');
+    assert.equal(result, expected);
+});
+
+test('games.ipc: remove-game passes id unchanged to legacy removeGame', async () => {
+    let receivedId;
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ removeGame: async (id) => { receivedId = id; return { status: 'success' }; } }));
+    await ipc.handles.get('remove-game')({}, 'g42');
+    assert.equal(receivedId, 'g42');
+});
+
+test('games.ipc: remove-game calls legacy removeGame exactly once (no shadow)', async () => {
+    let callCount = 0;
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps({ removeGame: async () => { callCount++; return { status: 'success' }; } }));
+    await ipc.handles.get('remove-game')({}, 'g1');
+    assert.equal(callCount, 1, 'removeGame must be called exactly once (no shadow)');
+});
+
+test('games.ipc: remove-game returns sanitized error when id fails assertSafeId', async () => {
+    const sanitized = { status: 'error', message: 'bad id' };
+    const ipc = makeFakeIpc();
+    const fakeValidation = {
+        assertSafeId:             () => { throw new Error('bad id'); },
+        sanitizeErrorForRenderer: () => sanitized,
+    };
+    gamesIpc.register(ipc, makeDeps({ ipcValidation: fakeValidation }));
+    const result = await ipc.handles.get('remove-game')({}, '');
+    assert.equal(result, sanitized);
+});
+
+test('games.ipc: remove-game fires analytics unconditionally after removeGame', async () => {
+    let analyticsCount = 0;
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRemoved: async () => { analyticsCount++; }, logGameRestored: async () => {}, track: () => {} };
+    gamesIpc.register(ipc, makeDeps({ removeGame: async () => ({ status: 'success' }), analytics }));
+    await ipc.handles.get('remove-game')({}, 'g1');
+    await new Promise(r => setImmediate(r));
+    assert.equal(analyticsCount, 1, 'logGameRemoved must be called once');
+});
+
+test('games.ipc: remove-game fires analytics even when removeGame returns error-like result', async () => {
+    // Legacy fires analytics unconditionally — not conditioned on result.status.
+    let analyticsCount = 0;
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRemoved: async () => { analyticsCount++; }, logGameRestored: async () => {}, track: () => {} };
+    gamesIpc.register(ipc, makeDeps({ removeGame: async () => ({ status: 'error' }), analytics }));
+    await ipc.handles.get('remove-game')({}, 'g1');
+    await new Promise(r => setImmediate(r));
+    assert.equal(analyticsCount, 1, 'logGameRemoved must still be called on non-success result');
+});
+
+test('games.ipc: remove-game passes platform from _detectPlatform to logGameRemoved', async () => {
+    let receivedPlatform;
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRemoved: async (p) => { receivedPlatform = p; }, logGameRestored: async () => {}, track: () => {} };
+    const game = { id: 'g1', command: 'steam://rungameid/12345' };
+    gamesIpc.register(ipc, makeDeps({
+        getSavedGames:   () => [game],
+        _detectPlatform: (cmd) => cmd && cmd.startsWith('steam') ? 'steam' : 'unknown',
+        removeGame:      async () => ({ status: 'success' }),
+        analytics,
+    }));
+    await ipc.handles.get('remove-game')({}, 'g1');
+    await new Promise(r => setImmediate(r));
+    assert.equal(receivedPlatform, 'steam');
+});
+
+test('games.ipc: remove-game passes undefined platform when game not found in getSavedGames', async () => {
+    let receivedPlatform = 'NOT_SET';
+    const ipc = makeFakeIpc();
+    const analytics = { logGameRemoved: async (p) => { receivedPlatform = p; }, logGameRestored: async () => {}, track: () => {} };
+    gamesIpc.register(ipc, makeDeps({
+        getSavedGames:   () => [],
+        _detectPlatform: (cmd) => cmd ? 'steam' : undefined,
+        removeGame:      async () => ({ status: 'success' }),
+        analytics,
+    }));
+    await ipc.handles.get('remove-game')({}, 'no-such-id');
+    await new Promise(r => setImmediate(r));
+    assert.equal(receivedPlatform, undefined);
+});
+
+// ── proxy interception: non-target channels still register ───────────────────
+
+test('games.ipc: scan-all-games is registered (non-target channel passes through)', () => {
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, makeDeps());
+    assert.ok(ipc.handles.has('scan-all-games'), 'scan-all-games not registered');
 });
 
 test('games.ipc: get-installed-games is registered (untouched by proxy)', () => {
