@@ -178,6 +178,110 @@ class JsonGameRepository {
 
     // ─── Image mutations ──────────────────────────────────────────────────────
 
+    async updateGameMetadata(gameId, metadata, { source = 'server', force = false } = {}) {
+        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
+        if (index === -1) return { status: 'error', message: 'Game not found' };
+        const game = this._dbCache[index];
+
+        const artLocked      = game.customArtworkLocked === true;
+        const serverVerified = game.artworkSource === 'server-details' && !!game.artworkUpdatedAt;
+
+        const skipArt = !force && (
+            (artLocked && source !== 'creator') ||
+            (serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'))
+        );
+
+        if (skipArt) {
+            this._log.log(`[updateGameMetadata] ${gameId}: skipping art overwrite (artLocked=${artLocked} serverVerified=${serverVerified}, source=${source})`);
+        } else {
+            const hasHeroKey  = ('hero' in metadata) || ('heroImage' in metadata);
+            const hasCoverKey = ('cover' in metadata);
+
+            if ('name' in metadata) {
+                const nextName = String(metadata.name || '').trim();
+                if (nextName) {
+                    game.name = nextName;
+                }
+            }
+
+            const hero = metadata.hero || metadata.heroImage || null;
+            const isCreator = source === 'creator';
+
+            if (hasHeroKey) {
+                if (hero) {
+                    if (isCreator && !game.creatorOriginalHero) {
+                        game.creatorOriginalHero = game.defaultHero || game.heroImage || null;
+                    }
+                    game.heroImage = hero;
+                    if (!isCreator) {
+                        game.defaultHero = hero;
+                    }
+                } else if (isCreator || force) {
+                    game.heroImage = game.creatorOriginalHero || game.defaultHero || null;
+                }
+            }
+
+            if (hasCoverKey) {
+                if (metadata.cover) {
+                    if (isCreator && !game.creatorOriginalCover) {
+                        game.creatorOriginalCover = game.defaultImage || game.image || null;
+                    }
+                    game.image = metadata.cover;
+                    if (!isCreator) {
+                        game.defaultImage = metadata.cover;
+                    }
+                } else if (isCreator || force) {
+                    game.image = game.creatorOriginalCover || game.defaultImage || null;
+                }
+            }
+
+            if ('logo' in metadata) {
+                if (metadata.logo) {
+                    if (isCreator && !game.creatorOriginalLogo) {
+                        game.creatorOriginalLogo = game.defaultLogo || game.logo || null;
+                    }
+                    game.logo = metadata.logo;
+                    if (!isCreator) {
+                        game.defaultLogo = metadata.logo;
+                    }
+                } else if (isCreator || force) {
+                    if (metadata.logo === null) {
+                        game.logo        = null;
+                        game.defaultLogo = null;
+                    } else {
+                        game.logo = game.creatorOriginalLogo || game.defaultLogo || null;
+                    }
+                }
+            }
+        }
+
+        // Provenance fields — always applied regardless of art-lock
+        if (metadata.customArtworkLocked !== undefined) {
+            game.customArtworkLocked = !!metadata.customArtworkLocked;
+        }
+        if (metadata.artworkSource !== undefined) {
+            game.artworkSource = metadata.artworkSource;
+        }
+        if (metadata.artworkUpdatedAt !== undefined) {
+            game.artworkUpdatedAt = metadata.artworkUpdatedAt;
+        }
+        if (metadata.clearCreatorOriginals === true) {
+            delete game.creatorOriginalCover;
+            delete game.creatorOriginalHero;
+            delete game.creatorOriginalLogo;
+        }
+        if (metadata.name !== undefined) {
+            const nextName = String(metadata.name || '').trim();
+            if (nextName) {
+                game.name  = nextName;
+                game.title = nextName;
+            }
+        }
+
+        this.saveDatabase();
+        return { status: 'success' };
+    }
+
     updateGameImage(gameId, newImagePath, type = 'cover') {
         const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
         if (index === -1) return { status: 'error', message: 'Game not found' };

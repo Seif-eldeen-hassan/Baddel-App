@@ -181,6 +181,186 @@ test('JsonGameRepository: getMissingInstalledGames returns the same object refer
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
+// ── updateGameMetadata ────────────────────────────────────────────────────────
+
+test('JsonGameRepository: updateGameMetadata returns error when game not found', async () => {
+    const repo = makeRepo([]);
+    const result = await repo.updateGameMetadata('no-such', {});
+    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+});
+
+test('JsonGameRepository: updateGameMetadata uses String() coercion on gameId', async () => {
+    const repo = makeRepo([game({ id: 42 })]);
+    const result = await repo.updateGameMetadata('42', {});
+    assert.equal(result.status, 'success');
+});
+
+test('JsonGameRepository: updateGameMetadata returns { status: success } on success', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updateGameMetadata('g1', {});
+    assert.deepEqual(result, { status: 'success' });
+});
+
+test('JsonGameRepository: updateGameMetadata does not call saveDatabase on missing game', async () => {
+    const repo = makeRepo([]);
+    let saved = false;
+    repo.saveDatabase = () => { saved = true; };
+    await repo.updateGameMetadata('no-such', {});
+    assert.equal(saved, false);
+});
+
+test('JsonGameRepository: updateGameMetadata schedules saveDatabase when game found', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', {});
+    assert.ok(repo._saveTimer !== null, 'saveDatabase timer must be set');
+    clearTimeout(repo._saveTimer);
+    repo._saveTimer = null;
+});
+
+test('JsonGameRepository: updateGameMetadata sets cover image when not art-locked', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: null })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://new.webp' });
+    assert.equal(repo._dbCache[0].image, 'file://new.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata sets hero image when not art-locked', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { hero: 'file://hero.webp' });
+    assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata accepts heroImage key as alias for hero', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { heroImage: 'file://hero2.webp' });
+    assert.equal(repo._dbCache[0].heroImage, 'file://hero2.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata sets non-creator cover as defaultImage', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://cover.webp' }, { source: 'server' });
+    assert.equal(repo._dbCache[0].defaultImage, 'file://cover.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata creator source does NOT set defaultImage', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://creator.webp' }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].image, 'file://creator.webp');
+    assert.equal(repo._dbCache[0].defaultImage, undefined, 'creator must not set defaultImage');
+});
+
+test('JsonGameRepository: updateGameMetadata creator source backs up creatorOriginalCover', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://old.webp', defaultImage: 'file://old.webp' })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://new.webp' }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].creatorOriginalCover, 'file://old.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata does not overwrite existing creatorOriginalCover', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://second.webp', creatorOriginalCover: 'file://first.webp' })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://third.webp' }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].creatorOriginalCover, 'file://first.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata pipeline source is blocked when artLocked', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://locked.webp', customArtworkLocked: true })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://pipeline.webp' }, { source: 'pipeline' });
+    assert.equal(repo._dbCache[0].image, 'file://locked.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata server source is blocked when artLocked', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://locked.webp', customArtworkLocked: true })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://server.webp' });
+    assert.equal(repo._dbCache[0].image, 'file://locked.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata creator source bypasses artLocked', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://old.webp', customArtworkLocked: true })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://creator.webp' }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].image, 'file://creator.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata pipeline blocked when serverVerified', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://gd.webp', artworkSource: 'server-details', artworkUpdatedAt: Date.now() })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://pipeline.webp' }, { source: 'pipeline' });
+    assert.equal(repo._dbCache[0].image, 'file://gd.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata addManual blocked when serverVerified', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://gd.webp', artworkSource: 'server-details', artworkUpdatedAt: Date.now() })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://manual.webp' }, { source: 'addManual' });
+    assert.equal(repo._dbCache[0].image, 'file://gd.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata default server source allowed even when serverVerified', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://old.webp', artworkSource: 'server-details', artworkUpdatedAt: Date.now() })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://fresh.webp' }, { source: 'server' });
+    assert.equal(repo._dbCache[0].image, 'file://fresh.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata force=true bypasses artLocked', async () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://locked.webp', customArtworkLocked: true })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://forced.webp' }, { source: 'pipeline', force: true });
+    assert.equal(repo._dbCache[0].image, 'file://forced.webp');
+});
+
+test('JsonGameRepository: updateGameMetadata skipArt still applies provenance fields', async () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
+    const ts = Date.now();
+    await repo.updateGameMetadata('g1', {
+        cover: 'file://blocked.webp',
+        artworkSource: 'server-details',
+        artworkUpdatedAt: ts,
+    });
+    assert.equal(repo._dbCache[0].artworkSource, 'server-details');
+    assert.equal(repo._dbCache[0].artworkUpdatedAt, ts);
+});
+
+test('JsonGameRepository: updateGameMetadata sets customArtworkLocked via provenance field', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { customArtworkLocked: true });
+    assert.equal(repo._dbCache[0].customArtworkLocked, true);
+});
+
+test('JsonGameRepository: updateGameMetadata sets artworkSource via provenance field', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updateGameMetadata('g1', { artworkSource: 'creator' });
+    assert.equal(repo._dbCache[0].artworkSource, 'creator');
+});
+
+test('JsonGameRepository: updateGameMetadata clears creatorOriginals when clearCreatorOriginals is true', async () => {
+    const repo = makeRepo([game({ id: 'g1', creatorOriginalCover: 'file://orig.webp', creatorOriginalHero: 'file://h.webp', creatorOriginalLogo: 'file://l.webp' })]);
+    await repo.updateGameMetadata('g1', { clearCreatorOriginals: true });
+    assert.equal('creatorOriginalCover' in repo._dbCache[0], false);
+    assert.equal('creatorOriginalHero'  in repo._dbCache[0], false);
+    assert.equal('creatorOriginalLogo'  in repo._dbCache[0], false);
+});
+
+test('JsonGameRepository: updateGameMetadata sets both name and title via outer name block', async () => {
+    const repo = makeRepo([game({ id: 'g1', name: 'Old', title: 'Old' })]);
+    await repo.updateGameMetadata('g1', { name: 'New Name' });
+    assert.equal(repo._dbCache[0].name,  'New Name');
+    assert.equal(repo._dbCache[0].title, 'New Name');
+});
+
+test('JsonGameRepository: updateGameMetadata outer name block does not apply empty/whitespace name', async () => {
+    const repo = makeRepo([game({ id: 'g1', name: 'Kept', title: 'Kept' })]);
+    await repo.updateGameMetadata('g1', { name: '   ' });
+    assert.equal(repo._dbCache[0].name,  'Kept');
+    assert.equal(repo._dbCache[0].title, 'Kept');
+});
+
+test('JsonGameRepository: updateGameMetadata logo=null from creator clears both logo and defaultLogo', async () => {
+    const repo = makeRepo([game({ id: 'g1', logo: 'file://old-logo.webp', defaultLogo: 'file://old-logo.webp' })]);
+    await repo.updateGameMetadata('g1', { logo: null }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].logo,        null);
+    assert.equal(repo._dbCache[0].defaultLogo, null);
+});
+
+test('JsonGameRepository: updateGameMetadata absent logo key does not touch logo field', async () => {
+    const repo = makeRepo([game({ id: 'g1', logo: 'file://keep.webp' })]);
+    await repo.updateGameMetadata('g1', { cover: 'file://new.webp' }, { source: 'creator' });
+    assert.equal(repo._dbCache[0].logo, 'file://keep.webp');
+});
+
 // ── updateGameImage ───────────────────────────────────────────────────────────
 
 test('JsonGameRepository: updateGameImage returns error shape when game not found', () => {

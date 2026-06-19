@@ -477,8 +477,8 @@ test('game-details.js: fallback path saveMetadata calls include artworkSource an
     assert.match(pathCBody, /artworkUpdatedAt/, 'path C saveMetadata must include artworkUpdatedAt');
 });
 
-test('gameScanner.js: updateGameMetadata skip logic references serverVerified and server-details', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
+test('JsonGameRepository.js: updateGameMetadata skip logic references serverVerified and server-details', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'repositories', 'JsonGameRepository.js'), 'utf8');
     const fnStart = src.indexOf('async updateGameMetadata');
     assert.ok(fnStart !== -1);
     const fnBody = src.slice(fnStart, fnStart + 1200);
