@@ -702,7 +702,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             }
 
             let totalStaleRemoved = 0;
-            for (const game of this.dbCache) {
+            for (const game of this.getAllGames()) {
                 const platform = this._scannerPlatformForGame(game);
                 if (!platform || !scannedPlatforms.has(platform)) continue;
                 if (!this._isScannerOwnedGame(game)) continue;

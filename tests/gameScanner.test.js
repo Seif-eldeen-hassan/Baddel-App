@@ -540,6 +540,101 @@ test('startGlobalScan: stale pass skips games from unscanned platforms', async (
     assert.equal(game.lastMissingScanAt, undefined, 'lastMissingScanAt must not be set for unscanned platform game');
 });
 
+// ── stale-pass backfill fields ────────────────────────────────────────────────
+
+test('startGlobalScan: stale pass backfills installSource to scanner', async () => {
+    // Game is scanner-owned (has scannerPlatform + command) but installSource was never set.
+    // _isScannerOwnedGame falls through to platform+command check when installSource is absent.
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        // installSource: intentionally absent
+        command: 'riot://launch/valorant', // satisfies _isScannerOwnedGame's command check
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    assert.equal(engine.dbCache[0].installSource, 'scanner', 'installSource must be backfilled to scanner');
+});
+
+test('startGlobalScan: stale pass backfills scannerPlatform when inferred from id prefix', async () => {
+    // Game has no scannerPlatform or platform field.
+    // _scannerPlatformForGame falls through to id-prefix check: 'riot-…' → 'riot'.
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'riot-valorant',   // starts with 'riot-' → inferred platform = 'riot'
+        name: 'VALORANT',
+        // scannerPlatform: intentionally absent
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    assert.equal(engine.dbCache[0].scannerPlatform, 'riot', 'scannerPlatform must be backfilled from id prefix');
+});
+
+test('startGlobalScan: stale pass backfills installedGameKey when missing', async () => {
+    // Game is scanner-owned but installedGameKey was never written.
+    // Stale pass calls makeInstalledGameKey(game) and stores the result.
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'steam-440',
+        name: 'Team Fortress 2',
+        scannerPlatform: 'steam',
+        installSource: 'scanner',
+        allIds: { steam: '440' }, // enough for makeInstalledGameKey to produce a steam key
+        // installedGameKey: intentionally absent
+        isInstalled: true,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    const key = engine.dbCache[0].installedGameKey;
+    assert.ok(typeof key === 'string' && key.length > 0, 'installedGameKey must be backfilled when missing');
+});
+
+// ── stale-pass staleRemoved counter ──────────────────────────────────────────
+
+test('startGlobalScan: stale pass increments staleRemoved only for previously visible games', async () => {
+    // Visible game → should increment platform staleRemoved counter once
+    const engineA = makeEngine();
+    engineA.dbCache = [{
+        id: 'riot-valorant', name: 'VALORANT', scannerPlatform: 'riot',
+        installSource: 'scanner', installedGameKey: 'riot:valorant',
+        isInstalled: true, // was visible
+    }];
+    for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
+        engineA[m] = async () => [];
+    await engineA.startGlobalScan();
+    assert.equal(engineA._currentScanReports?.riot?.staleRemoved, 1,
+        'visible game becoming stale must increment staleRemoved');
+
+    // Already-missing game → staleRemoved must stay at 0
+    const engineB = makeEngine();
+    engineB.dbCache = [{
+        id: 'riot-valorant', name: 'VALORANT', scannerPlatform: 'riot',
+        installSource: 'scanner', installedGameKey: 'riot:valorant',
+        isInstalled: false, // already marked missing — wasVisible is false
+    }];
+    for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
+        engineB[m] = async () => [];
+    await engineB.startGlobalScan();
+    assert.equal(engineB._currentScanReports?.riot?.staleRemoved ?? 0, 0,
+        'already-missing game must not increment staleRemoved');
+});
+
 // ── stale-pass: already-missing game ─────────────────────────────────────────
 
 test('startGlobalScan: stale pass updates lastMissingScanAt on game already marked missing', async () => {
