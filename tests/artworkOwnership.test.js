@@ -44,7 +44,7 @@ function makeEngine() {
 
 async function addTestGame(engine, overrides = {}) {
     const id = 'test-' + Math.random().toString(36).slice(2);
-    engine.dbCache.push({
+    engine.getAllGames().push({
         id,
         name: 'Test Game',
         image: null,
@@ -70,7 +70,7 @@ test('updateGameMetadata: pipeline source skips art when customArtworkLocked', a
 
     await engine.updateGameMetadata(id, { cover: 'file://wrong.webp' }, { source: 'pipeline' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://correct.webp', 'pipeline must not overwrite locked cover');
 });
 
@@ -83,7 +83,7 @@ test('updateGameMetadata: server source skips art when customArtworkLocked', asy
 
     await engine.updateGameMetadata(id, { cover: 'file://wrong.webp' }, { source: 'server' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://correct.webp', 'server source must not overwrite locked cover');
 });
 
@@ -96,7 +96,7 @@ test('updateGameMetadata: creator source always writes art even when locked', as
 
     await engine.updateGameMetadata(id, { cover: 'file://new.webp' }, { source: 'creator' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://new.webp', 'creator source must overwrite locked cover');
 });
 
@@ -109,7 +109,7 @@ test('updateGameMetadata: force=true bypasses lock regardless of source', async 
 
     await engine.updateGameMetadata(id, { cover: 'file://forced.webp' }, { source: 'pipeline', force: true });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://forced.webp', 'force=true must bypass lock');
 });
 
@@ -119,7 +119,7 @@ test('updateGameMetadata: default source (server) writes art when NOT locked', a
 
     await engine.updateGameMetadata(id, { cover: 'file://new.webp' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://new.webp', 'unlocked game must accept new cover');
 });
 
@@ -135,7 +135,7 @@ test('updateGameMetadata: sets ownership fields from metadata', async () => {
         artworkUpdatedAt: ts,
     }, { source: 'creator' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.customArtworkLocked, true, 'customArtworkLocked must be set');
     assert.equal(game.artworkSource, 'creator', 'artworkSource must be set');
     assert.equal(game.artworkUpdatedAt, ts, 'artworkUpdatedAt must be set');
@@ -147,7 +147,7 @@ test('updateGameMetadata: logo=null clears logo fields', async () => {
 
     await engine.updateGameMetadata(id, { logo: null }, { source: 'creator' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.logo, null, 'logo must be cleared');
     assert.equal(game.defaultLogo, null, 'defaultLogo must be cleared');
 });
@@ -159,7 +159,7 @@ test('updateGameMetadata: logo=null is a no-op when logo key absent from metadat
     // Pass metadata WITHOUT a 'logo' key — should not touch logo
     await engine.updateGameMetadata(id, { cover: 'file://new.webp' }, { source: 'creator' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.logo, 'file://keep.webp', 'logo must not be cleared when key absent from metadata');
 });
 
@@ -172,7 +172,7 @@ test('updateGameMetadata: pipeline skips hero when locked', async () => {
 
     await engine.updateGameMetadata(id, { hero: 'file://wrong-hero.webp' }, { source: 'pipeline' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.heroImage, 'file://correct-hero.webp', 'pipeline must not overwrite locked hero');
 });
 
@@ -196,7 +196,7 @@ test('backgroundDownload: source is forwarded to updateGameMetadata', async () =
         { source: 'pipeline' }
     );
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://locked.webp', 'backgroundDownload(pipeline) must not overwrite locked cover');
 });
 
@@ -328,7 +328,7 @@ test('server-details: pipeline cannot overwrite server-details-verified artwork'
         artworkUpdatedAt: Date.now(),
     }, { source: 'server-details' });
 
-    let game = engine.dbCache.find(g => g.id === id);
+    let game = engine.getGameById(id);
     assert.equal(game.image, 'file://correct.webp', 'server-details save must write correct cover');
     assert.equal(game.artworkSource, 'server-details', 'artworkSource must be set');
     assert.ok(game.artworkUpdatedAt > 0, 'artworkUpdatedAt must be set');
@@ -336,7 +336,7 @@ test('server-details: pipeline cannot overwrite server-details-verified artwork'
     // Step 3 — delayed backgroundDownload / pipeline tries to write old wrong cover
     await engine.updateGameMetadata(id, { cover: 'file://wrong.webp' }, { source: 'pipeline' });
 
-    game = engine.dbCache.find(g => g.id === id);
+    game = engine.getGameById(id);
     // Step 4 — final image must remain the correct GD-resolved cover
     assert.equal(game.image, 'file://correct.webp', 'pipeline must not overwrite server-details cover');
     assert.equal(game.defaultImage, 'file://correct.webp', 'defaultImage must remain correct');
@@ -355,7 +355,7 @@ test('server-details: addManual backgroundDownload cannot overwrite server-detai
     // Simulate delayed addManual backgroundDownload (source='addManual')
     await engine.updateGameMetadata(id, { cover: 'file://wrong.webp' }, { source: 'addManual' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://correct.webp', 'addManual must not overwrite server-details cover');
 });
 
@@ -377,7 +377,7 @@ test('server-details: fresh server-details write CAN overwrite an older server-d
         artworkUpdatedAt: Date.now(),
     }, { source: 'server-details' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://better.webp', 'newer server-details write must win');
 });
 
@@ -398,7 +398,7 @@ test('server-details: creator write always beats server-details', async () => {
         artworkUpdatedAt:    Date.now(),
     }, { source: 'creator' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://creator-art.webp', 'creator must overwrite server-details');
     assert.equal(game.customArtworkLocked, true, 'customArtworkLocked must be set by creator');
 });
@@ -413,7 +413,7 @@ test('server-details: creator-locked artwork blocks server-details writes', asyn
         artworkUpdatedAt: Date.now(),
     }, { source: 'server-details' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://creator.webp', 'server-details must not overwrite creator-locked art');
 });
 
@@ -433,7 +433,7 @@ test('server-details: hero and logo are also protected from pipeline', async () 
         logo: 'file://wrong-logo.webp',
     }, { source: 'pipeline' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.heroImage, 'file://correct-hero.webp', 'pipeline must not overwrite server-details hero');
     assert.equal(game.logo,      'file://correct-logo.webp', 'pipeline must not overwrite server-details logo');
 });
@@ -451,7 +451,7 @@ test('server-details: default server source (processQueue) CAN still update art'
     // Default 'server' source (from processQueue cacheAllAssets callback) is NOT blocked
     await engine.updateGameMetadata(id, { cover: 'file://fresh-server.webp' }, { source: 'server' });
 
-    const game = engine.dbCache.find(g => g.id === id);
+    const game = engine.getGameById(id);
     assert.equal(game.image, 'file://fresh-server.webp', 'default server source must still update server-details art');
 });
 
