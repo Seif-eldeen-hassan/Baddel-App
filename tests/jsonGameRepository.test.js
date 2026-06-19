@@ -448,3 +448,314 @@ test('JsonGameRepository: _migrateLnkRecords is a no-op for non-lnk games', () =
     const stored = repo._dbCache[0];
     assert.equal(stored.path, undefined, 'path must not be touched for non-lnk games');
 });
+
+// ── updatePlaytime ────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: updatePlaytime returns error when game not found', async () => {
+    const repo = makeRepo([]);
+    const result = await repo.updatePlaytime('no-such', 10);
+    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+});
+
+test('JsonGameRepository: updatePlaytime returns tracking_disabled when timeTrackingEnabled === false', async () => {
+    const repo = makeRepo([game({ id: 'g1', timeTrackingEnabled: false })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    assert.deepEqual(result, { status: 'tracking_disabled' });
+});
+
+test('JsonGameRepository: updatePlaytime initializes totalPlaytime from zero when field missing', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updatePlaytime('g1', 30);
+    assert.equal(result.status, 'success');
+    assert.equal(result.totalPlaytime, 30);
+});
+
+test('JsonGameRepository: updatePlaytime accumulates totalPlaytime on repeated calls', async () => {
+    const repo = makeRepo([game({ id: 'g1', totalPlaytime: 20 })]);
+    await repo.updatePlaytime('g1', 15);
+    const result = await repo.updatePlaytime('g1', 5);
+    assert.equal(result.totalPlaytime, 40);
+});
+
+test('JsonGameRepository: updatePlaytime sets lastPlayed to a recent timestamp', async () => {
+    const before = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    assert.ok(result.lastPlayed >= before, 'lastPlayed must be >= call time');
+});
+
+test('JsonGameRepository: updatePlaytime initializes playSessions when missing', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    assert.ok(Array.isArray(result.playSessions));
+    assert.equal(result.playSessions.length, 1);
+});
+
+test('JsonGameRepository: updatePlaytime adds legacy session entry for today', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    const today = new Date().toISOString().split('T')[0];
+    const entry = result.playSessions.find(s => s.date === today && !s.startedAt);
+    assert.ok(entry, 'must have a legacy session entry for today');
+    assert.equal(entry.minutes, 10);
+});
+
+test('JsonGameRepository: updatePlaytime accumulates minutes into existing legacy session for today', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const repo = makeRepo([game({ id: 'g1', playSessions: [{ date: today, minutes: 5 }] })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    const entry = result.playSessions.find(s => s.date === today && !s.startedAt);
+    assert.equal(entry.minutes, 15);
+});
+
+test('JsonGameRepository: updatePlaytime does not merge into rich session (has startedAt)', async () => {
+    const today = new Date().toISOString().split('T')[0];
+    const richSession = { date: today, startedAt: Date.now() - 1000, minutes: 5 };
+    const repo = makeRepo([game({ id: 'g1', playSessions: [richSession] })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    assert.equal(result.playSessions.length, 2, 'must push a new entry, not merge into rich session');
+});
+
+test('JsonGameRepository: updatePlaytime returns success shape with all required fields', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.updatePlaytime('g1', 10);
+    assert.equal(result.status, 'success');
+    assert.ok('totalPlaytime'       in result);
+    assert.ok('lastPlayed'          in result);
+    assert.ok('lastQualifiedPlayed' in result);
+    assert.ok('playSessions'        in result);
+});
+
+test('JsonGameRepository: updatePlaytime schedules saveDatabase', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.updatePlaytime('g1', 10);
+    assert.ok(repo._saveTimer !== null, 'saveDatabase debounce timer must be set');
+    clearTimeout(repo._saveTimer);
+    repo._saveTimer = null;
+});
+
+// ── saveQualifiedSession ──────────────────────────────────────────────────────
+
+test('JsonGameRepository: saveQualifiedSession returns error when game not found', async () => {
+    const repo = makeRepo([]);
+    const result = await repo.saveQualifiedSession('no-such', {});
+    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+});
+
+test('JsonGameRepository: saveQualifiedSession returns tracking_disabled when disabled', async () => {
+    const repo = makeRepo([game({ id: 'g1', timeTrackingEnabled: false })]);
+    const result = await repo.saveQualifiedSession('g1', {});
+    assert.deepEqual(result, { status: 'tracking_disabled' });
+});
+
+test('JsonGameRepository: saveQualifiedSession accumulates totalPlaytime when countedMinutes > 0', async () => {
+    const repo = makeRepo([game({ id: 'g1', totalPlaytime: 10 })]);
+    const result = await repo.saveQualifiedSession('g1', { countedMinutes: 20, endedAt: Date.now() });
+    assert.equal(result.totalPlaytime, 30);
+});
+
+test('JsonGameRepository: saveQualifiedSession does not change totalPlaytime when countedMinutes === 0', async () => {
+    const repo = makeRepo([game({ id: 'g1', totalPlaytime: 10 })]);
+    const result = await repo.saveQualifiedSession('g1', { countedMinutes: 0, endedAt: Date.now() });
+    assert.equal(result.totalPlaytime, 10);
+});
+
+test('JsonGameRepository: saveQualifiedSession sets lastDetectedPlayed always', async () => {
+    const endedAt = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.saveQualifiedSession('g1', { countedMinutes: 0, endedAt });
+    assert.equal(repo._dbCache[0].lastDetectedPlayed, endedAt);
+});
+
+test('JsonGameRepository: saveQualifiedSession sets lastPlayed only when countedMinutes > 0', async () => {
+    const endedAt = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.saveQualifiedSession('g1', { countedMinutes: 0, endedAt });
+    assert.equal(repo._dbCache[0].lastPlayed, undefined, 'lastPlayed must not be set when countedMinutes === 0');
+
+    const repo2 = makeRepo([game({ id: 'g1' })]);
+    await repo2.saveQualifiedSession('g1', { countedMinutes: 5, endedAt });
+    assert.equal(repo2._dbCache[0].lastPlayed, endedAt);
+});
+
+test('JsonGameRepository: saveQualifiedSession sets lastQualifiedPlayed only when isQualified', async () => {
+    const endedAt = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.saveQualifiedSession('g1', { countedMinutes: 5, isQualified: false, endedAt });
+    assert.equal(repo._dbCache[0].lastQualifiedPlayed, undefined);
+
+    const repo2 = makeRepo([game({ id: 'g1' })]);
+    const result = await repo2.saveQualifiedSession('g1', { countedMinutes: 5, isQualified: true, endedAt });
+    assert.equal(result.lastQualifiedPlayed, endedAt);
+});
+
+test('JsonGameRepository: saveQualifiedSession pushes rich session record with all fields', async () => {
+    const endedAt = Date.now();
+    const startedAt = endedAt - 60000;
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.saveQualifiedSession('g1', {
+        countedMinutes: 10,
+        totalCountedMinutes: 12,
+        rawRuntimeMinutes: 15,
+        idleMinutes: 2,
+        backgroundMinutes: 1,
+        foregroundSeen: true,
+        confidence: 'high',
+        endReason: 'process_exit',
+        startedAt,
+        endedAt,
+        isQualified: true,
+    });
+    assert.equal(result.status, 'success');
+    const session = result.playSessions[result.playSessions.length - 1];
+    assert.equal(session.startedAt, startedAt);
+    assert.equal(session.endedAt, endedAt);
+    assert.equal(session.minutes, 12);
+    assert.equal(session.countedMinutes, 12);
+    assert.equal(session.rawRuntimeMinutes, 15);
+    assert.equal(session.idleMinutes, 2);
+    assert.equal(session.backgroundMinutes, 1);
+    assert.equal(session.foregroundSeen, true);
+    assert.equal(session.confidence, 'high');
+    assert.equal(session.endReason, 'process_exit');
+    assert.equal(session.qualified, true);
+});
+
+test('JsonGameRepository: saveQualifiedSession uses totalCountedMinutes for session.minutes', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.saveQualifiedSession('g1', {
+        countedMinutes: 10,
+        totalCountedMinutes: 18,
+        endedAt: Date.now(),
+    });
+    const session = result.playSessions[0];
+    assert.equal(session.minutes, 18);
+    assert.equal(session.countedMinutes, 18);
+});
+
+test('JsonGameRepository: saveQualifiedSession defaults totalCountedMinutes to countedMinutes when absent', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.saveQualifiedSession('g1', { countedMinutes: 7, endedAt: Date.now() });
+    const session = result.playSessions[0];
+    assert.equal(session.minutes, 7);
+});
+
+test('JsonGameRepository: saveQualifiedSession trims playSessions to 500', async () => {
+    const sessions = Array.from({ length: 500 }, (_, i) => ({
+        date: '2024-01-01', startedAt: i, endedAt: i + 1, minutes: 1,
+        countedMinutes: 1, rawRuntimeMinutes: 1, idleMinutes: 0,
+        backgroundMinutes: 0, foregroundSeen: false, confidence: 'medium',
+        endReason: '', qualified: false,
+    }));
+    const repo = makeRepo([game({ id: 'g1', playSessions: sessions })]);
+    await repo.saveQualifiedSession('g1', { countedMinutes: 1, endedAt: Date.now() });
+    assert.equal(repo._dbCache[0].playSessions.length, 500, 'must trim to 500');
+});
+
+test('JsonGameRepository: saveQualifiedSession returns correct shape', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.saveQualifiedSession('g1', { countedMinutes: 5, isQualified: true, endedAt: Date.now() });
+    assert.equal(result.status, 'success');
+    assert.ok('totalPlaytime'       in result);
+    assert.ok('lastPlayed'          in result);
+    assert.ok('lastQualifiedPlayed' in result);
+    assert.ok('playSessions'        in result);
+    assert.equal(result.sessionQualified, true);
+});
+
+// ── setTimeTrackingEnabled ────────────────────────────────────────────────────
+
+test('JsonGameRepository: setTimeTrackingEnabled returns error when game not found', async () => {
+    const repo = makeRepo([]);
+    const result = await repo.setTimeTrackingEnabled('no-such', true);
+    assert.equal(result.status, 'error');
+    assert.equal(result.error, 'Game not found');
+    assert.equal(result.gameId, 'no-such');
+});
+
+test('JsonGameRepository: setTimeTrackingEnabled sets flag to true', async () => {
+    const repo = makeRepo([game({ id: 'g1', timeTrackingEnabled: false })]);
+    const result = await repo.setTimeTrackingEnabled('g1', true);
+    assert.equal(result.status, 'success');
+    assert.equal(result.timeTrackingEnabled, true);
+    assert.equal(repo._dbCache[0].timeTrackingEnabled, true);
+});
+
+test('JsonGameRepository: setTimeTrackingEnabled sets flag to false', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.setTimeTrackingEnabled('g1', false);
+    assert.equal(result.status, 'success');
+    assert.equal(result.timeTrackingEnabled, false);
+});
+
+test('JsonGameRepository: setTimeTrackingEnabled coerces to boolean via !!', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.setTimeTrackingEnabled('g1', 1);
+    assert.equal(typeof repo._dbCache[0].timeTrackingEnabled, 'boolean');
+    assert.equal(repo._dbCache[0].timeTrackingEnabled, true);
+});
+
+test('JsonGameRepository: setTimeTrackingEnabled returns gameId in success shape', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = await repo.setTimeTrackingEnabled('g1', true);
+    assert.equal(result.gameId, 'g1');
+});
+
+test('JsonGameRepository: setTimeTrackingEnabled schedules saveDatabase', async () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    await repo.setTimeTrackingEnabled('g1', true);
+    assert.ok(repo._saveTimer !== null, 'saveDatabase timer must be set');
+    clearTimeout(repo._saveTimer);
+    repo._saveTimer = null;
+});
+
+// ── getTimeTrackingEnabled ────────────────────────────────────────────────────
+
+test('JsonGameRepository: getTimeTrackingEnabled returns error when game not found', () => {
+    const repo = makeRepo([]);
+    const result = repo.getTimeTrackingEnabled('no-such');
+    assert.equal(result.status, 'error');
+    assert.equal(result.error, 'Game not found');
+    assert.equal(result.gameId, 'no-such');
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled returns true when field is absent (default on)', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.getTimeTrackingEnabled('g1');
+    assert.equal(result.status, 'success');
+    assert.equal(result.timeTrackingEnabled, true, 'absent field must default to true');
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled returns false when field is false', () => {
+    const repo = makeRepo([game({ id: 'g1', timeTrackingEnabled: false })]);
+    const result = repo.getTimeTrackingEnabled('g1');
+    assert.equal(result.status, 'success');
+    assert.equal(result.timeTrackingEnabled, false);
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled returns true when field is true', () => {
+    const repo = makeRepo([game({ id: 'g1', timeTrackingEnabled: true })]);
+    const result = repo.getTimeTrackingEnabled('g1');
+    assert.equal(result.status, 'success');
+    assert.equal(result.timeTrackingEnabled, true);
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled does not call saveDatabase', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    let saveCalled = false;
+    repo.saveDatabase = () => { saveCalled = true; };
+    repo.getTimeTrackingEnabled('g1');
+    assert.equal(saveCalled, false, 'getTimeTrackingEnabled must not persist');
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled is synchronous (not a Promise)', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.getTimeTrackingEnabled('g1');
+    assert.ok(!(result instanceof Promise), 'must return a plain object, not a Promise');
+});
+
+test('JsonGameRepository: getTimeTrackingEnabled returns gameId in result', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.getTimeTrackingEnabled('g1');
+    assert.equal(result.gameId, 'g1');
+});

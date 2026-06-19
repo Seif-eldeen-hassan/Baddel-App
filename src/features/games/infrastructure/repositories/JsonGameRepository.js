@@ -249,6 +249,125 @@ class JsonGameRepository {
             return { status: 'error' };
         }
     }
+
+    // ─── Playtime / session mutations ─────────────────────────────────────────
+
+    async updatePlaytime(gameId, playedMinutes) {
+        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
+        if (index === -1) return { status: 'error', message: 'Game not found' };
+
+        const game = this._dbCache[index];
+        if (game.timeTrackingEnabled === false) return { status: 'tracking_disabled' };
+
+        game.totalPlaytime = (game.totalPlaytime || 0) + playedMinutes;
+        game.lastPlayed = Date.now();
+
+        if (!game.playSessions) game.playSessions = [];
+        const today = new Date().toISOString().split('T')[0];
+        const legacySession = game.playSessions.find(s => s.date === today && !s.startedAt);
+        if (legacySession) legacySession.minutes = (legacySession.minutes || 0) + playedMinutes;
+        else game.playSessions.push({ date: today, minutes: playedMinutes });
+
+        this.saveDatabase();
+        return {
+            status: 'success',
+            totalPlaytime: game.totalPlaytime,
+            lastPlayed: game.lastPlayed,
+            lastQualifiedPlayed: game.lastQualifiedPlayed,
+            playSessions: game.playSessions,
+        };
+    }
+
+    async saveQualifiedSession(gameId, sessionData) {
+        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
+        if (index === -1) return { status: 'error', message: 'Game not found' };
+
+        const game = this._dbCache[index];
+        if (game.timeTrackingEnabled === false) return { status: 'tracking_disabled' };
+
+        const {
+            countedMinutes      = 0,
+            totalCountedMinutes = countedMinutes,
+            rawRuntimeMinutes   = 0,
+            idleMinutes         = 0,
+            backgroundMinutes   = 0,
+            foregroundSeen      = false,
+            confidence          = 'medium',
+            endReason           = '',
+            startedAt           = Date.now(),
+            endedAt             = Date.now(),
+            isQualified         = false,
+        } = sessionData;
+
+        if (countedMinutes > 0) {
+            game.totalPlaytime     = (game.totalPlaytime     || 0) + countedMinutes;
+            game.rawRuntimeMinutes = (game.rawRuntimeMinutes || 0) + rawRuntimeMinutes;
+            game.idleMinutes       = (game.idleMinutes       || 0) + idleMinutes;
+            game.backgroundMinutes = (game.backgroundMinutes || 0) + backgroundMinutes;
+        }
+
+        game.lastDetectedPlayed = endedAt;
+
+        if (countedMinutes > 0) {
+            game.lastPlayed = endedAt;
+        }
+        if (isQualified) {
+            game.lastQualifiedPlayed = endedAt;
+        }
+
+        if (!game.playSessions) game.playSessions = [];
+        const today = new Date(endedAt).toISOString().split('T')[0];
+        game.playSessions.push({
+            date:             today,
+            startedAt,
+            endedAt,
+            minutes:          totalCountedMinutes,
+            countedMinutes:   totalCountedMinutes,
+            rawRuntimeMinutes,
+            idleMinutes,
+            backgroundMinutes,
+            foregroundSeen,
+            confidence,
+            endReason,
+            qualified:        isQualified,
+        });
+
+        if (game.playSessions.length > 500) {
+            game.playSessions = game.playSessions.slice(-500);
+        }
+
+        this.saveDatabase();
+        return {
+            status:              'success',
+            totalPlaytime:       game.totalPlaytime,
+            lastPlayed:          game.lastPlayed,
+            lastQualifiedPlayed: game.lastQualifiedPlayed,
+            playSessions:        game.playSessions,
+            sessionQualified:    isQualified,
+        };
+    }
+
+    async setTimeTrackingEnabled(gameId, enabled) {
+        try {
+            const game = this._dbCache.find(g => String(g.id) === String(gameId));
+            if (!game) return { status: 'error', error: 'Game not found', gameId };
+            game.timeTrackingEnabled = !!enabled;
+            this.saveDatabase();
+            return { status: 'success', gameId, timeTrackingEnabled: game.timeTrackingEnabled };
+        } catch (err) {
+            return { status: 'error', error: err.message, gameId };
+        }
+    }
+
+    getTimeTrackingEnabled(gameId) {
+        try {
+            const game = this._dbCache.find(g => String(g.id) === String(gameId));
+            if (!game) return { status: 'error', error: 'Game not found', gameId };
+            return { status: 'success', gameId, timeTrackingEnabled: game.timeTrackingEnabled !== false };
+        } catch (err) {
+            return { status: 'error', error: err.message, gameId };
+        }
+    }
 }
 
 module.exports = { JsonGameRepository };
