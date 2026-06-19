@@ -277,67 +277,24 @@ class BaddelEngine {
     updateGameImage(gameId, newImagePath, type = 'cover') { return this._jsonGameRepository.updateGameImage(gameId, newImagePath, type); }
 
     async resetGameImage(gameId, type = 'cover', opts = {}) {
-    const index = this.dbCache.findIndex(g => String(g.id) === String(gameId));
-    if (index === -1) return { status: 'error', message: 'Game not found' };
+        const game = this._jsonGameRepository.getGameById(gameId);
+        if (!game) return { status: 'error', message: 'Game not found' };
 
-    const game = this.dbCache[index];
-    const now = Date.now();
+        const resetAll = type === 'all' || opts.all === true;
 
-    const resetOne = (kind) => {
-        let restoredPath = null;
-
-        if (kind === 'hero') {
-            restoredPath = game.defaultHero || this.findInCache(gameId, 'hero') || null;
-            game.heroImage = restoredPath;
-            return restoredPath;
+        const resolvedPaths = {};
+        if (resetAll || type === 'cover') {
+            resolvedPaths.cover = game.defaultImage || this._imageCacheService.findInCache(gameId, 'cover') || null;
+        }
+        if (resetAll || type === 'hero') {
+            resolvedPaths.hero = game.defaultHero || this._imageCacheService.findInCache(gameId, 'hero') || null;
+        }
+        if (resetAll || type === 'logo') {
+            resolvedPaths.logo = game.defaultLogo || this._imageCacheService.findInCache(gameId, 'logo') || null;
         }
 
-        if (kind === 'logo') {
-            restoredPath = game.defaultLogo || this.findInCache(gameId, 'logo') || null;
-            game.logo = restoredPath;
-            return restoredPath;
-        }
-
-        restoredPath = game.defaultImage || this.findInCache(gameId, 'cover') || null;
-        game.image = restoredPath;
-        return restoredPath;
-    };
-
-    const resetAll = type === 'all' || opts.all === true;
-
-    const result = {
-        status: 'success',
-        type,
-        cover: null,
-        hero: null,
-        logo: null,
-    };
-
-    if (resetAll) {
-        result.cover = resetOne('cover');
-        result.hero = resetOne('hero');
-        result.logo = resetOne('logo');
-
-        // رجوع كامل لوضع launcher/server default
-        game.customArtworkLocked = false;
-        game.artworkSource = 'reset';
-        game.artworkUpdatedAt = now;
-
-        delete game.creatorOriginalCover;
-        delete game.creatorOriginalHero;
-        delete game.creatorOriginalLogo;
-    } else {
-        const restoredPath = resetOne(type);
-        result.path = restoredPath;
-
-        // reset single image لا يغيّر lock العام عشان ممكن يكون فيه صورة تانية custom
-        game.artworkSource = game.customArtworkLocked ? 'creator' : 'reset';
-        game.artworkUpdatedAt = now;
+        return this._jsonGameRepository.applyImageReset(gameId, resolvedPaths, { type, resetAll });
     }
-
-    this.saveDatabase();
-    return result;
-}
 
     findInCache(gameId, type)  { return this._imageCacheService.findInCache(gameId, type); }
 

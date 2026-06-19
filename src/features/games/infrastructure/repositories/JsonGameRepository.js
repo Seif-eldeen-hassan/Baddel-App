@@ -15,6 +15,7 @@
 //
 // What this class does NOT do:
 //   • deleteGamePermanently orchestration (cross-cutting: images, mrm, metadata cache)
+//   • Path resolution via ImageCacheService — that stays in BaddelEngine
 //   • Scan / upsert / metadata / image / playtime operations
 //   • Import Electron, IPC, analytics, or mainWindow
 //
@@ -318,6 +319,51 @@ class JsonGameRepository {
             artworkSource: 'creator',
             artworkUpdatedAt: game.artworkUpdatedAt,
         };
+    }
+
+    applyImageReset(gameId, resolvedPaths, { type = 'cover', resetAll = false } = {}) {
+        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
+        if (index === -1) return { status: 'error', message: 'Game not found' };
+
+        const game  = this._dbCache[index];
+        const paths = resolvedPaths || {};
+        const now   = Date.now();
+
+        if (resetAll) {
+            const cover = paths.cover ?? null;
+            const hero  = paths.hero  ?? null;
+            const logo  = paths.logo  ?? null;
+
+            game.image     = cover;
+            game.heroImage = hero;
+            game.logo      = logo;
+
+            game.customArtworkLocked = false;
+            game.artworkSource       = 'reset';
+            game.artworkUpdatedAt    = now;
+
+            delete game.creatorOriginalCover;
+            delete game.creatorOriginalHero;
+            delete game.creatorOriginalLogo;
+
+            this.saveDatabase();
+            return { status: 'success', type, cover, hero, logo };
+        }
+
+        const restoredPath =
+            type === 'hero' ? (paths.hero  ?? null) :
+            type === 'logo' ? (paths.logo  ?? null) :
+                              (paths.cover ?? null);
+
+        if (type === 'hero')      game.heroImage = restoredPath;
+        else if (type === 'logo') game.logo      = restoredPath;
+        else                      game.image     = restoredPath;
+
+        game.artworkSource    = game.customArtworkLocked ? 'creator' : 'reset';
+        game.artworkUpdatedAt = now;
+
+        this.saveDatabase();
+        return { status: 'success', type, cover: null, hero: null, logo: null, path: restoredPath };
     }
 
     // ─── Mutations ────────────────────────────────────────────────────────────

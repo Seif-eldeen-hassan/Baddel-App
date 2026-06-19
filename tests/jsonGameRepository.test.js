@@ -506,6 +506,161 @@ test('JsonGameRepository: updateGameImage schedules saveDatabase on success', ()
     repo._saveTimer = null;
 });
 
+// ── applyImageReset ───────────────────────────────────────────────────────────
+
+test('JsonGameRepository: applyImageReset returns error shape when game not found', () => {
+    const repo = makeRepo([]);
+    const result = repo.applyImageReset('no-such', {}, { type: 'cover', resetAll: false });
+    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+});
+
+test('JsonGameRepository: applyImageReset single cover writes game.image', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1', { cover: 'file://cover.webp' }, { type: 'cover', resetAll: false });
+    assert.equal(repo._dbCache[0].image, 'file://cover.webp');
+});
+
+test('JsonGameRepository: applyImageReset single hero writes game.heroImage', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1', { hero: 'file://hero.webp' }, { type: 'hero', resetAll: false });
+    assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
+});
+
+test('JsonGameRepository: applyImageReset single logo writes game.logo', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1', { logo: 'file://logo.webp' }, { type: 'logo', resetAll: false });
+    assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
+});
+
+test('JsonGameRepository: applyImageReset single reset writes null when resolved path is null', () => {
+    const repo = makeRepo([game({ id: 'g1', image: 'file://old.webp' })]);
+    repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
+    assert.equal(repo._dbCache[0].image, null);
+});
+
+test('JsonGameRepository: applyImageReset single sets artworkSource=creator when customArtworkLocked is true', () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
+    repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
+    assert.equal(repo._dbCache[0].artworkSource, 'creator');
+});
+
+test('JsonGameRepository: applyImageReset single sets artworkSource=reset when customArtworkLocked is false', () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: false })]);
+    repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
+    assert.equal(repo._dbCache[0].artworkSource, 'reset');
+});
+
+test('JsonGameRepository: applyImageReset single does not change customArtworkLocked', () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
+    repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
+    assert.equal(repo._dbCache[0].customArtworkLocked, true, 'single reset must not unlock artwork');
+});
+
+test('JsonGameRepository: applyImageReset single sets artworkUpdatedAt to a recent timestamp', () => {
+    const before = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
+    const after = Date.now();
+    const ts = repo._dbCache[0].artworkUpdatedAt;
+    assert.ok(ts >= before && ts <= after, 'artworkUpdatedAt must be set to approximately now');
+});
+
+test('JsonGameRepository: applyImageReset single returns exact legacy shape', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.applyImageReset('g1', { cover: 'file://c.webp' }, { type: 'cover', resetAll: false });
+    assert.equal(result.status, 'success');
+    assert.equal(result.type, 'cover');
+    assert.equal(result.cover, null);
+    assert.equal(result.hero, null);
+    assert.equal(result.logo, null);
+    assert.equal(result.path, 'file://c.webp');
+    assert.ok(!('cover' in result && result.cover !== null), 'cover must be null in single shape');
+});
+
+test('JsonGameRepository: applyImageReset resetAll writes all three image fields', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1',
+        { cover: 'file://c.webp', hero: 'file://h.webp', logo: 'file://l.webp' },
+        { type: 'all', resetAll: true }
+    );
+    const g = repo._dbCache[0];
+    assert.equal(g.image,     'file://c.webp');
+    assert.equal(g.heroImage, 'file://h.webp');
+    assert.equal(g.logo,      'file://l.webp');
+});
+
+test('JsonGameRepository: applyImageReset resetAll sets customArtworkLocked=false', () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
+    repo.applyImageReset('g1', {}, { type: 'all', resetAll: true });
+    assert.equal(repo._dbCache[0].customArtworkLocked, false);
+});
+
+test('JsonGameRepository: applyImageReset resetAll sets artworkSource=reset', () => {
+    const repo = makeRepo([game({ id: 'g1', artworkSource: 'creator' })]);
+    repo.applyImageReset('g1', {}, { type: 'all', resetAll: true });
+    assert.equal(repo._dbCache[0].artworkSource, 'reset');
+});
+
+test('JsonGameRepository: applyImageReset resetAll deletes creatorOriginal fields', () => {
+    const repo = makeRepo([game({
+        id: 'g1',
+        creatorOriginalCover: 'file://old-c.webp',
+        creatorOriginalHero:  'file://old-h.webp',
+        creatorOriginalLogo:  'file://old-l.webp',
+    })]);
+    repo.applyImageReset('g1', {}, { type: 'all', resetAll: true });
+    const g = repo._dbCache[0];
+    assert.ok(!('creatorOriginalCover' in g), 'creatorOriginalCover must be deleted');
+    assert.ok(!('creatorOriginalHero'  in g), 'creatorOriginalHero must be deleted');
+    assert.ok(!('creatorOriginalLogo'  in g), 'creatorOriginalLogo must be deleted');
+});
+
+test('JsonGameRepository: applyImageReset resetAll sets artworkUpdatedAt', () => {
+    const before = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.applyImageReset('g1', {}, { type: 'all', resetAll: true });
+    const after = Date.now();
+    const ts = repo._dbCache[0].artworkUpdatedAt;
+    assert.ok(ts >= before && ts <= after);
+});
+
+test('JsonGameRepository: applyImageReset resetAll returns exact legacy shape', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.applyImageReset('g1',
+        { cover: 'file://c.webp', hero: 'file://h.webp', logo: null },
+        { type: 'all', resetAll: true }
+    );
+    assert.equal(result.status, 'success');
+    assert.equal(result.type, 'all');
+    assert.equal(result.cover, 'file://c.webp');
+    assert.equal(result.hero,  'file://h.webp');
+    assert.equal(result.logo,  null);
+    assert.ok(!('path' in result), 'resetAll shape must not have .path key');
+});
+
+test('JsonGameRepository: applyImageReset schedules saveDatabase when game is found', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.applyImageReset('g1', {}, { type: 'cover', resetAll: false });
+    assert.equal(saveCalled, true);
+});
+
+test('JsonGameRepository: applyImageReset does not call saveDatabase when game not found', () => {
+    const repo = makeRepo([]);
+    let saveCalled = false;
+    repo.saveDatabase = () => { saveCalled = true; };
+    repo.applyImageReset('no-such', {}, { type: 'cover', resetAll: false });
+    assert.equal(saveCalled, false);
+});
+
+test('JsonGameRepository: applyImageReset uses String() coercion for gameId lookup', () => {
+    const repo = makeRepo([game({ id: 42 })]);
+    const result = repo.applyImageReset('42', { cover: 'file://c.webp' }, { type: 'cover', resetAll: false });
+    assert.equal(result.status, 'success');
+});
+
 // ── generateStableId ──────────────────────────────────────────────────────────
 
 test('JsonGameRepository: generateStableId is deterministic for same command', () => {
