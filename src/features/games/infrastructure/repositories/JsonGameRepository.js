@@ -187,6 +187,25 @@ class JsonGameRepository {
         return this._dbCache.find(g => String(g.id) === String(gameId)) || null;
     }
 
+    /**
+     * Finds an existing game whose stored command or executablePath matches the
+     * supplied paths after normalisation.
+     * Incoming paths: path.normalize + lowercase + trim (no quote-strip).
+     * Stored fields:  path.normalize + quote-strip + trim + lowercase.
+     * Searches the full cache — includes hidden and isInstalled === false records.
+     * Returns the live object reference, or null when no match exists.
+     * Does not mutate. Does not call saveDatabase.
+     */
+    findManualGameByPaths(launchPath, effectivePath) {
+        const normalizeIncoming = v => this._path.normalize(v || '').toLowerCase().trim();
+        const normalizeStored   = v => this._path.normalize((v || '').replace(/"/g, '').trim()).toLowerCase();
+        const wantCmd = normalizeIncoming(launchPath);
+        const wantExe = normalizeIncoming(effectivePath);
+        return this._dbCache.find(g =>
+            normalizeStored(g.command) === wantCmd || normalizeStored(g.executablePath) === wantExe
+        ) || null;
+    }
+
     // ─── Image mutations ──────────────────────────────────────────────────────
 
     async updateGameMetadata(gameId, metadata, { source = 'server', force = false } = {}) {

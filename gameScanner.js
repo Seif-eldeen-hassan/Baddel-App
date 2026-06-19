@@ -465,15 +465,8 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             const tempId = this.generateStableId({ command: effectivePath, name: customName || exeName });
 
             // ── Duplicate / re-add check ───────────────────────────────────────
-            const normalizedLaunchPath    = path.normalize(launchPath).toLowerCase().trim();
-            const normalizedEffectivePath = path.normalize(effectivePath).toLowerCase().trim();
-            const existingIndex = this.dbCache.findIndex(g => {
-                const cmd = path.normalize((g.command || '').replace(/"/g, '').trim()).toLowerCase();
-                const exe = path.normalize((g.executablePath || '').replace(/"/g, '').trim()).toLowerCase();
-                return cmd === normalizedLaunchPath || exe === normalizedEffectivePath;
-            });
-            if (existingIndex > -1) {
-                const existing = this.dbCache[existingIndex];
+            const existing = this._jsonGameRepository.findManualGameByPaths(launchPath, effectivePath);
+            if (existing) {
                 if (existing.isHidden) { existing.isHidden = false; this.saveDatabase(); }
                 return { status: 'success', game: existing };
             }

@@ -269,6 +269,94 @@ test('JsonGameRepository: getGameById does not call saveDatabase', () => {
     assert.equal(saved, false);
 });
 
+// ── findManualGameByPaths ─────────────────────────────────────────────────────
+
+test('JsonGameRepository: findManualGameByPaths returns null when no match exists', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\other.exe', executablePath: 'C:\\games\\other.exe' })]);
+    assert.equal(repo.findManualGameByPaths('C:\\games\\missing.exe', 'C:\\games\\missing.exe'), null);
+});
+
+test('JsonGameRepository: findManualGameByPaths returns null on empty DB', () => {
+    const repo = makeRepo([]);
+    assert.equal(repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\games\\test.exe'), null);
+});
+
+test('JsonGameRepository: findManualGameByPaths matches by command path', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: null })]);
+    const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\something\\else.exe');
+    assert.ok(result !== null, 'must find a match by command');
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: findManualGameByPaths matches by executablePath', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\unrelated.exe', executablePath: 'C:\\games\\real.exe' })]);
+    const result = repo.findManualGameByPaths('C:\\no-match.exe', 'C:\\games\\real.exe');
+    assert.ok(result !== null, 'must find a match by executablePath');
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: findManualGameByPaths strips double quotes from stored command (not from incoming)', () => {
+    // Stored command has outer quotes (legacy format); incoming path does not.
+    // Only the stored side is quote-stripped — this is the legacy asymmetry.
+    const repo = makeRepo([game({ id: 'g1', command: '"C:\\games\\test.exe"', executablePath: null })]);
+    const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
+    assert.ok(result !== null, 'must match despite quotes in stored command');
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: findManualGameByPaths does not strip quotes from incoming paths', () => {
+    // Incoming paths with outer quotes must NOT match an unquoted stored command.
+    // Legacy normalizeIncoming never applied replace(/"/g, '').
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: 'C:\\games\\test.exe' })]);
+    const result = repo.findManualGameByPaths('"C:\\games\\test.exe"', '"C:\\games\\test.exe"');
+    assert.equal(result, null, 'quoted incoming path must not match unquoted stored command');
+});
+
+test('JsonGameRepository: findManualGameByPaths ignores case differences', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\Games\\Test.exe', executablePath: null })]);
+    const result = repo.findManualGameByPaths('c:\\games\\test.exe', 'c:\\no-match.exe');
+    assert.ok(result !== null, 'must match regardless of case');
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: findManualGameByPaths applies path.normalize to both sides', () => {
+    // path.normalize collapses redundant separators and resolves . segments
+    const stored = path.join('games', 'subdir', 'test.exe');
+    const lookup = path.join('games', 'subdir', '..', 'subdir', 'test.exe'); // same after normalize
+    const repo = makeRepo([game({ id: 'g1', command: stored, executablePath: null })]);
+    const result = repo.findManualGameByPaths(lookup, 'no-match.exe');
+    assert.ok(result !== null, 'must match after path.normalize on both sides');
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: findManualGameByPaths returns hidden games', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: null, isHidden: true })]);
+    const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
+    assert.ok(result !== null, 'must find hidden games');
+    assert.equal(result.isHidden, true);
+});
+
+test('JsonGameRepository: findManualGameByPaths returns isInstalled === false games', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: null, isInstalled: false })]);
+    const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
+    assert.ok(result !== null, 'must find isInstalled=false games');
+    assert.equal(result.isInstalled, false);
+});
+
+test('JsonGameRepository: findManualGameByPaths returns live object reference', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: null })]);
+    const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
+    assert.ok(result === repo._dbCache[0], 'must return the same object reference, not a copy');
+});
+
+test('JsonGameRepository: findManualGameByPaths does not call saveDatabase', () => {
+    const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\test.exe', executablePath: null })]);
+    let saved = false;
+    repo.saveDatabase = () => { saved = true; };
+    repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
+    assert.equal(saved, false, 'saveDatabase must not be called');
+});
+
 // ── updateGameMetadata ────────────────────────────────────────────────────────
 
 test('JsonGameRepository: updateGameMetadata returns error when game not found', async () => {
