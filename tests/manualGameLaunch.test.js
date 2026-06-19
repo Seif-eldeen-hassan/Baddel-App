@@ -191,6 +191,55 @@ test('addManualGame: adding the same exe twice returns existing game without dup
     } finally { rmDir(_testUserData); }
 });
 
+// ── addManualGame: re-adding a hidden manual game ─────────────────────────────
+
+test('addManualGame: re-adding a hidden manual game unhides existing record without duplicate', async () => {
+    _testUserData = makeTmpDir();
+    try {
+        const exeFile = path.join(_testUserData, 'HiddenGame', 'hidden.exe');
+        fs.mkdirSync(path.dirname(exeFile), { recursive: true });
+        fs.writeFileSync(exeFile, '');
+
+        const scanner = freshRequireScanner();
+
+        // First add — game enters DB as visible
+        const r1 = await scanner.addManualGame(exeFile, 'Hidden Game');
+        assert.equal(r1.status, 'success');
+        const gameId = r1.game.id;
+        assert.ok(scanner.getSavedGames().some(g => g.id === gameId), 'game must be visible after first add');
+
+        // Hide the game (simulates the UI "Delete" / hide action)
+        const hideResult = await scanner.removeGame(gameId);
+        assert.equal(hideResult.status, 'success', 'removeGame must succeed');
+        assert.ok(!scanner.getSavedGames().some(g => g.id === gameId), 'game must not appear in visible games after hide');
+        assert.ok(scanner.getHiddenGames().some(g => g.id === gameId), 'game must appear in hidden games');
+
+        // Spy on repo.saveDatabase to confirm the unhide is persisted immediately.
+        // The duplicate/re-add branch calls saveDatabase() at line 477 inside the
+        // if (existing.isHidden) block and returns before reaching the normal save
+        // at line 571, so this spy fires only because of the unhide path.
+        const repo = scanner.getJsonGameRepository();
+        let saveCalled = false;
+        const origSave = repo.saveDatabase.bind(repo);
+        repo.saveDatabase = () => { saveCalled = true; return origSave(); };
+
+        // Re-add same path — must hit duplicate/re-add branch and unhide
+        const r2 = await scanner.addManualGame(exeFile, 'Hidden Game');
+        assert.equal(r2.status, 'success', 're-add must succeed');
+        assert.equal(r2.game.id, gameId, 'must return the same game id as the original');
+        assert.equal(r2.game.isHidden, false, 'isHidden must be cleared on re-add');
+        assert.ok(saveCalled, 'saveDatabase must be called to persist the unhide');
+
+        // Game must be visible with exactly one record — no duplicate
+        assert.ok(scanner.getSavedGames().some(g => g.id === gameId), 'game must be visible again after re-add');
+        assert.ok(!scanner.getHiddenGames().some(g => g.id === gameId), 'game must not remain in hidden list after re-add');
+        assert.equal(
+            scanner.getSavedGames().filter(g => g.id === gameId).length, 1,
+            'must not create a duplicate visible record'
+        );
+    } finally { rmDir(_testUserData); }
+});
+
 // ── preload.js launchGame dual-signature ──────────────────────────────────────
 
 test('preload: launchGame new signature (gameId, opts) invokes IPC with null command', () => {
