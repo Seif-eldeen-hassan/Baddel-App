@@ -181,6 +181,47 @@ test('JsonGameRepository: getMissingInstalledGames returns the same object refer
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
+// ── getGameById ───────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: getGameById returns matching game', () => {
+    const repo = makeRepo([game({ id: 'g1', name: 'Test' })]);
+    const result = repo.getGameById('g1');
+    assert.ok(result !== null);
+    assert.equal(result.id, 'g1');
+});
+
+test('JsonGameRepository: getGameById returns null when not found', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    assert.equal(repo.getGameById('no-such'), null);
+});
+
+test('JsonGameRepository: getGameById uses String() coercion on id comparison', () => {
+    const repo = makeRepo([game({ id: 99 })]);
+    const result = repo.getGameById('99');
+    assert.ok(result !== null);
+    assert.equal(result.id, 99);
+});
+
+test('JsonGameRepository: getGameById returns same object reference from _dbCache', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.getGameById('g1');
+    assert.ok(result === repo._dbCache[0], 'must return the same reference, not a copy');
+});
+
+test('JsonGameRepository: getGameById does not mutate _dbCache', () => {
+    const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' })]);
+    repo.getGameById('g1');
+    assert.equal(repo._dbCache.length, 2);
+});
+
+test('JsonGameRepository: getGameById does not call saveDatabase', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    let saved = false;
+    repo.saveDatabase = () => { saved = true; };
+    repo.getGameById('g1');
+    assert.equal(saved, false);
+});
+
 // ── updateGameMetadata ────────────────────────────────────────────────────────
 
 test('JsonGameRepository: updateGameMetadata returns error when game not found', async () => {

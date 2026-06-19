@@ -203,6 +203,7 @@ class BaddelEngine {
     getStoredGames()           { return this._jsonGameRepository.getStoredGames(); }
     getHiddenGames()           { return this._jsonGameRepository.getHiddenGames(); }
     getMissingInstalledGames() { return this._jsonGameRepository.getMissingInstalledGames(); }
+    getGameById(gameId)        { return this._jsonGameRepository.getGameById(gameId); }
 
     async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 
@@ -746,7 +747,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
                 // Re-persist the full metadata payload with local file:// paths
                 // so that game-details.js (via loadFullMetadata) sees the locally
                 // cached art instead of the remote CDN URL.
-                const game = this.dbCache.find(g => g.id === gameId);
+                const game = this._jsonGameRepository.getGameById(gameId);
                 if (game && metadata) {
                     const updatedMeta = {
                         ...metadata,
@@ -761,7 +762,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
 
                 // إرسال إشعار للواجهة بعد اكتمال التحميل تماماً
                 if (notifyCallback) {
-                    const updatedGame = this.dbCache.find(g => g.id === gameId);
+                    const updatedGame = this._jsonGameRepository.getGameById(gameId);
                     if (updatedGame) notifyCallback(updatedGame);
                 }
             }
@@ -1429,7 +1430,7 @@ async function runBackgroundMetadataPipeline(games) {
                             engine.saveDatabase();
                             console.log(`${gameTag} [HeroBackfill] reused cached metadata hero — DB updated`);
                             if (_gameImageUpdatedFn) {
-                                const updatedGame = engine.dbCache.find(g => g.id === game.id);
+                                const updatedGame = engine.getGameById(game.id);
                                 if (updatedGame) _gameImageUpdatedFn(updatedGame);
                             }
                         } catch (e) {
@@ -1471,7 +1472,7 @@ async function runBackgroundMetadataPipeline(games) {
                         engine.saveDatabase();
                         console.log(`${gameTag} [IncompleteArtRecovery] backfilled logo (${finalLogo})`);
                         if (_gameImageUpdatedFn) {
-                            const upd = engine.dbCache.find(g => g.id === game.id);
+                            const upd = engine.getGameById(game.id);
                             if (upd) _gameImageUpdatedFn(upd);
                         }
                     }
@@ -1562,7 +1563,7 @@ async function runBackgroundMetadataPipeline(games) {
                     console.log(`${gameTag} ✓ DB entry backfilled (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
 
                     if (_gameImageUpdatedFn) {
-                        const updatedGame = engine.dbCache.find(g => g.id === game.id);
+                        const updatedGame = engine.getGameById(game.id);
                         if (updatedGame) {
                             _gameImageUpdatedFn(updatedGame);
                             console.log(`${gameTag} ✓ Renderer notified (game-image-updated)`);

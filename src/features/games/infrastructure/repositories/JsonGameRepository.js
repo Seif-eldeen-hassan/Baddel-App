@@ -176,6 +176,10 @@ class JsonGameRepository {
         return this._dbCache.filter(g => g.installSource === 'scanner' && g.isInstalled === false);
     }
 
+    getGameById(gameId) {
+        return this._dbCache.find(g => String(g.id) === String(gameId)) || null;
+    }
+
     // ─── Image mutations ──────────────────────────────────────────────────────
 
     async updateGameMetadata(gameId, metadata, { source = 'server', force = false } = {}) {
