@@ -370,6 +370,206 @@ test('startGlobalScan marks existing scanner-owned Epic Fab entry as isInstalled
     assert.equal(engine.dbCache[0].missingReason, 'epic_non_game_asset');
 });
 
+// ── stale-pass field mutation ─────────────────────────────────────────────────
+
+test('startGlobalScan: stale pass marks scanner-owned game missing with full metadata fields', async () => {
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        platform: 'Riot Games',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isHidden: false,
+        isInstalled: true,
+        totalPlaytime: 42,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    const beforeTs = new Date().toISOString();
+    await engine.startGlobalScan();
+    const afterTs = new Date().toISOString();
+
+    const game = engine.dbCache[0];
+    assert.equal(game.isInstalled, false, 'isInstalled must be false');
+    assert.equal(game.installVerified, false, 'installVerified must be false');
+    assert.ok(typeof game.removedFromDiskAt === 'string' && game.removedFromDiskAt.length > 0, 'removedFromDiskAt must be set');
+    assert.ok(game.lastMissingScanAt >= beforeTs, 'lastMissingScanAt must be at or after scan start');
+    assert.ok(game.lastMissingScanAt <= afterTs, 'lastMissingScanAt must be at or before scan end');
+    assert.ok(typeof game.missingReason === 'string' && game.missingReason.length > 0, 'missingReason must be set');
+    assert.ok(Array.isArray(game.validationWarnings), 'validationWarnings must be an array');
+    assert.ok(game.validationWarnings.includes(game.missingReason), 'validationWarnings must include missingReason');
+    assert.equal(game.totalPlaytime, 42, 'totalPlaytime must be preserved');
+});
+
+test('startGlobalScan: stale pass sets missingReason not_seen_in_latest_scan for unresolvable game', async () => {
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+        // no path, no executablePath → reason must be not_seen_in_latest_scan
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    assert.equal(engine.dbCache[0].missingReason, 'not_seen_in_latest_scan');
+});
+
+test('startGlobalScan: stale pass sets missingReason install_path_missing when path does not exist', async () => {
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+        path: path.join(engine.dbFolder, 'this-folder-does-not-exist'),
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    assert.equal(engine.dbCache[0].missingReason, 'install_path_missing');
+});
+
+test('startGlobalScan: stale pass accumulates validationWarnings without duplicates', async () => {
+    const engine = makeEngine();
+    const reason = 'not_seen_in_latest_scan';
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+        validationWarnings: [reason], // pre-existing warning — must not duplicate
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    const warnings = engine.dbCache[0].validationWarnings;
+    assert.ok(Array.isArray(warnings));
+    assert.equal(warnings.filter(w => w === reason).length, 1, 'must not duplicate an existing warning');
+});
+
+// ── stale-pass removedFromDiskAt idempotency ──────────────────────────────────
+
+test('startGlobalScan: stale pass preserves existing removedFromDiskAt', async () => {
+    const engine = makeEngine();
+    const existingDate = '2020-06-01T00:00:00.000Z';
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: true,
+        removedFromDiskAt: existingDate, // already recorded on a previous scan
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    const beforeTs = new Date().toISOString();
+    await engine.startGlobalScan();
+    const afterTs = new Date().toISOString();
+
+    const game = engine.dbCache[0];
+    assert.equal(game.removedFromDiskAt, existingDate, 'removedFromDiskAt must not be overwritten if already set');
+    // lastMissingScanAt must still update to the current scan time
+    assert.ok(game.lastMissingScanAt >= beforeTs, 'lastMissingScanAt must update to current scan');
+    assert.ok(game.lastMissingScanAt <= afterTs);
+    assert.notEqual(game.lastMissingScanAt, existingDate, 'lastMissingScanAt must differ from the preserved removedFromDiskAt');
+});
+
+// ── stale-pass skip conditions ────────────────────────────────────────────────
+
+test('startGlobalScan: stale pass skips manual games', async () => {
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'manual-mygame',
+        name: 'My Game',
+        scannerPlatform: 'manual',
+        installSource: 'manual',
+        platform: 'Manual',
+        isInstalled: true,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    const game = engine.dbCache[0];
+    assert.notEqual(game.isInstalled, false, 'manual game must not be marked missing by stale pass');
+    assert.equal(game.lastMissingScanAt, undefined, 'lastMissingScanAt must not be set on a manual game');
+    assert.equal(game.missingReason, undefined, 'missingReason must not be set on a manual game');
+});
+
+test('startGlobalScan: stale pass skips games from unscanned platforms', async () => {
+    const engine = makeEngine();
+    engine.dbCache = [{
+        id: 'steam-100',
+        name: 'Steam Game',
+        scannerPlatform: 'steam',
+        installSource: 'scanner',
+        installedGameKey: 'steam:100',
+        isInstalled: true,
+    }];
+    // Make steam scanner throw — steam is NOT added to scannedPlatforms
+    engine.getSteamGames = async () => { throw new Error('steam scan skipped'); };
+    for (const method of ['getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    await engine.startGlobalScan();
+    const game = engine.dbCache[0];
+    assert.notEqual(game.isInstalled, false, 'game from unscanned platform must not be marked missing');
+    assert.equal(game.lastMissingScanAt, undefined, 'lastMissingScanAt must not be set for unscanned platform game');
+});
+
+// ── stale-pass: already-missing game ─────────────────────────────────────────
+
+test('startGlobalScan: stale pass updates lastMissingScanAt on game already marked missing', async () => {
+    const engine = makeEngine();
+    const priorDate = '2020-06-01T00:00:00.000Z';
+    engine.dbCache = [{
+        id: 'riot-valorant',
+        name: 'VALORANT',
+        scannerPlatform: 'riot',
+        installSource: 'scanner',
+        installedGameKey: 'riot:valorant',
+        isInstalled: false, // already marked missing from a prior scan
+        removedFromDiskAt: priorDate,
+        lastMissingScanAt: priorDate,
+    }];
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
+        engine[method] = async () => [];
+    }
+
+    const beforeTs = new Date().toISOString();
+    await engine.startGlobalScan();
+    const afterTs = new Date().toISOString();
+
+    const game = engine.dbCache[0];
+    assert.equal(game.isInstalled, false, 'isInstalled must remain false');
+    assert.equal(game.removedFromDiskAt, priorDate, 'removedFromDiskAt must not change for already-missing game');
+    assert.ok(game.lastMissingScanAt >= beforeTs, 'lastMissingScanAt must update even when already missing');
+    assert.ok(game.lastMissingScanAt <= afterTs);
+});
+
 test('Epic scanner diagnostics count skipped non-game assets separately', () => {
     const engine = makeEngine();
     const installDir = path.join(engine.dbFolder, 'FabSkip');
