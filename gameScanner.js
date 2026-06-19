@@ -139,6 +139,7 @@ class BaddelEngine {
 
     async unhideAllGames() { return this._jsonGameRepository.unhideAllGames(); }
 
+    getAllGames()              { return this._jsonGameRepository.getAllGames(); }
     getStoredGames()           { return this._jsonGameRepository.getStoredGames(); }
     getHiddenGames()           { return this._jsonGameRepository.getHiddenGames(); }
     getMissingInstalledGames() { return this._jsonGameRepository.getMissingInstalledGames(); }
@@ -177,7 +178,7 @@ class BaddelEngine {
 
         const removed = [];
 
-        for (const game of this.dbCache) {
+        for (const game of this.getAllGames()) {
             const isEpic = game.platform === 'epic' || game.source === 'epic';
             if (!isEpic) continue;
 

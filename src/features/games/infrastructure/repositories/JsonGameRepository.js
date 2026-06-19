@@ -170,6 +170,11 @@ class JsonGameRepository {
         return this.getStoredGames();
     }
 
+    /** All games including hidden and isInstalled === false records. */
+    getAllGames() {
+        return this._dbCache;
+    }
+
     getHiddenGames() {
         return this._dbCache.filter(g => g.isHidden);
     }

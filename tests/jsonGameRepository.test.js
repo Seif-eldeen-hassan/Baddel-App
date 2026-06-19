@@ -181,6 +181,53 @@ test('JsonGameRepository: getMissingInstalledGames returns the same object refer
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
+// ── getAllGames ───────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: getAllGames returns all normal games', () => {
+    const repo = makeRepo([
+        game({ id: 'g1' }),
+        game({ id: 'g2' }),
+    ]);
+    const result = repo.getAllGames();
+    assert.equal(result.length, 2);
+    assert.ok(result.some(g => g.id === 'g1'));
+    assert.ok(result.some(g => g.id === 'g2'));
+});
+
+test('JsonGameRepository: getAllGames includes hidden games', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', isHidden: true }),
+        game({ id: 'g2', isHidden: false }),
+    ]);
+    const result = repo.getAllGames();
+    assert.equal(result.length, 2);
+    assert.ok(result.some(g => g.id === 'g1' && g.isHidden === true));
+});
+
+test('JsonGameRepository: getAllGames includes isInstalled === false games', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', isInstalled: false }),
+        game({ id: 'g2', isInstalled: true }),
+    ]);
+    const result = repo.getAllGames();
+    assert.equal(result.length, 2);
+    assert.ok(result.some(g => g.id === 'g1' && g.isInstalled === false));
+});
+
+test('JsonGameRepository: getAllGames does not call saveDatabase', () => {
+    let saveCalled = false;
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.saveDatabase = () => { saveCalled = true; };
+    repo.getAllGames();
+    assert.equal(saveCalled, false, 'saveDatabase must not be called by getAllGames');
+});
+
+test('JsonGameRepository: getAllGames returns the same object references as _dbCache', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.getAllGames();
+    assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
+});
+
 // ── getGameById ───────────────────────────────────────────────────────────────
 
 test('JsonGameRepository: getGameById returns matching game', () => {
