@@ -471,3 +471,33 @@ test('upsertGame: two games with different ids and keys are both inserted', asyn
     }));
     assert.equal(engine.dbCache.length, 2);
 });
+
+// ── findInCache timing ────────────────────────────────────────────────────────
+
+test('upsertGame: update path does not call findInCache', async () => {
+    const engine = makeEngine();
+    // Seed a game so the next upsert hits the UPDATE branch.
+    seedGame(engine, { id: 'fc-test', installSource: 'manual' });
+
+    let findInCacheCalled = false;
+    const orig = engine.findInCache.bind(engine);
+    engine.findInCache = (...args) => { findInCacheCalled = true; return orig(...args); };
+
+    await engine.upsertGame(makeGame({ id: 'fc-test', installSource: 'scanner' }));
+
+    assert.equal(findInCacheCalled, false,
+        'findInCache must not be called on the UPDATE path');
+    assert.equal(engine.dbCache[0].installSource, 'scanner', 'record must still be updated');
+});
+
+test('upsertGame: insert path calls findInCache when image fields are absent', async () => {
+    const engine = makeEngine();
+    let findInCacheCalled = false;
+    const orig = engine.findInCache.bind(engine);
+    engine.findInCache = (...args) => { findInCacheCalled = true; return orig(...args); };
+
+    await engine.upsertGame(makeGame({ id: 'fc-insert', image: null, heroImage: null, logo: null }));
+
+    assert.equal(findInCacheCalled, true,
+        'findInCache must be called on the INSERT path when image fields are absent');
+});

@@ -34,15 +34,16 @@ class JsonGameRepository {
      *   logger?:      Console,
      * }} deps
      */
-    constructor({ fs, path, crypto, databasePath, logger = console }) {
-        this._fs       = fs;
-        this._path     = path;
-        this._crypto   = crypto;
-        this._dbPath   = databasePath;
-        this._dbFolder = path.dirname(databasePath);
-        this._log      = logger;
-        this._dbCache  = [];
-        this._saveTimer = null;
+    constructor({ fs, path, crypto, databasePath, logger = console, keyResolver = null }) {
+        this._fs          = fs;
+        this._path        = path;
+        this._crypto      = crypto;
+        this._dbPath      = databasePath;
+        this._dbFolder    = path.dirname(databasePath);
+        this._log         = logger;
+        this._keyResolver = keyResolver; // makeInstalledGameKey injected by BaddelEngine
+        this._dbCache     = [];
+        this._saveTimer   = null;
 
         this.initDatabase();
     }
@@ -364,6 +365,110 @@ class JsonGameRepository {
 
         this.saveDatabase();
         return { status: 'success', type, cover: null, hero: null, logo: null, path: restoredPath };
+    }
+
+    // ─── Upsert ───────────────────────────────────────────────────────────────
+
+    /**
+     * Find-or-create a game record in the DB cache using a three-way match.
+     * Callers are responsible for calling saveDatabase() after all upserts are done.
+     *
+     * Pre-conditions (enforced by BaddelEngine.upsertGame before calling this):
+     *   • game.id is set (generated or caller-supplied)
+     *   • game.installedGameKey is stamped
+     *   • cachedCover/Hero/Logo are pre-resolved via ImageCacheService
+     *
+     * Match priority: id (strict ===) → installedGameKey → normalised command.
+     *
+     * @param {object} game                - prepared game object (may be mutated by caller)
+     * @param {object} [opts]
+     * @param {string|null} [opts.cachedCover] - file:// URL or null (image cache recovery)
+     * @param {string|null} [opts.cachedHero]
+     * @param {string|null} [opts.cachedLogo]
+     */
+    _findUpsertGameIndex(game) {
+        const incomingCommand = (game.command || '').replace(/"/g, '').toLowerCase().trim();
+        return this._dbCache.findIndex(g => {
+            const existingKey = g.installedGameKey ||
+                (this._keyResolver ? this._keyResolver(g) : null);
+            const existingCommand = (g.command || '').replace(/"/g, '').toLowerCase().trim();
+            return g.id === game.id ||
+                (game.installedGameKey && existingKey === game.installedGameKey) ||
+                (incomingCommand && existingCommand && incomingCommand === existingCommand);
+        });
+    }
+
+    hasUpsertMatch(game) {
+        return this._findUpsertGameIndex(game) > -1;
+    }
+
+    upsertGameRecord(game, { cachedCover = null, cachedHero = null, cachedLogo = null } = {}) {
+        const index = this._findUpsertGameIndex(game);
+
+        if (index > -1) {
+            const existing = this._dbCache[index];
+            const defImg  = existing.defaultImage  || existing.image     || game.image;
+            const defHero = existing.defaultHero   || existing.heroImage || game.heroImage;
+            const defLogo = existing.defaultLogo   || existing.logo      || game.logo;
+
+            this._dbCache[index] = {
+                ...existing,
+                command:          game.command          || existing.command,
+                path:             game.path             || existing.path,
+                platform:         game.platform         || existing.platform,
+                launchCommand:    game.launchCommand    || game.command || existing.launchCommand,
+                installSource:    game.installSource    || existing.installSource,
+                scannerPlatform:  game.scannerPlatform  || existing.scannerPlatform,
+                launcherGameId:   game.launcherGameId   || existing.launcherGameId,
+                installedGameKey: game.installedGameKey || existing.installedGameKey,
+                executablePath:   game.executablePath   || existing.executablePath,
+                exeCandidates:    Array.isArray(game.exeCandidates) ? game.exeCandidates : existing.exeCandidates,
+                allIds:           { ...(existing.allIds || {}), ...(game.allIds || {}) },
+                namespace:        game.namespace        || existing.namespace,
+                appName:          game.appName          || existing.appName,
+                catalogNamespace: game.catalogNamespace || existing.catalogNamespace,
+                catalogItemId:    game.catalogItemId    || existing.catalogItemId,
+                packageFamilyName: game.packageFamilyName || existing.packageFamilyName,
+                riotProduct:      game.riotProduct      || existing.riotProduct,
+                scanSourceDetail: game.scanSourceDetail || existing.scanSourceDetail,
+                validationWarnings: Array.isArray(game.validationWarnings) ? game.validationWarnings : (existing.validationWarnings || []),
+                installVerified:  game.installVerified  ?? existing.installVerified,
+                isInstalled:      game.isInstalled      ?? existing.isInstalled ?? true,
+                firstSeenAt:      existing.firstSeenAt  || game.firstSeenAt || existing.addedAt,
+                lastSeenAt:       game.lastSeenAt       || existing.lastSeenAt,
+                removedFromDiskAt: game.isInstalled === false ? (game.removedFromDiskAt || existing.removedFromDiskAt) : null,
+                missingReason:    game.isInstalled === false ? (game.missingReason    || existing.missingReason)    : null,
+                // ── Image field contract ─────────────────────────────────────────
+                // Always prefer the richer / more recently loaded value.
+                // A fresh scan may return null for image fields if the scanner did
+                // not find art on this pass (e.g. Steam cover not yet cached).
+                // Clobbering a good existing value with null is what causes the
+                // Installed Games card to flip to hero+logo after a rescan.
+                image:        game.image        || existing.image        || null,
+                heroImage:    game.heroImage    || existing.heroImage    || null,
+                logo:         game.logo         || existing.logo         || null,
+                defaultImage: defImg            || existing.defaultImage || null,
+                defaultHero:  defHero           || existing.defaultHero  || null,
+                defaultLogo:  defLogo           || existing.defaultLogo  || null,
+                id:           existing.id,
+            };
+        } else {
+            // ── Recover cached images from disk if the DB was wiped (e.g. after reinstall) ──
+            this._dbCache.push({
+                addedAt:  new Date().toISOString(),
+                score:    100,
+                isHidden: false,
+                heroImage: null,
+                logo:      null,
+                ...game,
+                image:        cachedCover || game.image     || null,
+                heroImage:    cachedHero  || game.heroImage || null,
+                logo:         cachedLogo  || game.logo      || null,
+                defaultImage: cachedCover || game.image     || null,
+                defaultHero:  cachedHero  || game.heroImage || null,
+                defaultLogo:  cachedLogo  || game.logo      || null,
+            });
+        }
     }
 
     // ─── Mutations ────────────────────────────────────────────────────────────

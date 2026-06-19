@@ -1423,3 +1423,226 @@ test('JsonGameRepository: getTimeTrackingEnabled returns gameId in result', () =
     const result = repo.getTimeTrackingEnabled('g1');
     assert.equal(result.gameId, 'g1');
 });
+
+// ── upsertGameRecord ──────────────────────────────────────────────────────────
+
+// makeInstalledGameKey is a pure identity utility — injected so JsonGameRepository
+// stays FS-free and avoids importing from another infrastructure module.
+const { makeInstalledGameKey } = require('../src/features/games/infrastructure/scanner/GameScannerCore');
+
+function makeUpsertRepo(games = []) {
+    return makeRepo(games, { keyResolver: makeInstalledGameKey });
+}
+
+function upsertGame(overrides = {}) {
+    return {
+        id:               'uid-' + Math.random().toString(36).slice(2),
+        name:             'Upsert Game',
+        command:          '"C:\\Games\\Upsert\\game.exe"',
+        path:             'C:\\Games\\Upsert',
+        executablePath:   'C:\\Games\\Upsert\\game.exe',
+        platform:         'pc',
+        scannerPlatform:  'manual',
+        installSource:    'manual',
+        installedGameKey: null,
+        isInstalled:      true,
+        ...overrides,
+    };
+}
+
+// ── INSERT path ───────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: upsertGameRecord inserts a new game when DB is empty', () => {
+    const repo = makeUpsertRepo([]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1' }));
+    assert.equal(repo._dbCache.length, 1);
+});
+
+test('JsonGameRepository: upsertGameRecord sets addedAt/score/isHidden defaults when omitted', () => {
+    const repo = makeUpsertRepo([]);
+    const g = upsertGame({ id: 'u1' });
+    delete g.score;
+    delete g.isHidden;
+    const before = new Date().toISOString();
+    repo.upsertGameRecord(g);
+    const after = new Date().toISOString();
+    const record = repo._dbCache[0];
+    assert.equal(record.score,    100);
+    assert.equal(record.isHidden, false);
+    assert.ok(record.addedAt >= before && record.addedAt <= after, 'addedAt must be set to current time');
+});
+
+test('JsonGameRepository: upsertGameRecord uses cachedCover for image when game.image is null', () => {
+    const repo = makeUpsertRepo([]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1', image: null }), { cachedCover: 'file://cached.webp' });
+    assert.equal(repo._dbCache[0].image,        'file://cached.webp');
+    assert.equal(repo._dbCache[0].defaultImage, 'file://cached.webp');
+});
+
+test('JsonGameRepository: upsertGameRecord uses game.image when cachedCover is null', () => {
+    const repo = makeUpsertRepo([]);
+    repo.upsertGameRecord(
+        upsertGame({ id: 'u1', image: 'file://game.webp' }),
+        { cachedCover: null },
+    );
+    assert.equal(repo._dbCache[0].image, 'file://game.webp');
+});
+
+// ── UPDATE path — id match ────────────────────────────────────────────────────
+
+test('JsonGameRepository: upsertGameRecord updates by id and prevents duplicate', () => {
+    const repo = makeUpsertRepo([game({ id: 'u1', installSource: 'manual' })]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'manual:name:u1', installSource: 'scanner' }));
+    assert.equal(repo._dbCache.length, 1, 'no duplicate must be created');
+    assert.equal(repo._dbCache[0].installSource, 'scanner');
+});
+
+test('JsonGameRepository: upsertGameRecord preserves existing.id on update', () => {
+    const repo = makeUpsertRepo([game({ id: 'original-id' })]);
+    repo.upsertGameRecord(upsertGame({ id: 'original-id', installedGameKey: 'k' }));
+    assert.equal(repo._dbCache[0].id, 'original-id');
+});
+
+test('JsonGameRepository: upsertGameRecord deep-merges allIds on update', () => {
+    const repo = makeUpsertRepo([game({ id: 'u1', allIds: { steam: 'aaa', epic: 'bbb' } })]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'k', allIds: { epic: 'zzz', riot: 'rrr' } }));
+    const merged = repo._dbCache[0].allIds;
+    assert.equal(merged.steam, 'aaa');
+    assert.equal(merged.epic,  'zzz');
+    assert.equal(merged.riot,  'rrr');
+});
+
+test('JsonGameRepository: upsertGameRecord preserves existing.firstSeenAt on update', () => {
+    const repo = makeUpsertRepo([game({ id: 'u1', firstSeenAt: '2023-01-01T00:00:00.000Z' })]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'k', firstSeenAt: '2025-01-01T00:00:00.000Z' }));
+    assert.equal(repo._dbCache[0].firstSeenAt, '2023-01-01T00:00:00.000Z');
+});
+
+// ── UPDATE path — installedGameKey match (requires keyResolver) ───────────────
+
+test('JsonGameRepository: upsertGameRecord updates by installedGameKey when ids differ', () => {
+    const repo = makeUpsertRepo([game({
+        id:               'existing-id',
+        scannerPlatform:  'steam',
+        allIds:           { steam: '80000' },
+        installedGameKey: 'steam:80000',
+        installSource:    'manual',
+    })]);
+    repo.upsertGameRecord(upsertGame({
+        id:               'incoming-id',
+        scannerPlatform:  'steam',
+        allIds:           { steam: '80000' },
+        installedGameKey: 'steam:80000',
+        installSource:    'scanner',
+    }));
+    assert.equal(repo._dbCache.length, 1, 'no duplicate must be created');
+    assert.equal(repo._dbCache[0].id,            'existing-id', 'existing id must be preserved');
+    assert.equal(repo._dbCache[0].installSource, 'scanner');
+});
+
+// ── UPDATE path — normalised command match ────────────────────────────────────
+
+test('JsonGameRepository: upsertGameRecord updates by normalised command when id and key differ', () => {
+    const repo = makeUpsertRepo([game({
+        id:               'cmd-existing',
+        installedGameKey: 'manual:path:aaa',
+        installSource:    'manual',
+        command:          '"C:\\Games\\CMD\\game.exe"',
+    })]);
+    repo.upsertGameRecord(upsertGame({
+        id:               'cmd-incoming',
+        installedGameKey: 'manual:path:bbb',
+        installSource:    'scanner',
+        command:          'C:\\Games\\CMD\\game.exe', // same after normalization, no quotes
+    }));
+    assert.equal(repo._dbCache.length, 1, 'command match must prevent duplicate');
+    assert.equal(repo._dbCache[0].installSource, 'scanner');
+});
+
+// ── saveDatabase ──────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: upsertGameRecord does not call saveDatabase — caller owns persistence', () => {
+    const repo = makeUpsertRepo([]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.upsertGameRecord(upsertGame({ id: 'u1' }));
+    assert.equal(saveCalled, false, 'upsertGameRecord must not call saveDatabase; caller owns persistence timing');
+});
+
+test('JsonGameRepository: upsertGameRecord does not call saveDatabase on update either', () => {
+    const repo = makeUpsertRepo([game({ id: 'u1' })]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'k' }));
+    assert.equal(saveCalled, false);
+});
+
+// ── idempotency ───────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: upsertGameRecord called twice with same id produces one record', () => {
+    const repo = makeUpsertRepo([]);
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'k', installSource: 'manual' }));
+    repo.upsertGameRecord(upsertGame({ id: 'u1', installedGameKey: 'k', installSource: 'scanner' }));
+    assert.equal(repo._dbCache.length, 1);
+    assert.equal(repo._dbCache[0].installSource, 'scanner');
+});
+
+// ── hasUpsertMatch ────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: hasUpsertMatch returns true for id match', () => {
+    const repo = makeUpsertRepo([game({ id: 'hm1' })]);
+    assert.equal(repo.hasUpsertMatch(upsertGame({ id: 'hm1', installedGameKey: 'k' })), true);
+});
+
+test('JsonGameRepository: hasUpsertMatch returns true for installedGameKey match', () => {
+    const repo = makeUpsertRepo([game({
+        id:               'hm2',
+        installedGameKey: 'steam:90000',
+        scannerPlatform:  'steam',
+        allIds:           { steam: '90000' },
+    })]);
+    assert.equal(
+        repo.hasUpsertMatch(upsertGame({
+            id:               'different-id',
+            installedGameKey: 'steam:90000',
+            scannerPlatform:  'steam',
+            allIds:           { steam: '90000' },
+        })),
+        true,
+    );
+});
+
+test('JsonGameRepository: hasUpsertMatch returns true for normalised command match', () => {
+    const repo = makeUpsertRepo([game({
+        id:               'hm3',
+        installedGameKey: 'manual:path:aaa',
+        command:          '"C:\\Games\\HM\\hm.exe"',
+    })]);
+    assert.equal(
+        repo.hasUpsertMatch(upsertGame({
+            id:               'other-id',
+            installedGameKey: 'manual:path:bbb',
+            command:          'c:\\games\\hm\\hm.exe',
+        })),
+        true,
+    );
+});
+
+test('JsonGameRepository: hasUpsertMatch returns false when no match exists', () => {
+    const repo = makeUpsertRepo([game({ id: 'hm4', installedGameKey: 'manual:name:other', command: '"C:\\Other\\x.exe"' })]);
+    assert.equal(
+        repo.hasUpsertMatch(upsertGame({ id: 'no-match', installedGameKey: 'manual:name:none', command: '"C:\\NoMatch\\y.exe"' })),
+        false,
+    );
+});
+
+test('JsonGameRepository: hasUpsertMatch does not call saveDatabase', () => {
+    const repo = makeUpsertRepo([game({ id: 'hm5' })]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.hasUpsertMatch(upsertGame({ id: 'hm5', installedGameKey: 'k' }));
+    assert.equal(saveCalled, false);
+});
