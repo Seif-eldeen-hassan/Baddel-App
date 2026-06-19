@@ -583,7 +583,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             if (finalMetadata) {
                 await this.backgroundDownload(finalMetadata, tempId, notifyCallback, { source: 'addManual' });
             }
-            const hydratedGame = this.dbCache.find(g => String(g.id) === String(tempId)) || newGame;
+            const hydratedGame = this.getGameById(tempId) || newGame;
             return { status: 'success', game: hydratedGame };
         } catch (err) {
             console.error('[Manual Add]', err);
@@ -863,7 +863,7 @@ async function refetchMissingImages(notifyCallback) {
     const fsSync = require('fs');
     let updated = false;
 
-    for (let game of engine.dbCache) {
+    for (const game of engine.getStoredGames()) {
         if (!game.isHidden && !game.customArtworkLocked) {
             let isMissing = false;
 

@@ -881,8 +881,8 @@ test('gameScanner.js: addManualGame awaits backgroundDownload and returns hydrat
     const fn = SCANNER_JS.slice(fnStart, fnStart + 8500);
     // Must await backgroundDownload (not fire-and-forget)
     assert.match(fn, /await this\.backgroundDownload/, 'must await backgroundDownload');
-    // Must return the hydrated game from dbCache
-    assert.match(fn, /hydratedGame.*dbCache|dbCache.*hydratedGame/, 'must return hydrated game from dbCache');
+    // Must return the hydrated game from the DB (via getGameById or dbCache.find)
+    assert.match(fn, /hydratedGame.*(?:getGameById|dbCache)|(?:getGameById|dbCache).*hydratedGame/, 'must return hydrated game from DB');
     assert.match(fn, /return \{ status: 'success', game: hydratedGame \}/, 'must return hydratedGame');
 });
 
