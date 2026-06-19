@@ -51,6 +51,7 @@ const {
     _hashShort,
 } = require('./src/features/games/infrastructure/scanner/GameScannerCore');
 const { JsonGameRepository } = require('./src/features/games/infrastructure/repositories/JsonGameRepository');
+const { ImageCacheService } = require('./src/features/games/infrastructure/services/ImageCacheService');
 
 
 // ============================================================
@@ -74,6 +75,11 @@ class BaddelEngine {
             path,
             crypto,
             databasePath: this.dbPath,
+        });
+        this._imageCacheService = new ImageCacheService({
+            fs: fsSync,
+            path,
+            dbFolder: this.dbFolder,
         });
         // dbCache is a get/set proxy to this._jsonGameRepository._dbCache
     }
@@ -333,29 +339,9 @@ class BaddelEngine {
     return result;
 }
 
-    findInCache(gameId, type) {
-        try {
-            const cacheDir = path.join(this.dbFolder, 'image_cache');
-            if (!fsSync.existsSync(cacheDir)) return null;
-            const files = fsSync.readdirSync(cacheDir);
-            const prefix = _cacheBaseName(type, gameId);
-            const found = files.find(f => f.startsWith(prefix));
-            return found ? `file://${path.join(cacheDir, found).replace(/\\/g, '/')}` : null;
-        } catch { return null; }
-    }
+    findInCache(gameId, type)  { return this._imageCacheService.findInCache(gameId, type); }
 
-    deleteGameImages(gameId) {
-        try {
-            const cacheDir = path.join(this.dbFolder, 'image_cache');
-            const files = fsSync.readdirSync(cacheDir);
-            ['cover', 'hero', 'logo'].forEach(type => {
-                const prefix = _cacheBaseName(type, gameId);
-                files.filter(f => f.startsWith(prefix)).forEach(file => {
-                    try { fsSync.unlinkSync(path.join(cacheDir, file)); } catch { /* ignore */ }
-                });
-            });
-        } catch { /* ignore */ }
-    }
+    deleteGameImages(gameId)   { this._imageCacheService.deleteGameImages(gameId); }
 
     async downloadToCache(url, gameId, type) {
         // All image caching is now handled by baddelapi
