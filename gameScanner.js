@@ -236,12 +236,11 @@ class BaddelEngine {
             badEntries.map(e => normalize(e?.app_title || e?.title)).filter(Boolean)
         );
 
-        const before = this.dbCache.length;
         const removed = [];
 
-        this.dbCache = this.dbCache.filter(game => {
+        for (const game of this.dbCache) {
             const isEpic = game.platform === 'epic' || game.source === 'epic';
-            if (!isEpic) return true;
+            if (!isEpic) continue;
 
             // Match by app_name or normalized title against the bad-entry lists.
             const gameAppName = normalize(game.appName || game.app_name);
@@ -250,21 +249,14 @@ class BaddelEngine {
 
             if ((gameAppName && badAppNames.has(gameAppName)) ||
                 (gameTitle   && badTitles.has(gameTitle))     ||
-                (gameId      && badAppNames.has(gameId))) {
+                (gameId      && badAppNames.has(gameId))      ||
+                !isEpicSyncedGameAllowed(game)) {
                 removed.push(game.id);
-                return false;
             }
-
-            // Also catch anything the classifier knows is bad.
-            if (!isEpicSyncedGameAllowed(game)) {
-                removed.push(game.id);
-                return false;
-            }
-
-            return true;
-        });
+        }
 
         if (removed.length > 0) {
+            this._jsonGameRepository.deleteGamesByIds(removed);
             removed.forEach(id => this.deleteGameImages(id));
             this.saveDatabase();
             console.log(`[GameScanner] Removed ${removed.length} Epic non-game entries:`, removed);

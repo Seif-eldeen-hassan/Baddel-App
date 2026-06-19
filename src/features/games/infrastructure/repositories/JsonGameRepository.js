@@ -11,7 +11,7 @@
 //   • generateStableId — deterministic MD5 game ID (identical to BaddelEngine)
 //   • Read queries: getStoredGames / getSavedGames / getHiddenGames
 //   • Mutations: renameGame, removeGame, unhideAllGames, restoreSpecificGames,
-//                reorderLibrary, deleteGameById
+//                reorderLibrary, deleteGameById, deleteGamesByIds
 //
 // What this class does NOT do:
 //   • deleteGamePermanently orchestration (cross-cutting: images, mrm, metadata cache)
@@ -362,6 +362,14 @@ class JsonGameRepository {
     deleteGameById(gameId) {
         const before = this._dbCache.length;
         this._dbCache = this._dbCache.filter(g => String(g.id) !== String(gameId));
+        return before - this._dbCache.length;
+    }
+
+    deleteGamesByIds(gameIds) {
+        const ids = new Set((Array.isArray(gameIds) ? gameIds : []).map(id => String(id)));
+        if (ids.size === 0) return 0;
+        const before = this._dbCache.length;
+        this._dbCache = this._dbCache.filter(g => !ids.has(String(g.id)));
         return before - this._dbCache.length;
     }
 
