@@ -276,40 +276,7 @@ class BaddelEngine {
     // ============================================================
     // IMAGES
     // ============================================================
-    updateGameImage(gameId, newImagePath, type = 'cover') {
-    const index = this.dbCache.findIndex(g => String(g.id) === String(gameId));
-    if (index === -1) return { status: 'error', message: 'Game not found' };
-
-    const game = this.dbCache[index];
-
-    let finalPath = newImagePath;
-    if (finalPath && !finalPath.startsWith('http') && !finalPath.startsWith('file://')) {
-        finalPath = `file://${finalPath}`;
-    }
-
-    if (type === 'hero') {
-        game.heroImage = finalPath;
-    } else if (type === 'logo') {
-        game.logo = finalPath;
-    } else {
-        game.image = finalPath;
-    }
-
-    // IMPORTANT: user changed artwork manually, so server/pipeline must not override it
-    game.customArtworkLocked = true;
-    game.artworkSource = 'creator';
-    game.artworkUpdatedAt = Date.now();
-
-    this.saveDatabase();
-    return {
-        status: 'success',
-        path: finalPath,
-        type,
-        customArtworkLocked: true,
-        artworkSource: 'creator',
-        artworkUpdatedAt: game.artworkUpdatedAt
-    };
-}
+    updateGameImage(gameId, newImagePath, type = 'cover') { return this._jsonGameRepository.updateGameImage(gameId, newImagePath, type); }
 
     async resetGameImage(gameId, type = 'cover', opts = {}) {
     const index = this.dbCache.findIndex(g => String(g.id) === String(gameId));

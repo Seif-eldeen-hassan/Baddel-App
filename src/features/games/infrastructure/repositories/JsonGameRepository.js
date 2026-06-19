@@ -176,6 +176,42 @@ class JsonGameRepository {
         return this._dbCache.filter(g => g.installSource === 'scanner' && g.isInstalled === false);
     }
 
+    // ─── Image mutations ──────────────────────────────────────────────────────
+
+    updateGameImage(gameId, newImagePath, type = 'cover') {
+        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
+        if (index === -1) return { status: 'error', message: 'Game not found' };
+
+        const game = this._dbCache[index];
+
+        let finalPath = newImagePath;
+        if (finalPath && !finalPath.startsWith('http') && !finalPath.startsWith('file://')) {
+            finalPath = `file://${finalPath}`;
+        }
+
+        if (type === 'hero') {
+            game.heroImage = finalPath;
+        } else if (type === 'logo') {
+            game.logo = finalPath;
+        } else {
+            game.image = finalPath;
+        }
+
+        game.customArtworkLocked = true;
+        game.artworkSource = 'creator';
+        game.artworkUpdatedAt = Date.now();
+
+        this.saveDatabase();
+        return {
+            status: 'success',
+            path: finalPath,
+            type,
+            customArtworkLocked: true,
+            artworkSource: 'creator',
+            artworkUpdatedAt: game.artworkUpdatedAt,
+        };
+    }
+
     // ─── Mutations ────────────────────────────────────────────────────────────
 
     async renameGame(gameId, newName) {

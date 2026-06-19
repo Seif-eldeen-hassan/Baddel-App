@@ -181,6 +181,110 @@ test('JsonGameRepository: getMissingInstalledGames returns the same object refer
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
+// ── updateGameImage ───────────────────────────────────────────────────────────
+
+test('JsonGameRepository: updateGameImage returns error shape when game not found', () => {
+    const repo = makeRepo([]);
+    const result = repo.updateGameImage('no-such', 'C:\\art\\cover.jpg');
+    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+});
+
+test('JsonGameRepository: updateGameImage uses String() coercion on gameId comparison', () => {
+    const repo = makeRepo([game({ id: 123 })]);
+    const result = repo.updateGameImage('123', 'C:\\art\\cover.jpg');
+    assert.equal(result.status, 'success');
+});
+
+test('JsonGameRepository: updateGameImage sets image field for default type (cover)', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._dbCache[0].image, 'file://cover.webp');
+});
+
+test('JsonGameRepository: updateGameImage sets heroImage field when type is hero', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://hero.webp', 'hero');
+    assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
+});
+
+test('JsonGameRepository: updateGameImage sets logo field when type is logo', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://logo.webp', 'logo');
+    assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
+});
+
+test('JsonGameRepository: updateGameImage prepends file:// when path has no protocol', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.updateGameImage('g1', 'C:\\art\\cover.webp');
+    assert.equal(result.path, 'file://C:\\art\\cover.webp');
+    assert.equal(repo._dbCache[0].image, 'file://C:\\art\\cover.webp');
+});
+
+test('JsonGameRepository: updateGameImage does not double-prefix file:// paths', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.updateGameImage('g1', 'file://already.webp');
+    assert.equal(result.path, 'file://already.webp');
+});
+
+test('JsonGameRepository: updateGameImage does not prefix http:// paths', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.updateGameImage('g1', 'http://cdn.example.com/cover.jpg');
+    assert.equal(result.path, 'http://cdn.example.com/cover.jpg');
+});
+
+test('JsonGameRepository: updateGameImage sets customArtworkLocked to true', () => {
+    const repo = makeRepo([game({ id: 'g1', customArtworkLocked: false })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._dbCache[0].customArtworkLocked, true);
+});
+
+test('JsonGameRepository: updateGameImage sets artworkSource to creator', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._dbCache[0].artworkSource, 'creator');
+});
+
+test('JsonGameRepository: updateGameImage sets artworkUpdatedAt to a recent timestamp', () => {
+    const before = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.ok(repo._dbCache[0].artworkUpdatedAt >= before);
+});
+
+test('JsonGameRepository: updateGameImage returns exact success shape', () => {
+    const before = Date.now();
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.updateGameImage('g1', 'file://cover.webp', 'cover');
+    assert.equal(result.status, 'success');
+    assert.equal(result.path, 'file://cover.webp');
+    assert.equal(result.type, 'cover');
+    assert.equal(result.customArtworkLocked, true);
+    assert.equal(result.artworkSource, 'creator');
+    assert.ok(typeof result.artworkUpdatedAt === 'number' && result.artworkUpdatedAt >= before);
+});
+
+test('JsonGameRepository: updateGameImage returns artworkUpdatedAt matching game field', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const result = repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(result.artworkUpdatedAt, repo._dbCache[0].artworkUpdatedAt);
+});
+
+test('JsonGameRepository: updateGameImage does not call saveDatabase on missing game', () => {
+    const repo = makeRepo([]);
+    let saveCalled = false;
+    repo.saveDatabase = () => { saveCalled = true; };
+    repo.updateGameImage('no-such', 'file://cover.webp');
+    assert.equal(saveCalled, false);
+});
+
+test('JsonGameRepository: updateGameImage schedules saveDatabase on success', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.ok(repo._saveTimer !== null, 'saveDatabase timer must be set after successful update');
+    clearTimeout(repo._saveTimer);
+    repo._saveTimer = null;
+});
+
 // ── generateStableId ──────────────────────────────────────────────────────────
 
 test('JsonGameRepository: generateStableId is deterministic for same command', () => {
