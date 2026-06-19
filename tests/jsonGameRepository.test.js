@@ -130,6 +130,57 @@ test('JsonGameRepository: getHiddenGames returns empty array when nothing hidden
     assert.deepEqual(repo.getHiddenGames(), []);
 });
 
+// ── getMissingInstalledGames ──────────────────────────────────────────────────
+
+test('JsonGameRepository: getMissingInstalledGames returns scanner-owned games where isInstalled === false', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', installSource: 'scanner', isInstalled: false }),
+        game({ id: 'g2', installSource: 'scanner', isInstalled: true }),
+        game({ id: 'g3', installSource: 'manual',  isInstalled: false }),
+    ]);
+    const result = repo.getMissingInstalledGames();
+    assert.equal(result.length, 1);
+    assert.equal(result[0].id, 'g1');
+});
+
+test('JsonGameRepository: getMissingInstalledGames excludes games where installSource is not scanner', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', installSource: 'manual',  isInstalled: false }),
+        game({ id: 'g2', installSource: 'epic',    isInstalled: false }),
+        game({ id: 'g3', installSource: undefined, isInstalled: false }),
+    ]);
+    assert.deepEqual(repo.getMissingInstalledGames(), []);
+});
+
+test('JsonGameRepository: getMissingInstalledGames excludes scanner games where isInstalled is true', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', installSource: 'scanner', isInstalled: true }),
+    ]);
+    assert.deepEqual(repo.getMissingInstalledGames(), []);
+});
+
+test('JsonGameRepository: getMissingInstalledGames returns empty array when no games match', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    assert.deepEqual(repo.getMissingInstalledGames(), []);
+});
+
+test('JsonGameRepository: getMissingInstalledGames does not mutate _dbCache', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', installSource: 'scanner', isInstalled: false }),
+    ]);
+    const before = repo._dbCache.length;
+    repo.getMissingInstalledGames();
+    assert.equal(repo._dbCache.length, before);
+});
+
+test('JsonGameRepository: getMissingInstalledGames returns the same object references as _dbCache', () => {
+    const repo = makeRepo([
+        game({ id: 'g1', installSource: 'scanner', isInstalled: false }),
+    ]);
+    const result = repo.getMissingInstalledGames();
+    assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
+});
+
 // ── generateStableId ──────────────────────────────────────────────────────────
 
 test('JsonGameRepository: generateStableId is deterministic for same command', () => {

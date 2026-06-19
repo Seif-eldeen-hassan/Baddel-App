@@ -202,7 +202,7 @@ class BaddelEngine {
 
     getStoredGames()           { return this._jsonGameRepository.getStoredGames(); }
     getHiddenGames()           { return this._jsonGameRepository.getHiddenGames(); }
-    getMissingInstalledGames() { return this.dbCache.filter(g => g.installSource === 'scanner' && g.isInstalled === false); }
+    getMissingInstalledGames() { return this._jsonGameRepository.getMissingInstalledGames(); }
 
     async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 

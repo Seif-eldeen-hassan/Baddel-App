@@ -172,6 +172,10 @@ class JsonGameRepository {
         return this._dbCache.filter(g => g.isHidden);
     }
 
+    getMissingInstalledGames() {
+        return this._dbCache.filter(g => g.installSource === 'scanner' && g.isInstalled === false);
+    }
+
     // ─── Mutations ────────────────────────────────────────────────────────────
 
     async renameGame(gameId, newName) {
