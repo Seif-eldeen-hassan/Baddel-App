@@ -632,6 +632,69 @@ test('JsonGameRepository: removeGame does not delete the game record', async () 
     assert.equal(repo._dbCache.length, 1, 'record must still exist, just hidden');
 });
 
+// ── deleteGameById ────────────────────────────────────────────────────────────
+
+test('JsonGameRepository: deleteGameById removes the matching game record', () => {
+    const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' })]);
+    repo.deleteGameById('g1');
+    assert.equal(repo._dbCache.length, 1);
+    assert.equal(repo._dbCache[0].id, 'g2');
+});
+
+test('JsonGameRepository: deleteGameById returns 1 when a game was removed', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const count = repo.deleteGameById('g1');
+    assert.equal(count, 1);
+});
+
+test('JsonGameRepository: deleteGameById returns 0 when no game matches', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const count = repo.deleteGameById('no-such');
+    assert.equal(count, 0);
+});
+
+test('JsonGameRepository: deleteGameById removes only the matching game, leaves others intact', () => {
+    const g1 = game({ id: 'g1' });
+    const g2 = game({ id: 'g2' });
+    const g3 = game({ id: 'g3' });
+    const repo = makeRepo([g1, g2, g3]);
+    repo.deleteGameById('g2');
+    assert.equal(repo._dbCache.length, 2);
+    assert.ok(repo._dbCache.every(g => g.id !== 'g2'), 'g2 must be gone');
+});
+
+test('JsonGameRepository: deleteGameById uses String() coercion for id comparison', () => {
+    const repo = makeRepo([game({ id: 42 })]);
+    const count = repo.deleteGameById('42');
+    assert.equal(count, 1, 'numeric id 42 must match string "42"');
+    assert.equal(repo._dbCache.length, 0);
+});
+
+test('JsonGameRepository: deleteGameById does not call saveDatabase — caller owns persistence timing', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.deleteGameById('g1');
+    assert.equal(saveCalled, false, 'deleteGameById must not call saveDatabase; BaddelEngine is responsible');
+});
+
+test('JsonGameRepository: deleteGameById does not call saveDatabase when no game matches', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    let saveCalled = false;
+    const orig = repo.saveDatabase.bind(repo);
+    repo.saveDatabase = () => { saveCalled = true; orig(); clearTimeout(repo._saveTimer); repo._saveTimer = null; };
+    repo.deleteGameById('no-such');
+    assert.equal(saveCalled, false, 'saveDatabase must not be called when nothing was removed');
+});
+
+test('JsonGameRepository: deleteGameById does not mutate the surviving game objects', () => {
+    const repo = makeRepo([game({ id: 'g1', name: 'Keeper' }), game({ id: 'g2' })]);
+    const beforeRef = repo._dbCache.find(g => g.id === 'g1');
+    repo.deleteGameById('g2');
+    assert.strictEqual(repo._dbCache[0], beforeRef, 'surviving object must be the same reference after filter');
+});
+
 // ── unhideAllGames ────────────────────────────────────────────────────────────
 
 test('JsonGameRepository: unhideAllGames clears isHidden on all hidden games', async () => {

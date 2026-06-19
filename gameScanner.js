@@ -208,9 +208,8 @@ class BaddelEngine {
     async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 
     async deleteGamePermanently(gameId) {
-        const before = this.dbCache.length;
-        this.dbCache = this.dbCache.filter(g => String(g.id) !== String(gameId));
-        if (this.dbCache.length < before) {
+        const removedCount = this._jsonGameRepository.deleteGameById(gameId);
+        if (removedCount > 0) {
             this.deleteGameImages(gameId);
             try { mrm.clearJob(gameId); } catch (_) {}
             try { await metadataCacheStore.deleteEntry(gameId); } catch (_) {}
