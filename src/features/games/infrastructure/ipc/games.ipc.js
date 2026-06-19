@@ -186,7 +186,7 @@ module.exports.register = function registerGamesIpc(ipcMain, deps) {
     // preserving exact legacy behavior.
     ipcMain.handle('remove-game', async (_, id) => {
         try { deps.ipcValidation.assertSafeId(id, 'id'); } catch (e) { return deps.ipcValidation.sanitizeErrorForRenderer(e); }
-        const games = await deps.getSavedGames();
+        const games = deps.jsonGameRepository.getSavedGames();
         const game = games.find(g => g.id === id);
         const platform = deps._detectPlatform(game && game.command);
         const result = await removeGameUseCase.execute(id);

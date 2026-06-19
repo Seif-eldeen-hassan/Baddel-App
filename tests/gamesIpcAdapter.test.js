@@ -395,6 +395,29 @@ test('games.ipc: remove-game passes platform from _detectPlatform to logGameRemo
     assert.equal(receivedPlatform, 'steam');
 });
 
+test('games.ipc: remove-game reads saved games from jsonGameRepository.getSavedGames, not deps.getSavedGames', async () => {
+    // deps.getSavedGames throws; jsonGameRepository.getSavedGames returns the game.
+    // If remove-game still called deps.getSavedGames() the handler would throw and
+    // analytics would never fire. If it calls jsonGameRepository.getSavedGames() it
+    // succeeds and analytics receives the correct platform.
+    let receivedPlatform;
+    const game = { id: 'g1', command: 'steam://rungameid/123' };
+    const analytics = { logGameRemoved: async (p) => { receivedPlatform = p; }, logGameRestored: async () => {}, track: () => {} };
+    const deps = makeDeps({
+        getSavedGames:   () => { throw new Error('deps.getSavedGames must not be called'); },
+        _detectPlatform: (cmd) => cmd && cmd.startsWith('steam') ? 'steam' : 'other',
+        removeGame:      async () => ({ status: 'success' }),
+        analytics,
+    });
+    // Override the repository side — leave deps.getSavedGames as the throwing stub
+    deps.jsonGameRepository.getSavedGames = () => [game];
+    const ipc = makeFakeIpc();
+    gamesIpc.register(ipc, deps);
+    await ipc.handles.get('remove-game')({}, 'g1');
+    await new Promise(r => setImmediate(r));
+    assert.equal(receivedPlatform, 'steam', 'platform must come from jsonGameRepository.getSavedGames');
+});
+
 test('games.ipc: remove-game passes undefined platform when game not found in getSavedGames', async () => {
     let receivedPlatform = 'NOT_SET';
     const ipc = makeFakeIpc();

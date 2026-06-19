@@ -47,6 +47,8 @@ class GamesRepositoryImpl extends GamesRepository {
         removeGame,
     } = {}) {
         super();
+        // Production path (Step 13.4+): jsonGameRepository is injected from BaddelEngine via main.js.
+        // TODO: remove legacy delegate fallback once all call-sites pass jsonGameRepository.
         this._jsonGameRepository   = jsonGameRepository   || null;
         // Legacy function delegates — kept as fallback for tests / rollback only.
         this._getSavedGames        = getSavedGames;
