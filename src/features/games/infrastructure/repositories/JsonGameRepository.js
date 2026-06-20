@@ -482,8 +482,6 @@ class JsonGameRepository {
                 addedAt:  new Date().toISOString(),
                 score:    100,
                 isHidden: false,
-                heroImage: null,
-                logo:      null,
                 ...game,
                 image:        cachedCover || game.image     || null,
                 heroImage:    cachedHero  || game.heroImage || null,
