@@ -28,6 +28,15 @@ function touch(filePath, content = 'x') {
     return filePath;
 }
 
+function seedGames(engine, games) {
+    const arr = engine.getAllGames();
+    arr.splice(0, arr.length, ...games);
+}
+
+function firstGame(engine) {
+    return engine.getAllGames()[0];
+}
+
 test('Ubisoft candidate with missing folder is skipped', () => {
     const engine = makeEngine();
     const game = engine._buildUbisoftGameFromCandidate({
@@ -125,7 +134,7 @@ test('Riot scans multiple roots and does not stop after first game', async () =>
 
 test('startGlobalScan marks previously scanned missing games as not installed and hides them', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         platform: 'Riot Games',
@@ -136,15 +145,15 @@ test('startGlobalScan marks previously scanned missing games as not installed an
         isHidden: false,
         isInstalled: true,
         totalPlaytime: 123,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     const visible = await engine.startGlobalScan();
     assert.equal(visible.length, 0);
-    assert.equal(engine.dbCache[0].isInstalled, false);
-    assert.equal(engine.dbCache[0].totalPlaytime, 123);
+    assert.equal(firstGame(engine).isInstalled, false);
+    assert.equal(firstGame(engine).totalPlaytime, 123);
     assert.equal(engine.getStoredGames().length, 0);
 });
 
@@ -345,7 +354,7 @@ test('startGlobalScan marks existing scanner-owned Epic Fab entry as isInstalled
     const fabDir = path.join(engine.dbFolder, 'Fab');
     touch(path.join(fabDir, 'Fab.exe'));
 
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'epic-fab-id',
         name: 'Fab',
         platform: 'Epic Games',
@@ -358,7 +367,7 @@ test('startGlobalScan marks existing scanner-owned Epic Fab entry as isInstalled
         path: fabDir,
         isHidden: false,
         isInstalled: true,
-    }];
+    }]);
 
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
@@ -366,15 +375,15 @@ test('startGlobalScan marks existing scanner-owned Epic Fab entry as isInstalled
 
     const visible = await engine.startGlobalScan();
     assert.equal(visible.length, 0, 'Fab should not appear in visible games');
-    assert.equal(engine.dbCache[0].isInstalled, false, 'Fab db entry must be marked isInstalled=false');
-    assert.equal(engine.dbCache[0].missingReason, 'epic_non_game_asset');
+    assert.equal(firstGame(engine).isInstalled, false, 'Fab db entry must be marked isInstalled=false');
+    assert.equal(firstGame(engine).missingReason, 'epic_non_game_asset');
 });
 
 // ── stale-pass field mutation ─────────────────────────────────────────────────
 
 test('startGlobalScan: stale pass marks scanner-owned game missing with full metadata fields', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         platform: 'Riot Games',
@@ -384,7 +393,7 @@ test('startGlobalScan: stale pass marks scanner-owned game missing with full met
         isHidden: false,
         isInstalled: true,
         totalPlaytime: 42,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
@@ -393,7 +402,7 @@ test('startGlobalScan: stale pass marks scanner-owned game missing with full met
     await engine.startGlobalScan();
     const afterTs = new Date().toISOString();
 
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.isInstalled, false, 'isInstalled must be false');
     assert.equal(game.installVerified, false, 'installVerified must be false');
     assert.ok(typeof game.removedFromDiskAt === 'string' && game.removedFromDiskAt.length > 0, 'removedFromDiskAt must be set');
@@ -407,7 +416,7 @@ test('startGlobalScan: stale pass marks scanner-owned game missing with full met
 
 test('startGlobalScan: stale pass sets missingReason not_seen_in_latest_scan for unresolvable game', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -415,18 +424,18 @@ test('startGlobalScan: stale pass sets missingReason not_seen_in_latest_scan for
         installedGameKey: 'riot:valorant',
         isInstalled: true,
         // no path, no executablePath → reason must be not_seen_in_latest_scan
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    assert.equal(engine.dbCache[0].missingReason, 'not_seen_in_latest_scan');
+    assert.equal(firstGame(engine).missingReason, 'not_seen_in_latest_scan');
 });
 
 test('startGlobalScan: stale pass sets missingReason install_path_missing when path does not exist', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -434,19 +443,19 @@ test('startGlobalScan: stale pass sets missingReason install_path_missing when p
         installedGameKey: 'riot:valorant',
         isInstalled: true,
         path: path.join(engine.dbFolder, 'this-folder-does-not-exist'),
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    assert.equal(engine.dbCache[0].missingReason, 'install_path_missing');
+    assert.equal(firstGame(engine).missingReason, 'install_path_missing');
 });
 
 test('startGlobalScan: stale pass accumulates validationWarnings without duplicates', async () => {
     const engine = makeEngine();
     const reason = 'not_seen_in_latest_scan';
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -454,13 +463,13 @@ test('startGlobalScan: stale pass accumulates validationWarnings without duplica
         installedGameKey: 'riot:valorant',
         isInstalled: true,
         validationWarnings: [reason], // pre-existing warning — must not duplicate
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    const warnings = engine.dbCache[0].validationWarnings;
+    const warnings = firstGame(engine).validationWarnings;
     assert.ok(Array.isArray(warnings));
     assert.equal(warnings.filter(w => w === reason).length, 1, 'must not duplicate an existing warning');
 });
@@ -470,7 +479,7 @@ test('startGlobalScan: stale pass accumulates validationWarnings without duplica
 test('startGlobalScan: stale pass preserves existing removedFromDiskAt', async () => {
     const engine = makeEngine();
     const existingDate = '2020-06-01T00:00:00.000Z';
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -478,7 +487,7 @@ test('startGlobalScan: stale pass preserves existing removedFromDiskAt', async (
         installedGameKey: 'riot:valorant',
         isInstalled: true,
         removedFromDiskAt: existingDate, // already recorded on a previous scan
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
@@ -487,7 +496,7 @@ test('startGlobalScan: stale pass preserves existing removedFromDiskAt', async (
     await engine.startGlobalScan();
     const afterTs = new Date().toISOString();
 
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.removedFromDiskAt, existingDate, 'removedFromDiskAt must not be overwritten if already set');
     // lastMissingScanAt must still update to the current scan time
     assert.ok(game.lastMissingScanAt >= beforeTs, 'lastMissingScanAt must update to current scan');
@@ -499,20 +508,20 @@ test('startGlobalScan: stale pass preserves existing removedFromDiskAt', async (
 
 test('startGlobalScan: stale pass skips manual games', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'manual-mygame',
         name: 'My Game',
         scannerPlatform: 'manual',
         installSource: 'manual',
         platform: 'Manual',
         isInstalled: true,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.notEqual(game.isInstalled, false, 'manual game must not be marked missing by stale pass');
     assert.equal(game.lastMissingScanAt, undefined, 'lastMissingScanAt must not be set on a manual game');
     assert.equal(game.missingReason, undefined, 'missingReason must not be set on a manual game');
@@ -520,14 +529,14 @@ test('startGlobalScan: stale pass skips manual games', async () => {
 
 test('startGlobalScan: stale pass skips games from unscanned platforms', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'steam-100',
         name: 'Steam Game',
         scannerPlatform: 'steam',
         installSource: 'scanner',
         installedGameKey: 'steam:100',
         isInstalled: true,
-    }];
+    }]);
     // Make steam scanner throw — steam is NOT added to scannedPlatforms
     engine.getSteamGames = async () => { throw new Error('steam scan skipped'); };
     for (const method of ['getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
@@ -535,7 +544,7 @@ test('startGlobalScan: stale pass skips games from unscanned platforms', async (
     }
 
     await engine.startGlobalScan();
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.notEqual(game.isInstalled, false, 'game from unscanned platform must not be marked missing');
     assert.equal(game.lastMissingScanAt, undefined, 'lastMissingScanAt must not be set for unscanned platform game');
 });
@@ -546,7 +555,7 @@ test('startGlobalScan: stale pass backfills installSource to scanner', async () 
     // Game is scanner-owned (has scannerPlatform + command) but installSource was never set.
     // _isScannerOwnedGame falls through to platform+command check when installSource is absent.
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -554,40 +563,40 @@ test('startGlobalScan: stale pass backfills installSource to scanner', async () 
         command: 'riot://launch/valorant', // satisfies _isScannerOwnedGame's command check
         installedGameKey: 'riot:valorant',
         isInstalled: true,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    assert.equal(engine.dbCache[0].installSource, 'scanner', 'installSource must be backfilled to scanner');
+    assert.equal(firstGame(engine).installSource, 'scanner', 'installSource must be backfilled to scanner');
 });
 
 test('startGlobalScan: stale pass backfills scannerPlatform when inferred from id prefix', async () => {
     // Game has no scannerPlatform or platform field.
     // _scannerPlatformForGame falls through to id-prefix check: 'riot-…' → 'riot'.
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',   // starts with 'riot-' → inferred platform = 'riot'
         name: 'VALORANT',
         // scannerPlatform: intentionally absent
         installSource: 'scanner',
         installedGameKey: 'riot:valorant',
         isInstalled: true,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    assert.equal(engine.dbCache[0].scannerPlatform, 'riot', 'scannerPlatform must be backfilled from id prefix');
+    assert.equal(firstGame(engine).scannerPlatform, 'riot', 'scannerPlatform must be backfilled from id prefix');
 });
 
 test('startGlobalScan: stale pass backfills installedGameKey when missing', async () => {
     // Game is scanner-owned but installedGameKey was never written.
     // Stale pass calls makeInstalledGameKey(game) and stores the result.
     const engine = makeEngine();
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'steam-440',
         name: 'Team Fortress 2',
         scannerPlatform: 'steam',
@@ -595,13 +604,13 @@ test('startGlobalScan: stale pass backfills installedGameKey when missing', asyn
         allIds: { steam: '440' }, // enough for makeInstalledGameKey to produce a steam key
         // installedGameKey: intentionally absent
         isInstalled: true,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
 
     await engine.startGlobalScan();
-    const key = engine.dbCache[0].installedGameKey;
+    const key = firstGame(engine).installedGameKey;
     assert.ok(typeof key === 'string' && key.length > 0, 'installedGameKey must be backfilled when missing');
 });
 
@@ -610,11 +619,11 @@ test('startGlobalScan: stale pass backfills installedGameKey when missing', asyn
 test('startGlobalScan: stale pass increments staleRemoved only for previously visible games', async () => {
     // Visible game → should increment platform staleRemoved counter once
     const engineA = makeEngine();
-    engineA.dbCache = [{
+    seedGames(engineA, [{
         id: 'riot-valorant', name: 'VALORANT', scannerPlatform: 'riot',
         installSource: 'scanner', installedGameKey: 'riot:valorant',
         isInstalled: true, // was visible
-    }];
+    }]);
     for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
         engineA[m] = async () => [];
     await engineA.startGlobalScan();
@@ -623,11 +632,11 @@ test('startGlobalScan: stale pass increments staleRemoved only for previously vi
 
     // Already-missing game → staleRemoved must stay at 0
     const engineB = makeEngine();
-    engineB.dbCache = [{
+    seedGames(engineB, [{
         id: 'riot-valorant', name: 'VALORANT', scannerPlatform: 'riot',
         installSource: 'scanner', installedGameKey: 'riot:valorant',
         isInstalled: false, // already marked missing — wasVisible is false
-    }];
+    }]);
     for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
         engineB[m] = async () => [];
     await engineB.startGlobalScan();
@@ -640,7 +649,7 @@ test('startGlobalScan: stale pass increments staleRemoved only for previously vi
 test('startGlobalScan: stale pass updates lastMissingScanAt on game already marked missing', async () => {
     const engine = makeEngine();
     const priorDate = '2020-06-01T00:00:00.000Z';
-    engine.dbCache = [{
+    seedGames(engine, [{
         id: 'riot-valorant',
         name: 'VALORANT',
         scannerPlatform: 'riot',
@@ -649,7 +658,7 @@ test('startGlobalScan: stale pass updates lastMissingScanAt on game already mark
         isInstalled: false, // already marked missing from a prior scan
         removedFromDiskAt: priorDate,
         lastMissingScanAt: priorDate,
-    }];
+    }]);
     for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) {
         engine[method] = async () => [];
     }
@@ -658,7 +667,7 @@ test('startGlobalScan: stale pass updates lastMissingScanAt on game already mark
     await engine.startGlobalScan();
     const afterTs = new Date().toISOString();
 
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.isInstalled, false, 'isInstalled must remain false');
     assert.equal(game.removedFromDiskAt, priorDate, 'removedFromDiskAt must not change for already-missing game');
     assert.ok(game.lastMissingScanAt >= beforeTs, 'lastMissingScanAt must update even when already missing');
@@ -692,7 +701,7 @@ test('Epic scanner diagnostics count skipped non-game assets separately', () => 
 test('saveQualifiedSession: qualified session updates totalPlaytime and lastQualifiedPlayed', async () => {
     const engine = makeEngine();
     // Manually insert a game into the cache
-    engine.dbCache = [{ id: 'g1', name: 'Portal 2', totalPlaytime: 10 }];
+    seedGames(engine, [{ id: 'g1', name: 'Portal 2', totalPlaytime: 10 }]);
     const result = await engine.saveQualifiedSession('g1', {
         countedMinutes:      5,
         totalCountedMinutes: 5,
@@ -710,7 +719,7 @@ test('saveQualifiedSession: qualified session updates totalPlaytime and lastQual
     assert.equal(result.totalPlaytime, 15);
     assert.ok(result.lastQualifiedPlayed, 'lastQualifiedPlayed must be set');
     assert.equal(result.sessionQualified, true);
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.totalPlaytime, 15);
     assert.ok(game.lastQualifiedPlayed, 'game.lastQualifiedPlayed must be set');
     assert.equal(game.playSessions[0].qualified, true);
@@ -719,7 +728,7 @@ test('saveQualifiedSession: qualified session updates totalPlaytime and lastQual
 
 test('saveQualifiedSession: unqualified session does NOT set lastQualifiedPlayed', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{ id: 'g2', name: 'Wallpaper Engine', totalPlaytime: 0 }];
+    seedGames(engine, [{ id: 'g2', name: 'Wallpaper Engine', totalPlaytime: 0 }]);
     await engine.saveQualifiedSession('g2', {
         countedMinutes:      0,
         totalCountedMinutes: 0,
@@ -733,7 +742,7 @@ test('saveQualifiedSession: unqualified session does NOT set lastQualifiedPlayed
         endedAt:             Date.now(),
         isQualified:         false,
     });
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.lastQualifiedPlayed, undefined, 'must not set lastQualifiedPlayed for unqualified session');
     assert.equal(game.totalPlaytime, 0, 'must not increment totalPlaytime when countedMinutes=0');
     assert.equal(game.lastPlayed, undefined, 'must not set lastPlayed when countedMinutes=0');
@@ -742,7 +751,7 @@ test('saveQualifiedSession: unqualified session does NOT set lastQualifiedPlayed
 test('saveQualifiedSession: unqualified but counted session sets lastPlayed, not lastQualifiedPlayed', async () => {
     const engine = makeEngine();
     const beforeTs = Date.now();
-    engine.dbCache = [{ id: 'g-short', name: 'Fall Guys', totalPlaytime: 0 }];
+    seedGames(engine, [{ id: 'g-short', name: 'Fall Guys', totalPlaytime: 0 }]);
     const result = await engine.saveQualifiedSession('g-short', {
         countedMinutes:      1,
         totalCountedMinutes: 1,
@@ -761,7 +770,7 @@ test('saveQualifiedSession: unqualified but counted session sets lastPlayed, not
     assert.ok(result.lastPlayed, 'result must carry lastPlayed');
     assert.equal(result.lastQualifiedPlayed, undefined, 'result must NOT carry lastQualifiedPlayed');
     assert.equal(result.sessionQualified, false);
-    const game = engine.dbCache[0];
+    const game = firstGame(engine);
     assert.equal(game.totalPlaytime, 1);
     assert.ok(game.lastPlayed, 'game.lastPlayed must be set for counted session');
     assert.equal(game.lastQualifiedPlayed, undefined, 'game.lastQualifiedPlayed must stay unset');
@@ -770,7 +779,7 @@ test('saveQualifiedSession: unqualified but counted session sets lastPlayed, not
 
 test('setTimeTrackingEnabled: sets and reads back the flag', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{ id: 'g3', name: 'Test Game' }];
+    seedGames(engine, [{ id: 'g3', name: 'Test Game' }]);
 
     const res = await engine.setTimeTrackingEnabled('g3', false);
     assert.equal(res.status, 'success');
@@ -788,7 +797,7 @@ test('setTimeTrackingEnabled: sets and reads back the flag', async () => {
 
 test('setTimeTrackingEnabled: missing game returns error without throwing', async () => {
     const engine = makeEngine();
-    engine.dbCache = [];
+    seedGames(engine, []);
     const res = await engine.setTimeTrackingEnabled('nonexistent', false);
     assert.equal(res.status, 'error');
     assert.ok(res.error, 'error field must be set');
@@ -796,7 +805,7 @@ test('setTimeTrackingEnabled: missing game returns error without throwing', asyn
 
 test('getTimeTrackingEnabled: missing game returns error without throwing', () => {
     const engine = makeEngine();
-    engine.dbCache = [];
+    seedGames(engine, []);
     const res = engine.getTimeTrackingEnabled('nonexistent');
     assert.equal(res.status, 'error');
     assert.ok(res.error, 'error field must be set');
@@ -804,7 +813,7 @@ test('getTimeTrackingEnabled: missing game returns error without throwing', () =
 
 test('getTimeTrackingEnabled: defaults to true when field absent (backward compat)', () => {
     const engine = makeEngine();
-    engine.dbCache = [{ id: 'g-legacy', name: 'Legacy Game' }]; // no timeTrackingEnabled field
+    seedGames(engine, [{ id: 'g-legacy', name: 'Legacy Game' }]); // no timeTrackingEnabled field
     const res = engine.getTimeTrackingEnabled('g-legacy');
     assert.equal(res.status, 'success');
     assert.equal(res.timeTrackingEnabled, true, 'missing field must default to true');
@@ -825,20 +834,20 @@ test('gameScanner module exports getTimeTrackingEnabled as a function', () => {
 
 test('updatePlaytime: tracking_disabled returns without incrementing', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{ id: 'g4', name: 'Disabled Game', totalPlaytime: 20, timeTrackingEnabled: false }];
+    seedGames(engine, [{ id: 'g4', name: 'Disabled Game', totalPlaytime: 20, timeTrackingEnabled: false }]);
     const res = await engine.updatePlaytime('g4', 5);
     assert.equal(res.status, 'tracking_disabled');
-    assert.equal(engine.dbCache[0].totalPlaytime, 20, 'totalPlaytime must not change');
+    assert.equal(firstGame(engine).totalPlaytime, 20, 'totalPlaytime must not change');
 });
 
 test('saveQualifiedSession: tracking_disabled blocks session save', async () => {
     const engine = makeEngine();
-    engine.dbCache = [{ id: 'g5', name: 'Off Game', totalPlaytime: 0, timeTrackingEnabled: false }];
+    seedGames(engine, [{ id: 'g5', name: 'Off Game', totalPlaytime: 0, timeTrackingEnabled: false }]);
     const res = await engine.saveQualifiedSession('g5', {
         countedMinutes: 10, totalCountedMinutes: 10, rawRuntimeMinutes: 15,
         foregroundSeen: true, confidence: 'high', isQualified: true,
         startedAt: Date.now(), endedAt: Date.now(),
     });
     assert.equal(res.status, 'tracking_disabled');
-    assert.equal(engine.dbCache[0].totalPlaytime, 0);
+    assert.equal(firstGame(engine).totalPlaytime, 0);
 });

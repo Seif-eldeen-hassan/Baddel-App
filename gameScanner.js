@@ -82,16 +82,8 @@ class BaddelEngine {
             path,
             dbFolder: this.dbFolder,
         });
-        // dbCache is a get/set proxy to this._jsonGameRepository._dbCache
     }
 
-    // ─── dbCache get/set proxy ───────────────────────────────────────────────
-    // All BaddelEngine methods share the single array owned by JsonGameRepository.
-    // Delegated methods (init/save/rename/etc.) go through the repository directly;
-    // non-delegated methods (upsertGame, scan, metadata, playtime) read/write through
-    // this proxy and therefore always see the same underlying array.
-    get dbCache()    { return this._jsonGameRepository._dbCache; }
-    set dbCache(arr) { this._jsonGameRepository._dbCache = arr; }
     // Migration bridge: exposes the single JsonGameRepository owned by BaddelEngine.
     // Do not instantiate repositories elsewhere.
     getJsonGameRepository() { return this._jsonGameRepository; }
