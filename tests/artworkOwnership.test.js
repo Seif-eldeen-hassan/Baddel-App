@@ -205,12 +205,11 @@ test('backgroundDownload: source is forwarded to updateGameMetadata', async () =
 test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to updateGameMetadata', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
     const pipelineStart = src.indexOf('async function runBackgroundMetadataPipeline');
-    assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist');
-    // Count occurrences of updateGameMetadata calls tagged with source:'pipeline' in the function body.
-    // The calls span multiple lines so we count the source tag occurrences co-located with
-    // updateGameMetadata within a 6000-char window rather than using a single-line regex.
-    const pipelineBody = src.slice(pipelineStart, pipelineStart + 12000);
-    const taggedCalls = (pipelineBody.match(/source:\s*['"]pipeline['"]/g) || []).length;
+    assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist in gameScanner.js facade');
+    // The pipeline body was extracted to services/backgroundMetadataPipeline.js in Phase 16.7.
+    // Count source:'pipeline' tags in the service module where the implementation lives.
+    const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'services', 'backgroundMetadataPipeline.js'), 'utf8');
+    const taggedCalls = (svcSrc.match(/source:\s*['"]pipeline['"]/g) || []).length;
     assert.ok(taggedCalls >= 3, `must have ≥3 source:'pipeline' tags in pipeline body, found ${taggedCalls}`);
 });
 
