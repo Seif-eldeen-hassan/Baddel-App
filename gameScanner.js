@@ -55,6 +55,7 @@ const { ImageCacheService } = require('./src/features/games/infrastructure/servi
 const { MetadataCacheStore } = require('./src/features/games/infrastructure/services/MetadataCacheStore');
 const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
+const { deleteGamePermanently: _deleteGamePermanentlyUseCase } = require('./src/features/games/application/useCases/DeleteGamePermanentlyUseCase');
 
 
 // ============================================================
@@ -143,15 +144,14 @@ class BaddelEngine {
     async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 
     async deleteGamePermanently(gameId) {
-        const removedCount = this._jsonGameRepository.deleteGameById(gameId);
-        if (removedCount > 0) {
-            this.deleteGameImages(gameId);
-            try { mrm.clearJob(gameId); } catch (_) {}
-            try { await metadataCacheStore.deleteEntry(gameId); } catch (_) {}
-            this.saveDatabase();
-            return { status: 'success' };
-        }
-        return { status: 'error', message: 'Game not found' };
+        return _deleteGamePermanentlyUseCase({
+            gameId,
+            gamesRepository:           this._jsonGameRepository,
+            imageCacheService:         this._imageCacheService,
+            metadataResolutionManager: mrm,
+            metadataCacheStore,
+            saveDatabase: () => this.saveDatabase(),
+        });
     }
 
     // Permanently remove Epic non-game entries (Fab assets, Unreal Marketplace

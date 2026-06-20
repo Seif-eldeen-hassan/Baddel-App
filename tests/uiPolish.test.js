@@ -827,17 +827,25 @@ test('MRM.resolve: force=true clears inflight before new resolve (source check)'
 });
 
 test('gameScanner.js: deleteGamePermanently calls mrm.clearJob after deleteGameImages', () => {
-    const fnStart = SCANNER_JS.indexOf('async deleteGamePermanently(gameId)');
-    const fn = SCANNER_JS.slice(fnStart, fnStart + 500);
-    assert.match(fn, /mrm\.clearJob\(gameId\)/, 'must call mrm.clearJob');
-    const imgIdx   = fn.indexOf('deleteGameImages');
-    const clearIdx = fn.indexOf('mrm.clearJob');
-    assert.ok(imgIdx < clearIdx, 'mrm.clearJob must come after deleteGameImages');
+    assert.ok(
+        SCANNER_JS.indexOf('async deleteGamePermanently(gameId)') !== -1,
+        'deleteGamePermanently must exist in gameScanner.js delegate'
+    );
+    // Real body lives in DeleteGamePermanentlyUseCase.js (Phase 18.3).
+    const ucSrc   = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'DeleteGamePermanentlyUseCase.js'), 'utf8');
+    const fnStart = ucSrc.indexOf('async function deleteGamePermanently(');
+    const fn      = ucSrc.slice(fnStart, fnStart + 500);
+    assert.match(fn, /metadataResolutionManager\.clearJob\(gameId\)/, 'must call metadataResolutionManager.clearJob');
+    const imgIdx   = fn.indexOf('imageCacheService.deleteGameImages');
+    const clearIdx = fn.indexOf('metadataResolutionManager.clearJob');
+    assert.ok(imgIdx < clearIdx, 'clearJob must come after deleteGameImages');
 });
 
 test('gameScanner.js: deleteGamePermanently calls metadataCacheStore.deleteEntry', () => {
-    const fnStart = SCANNER_JS.indexOf('async deleteGamePermanently(gameId)');
-    const fn = SCANNER_JS.slice(fnStart, fnStart + 500);
+    // Real body lives in DeleteGamePermanentlyUseCase.js (Phase 18.3).
+    const ucSrc   = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'DeleteGamePermanentlyUseCase.js'), 'utf8');
+    const fnStart = ucSrc.indexOf('async function deleteGamePermanently(');
+    const fn      = ucSrc.slice(fnStart, fnStart + 500);
     assert.match(fn, /metadataCacheStore\.deleteEntry\(gameId\)/, 'must call metadataCacheStore.deleteEntry');
 });
 
