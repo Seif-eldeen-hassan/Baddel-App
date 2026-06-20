@@ -53,7 +53,7 @@ const {
 const { JsonGameRepository } = require('./src/features/games/infrastructure/repositories/JsonGameRepository');
 const { ImageCacheService } = require('./src/features/games/infrastructure/services/ImageCacheService');
 const { MetadataCacheStore } = require('./src/features/games/infrastructure/services/MetadataCacheStore');
-const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./services/backgroundMetadataPipeline');
+const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 
 
 // ============================================================

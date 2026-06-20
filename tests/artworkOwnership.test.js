@@ -206,9 +206,9 @@ test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to up
     const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
     const pipelineStart = src.indexOf('async function runBackgroundMetadataPipeline');
     assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist in gameScanner.js facade');
-    // The pipeline body was extracted to services/backgroundMetadataPipeline.js in Phase 16.7.
+    // The pipeline body lives in src/features/games/infrastructure/services/BackgroundMetadataPipeline.js (Phase 17.2).
     // Count source:'pipeline' tags in the service module where the implementation lives.
-    const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'services', 'backgroundMetadataPipeline.js'), 'utf8');
+    const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'services', 'BackgroundMetadataPipeline.js'), 'utf8');
     const taggedCalls = (svcSrc.match(/source:\s*['"]pipeline['"]/g) || []).length;
     assert.ok(taggedCalls >= 3, `must have ≥3 source:'pipeline' tags in pipeline body, found ${taggedCalls}`);
 });
