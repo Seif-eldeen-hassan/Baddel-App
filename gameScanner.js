@@ -920,25 +920,6 @@ function registerLocalMetadataResolver(fn) {
 }
 
 /**
- * Derive a clean slug from a game title (same logic as game-details.js).
- * @param {string} name
- * @returns {{ slug: string|null, title: string }}
- */
-function _resolveGenericLookup(name) {
-    if (!name) return { slug: null, title: name };
-    const slug = name
-        .toLowerCase()
-        .trim()
-        .replace(/[''`™®©]/g, '')
-        .replace(/[^a-z0-9\s\-]/g, ' ')
-        .replace(/\s+/g, '-')
-        .replace(/-{2,}/g, '-')
-        .replace(/^-+|-+$/g, '');
-    const validSlug = (slug && slug.length >= 3 && !/^\d+$/.test(slug)) ? slug : null;
-    return { slug: validSlug, title: name };
-}
-
-/**
  * Public façade — injects the module-level singletons so production callers
  * that pass only the games array continue to work unchanged.  Test callers
  * spread their fakes into _deps, which overrides the singletons.
@@ -952,17 +933,6 @@ async function runBackgroundMetadataPipeline(games, _deps = {}) {
         gameImageUpdatedFn: _gameImageUpdatedFn,
         ..._deps,
     });
-}
-
-/** Simple completeness check (mirrors _gdIsMetadataTooIncomplete in game-details.js) */
-function _isMetaTooIncomplete(meta) {
-    if (!meta) return true;
-    const hasDescription = !!(meta.info?.description || meta.description);
-    const hasCover       = !!(meta.cover);
-    const hasHero        = !!(meta.heroImage || meta.hero);
-    const hasScreenshots = (meta.info?.screenshots || []).length > 0;
-    const missingVisuals = [hasCover, hasHero, hasScreenshots].filter(Boolean).length < 2;
-    return !hasDescription && missingVisuals;
 }
 
 /** Image downloader injected from main.js (caches remote URLs to local disk as WebP). */
