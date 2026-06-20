@@ -975,8 +975,16 @@ function _metadataFolderForGame(game) {
  * @param {object[]} games       - array of installed game records from the DB
  * @param {object}   imageCache  - the IPC-layer image cache helper (optional)
  */
-async function runBackgroundMetadataPipeline(games) {
+async function runBackgroundMetadataPipeline(games, _deps = {}) {
     const TAG = '[BackgroundMetaPipeline]';
+
+    // Resolve injectable dependencies — production callers pass no second argument
+    // so all fall through to the module-level singletons unchanged.
+    const _engine      = _deps.engine            ?? engine;
+    const _mrm         = _deps.mrm               ?? mrm;
+    const _cache       = _deps.metadataCacheStore ?? metadataCacheStore;
+    const _imgDownload = _deps.imageDownloadFn    ?? _imageDownloadFn;
+    const _imgNotifier = _deps.gameImageUpdatedFn ?? _gameImageUpdatedFn;
 
     // Filter: only non-Steam/Epic installed games
     const targets = games.filter(g => {
@@ -997,9 +1005,9 @@ async function runBackgroundMetadataPipeline(games) {
         const gameTag = `${TAG}[${game.name}]`;
 
         // ── Art presence helpers ──────────────────────────────────────────────
-        const hasDiskCover = !!engine.findInCache(game.id, 'cover');
-        const hasDiskHero  = !!engine.findInCache(game.id, 'hero');
-        const hasDiskLogo  = !!engine.findInCache(game.id, 'logo');
+        const hasDiskCover = !!_engine.findInCache(game.id, 'cover');
+        const hasDiskHero  = !!_engine.findInCache(game.id, 'hero');
+        const hasDiskLogo  = !!_engine.findInCache(game.id, 'logo');
         const hasDbArt     = !!(game.image || game.heroImage || game.logo);
         const hasDiskArt   = hasDiskCover || hasDiskHero;
         const hasAnyArt    = hasDbArt || hasDiskArt;
@@ -1012,18 +1020,18 @@ async function runBackgroundMetadataPipeline(games) {
         // This happens when a prior pipeline run resolved metadata but the image
         // download or DB write then failed.  Without this reset the game is stuck
         // behind the 7-day RESOLVED lock even though its card is blank.
-        const mrmStatus = mrm.getStatus(game.id);
+        const mrmStatus = _mrm.getStatus(game.id);
         if (mrmStatus === MRM_STATUS.RESOLVED && !hasAnyArt) {
             console.log(`${gameTag} ⚠ MRM RESOLVED but no usable art in DB/cache — resetting to IDLE`);
-            mrm.resetToIdle(game.id);
-            await metadataCacheStore.deleteEntry(game.id).catch(() => {});
+            _mrm.resetToIdle(game.id);
+            await _cache.deleteEntry(game.id).catch(() => {});
             recovered++;
         }
 
         // ── Skip only when cover + hero + logo are all present + metadata cached ─
         // Any missing visual asset must NOT trigger a skip — backfill runs instead.
         try {
-            if (hasAnyArt && hasHero && hasLogo && await metadataCacheStore.hasEntry(game.id)) {
+            if (hasAnyArt && hasHero && hasLogo && await _cache.hasEntry(game.id)) {
                 console.log(`${gameTag} ↷ Has cached metadata + cover + hero + logo — skipping.`);
                 skipped++;
                 continue;
@@ -1038,16 +1046,16 @@ async function runBackgroundMetadataPipeline(games) {
         if (hasAnyArt && !hasHero) {
             let heroHandled = false;
             try {
-                const hasMeta = await metadataCacheStore.hasEntry(game.id);
+                const hasMeta = await _cache.hasEntry(game.id);
                 if (hasMeta) {
                     console.log(`${gameTag} [HeroBackfill] missing hero but cover/logo present — retrying`);
-                    const cachedMeta   = await metadataCacheStore.load(game.id);
+                    const cachedMeta   = await _cache.load(game.id);
                     const cachedHeroUrl = cachedMeta?.heroImage || cachedMeta?.hero || null;
                     if (cachedHeroUrl) {
                         let finalHero = cachedHeroUrl;
-                        if (_imageDownloadFn) {
+                        if (_imgDownload) {
                             try {
-                                const dl = await _imageDownloadFn({ hero: cachedHeroUrl }, game.id);
+                                const dl = await _imgDownload({ hero: cachedHeroUrl }, game.id);
                                 if (dl?.hero) finalHero = dl.hero;
                                 console.log(`${gameTag} [HeroBackfill] hero cached successfully (${finalHero})`);
                             } catch (e) {
@@ -1055,12 +1063,12 @@ async function runBackgroundMetadataPipeline(games) {
                             }
                         }
                         try {
-                            await engine.updateGameMetadata(game.id, { hero: finalHero }, { source: 'pipeline' });
-                            engine.saveDatabase();
+                            await _engine.updateGameMetadata(game.id, { hero: finalHero }, { source: 'pipeline' });
+                            _engine.saveDatabase();
                             console.log(`${gameTag} [HeroBackfill] reused cached metadata hero — DB updated`);
-                            if (_gameImageUpdatedFn) {
-                                const updatedGame = engine.getGameById(game.id);
-                                if (updatedGame) _gameImageUpdatedFn(updatedGame);
+                            if (_imgNotifier) {
+                                const updatedGame = _engine.getGameById(game.id);
+                                if (updatedGame) _imgNotifier(updatedGame);
                             }
                         } catch (e) {
                             console.warn(`${gameTag} [HeroBackfill] DB update failed:`, e.message);
@@ -1070,8 +1078,8 @@ async function runBackgroundMetadataPipeline(games) {
                         // Cache entry exists but has no hero — treat as stale/incomplete.
                         // Delete it and reset MRM so the full pipeline re-resolves fresh data.
                         console.log(`${gameTag} [IncompleteArtRecovery] cache has no hero/logo -> force refresh`);
-                        await metadataCacheStore.deleteEntry(game.id).catch(() => {});
-                        mrm.resetToIdle(game.id);
+                        await _cache.deleteEntry(game.id).catch(() => {});
+                        _mrm.resetToIdle(game.id);
                         // heroHandled stays false → falls through to full resolve below
                     }
                 }
@@ -1090,19 +1098,19 @@ async function runBackgroundMetadataPipeline(games) {
         // just for a logo.  Reads from the cached metadata without network traffic.
         if (hasAnyArt && hasHero && !hasLogo) {
             try {
-                const hasMeta = await metadataCacheStore.hasEntry(game.id);
+                const hasMeta = await _cache.hasEntry(game.id);
                 if (hasMeta) {
-                    const cachedMeta    = await metadataCacheStore.load(game.id);
+                    const cachedMeta    = await _cache.load(game.id);
                     const cachedLogoUrl = cachedMeta?.logo || cachedMeta?.defaultLogo || null;
-                    if (cachedLogoUrl && _imageDownloadFn) {
-                        const dl = await _imageDownloadFn({ logo: cachedLogoUrl }, game.id);
+                    if (cachedLogoUrl && _imgDownload) {
+                        const dl = await _imgDownload({ logo: cachedLogoUrl }, game.id);
                         const finalLogo = dl?.logo || cachedLogoUrl;
-                        await engine.updateGameMetadata(game.id, { logo: finalLogo }, { source: 'pipeline' });
-                        engine.saveDatabase();
+                        await _engine.updateGameMetadata(game.id, { logo: finalLogo }, { source: 'pipeline' });
+                        _engine.saveDatabase();
                         console.log(`${gameTag} [IncompleteArtRecovery] backfilled logo (${finalLogo})`);
-                        if (_gameImageUpdatedFn) {
-                            const upd = engine.getGameById(game.id);
-                            if (upd) _gameImageUpdatedFn(upd);
+                        if (_imgNotifier) {
+                            const upd = _engine.getGameById(game.id);
+                            if (upd) _imgNotifier(upd);
                         }
                     }
                     await new Promise(r => setTimeout(r, 300));
@@ -1114,9 +1122,9 @@ async function runBackgroundMetadataPipeline(games) {
         }
 
         // ── Skip games only on active cooldown MRM state ──────────────────────
-        const effectiveMrmStatus = mrm.getStatus(game.id); // re-read after potential reset
+        const effectiveMrmStatus = _mrm.getStatus(game.id); // re-read after potential reset
         if (effectiveMrmStatus === MRM_STATUS.COOLDOWN) {
-            const job = mrm.getJob(game.id);
+            const job = _mrm.getJob(game.id);
             console.log(`${gameTag} ↷ MRM cooldown until ${new Date(job?.cooldownUntil).toISOString()} — skipping.`);
             mrmSkipped++;
             continue;
@@ -1139,7 +1147,7 @@ async function runBackgroundMetadataPipeline(games) {
         const primaryTitle = game.name || (candidates[0]?.title) || '';
         const { slug: _primarySlug } = (candidates[0] ? { slug: candidates[0].slug } : {});
 
-        const resolveResult = await mrm.resolve(game.id, {
+        const resolveResult = await _mrm.resolve(game.id, {
             candidates,
             title:        primaryTitle,
             slug:         _primarySlug || undefined,
@@ -1156,7 +1164,7 @@ async function runBackgroundMetadataPipeline(games) {
                 baddelApi.normalizeAssets(meta);
 
             try {
-                await metadataCacheStore.save(game.id, game.name, game.platform, meta);
+                await _cache.save(game.id, game.name, game.platform, meta);
                 console.log(`${gameTag} ✓ Full metadata persisted to local cache`);
                 resolved++;
             } catch (err) {
@@ -1168,10 +1176,10 @@ async function runBackgroundMetadataPipeline(games) {
             let finalHero  = remoteHero;
             let finalLogo  = remoteLogo;
 
-            if (_imageDownloadFn) {
+            if (_imgDownload) {
                 try {
                     const assets = { cover: remoteCover, hero: remoteHero, logo: remoteLogo };
-                    const cached = await _imageDownloadFn(assets, game.id);
+                    const cached = await _imgDownload(assets, game.id);
                     if (cached?.cover) finalCover = cached.cover;
                     if (cached?.hero)  finalHero  = cached.hero;
                     if (cached?.logo)  finalLogo  = cached.logo;
@@ -1183,18 +1191,18 @@ async function runBackgroundMetadataPipeline(games) {
 
             if (finalCover || finalHero || finalLogo) {
                 try {
-                    await engine.updateGameMetadata(game.id, {
+                    await _engine.updateGameMetadata(game.id, {
                         cover: finalCover,
                         hero:  finalHero,
                         logo:  finalLogo,
                     }, { source: 'pipeline' });
-                    engine.saveDatabase();
+                    _engine.saveDatabase();
                     console.log(`${gameTag} ✓ DB entry backfilled (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
 
-                    if (_gameImageUpdatedFn) {
-                        const updatedGame = engine.getGameById(game.id);
+                    if (_imgNotifier) {
+                        const updatedGame = _engine.getGameById(game.id);
                         if (updatedGame) {
-                            _gameImageUpdatedFn(updatedGame);
+                            _imgNotifier(updatedGame);
                             console.log(`${gameTag} ✓ Renderer notified (game-image-updated)`);
                         }
                     }
@@ -1205,7 +1213,7 @@ async function runBackgroundMetadataPipeline(games) {
                 // Metadata resolved (text / ratings) but no images at all.
                 // Reset MRM so the next pipeline pass retries image fetching;
                 // this keeps exception_keep_pending_art games in the retry loop.
-                mrm.resetToIdle(game.id);
+                _mrm.resetToIdle(game.id);
                 console.log(`${gameTag} ⚠ Resolved metadata has no images — MRM reset to IDLE for retry`);
             }
         } else {
