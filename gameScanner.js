@@ -54,6 +54,7 @@ const { JsonGameRepository } = require('./src/features/games/infrastructure/repo
 const { ImageCacheService } = require('./src/features/games/infrastructure/services/ImageCacheService');
 const { MetadataCacheStore } = require('./src/features/games/infrastructure/services/MetadataCacheStore');
 const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
+const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
 
 
 // ============================================================
@@ -847,42 +848,13 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
 // SINGLETON + EXPORTS
 // ============================================================
 const engine = new BaddelEngine();
-async function refetchMissingImages(notifyCallback) {
-    const fsSync = require('fs');
-    let updated = false;
-
-    for (const game of engine.getStoredGames()) {
-        if (!game.isHidden && !game.customArtworkLocked) {
-            let isMissing = false;
-
-            if (game.image && game.image.startsWith('file://')) {
-                try {
-                    const cleanPath = decodeURI(game.image.replace('file://', ''));
-                    if (!fsSync.existsSync(cleanPath)) isMissing = true;
-                } catch (e) { isMissing = true; }
-            } else if (!game.image) {
-                isMissing = true;
-            }
-
-            if (isMissing) {
-                try {
-                    // Try to fetch from Baddel metadata server by title
-                    const meta = await baddelApi.lookupGame({ title: game.name });
-                    if (meta && meta.images) {
-                        const coverImg = meta.images.find(i => i.image_type === 'cover');
-                        if (coverImg) {
-                            const coverUrl = coverImg.cdn_url || coverImg.url;
-                            if (coverUrl) {
-                                await engine.backgroundDownload({ cover: coverUrl }, game.id, notifyCallback, { source: 'pipeline' });
-                                updated = true;
-                            }
-                        }
-                    }
-                } catch (e) { /* skip */ }
-            }
-        }
-    }
-    if (updated) engine.saveDatabase();
+async function refetchMissingImages(notifyCallback = null, _deps = {}) {
+    return _refetchMissingImagesService({
+        engine,
+        baddelApi,
+        notifyCallback,
+        ..._deps,
+    });
 }
 
 const metadataCacheStore = new MetadataCacheStore(app.getPath('userData'));

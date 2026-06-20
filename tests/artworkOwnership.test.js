@@ -216,9 +216,10 @@ test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to up
 test('gameScanner.js: refetchMissingImages skips customArtworkLocked games', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
     const fnStart = src.indexOf('async function refetchMissingImages');
-    assert.ok(fnStart !== -1, 'refetchMissingImages must exist');
-    const fnBody = src.slice(fnStart, fnStart + 800);
-    assert.match(fnBody, /customArtworkLocked/, 'refetchMissingImages must check customArtworkLocked');
+    assert.ok(fnStart !== -1, 'refetchMissingImages must exist in gameScanner.js facade');
+    // The real body lives in src/features/games/infrastructure/services/RefetchImagesService.js (Phase 18.2).
+    const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'services', 'RefetchImagesService.js'), 'utf8');
+    assert.match(svcSrc, /customArtworkLocked/, 'RefetchImagesService must check customArtworkLocked');
 });
 
 // ── app.js: library-updated merge and fetchMetadata ────────────────────────
