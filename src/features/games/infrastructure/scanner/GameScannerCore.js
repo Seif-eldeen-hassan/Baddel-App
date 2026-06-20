@@ -30,6 +30,7 @@ const { exec }  = require('child_process');
 const util      = require('util');
 const execAsync = util.promisify(exec);
 const crypto    = require('crypto');
+const { mapPlatformHint } = require('../../../../shared/platform/platformHints');
 
 // ─── Shortcut args parser ─────────────────────────────────────────────────────
 function parseShortcutArgs(rawArgs) {
@@ -49,18 +50,9 @@ function _cacheBaseName(type, gameId) {
 }
 
 // ─── Platform hint mapper ─────────────────────────────────────────────────────
-function _mapPlatformHint(raw) {
-    if (!raw) return null;
-    const p = raw.toLowerCase().trim();
-    if (p === 'xbox' || p === 'xbox game pass' || p === 'microsoft store' || p === 'store') return 'xbox';
-    if (p === 'ea app' || p === 'ea' || p === 'origin')                                     return 'ea';
-    if (p === 'ubisoft connect' || p === 'ubisoft')                                          return 'ubisoft';
-    if (p === 'riot games' || p === 'riot')                                                  return 'riot';
-    if (p === 'rockstar' || p === 'rockstar games')                                          return 'rockstar';
-    if (p === 'gog')                                                                         return 'gog';
-    if (p === 'battlenet' || p === 'battle.net')                                             return 'battlenet';
-    return null;
-}
+// Canonical implementation lives in src/shared/platform/platformHints.js.
+// Alias kept for backward-compatible export.
+const _mapPlatformHint = mapPlatformHint;
 
 const SCANNER_PLATFORMS = new Set(['steam', 'epic', 'riot', 'ubisoft', 'ea', 'xbox']);
 

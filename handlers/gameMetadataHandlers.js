@@ -8,24 +8,10 @@
 //     mrm,                     ← require('./gameScanner').resolutionManager
 //     generateMetadataCandidates } ← services/candidateGenerator
 
+const { mapPlatformHint: _mapPlatformHint } = require('../src/shared/platform/platformHints');
+
 module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
     const { baddelApi, mrm, generateMetadataCandidates } = deps;
-
-    // ─── Platform hint mapper ──────────────────────────────────────────────────
-    // Maps raw launcher platform strings to the server-accepted `platformHint` values
-    // for POST /client/resolve-metadata.  Unknown values return null (field omitted).
-    function _mapPlatformHint(raw) {
-        if (!raw) return null;
-        const p = raw.toLowerCase().trim();
-        if (p === 'xbox' || p === 'xbox game pass' || p === 'microsoft store' || p === 'store') return 'xbox';
-        if (p === 'ea app' || p === 'ea' || p === 'origin')                                     return 'ea';
-        if (p === 'ubisoft connect' || p === 'ubisoft')                                          return 'ubisoft';
-        if (p === 'riot games' || p === 'riot')                                                  return 'riot';
-        if (p === 'rockstar' || p === 'rockstar games')                                          return 'rockstar';
-        if (p === 'gog')                                                                         return 'gog';
-        if (p === 'battlenet' || p === 'battle.net')                                             return 'battlenet';
-        return null; // steam/epic never reach this path; unknown → omit field
-    }
 
     function _canonicalSteamEpicId(platform, hints = {}) {
         const p = String(platform || '').toLowerCase().trim();

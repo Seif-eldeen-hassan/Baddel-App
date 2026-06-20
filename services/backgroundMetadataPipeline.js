@@ -4,7 +4,7 @@ const path = require('path');
 const baddelApi = require('./baddelApi');
 const { STATUS: MRM_STATUS } = require('./metadataResolutionManager');
 const { generateMetadataCandidates } = require('./candidateGenerator');
-const { _mapPlatformHint } = require('../src/features/games/infrastructure/scanner/GameScannerCore');
+const { mapPlatformHint: _mapPlatformHint } = require('../src/shared/platform/platformHints');
 
 /** Platforms that use the Steam/Epic server enrich flow — skip from this pipeline. */
 const _SERVER_ENRICH_PLATFORMS = new Set(['steam', 'Steam', 'epic', 'Epic Games', 'epic games']);

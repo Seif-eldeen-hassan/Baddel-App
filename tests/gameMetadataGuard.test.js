@@ -18,16 +18,25 @@ const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
 const GAME_METADATA_HANDLERS_JS = fs.readFileSync(
     path.join(ROOT, 'handlers', 'gameMetadataHandlers.js'), 'utf8'
 );
+const PLATFORM_HINTS_JS = fs.readFileSync(
+    path.join(ROOT, 'src', 'shared', 'platform', 'platformHints.js'), 'utf8'
+);
 
 // ── Production function anchors ───────────────────────────────────────────────
 
 const canonicalFnStart = GAME_METADATA_HANDLERS_JS.indexOf('function _canonicalSteamEpicId(');
-const mapHintFnStart   = GAME_METADATA_HANDLERS_JS.indexOf('function _mapPlatformHint(');
+// mapPlatformHint canonical definition now lives in the shared module (Phase 17.1).
+const mapHintFnStart   = PLATFORM_HINTS_JS.indexOf('function mapPlatformHint(');
 const handlerStart     = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
 
 assert.ok(canonicalFnStart !== -1, '_canonicalSteamEpicId must be defined in handlers/gameMetadataHandlers.js');
-assert.ok(mapHintFnStart   !== -1, '_mapPlatformHint must be defined in handlers/gameMetadataHandlers.js');
+assert.ok(mapHintFnStart   !== -1, 'mapPlatformHint must be defined in src/shared/platform/platformHints.js');
 assert.ok(handlerStart     !== -1, "get-game-metadata handler must exist in handlers/gameMetadataHandlers.js");
+// Handler must import from shared instead of defining the mapper inline.
+assert.ok(
+    GAME_METADATA_HANDLERS_JS.includes('platformHints'),
+    'handlers/gameMetadataHandlers.js must import from platformHints (no longer inline)'
+);
 
 // Verify the register call is wired up in main.js
 assert.ok(
@@ -233,8 +242,8 @@ test('_mapPlatformHint: null and empty string both return null', () => {
 // ─── 4. _mapPlatformHint — source-level anchor ───────────────────────────────
 
 test('_mapPlatformHint source: all eight platform mappings are present', () => {
-    // 1 000 chars stays safe on Windows CRLF — the function body is ~14 lines
-    const src = GAME_METADATA_HANDLERS_JS.slice(mapHintFnStart, mapHintFnStart + 1000);
+    // Canonical definition now lives in src/shared/platform/platformHints.js (Phase 17.1).
+    const src = PLATFORM_HINTS_JS.slice(mapHintFnStart, mapHintFnStart + 1000);
     assert.match(src, /xbox game pass/);
     assert.match(src, /ea app/);
     assert.match(src, /ubisoft connect/);
