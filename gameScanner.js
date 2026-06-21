@@ -56,6 +56,7 @@ const { MetadataCacheStore } = require('./src/features/games/infrastructure/serv
 const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
 const { deleteGamePermanently: _deleteGamePermanentlyUseCase } = require('./src/features/games/application/useCases/DeleteGamePermanentlyUseCase');
+const { backgroundDownload: _backgroundDownloadService } = require('./src/features/games/infrastructure/services/BackgroundDownloadService');
 
 
 // ============================================================
@@ -582,50 +583,15 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
 
 
     async backgroundDownload(metadata, gameId, notifyCallback = null, { source = 'pipeline' } = {}) {
-        try {
-            const [cover, hero, logo] = await Promise.all([
-                metadata.cover ? this.downloadToCache(metadata.cover, gameId, 'cover') : null,
-                metadata.hero  ? this.downloadToCache(metadata.hero,  gameId, 'hero')  : null,
-                metadata.logo  ? this.downloadToCache(metadata.logo,  gameId, 'logo')  : null
-            ]);
-
-            const finalCover = cover || metadata.cover || null;
-            const finalHero  = hero  || metadata.heroImage || metadata.hero || null;
-            const finalLogo  = logo  || metadata.logo  || null;
-
-            if (finalCover || finalHero || finalLogo) {
-                await this.updateGameMetadata(gameId, {
-                    cover: finalCover,
-                    hero:  finalHero,
-                    logo:  finalLogo,
-                }, { source });
-
-                // Re-persist the full metadata payload with local file:// paths
-                // so that game-details.js (via loadFullMetadata) sees the locally
-                // cached art instead of the remote CDN URL.
-                const game = this._jsonGameRepository.getGameById(gameId);
-                if (game && metadata) {
-                    const updatedMeta = {
-                        ...metadata,
-                        cover:     finalCover,
-                        heroImage: finalHero,
-                        hero:      finalHero,
-                        logo:      finalLogo,
-                    };
-                    metadataCacheStore.save(gameId, game.name, game.platform, updatedMeta)
-                        .catch(err => console.warn('[Background Download] Failed to re-persist metadata with local paths:', err.message));
-                }
-
-                // إرسال إشعار للواجهة بعد اكتمال التحميل تماماً
-                if (notifyCallback) {
-                    const updatedGame = this._jsonGameRepository.getGameById(gameId);
-                    if (updatedGame) notifyCallback(updatedGame);
-                }
-            }
-        } catch (err) {
-            console.error('[Background Download]', err);
-        }
-}
+        return _backgroundDownloadService({
+            metadata,
+            gameId,
+            notifyCallback,
+            source,
+            gamesRepository:  this._jsonGameRepository,
+            metadataCacheStore,
+        });
+    }
 
 
 
