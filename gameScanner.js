@@ -58,6 +58,7 @@ const { refetchMissingImages: _refetchMissingImagesService } = require('./src/fe
 const { deleteGamePermanently: _deleteGamePermanentlyUseCase } = require('./src/features/games/application/useCases/DeleteGamePermanentlyUseCase');
 const { backgroundDownload: _backgroundDownloadService } = require('./src/features/games/infrastructure/services/BackgroundDownloadService');
 const { addManualGame: _addManualGameUseCase } = require('./src/features/games/application/useCases/AddManualGameUseCase');
+const { removeEpicNonGameEntries: _removeEpicNonGameEntriesUseCase } = require('./src/features/games/application/useCases/RemoveEpicNonGameEntriesUseCase');
 
 
 // ============================================================
@@ -160,46 +161,14 @@ class BaddelEngine {
     // plugins, etc.) that were imported before the strict classifier existed.
     // Called after each Epic sync with the list of rejected/unknown entries.
     async removeEpicNonGameEntries(badEntries = []) {
-        if (!Array.isArray(badEntries) || badEntries.length === 0) return { removed: 0 };
-
-        const { isEpicSyncedGameAllowed } = require('./platformSyncShared');
-
-        const normalize = v => String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-        const badAppNames = new Set(
-            badEntries.map(e => normalize(e?.app_name)).filter(Boolean)
-        );
-        const badTitles = new Set(
-            badEntries.map(e => normalize(e?.app_title || e?.title)).filter(Boolean)
-        );
-
-        const removed = [];
-
-        for (const game of this.getAllGames()) {
-            const isEpic = game.platform === 'epic' || game.source === 'epic';
-            if (!isEpic) continue;
-
-            // Match by app_name or normalized title against the bad-entry lists.
-            const gameAppName = normalize(game.appName || game.app_name);
-            const gameTitle   = normalize(game.title || game.name);
-            const gameId      = normalize(game.id);
-
-            if ((gameAppName && badAppNames.has(gameAppName)) ||
-                (gameTitle   && badTitles.has(gameTitle))     ||
-                (gameId      && badAppNames.has(gameId))      ||
-                !isEpicSyncedGameAllowed(game)) {
-                removed.push(game.id);
-            }
-        }
-
-        if (removed.length > 0) {
-            this._jsonGameRepository.deleteGamesByIds(removed);
-            removed.forEach(id => this.deleteGameImages(id));
-            this.saveDatabase();
-            console.log(`[GameScanner] Removed ${removed.length} Epic non-game entries:`, removed);
-        }
-
-        return { removed: removed.length, ids: removed };
+        const epicEntryPolicy = require('./platformSyncShared');
+        return _removeEpicNonGameEntriesUseCase({
+            badEntries,
+            gamesRepository:  this._jsonGameRepository,
+            imageCacheService: this._imageCacheService,
+            saveDatabase:      () => this.saveDatabase(),
+            epicEntryPolicy,
+        });
     }
 
     // ============================================================
