@@ -734,6 +734,6 @@ module.exports = {
         withTimeout,
         safeJsonParse,
         normalizeDisplayName,
-        normalizeScannerPlatform,
+        normalizeScannerPlatform, 
     },
 };
