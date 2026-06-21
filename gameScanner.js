@@ -60,6 +60,7 @@ const { backgroundDownload: _backgroundDownloadService } = require('./src/featur
 const { addManualGame: _addManualGameUseCase } = require('./src/features/games/application/useCases/AddManualGameUseCase');
 const { removeEpicNonGameEntries: _removeEpicNonGameEntriesUseCase } = require('./src/features/games/application/useCases/RemoveEpicNonGameEntriesUseCase');
 const { resetGameImage: _resetGameImageUseCase } = require('./src/features/games/application/useCases/ResetGameImageUseCase');
+const { upsertGame: _upsertGameUseCase } = require('./src/features/games/application/useCases/UpsertGameUseCase');
 
 
 // ============================================================
@@ -116,18 +117,12 @@ class BaddelEngine {
     // UPSERT
     // ============================================================
     async upsertGame(game) {
-        if (!game.id) game.id = this.generateStableId(game);
-        game.installedGameKey = game.installedGameKey || makeInstalledGameKey(game);
-
-        // ── Image cache recovery (INSERT path only) ──────────────────────────
-        // Legacy: findInCache was only called when no existing record was found.
-        // Calling it on UPDATE would be an unnecessary filesystem read.
-        const willUpdate = this._jsonGameRepository.hasUpsertMatch(game);
-        const cachedCover = willUpdate ? null : (game.image     || this.findInCache(game.id, 'cover'));
-        const cachedHero  = willUpdate ? null : (game.heroImage || this.findInCache(game.id, 'hero'));
-        const cachedLogo  = willUpdate ? null : (game.logo      || this.findInCache(game.id, 'logo'));
-
-        this._jsonGameRepository.upsertGameRecord(game, { cachedCover, cachedHero, cachedLogo });
+        return _upsertGameUseCase({
+            game,
+            gamesRepository:      this._jsonGameRepository,
+            findInCache:          (id, type) => this.findInCache(id, type),
+            makeInstalledGameKey,
+        });
     }
 
     // ============================================================
