@@ -1,0 +1,29 @@
+'use strict';
+
+async function resetGameImage({
+    gameId,
+    type = 'cover',
+    opts = {},
+    gamesRepository,
+    imageCacheService,
+}) {
+    const game = gamesRepository.getGameById(gameId);
+    if (!game) return { status: 'error', message: 'Game not found' };
+
+    const resetAll = type === 'all' || opts.all === true;
+
+    const resolvedPaths = {};
+    if (resetAll || type === 'cover') {
+        resolvedPaths.cover = game.defaultImage || imageCacheService.findInCache(gameId, 'cover') || null;
+    }
+    if (resetAll || type === 'hero') {
+        resolvedPaths.hero = game.defaultHero || imageCacheService.findInCache(gameId, 'hero') || null;
+    }
+    if (resetAll || type === 'logo') {
+        resolvedPaths.logo = game.defaultLogo || imageCacheService.findInCache(gameId, 'logo') || null;
+    }
+
+    return gamesRepository.applyImageReset(gameId, resolvedPaths, { type, resetAll });
+}
+
+module.exports = { resetGameImage };

@@ -59,6 +59,7 @@ const { deleteGamePermanently: _deleteGamePermanentlyUseCase } = require('./src/
 const { backgroundDownload: _backgroundDownloadService } = require('./src/features/games/infrastructure/services/BackgroundDownloadService');
 const { addManualGame: _addManualGameUseCase } = require('./src/features/games/application/useCases/AddManualGameUseCase');
 const { removeEpicNonGameEntries: _removeEpicNonGameEntriesUseCase } = require('./src/features/games/application/useCases/RemoveEpicNonGameEntriesUseCase');
+const { resetGameImage: _resetGameImageUseCase } = require('./src/features/games/application/useCases/ResetGameImageUseCase');
 
 
 // ============================================================
@@ -177,23 +178,13 @@ class BaddelEngine {
     updateGameImage(gameId, newImagePath, type = 'cover') { return this._jsonGameRepository.updateGameImage(gameId, newImagePath, type); }
 
     async resetGameImage(gameId, type = 'cover', opts = {}) {
-        const game = this._jsonGameRepository.getGameById(gameId);
-        if (!game) return { status: 'error', message: 'Game not found' };
-
-        const resetAll = type === 'all' || opts.all === true;
-
-        const resolvedPaths = {};
-        if (resetAll || type === 'cover') {
-            resolvedPaths.cover = game.defaultImage || this._imageCacheService.findInCache(gameId, 'cover') || null;
-        }
-        if (resetAll || type === 'hero') {
-            resolvedPaths.hero = game.defaultHero || this._imageCacheService.findInCache(gameId, 'hero') || null;
-        }
-        if (resetAll || type === 'logo') {
-            resolvedPaths.logo = game.defaultLogo || this._imageCacheService.findInCache(gameId, 'logo') || null;
-        }
-
-        return this._jsonGameRepository.applyImageReset(gameId, resolvedPaths, { type, resetAll });
+        return _resetGameImageUseCase({
+            gameId,
+            type,
+            opts,
+            gamesRepository:   this._jsonGameRepository,
+            imageCacheService: this._imageCacheService,
+        });
     }
 
     findInCache(gameId, type)  { return this._imageCacheService.findInCache(gameId, type); }
