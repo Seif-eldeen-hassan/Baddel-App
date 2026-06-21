@@ -639,57 +639,6 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
 
             return this.getStoredGames();
         }
-        
-        // ─── Sync Steam & Epic games to metadata server ───
-        try {
-            // Extract Steam games
-            const steamGames = official
-                .filter(g => g.platform === 'Steam')
-                .map(g => {
-                    // Use allIds.steam (set at scan time) — always a clean numeric appid
-                    const id = g.allIds?.steam || String(g.id).replace(/^steam[-_]/i, '');
-                    return { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') };
-                })
-                .filter(g => /^\d+$/.test(g.id)); // guard: only numeric appids are valid
-
-            if (steamGames.length > 0) {
-                console.log(`[GameScanner] Syncing ${steamGames.length} Steam games to metadata server`);
-                baddelApi.importGames('steam', steamGames).catch(err =>
-                    console.warn('[GameScanner] Failed to sync Steam games:', err.message)
-                );
-            } else {
-                console.log('[GameScanner] No Steam games found to sync');
-            }
-
-            // ─── Sync Epic games to metadata server (namespace only — never AppName) ─
-            const epicGames = official
-                .filter(g => g.platform === 'Epic Games' || g.platform === 'Epic')
-                .map(g => {
-                    // Use allIds.epic (CatalogNamespace set at scan time)
-                    const id = g.allIds?.epic || g.namespace || null;
-                    return id ? { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), cover_url: g.image || null, hero_url: g.heroImage || null } : null;
-                })
-                .filter(g => {
-                    if (!g) return false;
-                    // Validate: namespace must be a hex UUID, not an appName like 'Sugar'
-                    const valid = g.id.length >= 10 && /^[a-f0-9\-]+$/i.test(g.id);
-                    if (!valid) console.warn(`[GameScanner] Epic game "${g.title}" — invalid namespace "${g.id}", skipping server sync`);
-                    return valid;
-                });
-
-            if (epicGames.length > 0) {
-                console.log(`[GameScanner] Syncing ${epicGames.length} Epic games to metadata server`);
-                baddelApi.importGames('epic', epicGames).catch(err =>
-                    console.warn('[GameScanner] Failed to sync Epic games:', err.message)
-                );
-            } else {
-                console.log('[GameScanner] No Epic games with valid namespaces found to sync');
-            }
-        } catch (err) {
-            console.warn('[GameScanner] Metadata server sync error:', err.message);
-        }
-        
-        return this.getStoredGames()
     }
 }
 
