@@ -799,6 +799,7 @@ test('app.js: _patchGameInMemory does not fall back to manual platform for belon
 
 const MRM_JS     = fs.readFileSync(path.join(ROOT, 'services/metadataResolutionManager.js'), 'utf8');
 const SCANNER_JS = fs.readFileSync(path.join(ROOT, 'gameScanner.js'), 'utf8');
+const ADD_MANUAL_GAME_UC_JS = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'AddManualGameUseCase.js'), 'utf8');
 
 test('MRM.resolve: force/bypassTtl flag clears persisted job before computing status', () => {
     const fnStart = MRM_JS.indexOf('async resolve(gameId, hints = {})');
@@ -872,23 +873,30 @@ test('gameLibraryHandlers.js: add-manual-game passes forceMetadata:true to gameS
 });
 
 test('gameScanner.js: addManualGame reads forceMetadata from options', () => {
-    const fnStart = SCANNER_JS.indexOf('async addManualGame(launchPath');
-    const fn = SCANNER_JS.slice(fnStart, fnStart + 400);
+    // Delegate still lives in gameScanner.js; real body is in AddManualGameUseCase.js (Phase 18.6).
+    assert.ok(
+        SCANNER_JS.indexOf('async addManualGame(launchPath') !== -1,
+        'BaddelEngine.addManualGame delegate must exist in gameScanner.js',
+    );
+    const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
+    const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 800);
     assert.match(fn, /forceMetadata\s*=\s*options/, 'must read forceMetadata from options');
 });
 
 test('gameScanner.js: addManualGame passes force/bypassTtl to mrm.resolve', () => {
-    const fnStart = SCANNER_JS.indexOf('async addManualGame(launchPath');
-    const fn = SCANNER_JS.slice(fnStart, fnStart + 4500);
-    assert.match(fn, /force:\s*forceMetadata/, 'must pass force to mrm.resolve');
-    assert.match(fn, /bypassTtl:\s*forceMetadata/, 'must pass bypassTtl to mrm.resolve');
+    // Real body lives in AddManualGameUseCase.js (Phase 18.6).
+    const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
+    const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 6000);
+    assert.match(fn, /force:\s*forceMetadata/, 'must pass force to metadataResolutionManager.resolve');
+    assert.match(fn, /bypassTtl:\s*forceMetadata/, 'must pass bypassTtl to metadataResolutionManager.resolve');
 });
 
 test('gameScanner.js: addManualGame awaits backgroundDownload and returns hydrated game from dbCache', () => {
-    const fnStart = SCANNER_JS.indexOf('async addManualGame(launchPath');
-    const fn = SCANNER_JS.slice(fnStart, fnStart + 8500);
+    // Real body lives in AddManualGameUseCase.js (Phase 18.6).
+    const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
+    const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 10000);
     // Must await backgroundDownload (not fire-and-forget)
-    assert.match(fn, /await this\.backgroundDownload/, 'must await backgroundDownload');
+    assert.match(fn, /await backgroundDownload/, 'must await backgroundDownload');
     // Must return the hydrated game from the DB (via getGameById or dbCache.find)
     assert.match(fn, /hydratedGame.*(?:getGameById|dbCache)|(?:getGameById|dbCache).*hydratedGame/, 'must return hydrated game from DB');
     assert.match(fn, /return \{ status: 'success', game: hydratedGame \}/, 'must return hydratedGame');

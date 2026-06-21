@@ -57,6 +57,7 @@ const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/
 const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
 const { deleteGamePermanently: _deleteGamePermanentlyUseCase } = require('./src/features/games/application/useCases/DeleteGamePermanentlyUseCase');
 const { backgroundDownload: _backgroundDownloadService } = require('./src/features/games/infrastructure/services/BackgroundDownloadService');
+const { addManualGame: _addManualGameUseCase } = require('./src/features/games/application/useCases/AddManualGameUseCase');
 
 
 // ============================================================
@@ -439,146 +440,28 @@ class BaddelEngine {
     // MANUAL ADD
     // ============================================================
 async addManualGame(launchPath, customName = null, notifyCallback = null, options = {}) {
-        const lnkTarget     = options?.lnkTarget    || null;
-        const metadataPath  = options?.metadataPath || lnkTarget || launchPath;
-        const shortcutArgs  = options?.shortcutArgs || '';
-        const shortcutCwd   = options?.shortcutCwd  || null;
-        const forceMetadata = options?.forceMetadata === true || options?.force === true;
+        return _addManualGameUseCase({
+            launchPath,
+            customName,
+            notifyCallback,
+            options,
 
-        try {
-            const stats = await fs.stat(launchPath);
-            if (!stats.isFile()) return { status: 'error', message: 'File not found' };
+            fs,
+            fsSync,
+            generateStableId:           input => this.generateStableId(input),
+            parseShortcutArgs,
+            generateMetadataCandidates,
 
-            // effectivePath is the real executable (or lnk target) used for
-            // metadata — never a Desktop .lnk path.
-            const effectivePath  = metadataPath;
-            const rawExeStem     = path.parse(effectivePath).name;
-            const exeName        = rawExeStem.replace(/[-_]/g, ' ').trim();
-            const parentFolder   = path.basename(path.dirname(effectivePath)).replace(/[-_]/g, ' ').trim();
+            gamesRepository:            this._jsonGameRepository,
+            metadataResolutionManager:  mrm,
+            metadataStatus:             MRM_STATUS,
+            metadataCacheStore,
 
-            // Compute stable ID from effectivePath so the same game reached via
-            // different .lnk shortcuts doesn't create duplicate DB entries.
-            const tempId = this.generateStableId({ command: effectivePath, name: customName || exeName });
-
-            // ── Duplicate / re-add check ───────────────────────────────────────
-            const existing = this._jsonGameRepository.findManualGameByPaths(launchPath, effectivePath);
-            if (existing) {
-                if (existing.isHidden) { existing.isHidden = false; this.saveDatabase(); }
-                return { status: 'success', game: existing };
-            }
-
-            const primaryTitle = customName || parentFolder || exeName;
-
-            // Build slug helper for MRM candidates
-            const _toSlug = str => (str || '').toLowerCase()
-                .replace(/[''`™®©]/g, '')
-                .replace(/[^a-z0-9\s-]/g, ' ')
-                .replace(/\s+/g, '-')
-                .replace(/-{2,}/g, '-')
-                .replace(/^-+|-+$/g, '');
-
-            // Build MRM candidates using effectivePath so a Desktop .lnk doesn't
-            // mislead camelCase splitting or franchise alias expansion.
-            const mrmCandidates = generateMetadataCandidates({
-                name:       customName || parentFolder,
-                folderName: parentFolder,
-                exeName:    rawExeStem,
-                pathHint:   effectivePath,
-            });
-
-            // ── Route ALL resolution through MRM ──────────────────────────────
-            let finalMetadata = null;
-            let finalName     = primaryTitle;
-            let validationDeferred = false;
-
-            const mrmStatus = mrm.getStatus(tempId);
-
-            if (mrmStatus === MRM_STATUS.COOLDOWN && !forceMetadata) {
-                console.log(`[Manual Add] MRM cooldown active for "${primaryTitle}" — deferred`);
-                validationDeferred = true;
-            } else {
-                console.log(`[Manual Add] MRM candidates for "${primaryTitle}": ${mrmCandidates.map(c => c.title || c.slug).join(', ')}`);
-                const resolveResult = await mrm.resolve(tempId, {
-                    candidates:  mrmCandidates,
-                    title:       primaryTitle,
-                    slug:        _toSlug(primaryTitle) || undefined,
-                    exeName:     exeName      || undefined,
-                    folderName:  parentFolder || undefined,
-                    pathHint:    effectivePath || undefined,
-                    force:       forceMetadata || undefined,
-                    bypassTtl:   forceMetadata || undefined,
-                });
-
-                if (resolveResult) {
-                    finalMetadata = resolveResult.meta;
-                    if (!customName) finalName = resolveResult.matchedName || primaryTitle;
-                    console.log(`[Manual Add] ✓ MRM resolved "${primaryTitle}" via ${resolveResult._resolveSource}`);
-                } else {
-                    if (mrm.getStatus(tempId) === MRM_STATUS.COOLDOWN && !forceMetadata) {
-                        console.warn(`[Manual Add] MRM entered cooldown for "${primaryTitle}" — deferred`);
-                        validationDeferred = true;
-                    }
-                }
-            }
-
-            const isLnk = launchPath.toLowerCase().endsWith('.lnk');
-            // installDir is the real game folder, never the Desktop / shortcut folder
-            const installDir = fsSync.existsSync(effectivePath)
-                ? path.dirname(effectivePath)
-                : path.dirname(launchPath);
-
-            const newGame = {
-                id:              tempId,
-                name:            finalName,
-                command:         launchPath,
-                shortcutPath:    isLnk ? launchPath : null,
-                path:            installDir,
-                executablePath:  effectivePath,
-                folderName:      parentFolder,
-                exeName:         rawExeStem,
-                launchArgs:      parseShortcutArgs(shortcutArgs),
-                launchCwd:       shortcutCwd || installDir,
-                rawShortcutArgs: shortcutArgs || '',
-                scannerPlatform: 'manual',
-                installSource:   'manual',
-                isInstalled:     true,
-                platform:        'Manual',
-                image:     finalMetadata?.cover     || finalMetadata?.image     || null,
-                heroImage: finalMetadata?.heroImage || finalMetadata?.hero      || null,
-                logo:      finalMetadata?.logo                                  || null,
-                score:     100,
-                isHidden:  false,
-                addedAt:   new Date().toISOString(),
-                ...(validationDeferred ? {
-                    needsValidation:    true,
-                    validationDeferred: true,
-                    validationReason:   'manual_add_rate_limited',
-                } : {}),
-            };
-
-            await this.upsertGame(newGame);
-            this.saveDatabase();
-
-            // ── Persist full structured metadata immediately ───────────────────
-            // game-details.js reads from metadataCacheStore via loadFullMetadata().
-            // Without this call the details page has no description, screenshots,
-            // ratings, etc. even though the card already shows the poster.
-            if (finalMetadata) {
-                metadataCacheStore.save(tempId, finalName, 'Manual', finalMetadata)
-                    .catch(err => console.warn('[Manual Add] Failed to persist full metadata:', err.message));
-            }
-
-            // Download images to local WebP cache before returning so the
-            // renderer receives a game with file:// cover/hero/logo already set.
-            if (finalMetadata) {
-                await this.backgroundDownload(finalMetadata, tempId, notifyCallback, { source: 'addManual' });
-            }
-            const hydratedGame = this.getGameById(tempId) || newGame;
-            return { status: 'success', game: hydratedGame };
-        } catch (err) {
-            console.error('[Manual Add]', err);
-            return { status: 'error', message: err.message };
-        }
+            upsertGame:         game => this.upsertGame(game),
+            saveDatabase:       () => this.saveDatabase(),
+            getGameById:        id => this.getGameById(id),
+            backgroundDownload: (metadata, gameId, cb, opts) => this.backgroundDownload(metadata, gameId, cb, opts),
+        });
     }
 
 
