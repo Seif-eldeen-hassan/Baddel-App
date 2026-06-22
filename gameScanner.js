@@ -58,6 +58,7 @@ const {
 const { JsonGameRepository } = require('./src/features/games/infrastructure/repositories/JsonGameRepository');
 const { ImageCacheService } = require('./src/features/games/infrastructure/services/ImageCacheService');
 const { ScanDiagnosticsWriter } = require('./src/features/games/infrastructure/services/ScanDiagnosticsWriter');
+const { GameScanReportAccumulator } = require('./src/features/games/application/services/GameScanReportAccumulator');
 const { MetadataCacheStore } = require('./src/features/games/infrastructure/services/MetadataCacheStore');
 const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
@@ -80,7 +81,10 @@ class BaddelEngine {
         this.dbPath = path.join(this.dbFolder, 'games-db.json');
         this.officialPaths = new Set();
         this._saveTimer = null; // retained for compatibility; timer is now owned by JsonGameRepository
-        this._currentScanReports = {};
+        this._scanReportAccumulator = new GameScanReportAccumulator({
+            normalizePlatform: normalizeScannerPlatform,
+        });
+        this._currentScanReports = this._scanReportAccumulator.reports;
         this._skipMetadataServerSync = !!options.skipMetadataServerSync;
         this._testDriveRoots = options.driveRoots || null;
         this._riotSearchRoots = options.riotSearchRoots || null;
@@ -200,50 +204,11 @@ class BaddelEngine {
         return url || null;
     }
 
-    _platformReport(platform) {
-        const key = normalizeScannerPlatform(platform);
-        if (!this._currentScanReports[key]) {
-            this._currentScanReports[key] = {
-                platform: key,
-                raw: 0,
-                valid: 0,
-                kept: 0,
-                skipped: 0,
-                skippedStale: 0,
-                skippedMissingPath: 0,
-                skippedMissingExe: 0,
-                staleRemoved: 0,
-                durationMs: 0,
-                errors: [],
-            };
-        }
-        return this._currentScanReports[key];
-    }
-
-    _recordRaw(platform, count = 1) {
-        this._platformReport(platform).raw += count;
-    }
-
-    _recordValid(platform, count = 1) {
-        const report = this._platformReport(platform);
-        report.valid += count;
-        report.kept += count;
-    }
-
-    _recordSkip(platform, reason, candidate = {}) {
-        const report = this._platformReport(platform);
-        report.skipped++;
-        if (reason === 'install_path_missing') report.skippedMissingPath++;
-        else if (reason === 'exe_missing') report.skippedMissingExe++;
-        else if (reason === 'stale_registry_entry' || reason === 'install_path_empty') report.skippedStale++;
-        if (platform === 'ubisoft') {
-            console.log(`[Ubisoft Scan] SKIP stale registry entry "${candidate.name || candidate.Name || candidate.DisplayName || 'Unknown'}" ${reason} path=${candidate.path || candidate.Path || candidate.InstallDir || candidate.InstallLocation || ''}`);
-        }
-    }
-
-    _recordError(platform, err) {
-        this._platformReport(platform).errors.push(err?.message || String(err));
-    }
+    _platformReport(platform) { return this._scanReportAccumulator.platformReport(platform); }
+    _recordRaw(platform, count = 1) { return this._scanReportAccumulator.recordRaw(platform, count); }
+    _recordValid(platform, count = 1) { return this._scanReportAccumulator.recordValid(platform, count); }
+    _recordSkip(platform, reason, candidate = {}) { return this._scanReportAccumulator.recordSkip(platform, reason, candidate); }
+    _recordError(platform, err) { return this._scanReportAccumulator.recordError(platform, err); }
 
     _scannerPlatformForGame(game = {}) {
         return scannerPlatformForGame(game);
@@ -364,7 +329,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
     async startGlobalScan() {
         const scanStartedAt = new Date().toISOString();
         const scanStartedMs = Date.now();
-        this._currentScanReports = {};
+        this._currentScanReports = this._scanReportAccumulator.reset();
         const scannedPlatforms = new Set();
 
         const official = await this._runPlatformScans(scannedPlatforms);
