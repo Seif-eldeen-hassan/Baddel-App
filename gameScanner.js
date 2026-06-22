@@ -57,6 +57,7 @@ const {
 } = require('./src/features/games/infrastructure/scanner/GameScannerCore');
 const { JsonGameRepository } = require('./src/features/games/infrastructure/repositories/JsonGameRepository');
 const { ImageCacheService } = require('./src/features/games/infrastructure/services/ImageCacheService');
+const { ScanDiagnosticsWriter } = require('./src/features/games/infrastructure/services/ScanDiagnosticsWriter');
 const { MetadataCacheStore } = require('./src/features/games/infrastructure/services/MetadataCacheStore');
 const { runBackgroundMetadataPipeline: _runBgPipelineService } = require('./src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 const { refetchMissingImages: _refetchMissingImagesService } = require('./src/features/games/infrastructure/services/RefetchImagesService');
@@ -95,6 +96,9 @@ class BaddelEngine {
             fs: fsSync,
             path,
             dbFolder: this.dbFolder,
+        });
+        this._scanDiagnosticsWriter = new ScanDiagnosticsWriter({
+            baseDir: this.dbFolder,
         });
     }
 
@@ -262,13 +266,7 @@ class BaddelEngine {
     }
 
     async _writeScanDiagnostics(report) {
-        try {
-            const dir = path.join(this.dbFolder, 'scan-diagnostics');
-            await fs.mkdir(dir, { recursive: true });
-            await fs.writeFile(path.join(dir, 'latest-scan.json'), JSON.stringify(report, null, 2), 'utf8');
-        } catch (err) {
-            console.warn('[GameScanner] Failed to write scan diagnostics:', err.message);
-        }
+        return this._scanDiagnosticsWriter.write(report);
     }
 
     // ============================================================
