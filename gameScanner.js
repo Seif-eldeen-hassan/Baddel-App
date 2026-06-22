@@ -68,6 +68,7 @@ const { addManualGame: _addManualGameUseCase } = require('./src/features/games/a
 const { removeEpicNonGameEntries: _removeEpicNonGameEntriesUseCase } = require('./src/features/games/application/useCases/RemoveEpicNonGameEntriesUseCase');
 const { resetGameImage: _resetGameImageUseCase } = require('./src/features/games/application/useCases/ResetGameImageUseCase');
 const { upsertGame: _upsertGameUseCase } = require('./src/features/games/application/useCases/UpsertGameUseCase');
+const { startGlobalScan: _startGlobalScanUseCase } = require('./src/features/games/application/useCases/StartGlobalScanUseCase');
 
 
 // ============================================================
@@ -327,31 +328,20 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
     // GLOBAL SCAN
     // ============================================================
     async startGlobalScan() {
-        const scanStartedAt = new Date().toISOString();
-        const scanStartedMs = Date.now();
-        this._currentScanReports = this._scanReportAccumulator.reset();
-        const scannedPlatforms = new Set();
-
-        const official = await this._runPlatformScans(scannedPlatforms);
-        const { detectedGames, detectedKeys } = this._buildDetectionMap(official, scanStartedAt);
-
-        await this._upsertDetectedGames(detectedGames);
-
-        const totalStaleRemoved = this._applyStalePass(scannedPlatforms, detectedKeys, scanStartedAt);
-
-        await this.flushDatabase();
-
-        await this._writeScanDiagnostics(
-            this._buildScanDiagnostics({ scanStartedAt, scanStartedMs, official, detectedGames, totalStaleRemoved, scannedPlatforms })
-        );
-
-        this._logScanSummary();
-
-        if (!this._skipMetadataServerSync) {
-            this._syncDetectedGamesToMetadataServer(detectedGames);
-        }
-
-        return this.getStoredGames();
+        return _startGlobalScanUseCase({
+            runPlatformScans:      (sp) => this._runPlatformScans(sp),
+            buildDetectionMap:     (official, t) => this._buildDetectionMap(official, t),
+            upsertDetectedGames:   (games) => this._upsertDetectedGames(games),
+            applyStalePass:        (sp, dk, t) => this._applyStalePass(sp, dk, t),
+            buildScanDiagnostics:  (args) => this._buildScanDiagnostics(args),
+            writeScanDiagnostics:  (report) => this._writeScanDiagnostics(report),
+            logScanSummary:        () => this._logScanSummary(),
+            syncToMetadataServer:  (games) => this._syncDetectedGamesToMetadataServer(games),
+            flushDatabase:         () => this.flushDatabase(),
+            getStoredGames:        () => this.getStoredGames(),
+            resetReports:          () => { this._currentScanReports = this._scanReportAccumulator.reset(); },
+            skipMetadataServerSync: this._skipMetadataServerSync,
+        });
     }
 
     // ── Scan stage helpers ────────────────────────────────────────
