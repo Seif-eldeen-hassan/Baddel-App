@@ -378,162 +378,193 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
     // GLOBAL SCAN
     // ============================================================
     async startGlobalScan() {
-        {
-            const scanStartedAt = new Date().toISOString();
-            const scanStartedMs = Date.now();
-            this._currentScanReports = {};
-            const scannedPlatforms = new Set();
-            const scannerDefs = [
-                { platform: 'steam', method: 'getSteamGames', timeoutMs: 30000 },
-                { platform: 'epic', method: 'getEpicGames', timeoutMs: 30000 },
-                { platform: 'riot', method: 'getRiotGames', timeoutMs: 30000 },
-                { platform: 'ubisoft', method: 'getUbisoftGames', timeoutMs: 30000 },
-                { platform: 'ea', method: 'getEAGames', timeoutMs: 30000 },
-                { platform: 'xbox', method: 'getXboxGames', timeoutMs: 45000 },
-            ];
+        const scanStartedAt = new Date().toISOString();
+        const scanStartedMs = Date.now();
+        this._currentScanReports = {};
+        const scannedPlatforms = new Set();
 
-            const official = [];
-            this._getCore().clearScanReports();
-            await Promise.all(scannerDefs.map(async ({ platform, method, timeoutMs }) => {
-                const started = Date.now();
-                const report = this._platformReport(platform);
-                try {
-                    const games = await withTimeout(Promise.resolve().then(() => this[method]()), timeoutMs, platform);
-                    // Merge per-platform stats tracked by GameScannerCore into BaddelEngine's report
-                    const coreStats = this._getCore().getScanReports()[platform];
-                    if (coreStats) Object.assign(report, coreStats);
-                    report.durationMs = Date.now() - started;
-                    scannedPlatforms.add(platform);
-                    official.push(...(Array.isArray(games) ? games : []));
-                } catch (err) {
-                    const coreStats = this._getCore().getScanReports()[platform];
-                    if (coreStats) Object.assign(report, coreStats);
-                    report.durationMs = Date.now() - started;
-                    this._recordError(platform, err);
-                    console.warn(`[GameScanner] ${platform} scan failed:`, err.message);
-                }
-            }));
+        const official = await this._runPlatformScans(scannedPlatforms);
+        const { detectedGames, detectedKeys } = this._buildDetectionMap(official, scanStartedAt);
 
-            const detectedMap = new Map();
-            for (const rawGame of official) {
-                const platform = normalizeScannerPlatform(rawGame.scannerPlatform || rawGame.platform);
-                const { game, validation } = this._prepareScannerGame(rawGame, platform, scanStartedAt);
-                if (!validation.valid) {
-                    this._recordSkip(platform, validation.reason || 'invalid', game);
-                    continue;
-                }
-                const key = makeInstalledGameKey(game);
-                if (!key) {
-                    this._recordSkip(platform, 'missing_stable_key', game);
-                    continue;
-                }
-                game.installedGameKey = key;
-                detectedMap.set(key, this._preferDetectedCandidate(detectedMap.get(key), game));
+        await this._upsertDetectedGames(detectedGames);
+
+        const totalStaleRemoved = this._applyStalePass(scannedPlatforms, detectedKeys, scanStartedAt);
+
+        await this.flushDatabase();
+
+        await this._writeScanDiagnostics(
+            this._buildScanDiagnostics({ scanStartedAt, scanStartedMs, official, detectedGames, totalStaleRemoved, scannedPlatforms })
+        );
+
+        this._logScanSummary();
+
+        if (!this._skipMetadataServerSync) {
+            this._syncDetectedGamesToMetadataServer(detectedGames);
+        }
+
+        return this.getStoredGames();
+    }
+
+    // ── Scan stage helpers ────────────────────────────────────────
+
+    async _runPlatformScans(scannedPlatforms) {
+        const scannerDefs = [
+            { platform: 'steam',   method: 'getSteamGames',   timeoutMs: 30000 },
+            { platform: 'epic',    method: 'getEpicGames',    timeoutMs: 30000 },
+            { platform: 'riot',    method: 'getRiotGames',    timeoutMs: 30000 },
+            { platform: 'ubisoft', method: 'getUbisoftGames', timeoutMs: 30000 },
+            { platform: 'ea',      method: 'getEAGames',      timeoutMs: 30000 },
+            { platform: 'xbox',    method: 'getXboxGames',    timeoutMs: 45000 },
+        ];
+        const official = [];
+        this._getCore().clearScanReports();
+        await Promise.all(scannerDefs.map(async ({ platform, method, timeoutMs }) => {
+            const started = Date.now();
+            const report = this._platformReport(platform);
+            try {
+                const games = await withTimeout(Promise.resolve().then(() => this[method]()), timeoutMs, platform);
+                // Merge per-platform stats tracked by GameScannerCore into BaddelEngine's report
+                const coreStats = this._getCore().getScanReports()[platform];
+                if (coreStats) Object.assign(report, coreStats);
+                report.durationMs = Date.now() - started;
+                scannedPlatforms.add(platform);
+                official.push(...(Array.isArray(games) ? games : []));
+            } catch (err) {
+                const coreStats = this._getCore().getScanReports()[platform];
+                if (coreStats) Object.assign(report, coreStats);
+                report.durationMs = Date.now() - started;
+                this._recordError(platform, err);
+                console.warn(`[GameScanner] ${platform} scan failed:`, err.message);
+            }
+        }));
+        return official;
+    }
+
+    _buildDetectionMap(official, scanStartedAt) {
+        const detectedMap = new Map();
+        for (const rawGame of official) {
+            const platform = normalizeScannerPlatform(rawGame.scannerPlatform || rawGame.platform);
+            const { game, validation } = this._prepareScannerGame(rawGame, platform, scanStartedAt);
+            if (!validation.valid) {
+                this._recordSkip(platform, validation.reason || 'invalid', game);
+                continue;
+            }
+            const key = makeInstalledGameKey(game);
+            if (!key) {
+                this._recordSkip(platform, 'missing_stable_key', game);
+                continue;
+            }
+            game.installedGameKey = key;
+            detectedMap.set(key, this._preferDetectedCandidate(detectedMap.get(key), game));
+        }
+        const detectedGames = [...detectedMap.values()];
+        const detectedKeys = new Set(detectedMap.keys());
+        return { detectedMap, detectedGames, detectedKeys };
+    }
+
+    async _upsertDetectedGames(detectedGames) {
+        for (const game of detectedGames) {
+            try {
+                await this.upsertGame(game);
+            } catch (err) {
+                this._recordError(game.scannerPlatform || 'unknown', err);
+            }
+        }
+    }
+
+    _applyStalePass(scannedPlatforms, detectedKeys, scanStartedAt) {
+        let totalStaleRemoved = 0;
+        for (const game of this.getAllGames()) {
+            const platform = this._scannerPlatformForGame(game);
+            if (!platform || !scannedPlatforms.has(platform)) continue;
+            if (!this._isScannerOwnedGame(game)) continue;
+            const key = game.installedGameKey || makeInstalledGameKey(game);
+            if (key && detectedKeys.has(key)) continue;
+
+            const reason = this._missingReasonForStoredGame(game);
+            const wasVisible = game.isInstalled !== false;
+            game.installSource = 'scanner';
+            game.scannerPlatform = platform;
+            game.installedGameKey = key || game.installedGameKey;
+            game.isInstalled = false;
+            game.installVerified = false;
+            game.removedFromDiskAt = game.removedFromDiskAt || scanStartedAt;
+            game.lastMissingScanAt = scanStartedAt;
+            game.missingReason = reason;
+            game.validationWarnings = [...new Set([...(game.validationWarnings || []), reason])];
+            if (wasVisible) {
+                totalStaleRemoved++;
+                this._platformReport(platform).staleRemoved++;
+                console.log(`[GameScanner] Missing game hidden: ${game.name} reason=${reason} oldPath=${game.path || game.executablePath || ''}`);
+            }
+        }
+        return totalStaleRemoved;
+    }
+
+    _buildScanDiagnostics({ scanStartedAt, scanStartedMs, official, detectedGames, totalStaleRemoved, scannedPlatforms }) {
+        const scanFinishedAt = new Date().toISOString();
+        return {
+            scanStartedAt,
+            scanFinishedAt,
+            durationMs: Date.now() - scanStartedMs,
+            rawDetected: official.length,
+            uniqueDetected: detectedGames.length,
+            staleRemoved: totalStaleRemoved,
+            scannedPlatforms: [...scannedPlatforms],
+            platforms: this._currentScanReports,
+            visibleGamesAfterScan: this.getStoredGames().length,
+        };
+    }
+
+    _logScanSummary() {
+        for (const platform of Object.keys(this._currentScanReports)) {
+            const r = this._currentScanReports[platform];
+            console.log(`[GameScanner] Summary platform=${platform} raw=${r.raw} valid=${r.valid} skipped=${r.skipped} staleRemoved=${r.staleRemoved} durationMs=${r.durationMs}`);
+        }
+    }
+
+    _syncDetectedGamesToMetadataServer(detectedGames) {
+        try {
+            const steamGames = detectedGames
+                .filter(g => g.scannerPlatform === 'steam')
+                .map(g => {
+                    const id = g.allIds?.steam || String(g.id).replace(/^steam[-_]/i, '');
+                    return { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') };
+                })
+                .filter(g => /^\d+$/.test(g.id));
+
+            if (steamGames.length > 0) {
+                console.log(`[GameScanner] Syncing ${steamGames.length} Steam games to metadata server`);
+                baddelApi.importGames('steam', steamGames).catch(err =>
+                    console.warn('[GameScanner] Failed to sync Steam games:', err.message)
+                );
+            } else {
+                console.log('[GameScanner] No Steam games found to sync');
             }
 
-            const detectedGames = [...detectedMap.values()];
-            const detectedKeys = new Set(detectedMap.keys());
-            for (const game of detectedGames) {
-                try {
-                    await this.upsertGame(game);
-                } catch (err) {
-                    this._recordError(game.scannerPlatform || 'unknown', err);
-                }
+            const epicGames = detectedGames
+                .filter(g => g.scannerPlatform === 'epic')
+                .map(g => {
+                    const id = g.allIds?.epic || g.namespace || null;
+                    return id ? { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), cover_url: g.image || null, hero_url: g.heroImage || null } : null;
+                })
+                .filter(g => {
+                    if (!g) return false;
+                    const valid = g.id.length >= 10 && /^[a-f0-9\-]+$/i.test(g.id);
+                    if (!valid) console.warn(`[GameScanner] Epic game "${g.title}" - invalid namespace "${g.id}", skipping server sync`);
+                    return valid;
+                });
+
+            if (epicGames.length > 0) {
+                console.log(`[GameScanner] Syncing ${epicGames.length} Epic games to metadata server`);
+                baddelApi.importGames('epic', epicGames).catch(err =>
+                    console.warn('[GameScanner] Failed to sync Epic games:', err.message)
+                );
+            } else {
+                console.log('[GameScanner] No Epic games with valid namespaces found to sync');
             }
-
-            let totalStaleRemoved = 0;
-            for (const game of this.getAllGames()) {
-                const platform = this._scannerPlatformForGame(game);
-                if (!platform || !scannedPlatforms.has(platform)) continue;
-                if (!this._isScannerOwnedGame(game)) continue;
-                const key = game.installedGameKey || makeInstalledGameKey(game);
-                if (key && detectedKeys.has(key)) continue;
-
-                const reason = this._missingReasonForStoredGame(game);
-                const wasVisible = game.isInstalled !== false;
-                game.installSource = 'scanner';
-                game.scannerPlatform = platform;
-                game.installedGameKey = key || game.installedGameKey;
-                game.isInstalled = false;
-                game.installVerified = false;
-                game.removedFromDiskAt = game.removedFromDiskAt || scanStartedAt;
-                game.lastMissingScanAt = scanStartedAt;
-                game.missingReason = reason;
-                game.validationWarnings = [...new Set([...(game.validationWarnings || []), reason])];
-                if (wasVisible) {
-                    totalStaleRemoved++;
-                    this._platformReport(platform).staleRemoved++;
-                    console.log(`[GameScanner] Missing game hidden: ${game.name} reason=${reason} oldPath=${game.path || game.executablePath || ''}`);
-                }
-            }
-
-            await this.flushDatabase();
-
-            const scanFinishedAt = new Date().toISOString();
-            const diagnostics = {
-                scanStartedAt,
-                scanFinishedAt,
-                durationMs: Date.now() - scanStartedMs,
-                rawDetected: official.length,
-                uniqueDetected: detectedGames.length,
-                staleRemoved: totalStaleRemoved,
-                scannedPlatforms: [...scannedPlatforms],
-                platforms: this._currentScanReports,
-                visibleGamesAfterScan: this.getStoredGames().length,
-            };
-            await this._writeScanDiagnostics(diagnostics);
-
-            for (const platform of Object.keys(this._currentScanReports)) {
-                const r = this._currentScanReports[platform];
-                console.log(`[GameScanner] Summary platform=${platform} raw=${r.raw} valid=${r.valid} skipped=${r.skipped} staleRemoved=${r.staleRemoved} durationMs=${r.durationMs}`);
-            }
-
-            if (!this._skipMetadataServerSync) {
-                try {
-                    const steamGames = detectedGames
-                        .filter(g => g.scannerPlatform === 'steam')
-                        .map(g => {
-                            const id = g.allIds?.steam || String(g.id).replace(/^steam[-_]/i, '');
-                            return { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-') };
-                        })
-                        .filter(g => /^\d+$/.test(g.id));
-
-                    if (steamGames.length > 0) {
-                        console.log(`[GameScanner] Syncing ${steamGames.length} Steam games to metadata server`);
-                        baddelApi.importGames('steam', steamGames).catch(err =>
-                            console.warn('[GameScanner] Failed to sync Steam games:', err.message)
-                        );
-                    } else {
-                        console.log('[GameScanner] No Steam games found to sync');
-                    }
-
-                    const epicGames = detectedGames
-                        .filter(g => g.scannerPlatform === 'epic')
-                        .map(g => {
-                            const id = g.allIds?.epic || g.namespace || null;
-                            return id ? { id, title: g.name, slug: g.name.toLowerCase().replace(/[^a-z0-9]+/g, '-'), cover_url: g.image || null, hero_url: g.heroImage || null } : null;
-                        })
-                        .filter(g => {
-                            if (!g) return false;
-                            const valid = g.id.length >= 10 && /^[a-f0-9\-]+$/i.test(g.id);
-                            if (!valid) console.warn(`[GameScanner] Epic game "${g.title}" - invalid namespace "${g.id}", skipping server sync`);
-                            return valid;
-                        });
-
-                    if (epicGames.length > 0) {
-                        console.log(`[GameScanner] Syncing ${epicGames.length} Epic games to metadata server`);
-                        baddelApi.importGames('epic', epicGames).catch(err =>
-                            console.warn('[GameScanner] Failed to sync Epic games:', err.message)
-                        );
-                    } else {
-                        console.log('[GameScanner] No Epic games with valid namespaces found to sync');
-                    }
-                } catch (err) {
-                    console.warn('[GameScanner] Metadata server sync error:', err.message);
-                }
-            }
-
-            return this.getStoredGames();
+        } catch (err) {
+            console.warn('[GameScanner] Metadata server sync error:', err.message);
         }
     }
 }
