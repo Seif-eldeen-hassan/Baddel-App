@@ -291,20 +291,6 @@ class BaddelEngine {
     }
 
 
-    async getOfficialGames() {
-        const results = await Promise.allSettled([
-            this.getSteamGames(),
-            this.getEpicGames(),
-            this.getRiotGames(),
-            this.getUbisoftGames(),
-            this.getEAGames(),
-            this.getXboxGames()
-        ]);
-        const flatList = results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
-        flatList.forEach(g => { if (g.path) this.officialPaths.add(g.path.toLowerCase()); });
-        return flatList;
-    }
-
     async getSteamGames()      { return this._getCore().getSteamGames(); }
     async getLocalSteamGames() { return this._getCore().getLocalSteamGames(); }
     async getEpicGames()       { return this._getCore().getEpicGames(); }
