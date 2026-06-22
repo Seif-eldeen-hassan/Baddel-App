@@ -674,6 +674,85 @@ test('startGlobalScan: stale pass updates lastMissingScanAt on game already mark
     assert.ok(game.lastMissingScanAt <= afterTs);
 });
 
+// ── startGlobalScan orchestration characterization ────────────────────────────
+
+test('startGlobalScan: detection map dedup prefers candidate with executablePath', async () => {
+    const engine = makeEngine();
+    const exePath = touch(path.join(engine.dbFolder, 'HalfLife2', 'hl2.exe'));
+
+    // Two Steam candidates that resolve to the same installedGameKey (steam:220).
+    // Candidate A has a real executablePath on disk.
+    // Candidate B has no executablePath and no installPath (still valid for steam).
+    engine.getSteamGames = async () => [
+        {
+            id: 'steam-220-a',
+            name: 'Half-Life 2',
+            scannerPlatform: 'steam',
+            allIds: { steam: '220' },
+            launcherGameId: '220',
+            command: 'steam://run/220',
+            executablePath: exePath,
+        },
+        {
+            id: 'steam-220-b',
+            name: 'Half-Life 2',
+            scannerPlatform: 'steam',
+            allIds: { steam: '220' },
+            launcherGameId: '220',
+            command: 'steam://run/220',
+        },
+    ];
+    for (const m of ['getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
+        engine[m] = async () => [];
+
+    const visible = await engine.startGlobalScan();
+
+    assert.equal(visible.length, 1, 'dedup must produce exactly one game for the shared key');
+    assert.equal(visible[0].executablePath, exePath, 'candidate with executablePath must be preferred by dedup');
+    assert.equal(engine.getAllGames().length, 1, 'no duplicate record must exist in the DB');
+});
+
+test('startGlobalScan: _currentScanReports is reset at the start of each scan', async () => {
+    const engine = makeEngine();
+
+    // Scan 1: one riot game goes stale → staleRemoved becomes 1
+    seedGames(engine, [{
+        id: 'riot-valorant', name: 'VALORANT',
+        scannerPlatform: 'riot', installSource: 'scanner',
+        installedGameKey: 'riot:valorant', isInstalled: true,
+    }]);
+    for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
+        engine[m] = async () => [];
+    await engine.startGlobalScan();
+    assert.equal(engine._currentScanReports?.riot?.staleRemoved, 1, 'scan 1: staleRemoved must be 1');
+
+    // Scan 2: DB is now empty (nothing to go stale) → staleRemoved must be 0, not carried over
+    await engine.startGlobalScan();
+    assert.equal(engine._currentScanReports?.riot?.staleRemoved ?? 0, 0,
+        '_currentScanReports must reset between scans — staleRemoved from scan 1 must not carry over to scan 2');
+});
+
+test('startGlobalScan: return value excludes hidden games', async () => {
+    const engine = makeEngine();
+    // Pre-seed a hidden manual game.  installSource: 'manual' prevents the stale pass
+    // from touching it, so it remains in the DB with isHidden: true.
+    seedGames(engine, [{
+        id: 'manual-hiddenGame',
+        name: 'Hidden Game',
+        installSource: 'manual',
+        isHidden: true,
+        isInstalled: true,
+    }]);
+    for (const m of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames'])
+        engine[m] = async () => [];
+
+    const visible = await engine.startGlobalScan();
+
+    assert.equal(visible.length, 0, 'startGlobalScan must not return hidden games');
+    assert.equal(engine.getAllGames().length, 1, 'getAllGames must still contain the hidden game');
+    assert.equal(engine.getAllGames()[0].isHidden, true, 'game must remain hidden after scan');
+});
+
 test('Epic scanner diagnostics count skipped non-game assets separately', () => {
     const engine = makeEngine();
     const installDir = path.join(engine.dbFolder, 'FabSkip');
