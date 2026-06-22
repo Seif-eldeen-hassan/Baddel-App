@@ -472,16 +472,7 @@ class GameScannerCore {
     // PREFER LOGIC
     // ============================================================
     _preferDetectedCandidate(existing, candidate) {
-        if (!existing) return candidate;
-        const existingHasExe  = !!existing.executablePath;
-        const candidateHasExe = !!candidate.executablePath;
-        if (candidateHasExe && !existingHasExe) return candidate;
-        if (candidateHasExe === existingHasExe) {
-            const existingPath  = normalizePath(existing.path  || '');
-            const candidatePath = normalizePath(candidate.path || '');
-            if (candidatePath && (!existingPath || candidatePath.length < existingPath.length)) return candidate;
-        }
-        return existing;
+        return preferDetectedCandidate(existing, candidate);
     }
 
     // ============================================================
@@ -1630,6 +1621,92 @@ class GameScannerCore {
 }
 
 // ============================================================
+// SCAN PREP STANDALONE HELPERS
+// ============================================================
+
+function scannerPlatformForGame(game = {}) {
+    const platform = normalizeScannerPlatform(game.scannerPlatform || game.platform || game.source);
+    if (SCANNER_PLATFORMS.has(platform)) return platform;
+
+    const id = String(game.id || '').toLowerCase();
+    if (id.startsWith('steam-'))   return 'steam';
+    if (id.startsWith('epic-'))    return 'epic';
+    if (id.startsWith('riot-'))    return 'riot';
+    if (id.startsWith('ubisoft-')) return 'ubisoft';
+    if (id.startsWith('ea-'))      return 'ea';
+    if (id.startsWith('xbox-'))    return 'xbox';
+    return null;
+}
+
+function isScannerOwnedGame(game = {}) {
+    if (game.installSource === 'scanner') return true;
+    if (game.installSource && game.installSource !== 'scanner') return false;
+    const platform = scannerPlatformForGame(game);
+    if (!platform) return false;
+    if (String(game.platform || '').toLowerCase() === 'manual') return false;
+    return !!(game.command || game.path || game.launcherGameId || game.allIds);
+}
+
+function prepareScannerGame(game, platform, scanStartedAt) {
+    const scannerPlatform = normalizeScannerPlatform(platform || game.scannerPlatform || game.platform);
+    const validation = isGameInstallValid({ ...game, scannerPlatform });
+    const prepared = {
+        ...game,
+        name: normalizeDisplayName(game.name || game.title),
+        installSource: 'scanner',
+        scannerPlatform,
+        launchCommand: game.launchCommand || game.command || null,
+        installVerified: validation.valid,
+        isInstalled: validation.valid,
+        firstSeenAt: game.firstSeenAt || scanStartedAt,
+        lastSeenAt: scanStartedAt,
+        scanSourceDetail: game.scanSourceDetail || scannerPlatform,
+        validationWarnings: [
+            ...(Array.isArray(game.validationWarnings) ? game.validationWarnings : []),
+            ...(validation.validationWarnings || [])
+        ],
+    };
+    prepared.installedGameKey = game.installedGameKey || makeInstalledGameKey(prepared);
+    if (!prepared.launcherGameId) {
+        if (scannerPlatform === 'steam')  prepared.launcherGameId = prepared.allIds?.steam || String(prepared.id || '').replace(/^steam[-_]/i, '');
+        if (scannerPlatform === 'epic')   prepared.launcherGameId = [prepared.namespace || prepared.catalogNamespace, prepared.catalogItemId, prepared.appName].filter(Boolean).join(':');
+        if (scannerPlatform === 'riot')   prepared.launcherGameId = prepared.riotProduct;
+        if (scannerPlatform === 'xbox')   prepared.launcherGameId = prepared.packageFamilyName;
+    }
+    return { game: prepared, validation };
+}
+
+function preferDetectedCandidate(existing, candidate) {
+    if (!existing) return candidate;
+    const existingHasExe  = !!existing.executablePath;
+    const candidateHasExe = !!candidate.executablePath;
+    if (candidateHasExe && !existingHasExe) return candidate;
+    if (candidateHasExe === existingHasExe) {
+        const existingPath  = normalizePath(existing.path  || '');
+        const candidatePath = normalizePath(candidate.path || '');
+        if (candidatePath && (!existingPath || candidatePath.length < existingPath.length)) return candidate;
+    }
+    return existing;
+}
+
+function missingReasonForStoredGame(game = {}) {
+    if (game.scannerPlatform === 'epic' || game.platform === 'Epic Games') {
+        const { classifyEpicEntry } = require('../../../../../platformSyncShared');
+        const { decision } = classifyEpicEntry({
+            app_name:  game.appName || '',
+            app_title: game.name   || '',
+            title:     game.name   || '',
+            namespace: game.namespace || game.catalogNamespace || '',
+            metadata:  {},
+        });
+        if (decision === 'reject') return 'epic_non_game_asset';
+    }
+    if (game.path && !dirExists(game.path) && !fileExists(game.path)) return 'install_path_missing';
+    if (game.executablePath && !fileExists(game.executablePath)) return 'exe_missing';
+    return 'not_seen_in_latest_scan';
+}
+
+// ============================================================
 // EXPORTS
 // ============================================================
 module.exports = {
@@ -1658,4 +1735,11 @@ module.exports = {
     isGameInstallValid,
     withTimeout,
     _hashShort,
+
+    // Scan prep standalone helpers (Phase 21.3)
+    scannerPlatformForGame,
+    isScannerOwnedGame,
+    prepareScannerGame,
+    preferDetectedCandidate,
+    missingReasonForStoredGame,
 };
