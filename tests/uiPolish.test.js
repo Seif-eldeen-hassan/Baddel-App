@@ -799,6 +799,7 @@ test('app.js: _patchGameInMemory does not fall back to manual platform for belon
 
 const MRM_JS     = fs.readFileSync(path.join(ROOT, 'services/metadataResolutionManager.js'), 'utf8');
 const SCANNER_JS = fs.readFileSync(path.join(ROOT, 'gameScanner.js'), 'utf8');
+const BADDEL_ENGINE_JS = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'infrastructure', 'legacy', 'BaddelEngine.js'), 'utf8');
 const ADD_MANUAL_GAME_UC_JS = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'AddManualGameUseCase.js'), 'utf8');
 
 test('MRM.resolve: force/bypassTtl flag clears persisted job before computing status', () => {
@@ -829,8 +830,8 @@ test('MRM.resolve: force=true clears inflight before new resolve (source check)'
 
 test('gameScanner.js: deleteGamePermanently calls mrm.clearJob after deleteGameImages', () => {
     assert.ok(
-        SCANNER_JS.indexOf('async deleteGamePermanently(gameId)') !== -1,
-        'deleteGamePermanently must exist in gameScanner.js delegate'
+        BADDEL_ENGINE_JS.indexOf('async deleteGamePermanently(gameId)') !== -1,
+        'deleteGamePermanently must exist in BaddelEngine delegate'
     );
     // Real body lives in DeleteGamePermanentlyUseCase.js (Phase 18.3).
     const ucSrc   = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'DeleteGamePermanentlyUseCase.js'), 'utf8');
@@ -873,10 +874,10 @@ test('gameLibraryHandlers.js: add-manual-game passes forceMetadata:true to gameS
 });
 
 test('gameScanner.js: addManualGame reads forceMetadata from options', () => {
-    // Delegate still lives in gameScanner.js; real body is in AddManualGameUseCase.js (Phase 18.6).
+    // Delegate now lives in BaddelEngine.js; real body is in AddManualGameUseCase.js (Phase 18.6).
     assert.ok(
-        SCANNER_JS.indexOf('async addManualGame(launchPath') !== -1,
-        'BaddelEngine.addManualGame delegate must exist in gameScanner.js',
+        BADDEL_ENGINE_JS.indexOf('async addManualGame(launchPath') !== -1,
+        'BaddelEngine.addManualGame delegate must exist in BaddelEngine.js',
     );
     const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
     const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 800);
