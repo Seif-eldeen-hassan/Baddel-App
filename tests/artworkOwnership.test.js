@@ -203,9 +203,9 @@ test('backgroundDownload: source is forwarded to updateGameMetadata', async () =
 // ── gameScanner.js source tagging in pipeline / refetch ────────────────────
 
 test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to updateGameMetadata', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer.js'), 'utf8');
     const pipelineStart = src.indexOf('async function runBackgroundMetadataPipeline');
-    assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist in gameScanner.js facade');
+    assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist in GamesContainer facade');
     // The pipeline body lives in src/features/games/infrastructure/services/BackgroundMetadataPipeline.js (Phase 17.2).
     // Count source:'pipeline' tags in the service module where the implementation lives.
     const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'services', 'BackgroundMetadataPipeline.js'), 'utf8');
@@ -214,9 +214,9 @@ test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to up
 });
 
 test('gameScanner.js: refetchMissingImages skips customArtworkLocked games', () => {
-    const src = fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'), 'utf8');
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer.js'), 'utf8');
     const fnStart = src.indexOf('async function refetchMissingImages');
-    assert.ok(fnStart !== -1, 'refetchMissingImages must exist in gameScanner.js facade');
+    assert.ok(fnStart !== -1, 'refetchMissingImages must exist in GamesContainer facade');
     // The real body lives in src/features/games/infrastructure/services/RefetchImagesService.js (Phase 18.2).
     const svcSrc = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'services', 'RefetchImagesService.js'), 'utf8');
     assert.match(svcSrc, /customArtworkLocked/, 'RefetchImagesService must check customArtworkLocked');
