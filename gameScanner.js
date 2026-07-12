@@ -89,7 +89,9 @@ class BaddelEngine {
         this._skipMetadataServerSync = !!options.skipMetadataServerSync;
         this._testDriveRoots = options.driveRoots || null;
         this._riotSearchRoots = options.riotSearchRoots || null;
-        this.__core = null; // lazy — created on first scan (after module-level mrm/baddelApi are initialized)
+        this._mrm = options.mrm || mrm;
+        this._metadataCacheStore = options.metadataCacheStore || metadataCacheStore;
+        this.__core = null; // lazy — created on first scan
         this._jsonGameRepository = new JsonGameRepository({
             fs: fsSync,
             path,
@@ -161,8 +163,8 @@ class BaddelEngine {
             gameId,
             gamesRepository:           this._jsonGameRepository,
             imageCacheService:         this._imageCacheService,
-            metadataResolutionManager: mrm,
-            metadataCacheStore,
+            metadataResolutionManager: this._mrm,
+            metadataCacheStore:         this._metadataCacheStore,
             saveDatabase: () => this.saveDatabase(),
         });
     }
@@ -247,7 +249,7 @@ class BaddelEngine {
                 testDriveRoots:  this._testDriveRoots,
                 riotSearchRoots: this._riotSearchRoots,
                 api:             baddelApi,
-                mrm,
+                mrm:             this._mrm,
                 MRM_STATUS,
             });
         }
@@ -299,9 +301,9 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             generateMetadataCandidates,
 
             gamesRepository:            this._jsonGameRepository,
-            metadataResolutionManager:  mrm,
+            metadataResolutionManager:  this._mrm,
             metadataStatus:             MRM_STATUS,
-            metadataCacheStore,
+            metadataCacheStore:         this._metadataCacheStore,
 
             upsertGame:         game => this.upsertGame(game),
             saveDatabase:       () => this.saveDatabase(),
@@ -318,7 +320,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             notifyCallback,
             source,
             gamesRepository:  this._jsonGameRepository,
-            metadataCacheStore,
+            metadataCacheStore: this._metadataCacheStore,
         });
     }
 
@@ -511,7 +513,17 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
 // ============================================================
 // SINGLETON + EXPORTS
 // ============================================================
-const engine = new BaddelEngine();
+const metadataCacheStore = new MetadataCacheStore(app.getPath('userData'));
+
+// Single coordinator for all non-Steam/Epic metadata resolution.
+// Replaces the old _resolveThrottleMap + scattered cooldown checks.
+const mrm = new MetadataResolutionManager(app.getPath('userData'));
+mrm.setApi(baddelApi);
+
+const engine = new BaddelEngine({
+    mrm,
+    metadataCacheStore,
+});
 async function refetchMissingImages(notifyCallback = null, _deps = {}) {
     return _refetchMissingImagesService({
         engine,
@@ -520,13 +532,6 @@ async function refetchMissingImages(notifyCallback = null, _deps = {}) {
         ..._deps,
     });
 }
-
-const metadataCacheStore = new MetadataCacheStore(app.getPath('userData'));
-
-// Single coordinator for all non-Steam/Epic metadata resolution.
-// Replaces the old _resolveThrottleMap + scattered cooldown checks.
-const mrm = new MetadataResolutionManager(app.getPath('userData'));
-mrm.setApi(baddelApi);
 
 // ============================================================
 // BACKGROUND METADATA PIPELINE
