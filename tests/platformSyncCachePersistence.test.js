@@ -11,6 +11,7 @@ const { EventEmitter } = require('node:events');
 const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const SYNC_REPOSITORIES_DIR = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'repositories');
+const PLATFORM_SYNC_CACHE_REPOSITORY_PATH = path.join(SYNC_REPOSITORIES_DIR, 'PlatformSyncCacheRepository.js');
 
 function makeTempUserData() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-sync-cache-'));
@@ -461,22 +462,34 @@ test('epic unlink for a missing account keeps cached ownership unchanged', async
     }
 });
 
-test('platformSync still owns sync cache file names and no cache repository has been extracted', () => {
+test('platformSync delegates sync cache persistence to the cache repository', () => {
     const platformSyncSource = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
+    const repositorySource = fs.readFileSync(PLATFORM_SYNC_CACHE_REPOSITORY_PATH, 'utf8');
 
-    assert.match(platformSyncSource, /SYNC_CACHE_DIR\s*=\s*path\.join\(app\.getPath\(['"]userData['"]\), ['"]platform-sync['"]\)/);
-    assert.match(platformSyncSource, /STEAM_ACCOUNTS_FILE\s*=\s*path\.join\(SYNC_CACHE_DIR,\s*['"]steam_accounts\.json['"]\)/);
-    assert.match(platformSyncSource, /STEAM_MERGED_CACHE\s*=\s*path\.join\(SYNC_CACHE_DIR,\s*['"]steam_library_merged\.json['"]\)/);
-    assert.match(platformSyncSource, /EPIC_ACCOUNTS_FILE\s*=\s*path\.join\(SYNC_CACHE_DIR,\s*['"]epic_accounts\.json['"]\)/);
-    assert.match(platformSyncSource, /EPIC_MERGED_CACHE\s*=\s*path\.join\(SYNC_CACHE_DIR,\s*['"]epic_library_merged\.json['"]\)/);
-    assert.match(platformSyncSource, /EPIC_CLASSIFICATION_REPORT\s*=\s*path\.join\(SYNC_CACHE_DIR,\s*['"]epic_sync_classification_report\.json['"]\)/);
+    assert.match(platformSyncSource, /PlatformSyncCacheRepository/);
+    assert.match(platformSyncSource, /syncCacheRepository\s*=\s*new PlatformSyncCacheRepository\(\{\s*userDataDir:\s*app\.getPath\(['"]userData['"]\)\s*\}\)/);
+    assert.match(platformSyncSource, /syncCacheRepository\.readSteamAccountsSync\(\)/);
+    assert.match(platformSyncSource, /syncCacheRepository\.readEpicAccountsSync\(\)/);
+    assert.match(platformSyncSource, /syncCacheRepository\.writeSteamMergedLibrary/);
+    assert.match(platformSyncSource, /syncCacheRepository\.writeEpicMergedLibrary/);
+    assert.match(platformSyncSource, /syncCacheRepository\.writeEpicClassificationReport/);
     assert.match(platformSyncSource, /async getCachedLibrary\(\)/);
     assert.match(platformSyncSource, /async unlink\(accountId\)/);
+
+    assert.match(repositorySource, /path\.join\(userDataDir,\s*['"]platform-sync['"]\)/);
+    assert.match(repositorySource, /steam_accounts\.json/);
+    assert.match(repositorySource, /steam_library_merged\.json/);
+    assert.match(repositorySource, /epic_accounts\.json/);
+    assert.match(repositorySource, /epic_library_merged\.json/);
+    assert.match(repositorySource, /epic_sync_classification_report\.json/);
+    assert.match(repositorySource, /JSON\.stringify\(value,\s*null,\s*2\)/);
+    assert.match(repositorySource, /readSteamAccountsSync/);
+    assert.match(repositorySource, /readEpicAccountsSync/);
 
     const repositoryFiles = fs.existsSync(SYNC_REPOSITORIES_DIR)
         ? fs.readdirSync(SYNC_REPOSITORIES_DIR)
         : [];
-    assert.equal(repositoryFiles.includes('PlatformSyncCacheRepository.js'), false);
+    assert.equal(repositoryFiles.includes('PlatformSyncCacheRepository.js'), true);
     assert.equal(repositoryFiles.includes('SteamSyncCacheRepository.js'), false);
     assert.equal(repositoryFiles.includes('EpicSyncCacheRepository.js'), false);
     assert.equal(repositoryFiles.includes('SyncAccountRepository.js'), false);

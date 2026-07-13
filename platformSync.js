@@ -35,6 +35,9 @@ const {
     EpicSwitcherRepository,
 } = require('./src/features/sync/infrastructure/repositories/EpicSwitcherRepository');
 const {
+    PlatformSyncCacheRepository,
+} = require('./src/features/sync/infrastructure/repositories/PlatformSyncCacheRepository');
+const {
     PollSteamApprovalUseCase,
 } = require('./src/features/sync/application/useCases/PollSteamApprovalUseCase');
 const {
@@ -67,17 +70,15 @@ function getGamesApi() {
 
 // ─── Paths ───────────────────────────────────────────────────
 const LEGENDARY_BIN      = path.join(__dirname, 'bin', 'legendary.exe');
-const SYNC_CACHE_DIR     = path.join(app.getPath('userData'), 'platform-sync');
-const SYNC_LOGS_DIR      = path.join(SYNC_CACHE_DIR, 'logs');
+const syncCacheRepository = new PlatformSyncCacheRepository({ userDataDir: app.getPath('userData') });
+const SYNC_CACHE_DIR     = syncCacheRepository.syncCacheDir;
+const SYNC_LOGS_DIR      = syncCacheRepository.syncLogsDir;
 
 // Epic Paths
-const EPIC_ACCOUNTS_FILE           = path.join(SYNC_CACHE_DIR, 'epic_accounts.json');
-const EPIC_MERGED_CACHE            = path.join(SYNC_CACHE_DIR, 'epic_library_merged.json');
-const EPIC_CLASSIFICATION_REPORT   = path.join(SYNC_CACHE_DIR, 'epic_sync_classification_report.json');
+const EPIC_MERGED_CACHE            = syncCacheRepository.epicMergedCacheFile;
 
 // Steam Paths
-const STEAM_ACCOUNTS_FILE = path.join(SYNC_CACHE_DIR, 'steam_accounts.json');
-const STEAM_MERGED_CACHE  = path.join(SYNC_CACHE_DIR, 'steam_library_merged.json');
+const STEAM_MERGED_CACHE  = syncCacheRepository.steamMergedCacheFile;
 let _libraryWriteQueue = Promise.resolve();
 let _enrichRequestQueue = Promise.resolve();
 let _libraryUpdateDebounceTimer = null;
@@ -504,14 +505,7 @@ async function cacheLibraryCoversFirst(entries, downloader, cacheFile, matchFn, 
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function ensureDirs() {
-    await fs.mkdir(SYNC_CACHE_DIR, { recursive: true });
-    await fs.mkdir(SYNC_LOGS_DIR, { recursive: true });
-}
-
-async function _atomicWriteFile(filePath, content) {
-    const tmp = filePath + '.tmp';
-    await fs.writeFile(tmp, content, 'utf8');
-    await fs.rename(tmp, filePath);
+    await syncCacheRepository.ensureDirs();
 }
 
 let _platformSyncWindowGetter = null;
@@ -960,7 +954,7 @@ async function _ensureBridgeRunning() {
 
         syncLog(`[SteamBridge] 🎮 Background: ${newGames.length} new games from account ${sid}`);
         try {
-            const existing = JSON.parse(await fs.readFile(STEAM_MERGED_CACHE, 'utf8').catch(() => '[]'));
+            const existing = await syncCacheRepository.readSteamMergedLibrary();
             const map = new Map(existing.map(g => [g.id, g]));
             const accs = steamConnector.getAccounts();
             const accMatch = accs.find((a) => String(a.id) === sid) || null;
@@ -995,7 +989,7 @@ async function _ensureBridgeRunning() {
                     }
                 }
             }
-            await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify([...map.values()], null, 2), 'utf8');
+            await syncCacheRepository.writeSteamMergedLibrary([...map.values()]);
         } catch (e) {
             console.error('[SteamBridge] Failed to merge background games:', e.message);
         }
@@ -1446,20 +1440,12 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
 
 const steamConnector = {
     isLinked() {
-        try {
-            if (!fsSync.existsSync(STEAM_ACCOUNTS_FILE)) return false;
-            return JSON.parse(fsSync.readFileSync(STEAM_ACCOUNTS_FILE, 'utf8')).length > 0;
-        } catch { return false; }
+        return syncCacheRepository.isSteamLinked();
     },
 
     getAccounts() {
-        try {
-            if (!fsSync.existsSync(STEAM_ACCOUNTS_FILE)) return [];
-            const raw = JSON.parse(fsSync.readFileSync(STEAM_ACCOUNTS_FILE, 'utf8'));
-            return Array.isArray(raw)
-                ? raw.map((a) => ({ ...a, id: String(a.id) }))
-                : [];
-        } catch { return []; }
+        return syncCacheRepository.readSteamAccountsSync()
+            .map((a) => ({ ...a, id: String(a.id) }));
     },
 
     async link(parentWindow) {
@@ -1525,7 +1511,7 @@ const steamConnector = {
             throw new Error('Failed to update account list.');
         }
 
-        await _atomicWriteFile(STEAM_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2));
+        await syncCacheRepository.writeSteamAccountsAtomic(accounts);
         await _writeSwitcherSyncLink('steam', displayName, steamIdStr, { steamDisplayName: displayName });
 
         steamAuthLog(`[PlatformSync:Steam] ✅ Linked ${displayName} (${steamIdStr}) credentialStatus=${accountEntry.credentialStatus}`);
@@ -1640,7 +1626,7 @@ const steamConnector = {
                                 credentialStatus: 'missing',
                                 status:           'needs_reauth',
                             };
-                            _atomicWriteFile(STEAM_ACCOUNTS_FILE, JSON.stringify(savedAccts, null, 2)).catch(() => {});
+                            syncCacheRepository.writeSteamAccountsAtomic(savedAccts).catch(() => {});
                         }
                         accountResults[aid] = { status: 'warning', rawGamesCount: 0, validationFailed: true, allowZeroGames: false };
                         _updatePlatformSyncAccount('steam', aid, {
@@ -1891,7 +1877,7 @@ const steamConnector = {
                                 credentialStatus: 'ok',
                                 status:           'synced',
                             };
-                            _atomicWriteFile(STEAM_ACCOUNTS_FILE, JSON.stringify(savedAccts, null, 2)).catch(() => {});
+                            syncCacheRepository.writeSteamAccountsAtomic(savedAccts).catch(() => {});
                         }
                     }
                 } else {
@@ -1914,7 +1900,7 @@ const steamConnector = {
                 _pushPlatformSyncLog('steam', 'warn', issue);
             }
 
-            await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
+            await syncCacheRepository.writeSteamMergedLibrary(finalGames);
 
             // ── Cover-first image caching (fire-and-forget) ───────────────────
             if (_platformSyncAssetDownloader) {
@@ -1995,8 +1981,7 @@ const steamConnector = {
     },
 
     async getCachedLibrary() {
-        try { return JSON.parse(await fs.readFile(STEAM_MERGED_CACHE, 'utf8')); }
-        catch { return []; }
+        return syncCacheRepository.readSteamMergedLibrary();
     },
 
     async unlink(accountId) {
@@ -2013,16 +1998,16 @@ const steamConnector = {
             accounts = [];
         }
 
-        await fs.writeFile(STEAM_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
+        await syncCacheRepository.writeSteamAccounts(accounts);
 
         if (accounts.length === 0) {
-            try { await fs.unlink(STEAM_MERGED_CACHE); } catch {}
+            await syncCacheRepository.deleteSteamMergedLibrary();
             if (steamBridge.isRunning) await steamBridge.stop();
             _bridgeStarted = false;
         } else if (removedAccount) {
             const cachedGames = await this.getCachedLibrary();
             const filteredGames = removeAccountFromLibrary('steam', cachedGames, removedAccount);
-            await fs.writeFile(STEAM_MERGED_CACHE, JSON.stringify(filteredGames, null, 2), 'utf8');
+            await syncCacheRepository.writeSteamMergedLibrary(filteredGames);
         }
         analytics.logPlatformUnlinked('steam').catch(() => {});
     },
@@ -2038,13 +2023,11 @@ function getLegendaryConfPath(accountId) {
 }
 
 async function getEpicAccountsList() {
-    try { return JSON.parse(await fs.readFile(EPIC_ACCOUNTS_FILE, 'utf8')); } 
-    catch { return []; }
+    return syncCacheRepository.readEpicAccounts();
 }
 
 async function saveEpicAccountsList(accounts) {
-    await ensureDirs();
-    await fs.writeFile(EPIC_ACCOUNTS_FILE, JSON.stringify(accounts, null, 2), 'utf8');
+    await syncCacheRepository.writeEpicAccounts(accounts);
 }
 
 function runLegendary(args, configPath, timeoutMs = 45_000) {
@@ -2427,13 +2410,10 @@ async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null)
 
 const epicConnector = {
     isLinked() {
-        try { return fsSync.existsSync(EPIC_ACCOUNTS_FILE) && JSON.parse(fsSync.readFileSync(EPIC_ACCOUNTS_FILE, 'utf8')).length > 0; } 
-        catch { return false; }
+        return syncCacheRepository.isEpicLinked();
     },
     getAccounts() {
-        let raw;
-        try { raw = fsSync.existsSync(EPIC_ACCOUNTS_FILE) ? JSON.parse(fsSync.readFileSync(EPIC_ACCOUNTS_FILE, 'utf8')) : []; }
-        catch { return []; }
+        const raw = syncCacheRepository.readEpicAccountsSync();
         if (!Array.isArray(raw)) return [];
         return raw.filter(a => a?.id).map(a => {
             // Sanitize accounts saved with an epic_tmp fallback id or display name
@@ -2670,7 +2650,7 @@ const epicConnector = {
                 _pushPlatformSyncLog('epic', 'warn', issue);
             }
 
-            await fs.writeFile(EPIC_MERGED_CACHE, JSON.stringify(finalGames, null, 2), 'utf8');
+            await syncCacheRepository.writeEpicMergedLibrary(finalGames);
 
             // ── Cover-first image caching (fire-and-forget) ───────────────────
             if (_platformSyncAssetDownloader) {
@@ -2690,10 +2670,10 @@ const epicConnector = {
             }
 
             // ── Write classification report (non-blocking) ────────────────────
-            fs.writeFile(EPIC_CLASSIFICATION_REPORT, JSON.stringify({
+            syncCacheRepository.writeEpicClassificationReport({
                 generatedAt: new Date().toISOString(),
                 accounts: classificationReports,
-            }, null, 2), 'utf8').catch(err =>
+            }).catch(err =>
                 _pushPlatformSyncLog('epic', 'warn', `Failed to write classification report: ${err.message}`)
             );
 
@@ -2734,8 +2714,7 @@ const epicConnector = {
         }
     },
     async getCachedLibrary() {
-        try { return JSON.parse(await fs.readFile(EPIC_MERGED_CACHE, 'utf8')); } 
-        catch { return []; }
+        return syncCacheRepository.readEpicMergedLibrary();
     },
     async unlink(accountId) {
         let accounts = await getEpicAccountsList();
@@ -2757,11 +2736,11 @@ const epicConnector = {
         }
         await saveEpicAccountsList(accounts);
         if (accounts.length === 0) {
-            try { await fs.unlink(EPIC_MERGED_CACHE); } catch {}
+            await syncCacheRepository.deleteEpicMergedLibrary();
         } else if (removedAccount) {
             const cachedGames = await this.getCachedLibrary();
             const filteredGames = removeAccountFromLibrary('epic', cachedGames, removedAccount);
-            await fs.writeFile(EPIC_MERGED_CACHE, JSON.stringify(filteredGames, null, 2), 'utf8');
+            await syncCacheRepository.writeEpicMergedLibrary(filteredGames);
         }
         analytics.logPlatformUnlinked('epic').catch(() => {});
     },
@@ -2986,7 +2965,7 @@ async function _importLibraryToServer(platform, games) {
     const applyNormalizedToCache = (gameIdExternal, normalized) => {
         _libraryWriteQueue = _libraryWriteQueue.then(async () => {
             try {
-                const localLibrary = JSON.parse(await fs.readFile(cacheFile, 'utf8').catch(() => '[]'));
+                const localLibrary = await syncCacheRepository.readMergedLibrary(platform);
                 const localIdx = localLibrary.findIndex(lg => {
                     if (platform === 'steam') return String(lg.appName) === String(gameIdExternal);
                     return lg.namespace === gameIdExternal || lg.appName === gameIdExternal;
@@ -3002,7 +2981,7 @@ async function _importLibraryToServer(platform, games) {
                 if (normalized.info?.releaseDate)                                  { lg.releaseYear = normalized.info.releaseDate; updated = true; }
 
                 if (updated) {
-                    await fs.writeFile(cacheFile, JSON.stringify(localLibrary, null, 2), 'utf8');
+                    await syncCacheRepository.writeMergedLibrary(platform, localLibrary);
                     const win = _platformSyncWindowGetter?.();
                     _emitLibraryUpdated(win);
                 }
@@ -3041,7 +3020,7 @@ async function _importLibraryToServer(platform, games) {
                         // Write file:// paths back into the merged cache file
                         _libraryWriteQueue = _libraryWriteQueue.then(async () => {
                             try {
-                                const lib2 = JSON.parse(await fs.readFile(cacheFile, 'utf8').catch(() => '[]'));
+                                const lib2 = await syncCacheRepository.readMergedLibrary(platform);
                                 const idx2 = lib2.findIndex(lg2 => {
                                     if (platform === 'steam') return String(lg2.appName) === String(gameIdExternal);
                                     return lg2.namespace === gameIdExternal || lg2.appName === gameIdExternal;
@@ -3053,7 +3032,7 @@ async function _importLibraryToServer(platform, games) {
                                 if (cached.hero  && String(cached.hero ).startsWith('file://')) { entry.heroUrl  = cached.hero;  changed = true; }
                                 if (cached.logo  && String(cached.logo ).startsWith('file://')) { entry.logoUrl  = cached.logo;  changed = true; }
                                 if (changed) {
-                                    await fs.writeFile(cacheFile, JSON.stringify(lib2, null, 2), 'utf8');
+                                    await syncCacheRepository.writeMergedLibrary(platform, lib2);
                                     console.log(
                                         `[EnrichQueueAssets] ${gameTitle} DB/cache backfilled ` +
                                         `cover=${!!(cached.cover?.startsWith('file://'))} ` +
