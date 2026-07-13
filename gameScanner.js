@@ -1,5 +1,5 @@
 'use strict';
 
-const { createGamesFeature } = require('./src/features/games/infrastructure/composition/GamesContainer');
+const { getGamesFeature } = require('./src/features/games/infrastructure/composition/GamesContainer');
 
-module.exports = createGamesFeature();
+module.exports = getGamesFeature();

@@ -3,7 +3,10 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
-const { createGamesFeature } = require('../src/features/games/infrastructure/composition/GamesContainer');
+const {
+    createGamesFeature,
+    getGamesFeature,
+} = require('../src/features/games/infrastructure/composition/GamesContainer');
 
 const EXPECTED_EXPORT_KEYS = [
     'scanAllGames',
@@ -75,6 +78,49 @@ test('createGamesFeature exists and returns an API object', () => {
     assert.equal(typeof createGamesFeature, 'function');
     assert.equal(typeof api, 'object');
     assert.equal(typeof api.scanAllGames, 'function');
+});
+
+test('getGamesFeature is exported as a function', () => {
+    assert.equal(typeof getGamesFeature, 'function');
+});
+
+test('getGamesFeature returns the same API object across calls', () => {
+    const a = getGamesFeature();
+    const b = getGamesFeature();
+
+    assert.strictEqual(a, b);
+});
+
+test('createGamesFeature still returns fresh API objects', () => {
+    const options = {
+        engine: makeEngine(),
+        metadataCacheStore: { save: async () => {}, load: async () => null },
+        resolutionManager: { setApi() {} },
+    };
+    const a = createGamesFeature(options);
+    const b = createGamesFeature(options);
+
+    assert.notStrictEqual(a, b);
+});
+
+test('gameScanner shim returns the GamesContainer singleton', () => {
+    const gameScanner = require('../gameScanner');
+
+    assert.strictEqual(gameScanner, getGamesFeature());
+});
+
+test('gameScanner shim keeps the expected public API keys', () => {
+    const gameScanner = require('../gameScanner');
+
+    assert.deepEqual(Object.keys(gameScanner), EXPECTED_EXPORT_KEYS);
+});
+
+test('gameScanner re-require returns the same GamesContainer singleton', () => {
+    const a = require('../gameScanner');
+    delete require.cache[require.resolve('../gameScanner')];
+    const b = require('../gameScanner');
+
+    assert.strictEqual(a, b);
 });
 
 test('createGamesFeature API contains the gameScanner public export keys', () => {

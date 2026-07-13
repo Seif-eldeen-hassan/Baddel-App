@@ -43,6 +43,8 @@ const { MetadataCacheStore: DefaultMetadataCacheStore } = require('../services/M
 const { runBackgroundMetadataPipeline: defaultRunBackgroundMetadataPipeline } = require('../services/BackgroundMetadataPipeline');
 const { refetchMissingImages: defaultRefetchMissingImages } = require('../services/RefetchImagesService');
 
+let gamesFeatureSingleton = null;
+
 function createGamesFeature(options = {}) {
     const app = options.app || defaultApp;
     const baddelApi = options.baddelApi || defaultBaddelApi;
@@ -160,6 +162,14 @@ function createGamesFeature(options = {}) {
     };
 }
 
+function getGamesFeature() {
+    if (!gamesFeatureSingleton) {
+        gamesFeatureSingleton = createGamesFeature();
+    }
+    return gamesFeatureSingleton;
+}
+
 module.exports = {
     createGamesFeature,
+    getGamesFeature,
 };
