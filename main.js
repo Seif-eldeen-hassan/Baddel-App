@@ -7,6 +7,8 @@ const os = require('os');
 const { exec, spawn } = require('child_process');
 const util = require('util');
 const execAsync = util.promisify(exec);
+const { getGamesFeature } = require('./src/features/games/infrastructure/composition/GamesContainer');
+const gamesApi = getGamesFeature();
 const {
     scanAllGames, addManualGame, getSavedGames, updateGameImage, resetGameImage,
     removeGame, renameGame, unhideAllGames, getHiddenGames,
@@ -14,7 +16,7 @@ const {
     updateGameMetadata, saveFullMetadata, loadFullMetadata,
     updatePlaytime, setTimeTrackingEnabled, getTimeTrackingEnabled,
     refetchMissingImages, runBackgroundMetadataPipeline, getJsonGameRepository,
-} = require('./gameScanner');
+} = gamesApi;
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
@@ -1105,8 +1107,7 @@ function _doPeriodicSave(gameId, tracker) {
     const delta   = tracker.totalActiveMs - savedMs;
     if (delta < 5 * 60_000) return;
     const mins = Math.floor(delta / 60_000);
-    const gameScanner = require('./gameScanner');
-    gameScanner.updatePlaytime(gameId, mins).catch((err) => {
+    gamesApi.updatePlaytime(gameId, mins).catch((err) => {
         console.error('[Playtime] periodic updatePlaytime error:', err);
     });
     tracker.lastSavedActiveMs = savedMs + mins * 60_000;
@@ -1305,18 +1306,16 @@ function saveTrackerPlaytime(gameId, tracker, gameName) {
         isQualified,
     };
 
-    const gameScanner = require('./gameScanner');
-
     // Guard: ensure the export is wired up correctly (catches future regressions early)
-    if (typeof gameScanner.saveQualifiedSession !== 'function') {
-        console.error('[Playtime] saveQualifiedSession is not a function on gameScanner - skipping save for:', gameName);
+    if (typeof gamesApi.saveQualifiedSession !== 'function') {
+        console.error('[Playtime] saveQualifiedSession is not a function on gamesApi - skipping save for:', gameName);
         return;
     }
 
     console.log(`[Playtime] saveTrackerPlaytime -> gameId=${gameId} gameName=${gameName}`);
     console.log(`[Playtime] sessionData:`, JSON.stringify(sessionData));
 
-    gameScanner.saveQualifiedSession(gameId, sessionData).then(result => {
+    gamesApi.saveQualifiedSession(gameId, sessionData).then(result => {
         console.log(`[Playtime] saveQualifiedSession result: status=${result.status} totalPlaytime=${result.totalPlaytime} sessionQualified=${result.sessionQualified}`);
         if (mainWindow && result.status === 'success') {
             mainWindow.webContents.send('playtime-updated', {
@@ -1954,7 +1953,7 @@ const allAchievements = allSchemaAchievements.length
     // -- Metadata IPC (moved to handlers/gameMetadataHandlers.js) --
     require('./handlers/gameMetadataHandlers').register(ipcMain, {
         baddelApi,
-        mrm: require('./gameScanner').resolutionManager,
+        mrm: gamesApi.resolutionManager,
         generateMetadataCandidates,
     });
     
@@ -2004,9 +2003,7 @@ const allAchievements = allSchemaAchievements.length
     // The local metadata resolver is kept for compatibility but is a no-op.
     // All non-Steam/Epic resolution now flows through MetadataResolutionManager
     // (mrm.resolve()) in both runBackgroundMetadataPipeline and get-game-metadata.
-    const gameScanner = require('./gameScanner');
-
-    gameScanner.registerLocalMetadataResolver(async (gameName, hints = {}) => {
+    gamesApi.registerLocalMetadataResolver(async (gameName, hints = {}) => {
         try {
             const platform = (hints.platform || '').toLowerCase().trim();
             // Steam/Epic are handled by the server enrich pipeline - skip here.
@@ -2040,7 +2037,7 @@ const allAchievements = allSchemaAchievements.length
 
     // Wire the same downloader into both pipelines so Steam/Epic games from
     // applyNormalizedToCache also get hero/logo written to image_cache.
-    gameScanner.registerImageDownloader(_downloadAssetsToCache);
+    gamesApi.registerImageDownloader(_downloadAssetsToCache);
     registerPlatformSyncAssetDownloader(_downloadAssetsToCache);
 
     console.log('[Startup] Background metadata pipeline dependencies registered.');
@@ -2048,7 +2045,7 @@ const allAchievements = allSchemaAchievements.length
     // Analytics startup snapshot
     try {
         const [games, collections] = await Promise.all([
-            require('./gameScanner').getSavedGames(),
+            gamesApi.getSavedGames(),
             colHandler.getCollections(),
         ]);
         const platforms = [...new Set(games.map(g => g.platform).filter(Boolean))];
