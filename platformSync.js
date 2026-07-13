@@ -22,7 +22,6 @@ const {
     isEpicSyncedGameAllowed,
     classifyEpicEntry,
     resolveEpicAccountIdentity,
-    isRealEpicSwitcherProfile,
 } = require('./platformSyncShared');
 const {
     createFriendlySyncError,
@@ -33,8 +32,8 @@ const {
     steamGameBelongsToAccount,
 } = require('./src/features/sync/domain/services/syncLibraryRules');
 const {
-    findMatchingEpicSwitcherProfile,
-} = require('./src/features/sync/domain/services/epicSwitcherRules');
+    EpicSwitcherRepository,
+} = require('./src/features/sync/infrastructure/repositories/EpicSwitcherRepository');
 const {
     PollSteamApprovalUseCase,
 } = require('./src/features/sync/application/useCases/PollSteamApprovalUseCase');
@@ -727,54 +726,28 @@ async function _writeSwitcherSyncLink(platform, switcherProfileName, platformAcc
 // real switcher profile folder already exists. For Epic it also verifies the folder
 // contains actual session data (Data/, Config/, etc.) so phantom folders are ignored.
 async function _writeSyncLinkToExistingSwitcherProfile(platform, profileName, platformAccountId, extra = {}) {
-    try {
-        const switcherDir = path.join(app.getPath('userData'), 'accounts', platform, profileName.trim());
-        try { await fs.access(switcherDir); } catch {
-            syncLog(`[PlatformSync] No existing ${platform} switcher profile "${profileName}"; skipping sync_link write.`);
-            return false;
-        }
-        if (platform === 'epic') {
-            const entries = await fs.readdir(switcherDir).catch(() => []);
-            if (!isRealEpicSwitcherProfile(entries)) {
-                syncLog(`[PlatformSync] Epic folder "${profileName}" contains no real session data; skipping sync_link write.`);
-                return false;
-            }
-        }
-        const linkFile = path.join(switcherDir, 'sync_link.json');
-        await fs.writeFile(linkFile, JSON.stringify({
-            platformAccountId: String(platformAccountId),
-            linkedAt: new Date().toISOString(),
-            ...extra
-        }, null, 2), 'utf8');
-        return true;
-    } catch (e) {
-        syncWarn(`[PlatformSync] Could not write sync_link.json for ${platform}/${profileName}:`, e.message);
-        return false;
+    const repository = new EpicSwitcherRepository({
+        accountsRootDir: path.join(app.getPath('userData'), 'accounts'),
+    });
+    const result = await repository.writeSyncLinkToExistingProfile(platform, profileName, platformAccountId, extra);
+    if (result.ok) return true;
+    if (result.reason === 'missing_profile') {
+        syncLog(`[PlatformSync] No existing ${platform} switcher profile "${profileName}"; skipping sync_link write.`);
+    } else if (result.reason === 'phantom_profile') {
+        syncLog(`[PlatformSync] Epic folder "${profileName}" contains no real session data; skipping sync_link write.`);
+    } else if (result.reason === 'error') {
+        syncWarn(`[PlatformSync] Could not write sync_link.json for ${platform}/${profileName}:`, result.error.message);
     }
+    return false;
 }
 
 // Searches existing Epic switcher profiles for one that matches by account ID or
 // display name. Returns the profile folder name if found, null otherwise.
 async function _findMatchingEpicSwitcherProfile(accountId, displayName) {
-    const epicDir = path.join(app.getPath('userData'), 'accounts', 'epic');
-    let entries;
-    try { entries = await fs.readdir(epicDir, { withFileTypes: true }); } catch { return null; }
-
-    const profiles = [];
-
-    for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const profileDir = path.join(epicDir, entry.name);
-        const isReal = isRealEpicSwitcherProfile(await fs.readdir(profileDir).catch(() => []));
-        let syncLink = null;
-        if (isReal) {
-            try {
-                syncLink = JSON.parse(await fs.readFile(path.join(profileDir, 'sync_link.json'), 'utf8'));
-            } catch { /* no sync_link present */ }
-        }
-        profiles.push({ name: entry.name, isReal, syncLink });
-    }
-    return findMatchingEpicSwitcherProfile(accountId, displayName, profiles);
+    const repository = new EpicSwitcherRepository({
+        accountsRootDir: path.join(app.getPath('userData'), 'accounts'),
+    });
+    return repository.findMatchingEpicProfile(accountId, displayName);
 }
 
 async function mapWithConcurrency(items, limit, mapper) {

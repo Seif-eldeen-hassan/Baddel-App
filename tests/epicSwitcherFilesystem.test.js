@@ -257,7 +257,7 @@ test('_findMatchingEpicSwitcherProfile never matches phantom profile by name or 
     }
 });
 
-test('Epic switcher filesystem repository has not been extracted yet', () => {
+test('Epic switcher filesystem wrappers delegate to extracted repository', () => {
     const platformSyncSource = fs.readFileSync(path.join(__dirname, '..', 'platformSync.js'), 'utf8');
     const repositoryPath = path.join(
         __dirname,
@@ -272,6 +272,6 @@ test('Epic switcher filesystem repository has not been extracted yet', () => {
 
     assert.match(platformSyncSource, /async function _writeSyncLinkToExistingSwitcherProfile/);
     assert.match(platformSyncSource, /async function _findMatchingEpicSwitcherProfile/);
-    assert.equal(fs.existsSync(repositoryPath), false);
-    assert.doesNotMatch(platformSyncSource, /EpicSwitcherRepository/);
+    assert.equal(fs.existsSync(repositoryPath), true);
+    assert.match(platformSyncSource, /EpicSwitcherRepository/);
 });
