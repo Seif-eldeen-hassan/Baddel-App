@@ -69,8 +69,50 @@ function steamGameBelongsToAccount(game, accountId) {
     return false;
 }
 
+function mergeOwnedGamesIntoLibrary(mergedLibrary, games, account, platform) {
+    const aid = String(account.id);
+    for (const game of games) {
+        if (mergedLibrary.has(game.id)) {
+            const existing = mergedLibrary.get(game.id);
+            if (!existing.ownedBy.includes(account.displayName)) existing.ownedBy.push(account.displayName);
+            if (!existing.ownedByAccountIds.map(String).includes(aid)) existing.ownedByAccountIds.push(aid);
+            if (platform === 'steam') {
+                if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
+                if (!existing.steamLicensedAccountIds.map(String).includes(aid)) existing.steamLicensedAccountIds.push(aid);
+            }
+            continue;
+        }
+        mergedLibrary.set(game.id, game);
+    }
+}
+
+function mergeExistingEpicOwnership(targetGame, previousGame, targetAccountId) {
+    const targetAid = String(targetAccountId);
+
+    if (!Array.isArray(targetGame.ownedBy)) targetGame.ownedBy = [];
+    if (!Array.isArray(targetGame.ownedByAccountIds)) targetGame.ownedByAccountIds = [];
+
+    for (const prevAid of (previousGame.ownedByAccountIds || [])) {
+        const prevAidStr = String(prevAid);
+        if (prevAidStr === targetAid) continue;
+        if (!targetGame.ownedByAccountIds.some((id) => String(id) === prevAidStr)) {
+            targetGame.ownedByAccountIds.push(prevAidStr);
+        }
+    }
+
+    for (const prevName of (previousGame.ownedBy || [])) {
+        const prevNameStr = String(prevName || '').trim();
+        if (!prevNameStr) continue;
+        if (!targetGame.ownedBy.includes(prevNameStr)) {
+            targetGame.ownedBy.push(prevNameStr);
+        }
+    }
+}
+
 module.exports = {
     createFriendlySyncError,
+    mergeExistingEpicOwnership,
+    mergeOwnedGamesIntoLibrary,
     summarizeEpicEntryForLog,
     summarizeGameTitles,
     steamGameBelongsToAccount,

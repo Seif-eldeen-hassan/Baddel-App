@@ -5,6 +5,8 @@ const assert = require('node:assert/strict');
 
 const {
     createFriendlySyncError,
+    mergeExistingEpicOwnership,
+    mergeOwnedGamesIntoLibrary,
     summarizeEpicEntryForLog,
     summarizeGameTitles,
     steamGameBelongsToAccount,
@@ -138,4 +140,107 @@ test('steamGameBelongsToAccount ignores detected install ids as ownership eviden
 test('steamGameBelongsToAccount handles missing game/account data', () => {
     assert.equal(steamGameBelongsToAccount(null, '1'), false);
     assert.equal(steamGameBelongsToAccount({}, '1'), false);
+});
+
+test('mergeOwnedGamesIntoLibrary inserts fresh games into the target map', () => {
+    const mergedLibrary = new Map();
+    const game = {
+        id: 'steam_10',
+        title: 'Portal',
+        ownedBy: ['Steam One'],
+        ownedByAccountIds: ['s1'],
+        steamLicensedAccountIds: ['s1'],
+    };
+
+    mergeOwnedGamesIntoLibrary(
+        mergedLibrary,
+        [game],
+        { id: 's1', displayName: 'Steam One' },
+        'steam'
+    );
+
+    assert.equal(mergedLibrary.get('steam_10'), game);
+});
+
+test('mergeOwnedGamesIntoLibrary mutates existing Steam ownership without duplicating ids', () => {
+    const existing = {
+        id: 'steam_10',
+        title: 'Cached Portal',
+        ownedBy: ['Steam Two'],
+        ownedByAccountIds: ['s2'],
+        steamLicensedAccountIds: ['s2'],
+    };
+    const mergedLibrary = new Map([['steam_10', existing]]);
+    const fresh = {
+        id: 'steam_10',
+        title: 'Fresh Portal',
+        ownedBy: ['Steam One'],
+        ownedByAccountIds: ['s1'],
+        steamLicensedAccountIds: ['s1'],
+    };
+
+    mergeOwnedGamesIntoLibrary(
+        mergedLibrary,
+        [fresh, fresh],
+        { id: 's1', displayName: 'Steam One' },
+        'steam'
+    );
+
+    assert.equal(mergedLibrary.get('steam_10'), existing);
+    assert.deepEqual(existing.ownedBy, ['Steam Two', 'Steam One']);
+    assert.deepEqual(existing.ownedByAccountIds, ['s2', 's1']);
+    assert.deepEqual(existing.steamLicensedAccountIds, ['s2', 's1']);
+});
+
+test('mergeOwnedGamesIntoLibrary mutates existing Epic ownership without Steam fields', () => {
+    const existing = {
+        id: 'epic_control',
+        title: 'Control',
+        ownedBy: ['Epic One'],
+        ownedByAccountIds: ['e1'],
+    };
+    const mergedLibrary = new Map([['epic_control', existing]]);
+
+    mergeOwnedGamesIntoLibrary(
+        mergedLibrary,
+        [{ id: 'epic_control', title: 'Control Fresh' }],
+        { id: 'e2', displayName: 'Epic Two' },
+        'epic'
+    );
+
+    assert.equal(mergedLibrary.get('epic_control'), existing);
+    assert.deepEqual(existing.ownedBy, ['Epic One', 'Epic Two']);
+    assert.deepEqual(existing.ownedByAccountIds, ['e1', 'e2']);
+    assert.equal(existing.steamLicensedAccountIds, undefined);
+});
+
+test('mergeExistingEpicOwnership preserves non-target cached owners only', () => {
+    const targetGame = {
+        id: 'epic_shared',
+        ownedBy: ['Epic Two'],
+        ownedByAccountIds: ['e2'],
+    };
+    const previousGame = {
+        id: 'epic_shared',
+        ownedBy: ['Epic One', 'Epic Two'],
+        ownedByAccountIds: ['e1', 'e2'],
+    };
+
+    mergeExistingEpicOwnership(targetGame, previousGame, 'e2');
+
+    assert.deepEqual(targetGame.ownedByAccountIds, ['e2', 'e1']);
+    assert.deepEqual(targetGame.ownedBy, ['Epic Two', 'Epic One']);
+});
+
+test('mergeExistingEpicOwnership initializes missing ownership arrays', () => {
+    const targetGame = { id: 'epic_shared' };
+
+    mergeExistingEpicOwnership(
+        targetGame,
+        { ownedBy: ['Epic One'], ownedByAccountIds: ['e1'] },
+        'e2'
+    );
+
+    assert.deepEqual(targetGame.ownedByAccountIds, ['e1']);
+    assert.deepEqual(targetGame.ownedBy, ['Epic One']);
 });

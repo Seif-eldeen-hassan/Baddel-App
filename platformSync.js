@@ -26,6 +26,8 @@ const {
 } = require('./platformSyncShared');
 const {
     createFriendlySyncError,
+    mergeExistingEpicOwnership,
+    mergeOwnedGamesIntoLibrary,
     summarizeEpicEntryForLog,
     summarizeGameTitles,
     steamGameBelongsToAccount,
@@ -783,62 +785,6 @@ async function mapWithConcurrency(items, limit, mapper) {
 
     await Promise.all(Array.from({ length: concurrency }, () => worker()));
     return results;
-}
-
-function mergeOwnedGamesIntoLibrary(mergedLibrary, games, account, platform) {
-    const aid = String(account.id);
-    for (const game of games) {
-        if (mergedLibrary.has(game.id)) {
-            const existing = mergedLibrary.get(game.id);
-            if (!existing.ownedBy.includes(account.displayName)) existing.ownedBy.push(account.displayName);
-            if (!existing.ownedByAccountIds.map(String).includes(aid)) existing.ownedByAccountIds.push(aid);
-            if (platform === 'steam') {
-                if (!existing.steamLicensedAccountIds) existing.steamLicensedAccountIds = [];
-                if (!existing.steamLicensedAccountIds.map(String).includes(aid)) existing.steamLicensedAccountIds.push(aid);
-            }
-            continue;
-        }
-        mergedLibrary.set(game.id, game);
-    }
-}
-
-/**
- * When doing a partial Epic sync (only account B), we seed mergedLibrary from
- * previousGames first so all existing ownership is preserved.  Then
- * mergeOwnedGamesIntoLibrary() adds fresh B data on top.  For shared games
- * that already exist in the map, this helper merges the *other* accounts'
- * ownership arrays from the cached version so they are never lost.
- *
- * Rules:
- *  - Never duplicate ids in ownedByAccountIds
- *  - Never duplicate names in ownedBy
- *  - Do not invent ownership for the target account
- *  - Do not remove the target account's ownership after refresh
- */
-function mergeExistingEpicOwnership(targetGame, previousGame, targetAccountId) {
-    const targetAid = String(targetAccountId);
-
-    if (!Array.isArray(targetGame.ownedBy)) targetGame.ownedBy = [];
-    if (!Array.isArray(targetGame.ownedByAccountIds)) targetGame.ownedByAccountIds = [];
-
-    // Bring over every previous owner that is NOT the account we just synced
-    // (the synced account's data comes from the fresh legendary output).
-    for (const prevAid of (previousGame.ownedByAccountIds || [])) {
-        const prevAidStr = String(prevAid);
-        if (prevAidStr === targetAid) continue; // fresh data owns this, skip
-        if (!targetGame.ownedByAccountIds.some((id) => String(id) === prevAidStr)) {
-            targetGame.ownedByAccountIds.push(prevAidStr);
-        }
-    }
-
-    for (const prevName of (previousGame.ownedBy || [])) {
-        const prevNameStr = String(prevName || '').trim();
-        if (!prevNameStr) continue;
-        // Only re-add display names that correspond to a non-target owner we just preserved
-        if (!targetGame.ownedBy.includes(prevNameStr)) {
-            targetGame.ownedBy.push(prevNameStr);
-        }
-    }
 }
 
 async function buildSteamOwnedGameEntries(account, games = []) {
