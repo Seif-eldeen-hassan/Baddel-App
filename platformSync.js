@@ -9,7 +9,7 @@ const fs          = require('fs').promises;
 const fsSync      = require('fs');
 const { execFile } = require('child_process');
 const { app, BrowserWindow, Notification } = require('electron');
-const { getLocalSteamGames } = require('./gameScanner');
+const { getGamesFeature } = require('./src/features/games/infrastructure/composition/GamesContainer');
 const {
     orderAccountsForSync,
     countGamesForAccount,
@@ -41,6 +41,10 @@ function coverDbgSync(msg, data = {}) {
     try {
         console.log('[CoverDebug:Sync]', msg, data);
     } catch {}
+}
+
+function getGamesApi() {
+    return getGamesFeature();
 }
 
 // ─── Paths ───────────────────────────────────────────────────
@@ -77,7 +81,7 @@ function _emitLibraryUpdated(win) {
     _libraryUpdateDebounceTimer = setTimeout(async () => {
         try {
             if (win && !win.isDestroyed()) {
-                const updatedLibrary = await require('./gameScanner').getSavedGames();
+                const updatedLibrary = await getGamesApi().getSavedGames();
                 win.webContents.send('library-updated', updatedLibrary);
             }
         } catch {}
@@ -1970,7 +1974,7 @@ const steamConnector = {
             });
             _pushPlatformSyncLog('steam', 'info', 'Merging locally installed Steam games');
 
-            const localGames = await getLocalSteamGames().catch((err) => {
+            const localGames = await getGamesApi().getLocalSteamGames().catch((err) => {
                 _pushPlatformSyncLog('steam', 'warn', `Failed to read local Steam manifests: ${err.message}`);
                 return [];
             });
@@ -2568,8 +2572,7 @@ async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null)
         const badEntries = [...rejectedEntries, ...unknownEntries].map(x => x.entry);
         if (badEntries.length > 0) {
             try {
-                const { removeEpicNonGameEntries } = require('./gameScanner');
-                await removeEpicNonGameEntries(badEntries);
+                await getGamesApi().removeEpicNonGameEntries(badEntries);
             } catch (cleanupErr) {
                 _pushPlatformSyncLog('epic', 'warn', `DB cleanup error: ${cleanupErr.message}`, { accountId: aid });
             }

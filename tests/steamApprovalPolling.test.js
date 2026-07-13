@@ -7,9 +7,16 @@ const assert = require('node:assert/strict');
 const Module = require('module');
 const _origLoad = Module._load;
 const _mockApp = { getPath: () => '/tmp/baddel-test' };
+const _mockGamesContainer = {
+    getGamesFeature: () => ({
+        getLocalSteamGames: () => [],
+        getSavedGames: () => [],
+        removeEpicNonGameEntries: async () => {},
+    }),
+};
 Module._load = function (id, parent, isMain) {
     if (id === 'electron') return { app: _mockApp, BrowserWindow: null, Notification: null };
-    if (id === './gameScanner') return { getLocalSteamGames: () => [] };
+    if (id === './src/features/games/infrastructure/composition/GamesContainer') return _mockGamesContainer;
     if (id === './platformSyncShared') return {};
     if (id === './services/baddelApi') return {};
     if (id === './services/credentialValidator') return { redactSecrets: x => x };
@@ -227,7 +234,7 @@ test('index.html choose_method and steam_qr views hide Continue button', () => {
     const _fakeMod = Module._load;
     Module._load = function (id, parent, isMain) {
         if (id === 'electron') return { app: _mockApp, BrowserWindow: null, Notification: null };
-        if (id === './gameScanner') return { getLocalSteamGames: () => [] };
+        if (id === './src/features/games/infrastructure/composition/GamesContainer') return _mockGamesContainer;
         if (id === './platformSyncShared') return {};
         if (id === './services/baddelApi') return {};
         if (id === './services/credentialValidator') return { redactSecrets: x => x };
@@ -338,6 +345,13 @@ test('platformSync.js defines QUIET_LOGS and STEAM_AUTH_DEBUG flags', () => {
     const ps = fs.readFileSync(path.join(__dirname, '../platformSync.js'), 'utf8');
     assert.ok(ps.includes('BADDEL_QUIET_LOGS'), 'QUIET_LOGS gate missing from platformSync.js');
     assert.ok(ps.includes('BADDEL_STEAM_AUTH_DEBUG'), 'STEAM_AUTH_DEBUG gate missing from platformSync.js');
+});
+
+test('platformSync.js uses the GamesContainer singleton instead of the gameScanner shim', () => {
+    const ps = fs.readFileSync(path.join(__dirname, '../platformSync.js'), 'utf8');
+    assert.match(ps, /getGamesFeature/);
+    assert.doesNotMatch(ps, /require\s*\(\s*['"]\.\/gameScanner['"]\s*\)/);
+    assert.doesNotMatch(ps, /createGamesFeature/);
 });
 
 test('steamBridge.js filters protocol noise in QUIET mode', () => {
