@@ -4,16 +4,15 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-// Must be set before requiring gameScanner so the module-level singleton uses a temp dir.
 if (!process.env.BADDEL_TEST_USER_DATA) {
     process.env.BADDEL_TEST_USER_DATA = fs.mkdtempSync(
         path.join(os.tmpdir(), 'baddel-stages-singleton-')
     );
 }
 
-const { BaddelEngine } = require('../gameScanner');
+const { BaddelEngine } = require('../src/features/games/infrastructure/legacy/BaddelEngine');
 // Require the same cached module object so mutations to importGames are visible
-// to gameScanner.js's module-level baddelApi reference.
+// to BaddelEngine's module-level baddelApi reference.
 const baddelApi = require('../services/baddelApi');
 
 // ─── Shared helpers ───────────────────────────────────────────────────────────

@@ -103,27 +103,11 @@ test('createGamesFeature still returns fresh API objects', () => {
     assert.notStrictEqual(a, b);
 });
 
-test('gameScanner shim returns the GamesContainer singleton', () => {
-    const gameScanner = require('../gameScanner');
-
-    assert.strictEqual(gameScanner, getGamesFeature());
+test('getGamesFeature singleton keeps the expected public API keys', () => {
+    assert.deepEqual(Object.keys(getGamesFeature()), EXPECTED_EXPORT_KEYS);
 });
 
-test('gameScanner shim keeps the expected public API keys', () => {
-    const gameScanner = require('../gameScanner');
-
-    assert.deepEqual(Object.keys(gameScanner), EXPECTED_EXPORT_KEYS);
-});
-
-test('gameScanner re-require returns the same GamesContainer singleton', () => {
-    const a = require('../gameScanner');
-    delete require.cache[require.resolve('../gameScanner')];
-    const b = require('../gameScanner');
-
-    assert.strictEqual(a, b);
-});
-
-test('createGamesFeature API contains the gameScanner public export keys', () => {
+test('createGamesFeature API contains the expected public export keys', () => {
     const api = createGamesFeature({
         engine: makeEngine(),
         metadataCacheStore: { save: async () => {}, load: async () => null },

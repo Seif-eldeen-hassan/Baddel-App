@@ -8,7 +8,7 @@ const path   = require('node:path');
 
 process.env.BADDEL_TEST_USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-scanprep-singleton-'));
 
-const { BaddelEngine } = require('../gameScanner');
+const { BaddelEngine } = require('../src/features/games/infrastructure/legacy/BaddelEngine');
 
 function makeEngine() {
     const dbFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-scanprep-'));

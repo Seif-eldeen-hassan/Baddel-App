@@ -49,14 +49,15 @@ function rmDir(dir)   { try { fs.rmSync(dir, { recursive: true, force: true }); 
 
 function freshRequireScanner() {
     for (const key of Object.keys(require.cache)) {
-        if (key.includes('gameScanner') || key.includes('analytics') ||
+        if (key.includes('GamesContainer') || key.includes('BaddelEngine') || key.includes('analytics') ||
             key.includes('metadataCacheStore') || key.includes('baddelApi') ||
             key.includes('candidateGenerator') || key.includes('metadataResolutionManager') ||
             key.includes('platformSyncShared')) {
             delete require.cache[key];
         }
     }
-    return require('../gameScanner');
+    const { getGamesFeature } = require('../src/features/games/infrastructure/composition/GamesContainer');
+    return getGamesFeature();
 }
 
 // ── addManualGame: .exe stores unquoted command ───────────────────────────────

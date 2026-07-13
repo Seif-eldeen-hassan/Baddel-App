@@ -6,7 +6,36 @@ const path = require('node:path');
 
 process.env.BADDEL_TEST_USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-scanner-singleton-'));
 
-const { BaddelEngine, __scannerTest } = require('../gameScanner');
+const { BaddelEngine } = require('../src/features/games/infrastructure/legacy/BaddelEngine');
+const { createGamesFeature } = require('../src/features/games/infrastructure/composition/GamesContainer');
+
+const __scannerTest = createGamesFeature({
+    engine: {
+        startGlobalScan: async () => [],
+        addManualGame: async () => ({ status: 'success' }),
+        getStoredGames: () => [],
+        getMissingInstalledGames: () => [],
+        renameGame: async () => ({ status: 'success' }),
+        removeGame: async () => ({ status: 'success' }),
+        unhideAllGames: async () => ({ status: 'success' }),
+        getHiddenGames: () => [],
+        restoreSpecificGames: async () => ({ status: 'success' }),
+        deleteGamePermanently: async () => ({ status: 'success' }),
+        updateGameImage: () => ({ status: 'success' }),
+        resetGameImage: async () => ({ status: 'success' }),
+        updateGameMetadata: async () => ({ status: 'success' }),
+        reorderLibrary: async () => ({ status: 'success' }),
+        getJsonGameRepository: () => ({}),
+        updatePlaytime: async () => ({ status: 'success' }),
+        saveQualifiedSession: async () => ({ status: 'success' }),
+        setTimeTrackingEnabled: async () => ({ status: 'success' }),
+        getTimeTrackingEnabled: () => ({ status: 'success', timeTrackingEnabled: true }),
+        getLocalSteamGames: async () => [],
+        removeEpicNonGameEntries: async () => ({ removed: 0 }),
+    },
+    metadataCacheStore: { save: async () => {}, load: async () => null },
+    resolutionManager: { setApi() {} },
+}).__scannerTest;
 
 function makeTempDir(prefix = 'baddel-scanner-') {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -898,17 +927,25 @@ test('getTimeTrackingEnabled: defaults to true when field absent (backward compa
     assert.equal(res.timeTrackingEnabled, true, 'missing field must default to true');
 });
 
-// Runtime export tests — not just grep, actually require the module
-test('gameScanner module exports setTimeTrackingEnabled as a function', () => {
-    const gs = require('../gameScanner');
-    assert.equal(typeof gs.setTimeTrackingEnabled, 'function',
-        'setTimeTrackingEnabled must be exported from module.exports');
+// Runtime export tests — public GamesContainer facade, not the compatibility shim.
+test('GamesContainer public API exports setTimeTrackingEnabled as a function', () => {
+    const api = createGamesFeature({
+        engine: makeEngine(),
+        metadataCacheStore: { save: async () => {}, load: async () => null },
+        resolutionManager: { setApi() {} },
+    });
+    assert.equal(typeof api.setTimeTrackingEnabled, 'function',
+        'setTimeTrackingEnabled must be exported from the games API');
 });
 
-test('gameScanner module exports getTimeTrackingEnabled as a function', () => {
-    const gs = require('../gameScanner');
-    assert.equal(typeof gs.getTimeTrackingEnabled, 'function',
-        'getTimeTrackingEnabled must be exported from module.exports');
+test('GamesContainer public API exports getTimeTrackingEnabled as a function', () => {
+    const api = createGamesFeature({
+        engine: makeEngine(),
+        metadataCacheStore: { save: async () => {}, load: async () => null },
+        resolutionManager: { setApi() {} },
+    });
+    assert.equal(typeof api.getTimeTrackingEnabled, 'function',
+        'getTimeTrackingEnabled must be exported from the games API');
 });
 
 test('updatePlaytime: tracking_disabled returns without incrementing', async () => {

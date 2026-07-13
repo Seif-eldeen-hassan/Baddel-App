@@ -5,7 +5,7 @@ const fs     = require('node:fs');
 const os     = require('node:os');
 const path   = require('node:path');
 
-const { BaddelEngine } = require('../gameScanner');
+const { BaddelEngine } = require('../src/features/games/infrastructure/legacy/BaddelEngine');
 
 function makeTempDir() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-engine-injection-'));

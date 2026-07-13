@@ -1947,17 +1947,19 @@ test('context menu: Time Tracking item has no emoji', () => {
     assert.doesNotMatch(snippet, /[⏱⏰⏳]/, 'no clock emoji in context menu time tracking item');
 });
 
-// Runtime test: require the actual module and verify export types
-test('gameScanner runtime exports: setTimeTrackingEnabled is a function', () => {
-    const gs = require(path.join(ROOT, 'gameScanner'));
+// Runtime test: require the GamesContainer singleton and verify export types.
+test('GamesContainer runtime exports: setTimeTrackingEnabled is a function', () => {
+    const { getGamesFeature } = require(path.join(ROOT, 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer'));
+    const gs = getGamesFeature();
     assert.equal(typeof gs.setTimeTrackingEnabled, 'function',
-        'setTimeTrackingEnabled must be a function in module.exports at runtime');
+        'setTimeTrackingEnabled must be a function in the games API at runtime');
 });
 
-test('gameScanner runtime exports: getTimeTrackingEnabled is a function', () => {
-    const gs = require(path.join(ROOT, 'gameScanner'));
+test('GamesContainer runtime exports: getTimeTrackingEnabled is a function', () => {
+    const { getGamesFeature } = require(path.join(ROOT, 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer'));
+    const gs = getGamesFeature();
     assert.equal(typeof gs.getTimeTrackingEnabled, 'function',
-        'getTimeTrackingEnabled must be a function in module.exports at runtime');
+        'getTimeTrackingEnabled must be a function in the games API at runtime');
 });
 
 // ── Trailer player guards ─────────────────────────────────────────────────────

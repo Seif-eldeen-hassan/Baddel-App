@@ -9,9 +9,9 @@
  * pointing it at a temporary userData directory.
  *
  * What this guards:
- *   - gameScanner.getSavedGames() returns an array
+ *   - GamesContainer.getSavedGames() returns an array
  *   - Each game object has the required fields: id, name, command
- *   - The module loads without throwing at require() time
+ *   - The GamesContainer module loads without throwing at require() time
  *
  * MIGRATION GATE: If this test fails after any migration step, the game
  * library persistence layer has been broken. Do not merge until fixed.
@@ -25,15 +25,16 @@ const os = require('node:os');
 
 describe('Game Library — smoke', () => {
 
-    test('gameScanner module loads without throwing', () => {
-        // If this throws, a top-level side effect in gameScanner.js is crashing.
+    test('GamesContainer module loads without throwing', () => {
+        // If this throws, a top-level side effect in GamesContainer is crashing.
         assert.doesNotThrow(() => {
-            require('../../gameScanner');
-        }, 'gameScanner.js must not throw at require() time');
+            require('../../src/features/games/infrastructure/composition/GamesContainer');
+        }, 'GamesContainer must not throw at require() time');
     });
 
     test('getSavedGames returns an array', () => {
-        const { getSavedGames } = require('../../gameScanner');
+        const { getGamesFeature } = require('../../src/features/games/infrastructure/composition/GamesContainer');
+        const { getSavedGames } = getGamesFeature();
 
         assert.equal(typeof getSavedGames, 'function',
             'getSavedGames must be exported as a function');
@@ -45,7 +46,8 @@ describe('Game Library — smoke', () => {
     });
 
     test('each game object has required fields', () => {
-        const { getSavedGames } = require('../../gameScanner');
+        const { getGamesFeature } = require('../../src/features/games/infrastructure/composition/GamesContainer');
+        const { getSavedGames } = getGamesFeature();
         const games = getSavedGames();
 
         // Skip field check if library is empty (fresh install) — that is valid.
@@ -68,7 +70,8 @@ describe('Game Library — smoke', () => {
     });
 
     test('game IDs are non-empty strings', () => {
-        const { getSavedGames } = require('../../gameScanner');
+        const { getGamesFeature } = require('../../src/features/games/infrastructure/composition/GamesContainer');
+        const { getSavedGames } = getGamesFeature();
         const games = getSavedGames();
 
         if (games.length === 0) return;

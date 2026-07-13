@@ -2,8 +2,8 @@
 const test   = require('node:test');
 const assert = require('node:assert/strict');
 
-// Real pipeline function — deps injected via the _deps parameter added in Phase 16.5.
-const { runBackgroundMetadataPipeline } = require('../gameScanner');
+// Real pipeline function — deps injected via the deps parameter.
+const { runBackgroundMetadataPipeline } = require('../src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 // Real status enum so our fake MRM uses the exact values the pipeline compares against.
 const { STATUS: MRM_STATUS } = require('../services/metadataResolutionManager');
 

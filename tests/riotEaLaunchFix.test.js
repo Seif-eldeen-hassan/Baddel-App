@@ -6,8 +6,7 @@ const path   = require('path');
 
 const MAIN_JS          = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                              'utf8');
 const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'), 'utf8');
-const SCANNER_JS       = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'scanner', 'GameScannerCore.js'), 'utf8') +
-                         fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                   'utf8');
+const SCANNER_JS       = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'scanner', 'GameScannerCore.js'), 'utf8');
 
 // ── _parseLaunchCommand: helper existence ─────────────────────────────────────
 
@@ -147,30 +146,30 @@ test('main.js: EA mobilehome fallback runs before the protocol:// branch', () =>
     assert.ok(eaIdx < protocolIdx, 'EA fallback must come before protocol:// branch');
 });
 
-// ── gameScanner.js: EA scanner no longer stores mobilehome/default ────────────
+// ── GameScannerCore: EA scanner no longer stores mobilehome/default ───────────
 
-test('gameScanner.js: EA scanner uses eaLaunchCmd variable', () => {
+test('GameScannerCore: EA scanner uses eaLaunchCmd variable', () => {
     assert.ok(
         SCANNER_JS.includes('eaLaunchCmd'),
         'eaLaunchCmd variable not found in EA scanner'
     );
 });
 
-test('gameScanner.js: EA scanner rejects mobilehome URL as launch command', () => {
+test('GameScannerCore: EA scanner rejects mobilehome URL as launch command', () => {
     const idx = SCANNER_JS.indexOf('eaLaunchCmd');
     assert.ok(idx !== -1, 'eaLaunchCmd not found');
     const block = SCANNER_JS.slice(idx, idx + 300);
     assert.ok(block.includes('mobilehome'), 'mobilehome guard not found');
 });
 
-test('gameScanner.js: EA scanner falls back to exe path when no real launch URL', () => {
+test('GameScannerCore: EA scanner falls back to exe path when no real launch URL', () => {
     const idx = SCANNER_JS.indexOf('eaLaunchCmd');
     const block = SCANNER_JS.slice(idx, idx + 200);
     // The fallback is the exe variable
     assert.ok(block.includes(': exe'), 'exe fallback not set in eaLaunchCmd');
 });
 
-test('gameScanner.js: EA scanner stores launchCwd as exe directory', () => {
+test('GameScannerCore: EA scanner stores launchCwd as exe directory', () => {
     const idx = SCANNER_JS.indexOf('_buildEAGameFromCandidate');
     assert.ok(idx !== -1, '_buildEAGameFromCandidate not found');
     const block = SCANNER_JS.slice(idx, idx + 2100);
@@ -178,7 +177,7 @@ test('gameScanner.js: EA scanner stores launchCwd as exe directory', () => {
     assert.ok(block.includes('path.dirname(exe)'), 'launchCwd not set to exe directory');
 });
 
-test('gameScanner.js: EA scanner no longer hard-codes eadesktop://mobilehome/default', () => {
+test('GameScannerCore: EA scanner no longer hard-codes eadesktop://mobilehome/default', () => {
     const idx = SCANNER_JS.indexOf('_buildEAGameFromCandidate');
     assert.ok(idx !== -1);
     const fnEnd = SCANNER_JS.indexOf('\n    }', idx + 1000);

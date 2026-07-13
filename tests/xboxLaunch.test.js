@@ -6,14 +6,13 @@ const path   = require('path');
 
 const MAIN_JS            = fs.readFileSync(path.join(__dirname, '..', 'main.js'),                              'utf8');
 const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'launchHandlers.js'),       'utf8');
-const SCANNER_JS         = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'scanner', 'GameScannerCore.js'), 'utf8') +
-                           fs.readFileSync(path.join(__dirname, '..', 'gameScanner.js'),                      'utf8');
+const SCANNER_JS         = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'scanner', 'GameScannerCore.js'), 'utf8');
 const LAUNCHER_JS        = fs.readFileSync(path.join(__dirname, '..', 'services', 'safeLauncher.js'),         'utf8');
 const PLAY_JS            = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'play-launcher.js'),       'utf8');
 
-// ── gameScanner.js Xbox record fields ─────────────────────────────────────────
+// ── GameScannerCore Xbox record fields ────────────────────────────────────────
 
-test('gameScanner: Xbox records store launchType uwp-appsfolder', () => {
+test('GameScannerCore: Xbox records store launchType uwp-appsfolder', () => {
     assert.ok(
         SCANNER_JS.includes("launchType:      'uwp-appsfolder'") ||
         SCANNER_JS.includes('launchType: "uwp-appsfolder"') ||
@@ -22,26 +21,26 @@ test('gameScanner: Xbox records store launchType uwp-appsfolder', () => {
     );
 });
 
-test('gameScanner: Xbox records store appUserModelId ending with !App', () => {
+test('GameScannerCore: Xbox records store appUserModelId ending with !App', () => {
     const idx = SCANNER_JS.indexOf('appUserModelId');
-    assert.ok(idx !== -1, 'appUserModelId not found in gameScanner.js');
+    assert.ok(idx !== -1, 'appUserModelId not found in GameScannerCore.js');
     const block = SCANNER_JS.slice(idx, idx + 200);
     assert.ok(block.includes('!App'), 'appUserModelId does not include !App');
 });
 
-test('gameScanner: Xbox records command starts with shell:AppsFolder\\', () => {
+test('GameScannerCore: Xbox records command starts with shell:AppsFolder\\', () => {
     const idx = SCANNER_JS.indexOf("command:         appsFolderTarget");
     assert.ok(idx !== -1, 'command: appsFolderTarget not found in Xbox scanner map');
 });
 
-test('gameScanner: Xbox appsFolderTarget uses shell:AppsFolder\\ prefix', () => {
+test('GameScannerCore: Xbox appsFolderTarget uses shell:AppsFolder\\ prefix', () => {
     assert.ok(
         SCANNER_JS.includes('shell:AppsFolder\\\\'),
         'shell:AppsFolder\\ not found in Xbox scanner section'
     );
 });
 
-test('gameScanner: Xbox records store launchCommand matching command', () => {
+test('GameScannerCore: Xbox records store launchCommand matching command', () => {
     const idx = SCANNER_JS.indexOf('appsFolderTarget');
     assert.ok(idx !== -1, 'appsFolderTarget not found');
     const block = SCANNER_JS.slice(idx, idx + 1200);

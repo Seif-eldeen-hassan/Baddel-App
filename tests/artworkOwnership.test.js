@@ -27,7 +27,7 @@ const path   = require('node:path');
 
 process.env.BADDEL_TEST_USER_DATA = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-artwork-ownership-'));
 
-const { BaddelEngine } = require('../gameScanner');
+const { BaddelEngine } = require('../src/features/games/infrastructure/legacy/BaddelEngine');
 
 function makeTempDir(prefix = 'baddel-art-') {
     return fs.mkdtempSync(path.join(os.tmpdir(), prefix));
@@ -200,9 +200,9 @@ test('backgroundDownload: source is forwarded to updateGameMetadata', async () =
     assert.equal(game.image, 'file://locked.webp', 'backgroundDownload(pipeline) must not overwrite locked cover');
 });
 
-// ── gameScanner.js source tagging in pipeline / refetch ────────────────────
+// ── GamesContainer/service source tagging in pipeline / refetch ────────────
 
-test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to updateGameMetadata', () => {
+test('GamesContainer: runBackgroundMetadataPipeline passes source=pipeline to updateGameMetadata', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer.js'), 'utf8');
     const pipelineStart = src.indexOf('async function runBackgroundMetadataPipeline');
     assert.ok(pipelineStart !== -1, 'runBackgroundMetadataPipeline must exist in GamesContainer facade');
@@ -213,7 +213,7 @@ test('gameScanner.js: runBackgroundMetadataPipeline passes source=pipeline to up
     assert.ok(taggedCalls >= 3, `must have ≥3 source:'pipeline' tags in pipeline body, found ${taggedCalls}`);
 });
 
-test('gameScanner.js: refetchMissingImages skips customArtworkLocked games', () => {
+test('RefetchImagesService: refetchMissingImages skips customArtworkLocked games', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'features', 'games', 'infrastructure', 'composition', 'GamesContainer.js'), 'utf8');
     const fnStart = src.indexOf('async function refetchMissingImages');
     assert.ok(fnStart !== -1, 'refetchMissingImages must exist in GamesContainer facade');

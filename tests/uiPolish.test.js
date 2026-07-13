@@ -798,7 +798,6 @@ test('app.js: _patchGameInMemory does not fall back to manual platform for belon
 // ─── Bug A: Manual re-add poster regression (MRM force + deleteGamePermanently) ─
 
 const MRM_JS     = fs.readFileSync(path.join(ROOT, 'services/metadataResolutionManager.js'), 'utf8');
-const SCANNER_JS = fs.readFileSync(path.join(ROOT, 'gameScanner.js'), 'utf8');
 const BADDEL_ENGINE_JS = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'infrastructure', 'legacy', 'BaddelEngine.js'), 'utf8');
 const ADD_MANUAL_GAME_UC_JS = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'AddManualGameUseCase.js'), 'utf8');
 
@@ -828,7 +827,7 @@ test('MRM.resolve: force=true clears inflight before new resolve (source check)'
     assert.ok(deleteIdx < hasIdx, 'inflight.delete must precede inflight.has');
 });
 
-test('gameScanner.js: deleteGamePermanently calls mrm.clearJob after deleteGameImages', () => {
+test('DeleteGamePermanentlyUseCase: calls mrm.clearJob after deleteGameImages', () => {
     assert.ok(
         BADDEL_ENGINE_JS.indexOf('async deleteGamePermanently(gameId)') !== -1,
         'deleteGamePermanently must exist in BaddelEngine delegate'
@@ -843,7 +842,7 @@ test('gameScanner.js: deleteGamePermanently calls mrm.clearJob after deleteGameI
     assert.ok(imgIdx < clearIdx, 'clearJob must come after deleteGameImages');
 });
 
-test('gameScanner.js: deleteGamePermanently calls metadataCacheStore.deleteEntry', () => {
+test('DeleteGamePermanentlyUseCase: calls metadataCacheStore.deleteEntry', () => {
     // Real body lives in DeleteGamePermanentlyUseCase.js (Phase 18.3).
     const ucSrc   = fs.readFileSync(path.join(ROOT, 'src', 'features', 'games', 'application', 'useCases', 'DeleteGamePermanentlyUseCase.js'), 'utf8');
     const fnStart = ucSrc.indexOf('async function deleteGamePermanently(');
@@ -867,13 +866,13 @@ test('gameMetadataHandlers.js: get-game-metadata bypasses cooldown when source i
     assert.match(handler, /manual-add-readd/, 'must include manual-add-readd source in forceMetadata check');
 });
 
-test('gameLibraryHandlers.js: add-manual-game passes forceMetadata:true to gameScanner', () => {
+test('gameLibraryHandlers.js: add-manual-game passes forceMetadata:true to games API', () => {
     const handlerIdx = GAME_LIBRARY_HANDLERS_JS.indexOf("ipcMain.handle('add-manual-game'");
     const handler = GAME_LIBRARY_HANDLERS_JS.slice(handlerIdx, handlerIdx + 1500);
     assert.match(handler, /forceMetadata:\s*true/, 'must pass forceMetadata:true');
 });
 
-test('gameScanner.js: addManualGame reads forceMetadata from options', () => {
+test('AddManualGameUseCase: addManualGame reads forceMetadata from options', () => {
     // Delegate now lives in BaddelEngine.js; real body is in AddManualGameUseCase.js (Phase 18.6).
     assert.ok(
         BADDEL_ENGINE_JS.indexOf('async addManualGame(launchPath') !== -1,
@@ -884,7 +883,7 @@ test('gameScanner.js: addManualGame reads forceMetadata from options', () => {
     assert.match(fn, /forceMetadata\s*=\s*options/, 'must read forceMetadata from options');
 });
 
-test('gameScanner.js: addManualGame passes force/bypassTtl to mrm.resolve', () => {
+test('AddManualGameUseCase: addManualGame passes force/bypassTtl to mrm.resolve', () => {
     // Real body lives in AddManualGameUseCase.js (Phase 18.6).
     const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
     const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 6000);
@@ -892,7 +891,7 @@ test('gameScanner.js: addManualGame passes force/bypassTtl to mrm.resolve', () =
     assert.match(fn, /bypassTtl:\s*forceMetadata/, 'must pass bypassTtl to metadataResolutionManager.resolve');
 });
 
-test('gameScanner.js: addManualGame awaits backgroundDownload and returns hydrated game from dbCache', () => {
+test('AddManualGameUseCase: addManualGame awaits backgroundDownload and returns hydrated game from dbCache', () => {
     // Real body lives in AddManualGameUseCase.js (Phase 18.6).
     const fnStart = ADD_MANUAL_GAME_UC_JS.indexOf('async function addManualGame(');
     const fn = ADD_MANUAL_GAME_UC_JS.slice(fnStart, fnStart + 10000);
