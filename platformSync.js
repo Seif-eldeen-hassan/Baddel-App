@@ -43,6 +43,9 @@ const {
 const {
     createSteamQrPollingLoop,
 } = require('./src/features/sync/application/services/SteamQrPollingLoop');
+const {
+    PlatformSyncAssetWriteBackService,
+} = require('./src/features/sync/application/services/PlatformSyncAssetWriteBackService');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -128,6 +131,15 @@ async function _withConcurrency(items, fn, concurrency) {
     );
 }
 
+function _enqueueLibraryWrite(fn) {
+    _libraryWriteQueue = _libraryWriteQueue.then(fn);
+    return _libraryWriteQueue;
+}
+
+function _waitForLibraryWrites() {
+    return _libraryWriteQueue;
+}
+
 /**
  * Cover-first image caching for a just-written merged library.
  *
@@ -158,349 +170,29 @@ async function _withConcurrency(items, fn, concurrency) {
  * @param {number}   [opts.libUpdatedDebounceMs=500]
  */
 async function cacheLibraryCoversFirst(entries, downloader, cacheFile, matchFn, emitter, opts = {}) {
-    const {
-        coverCachedEmitter       = null,
-        existsFn                 = (p) => fsSync.existsSync(p),
-        fsDeps                   = { readFile: (f, enc) => fs.readFile(f, enc), writeFile: (f, d, enc) => fs.writeFile(f, d, enc) },
-        coverConcurrency         = 10,
-        secondaryConcurrency     = 2,
-        batchSize                = 20,
-        libUpdatedDebounceMs     = 500,
-    } = opts;
+    const assetWriteBackService = new PlatformSyncAssetWriteBackService({
+        fsDeps: opts.fsDeps || {
+            readFile: (file, encoding) => fs.readFile(file, encoding),
+            writeFile: (file, data, encoding) => fs.writeFile(file, data, encoding),
+        },
+        existsFn: opts.existsFn || ((file) => fsSync.existsSync(file)),
+        enqueueWrite: _enqueueLibraryWrite,
+        waitForWrites: _waitForLibraryWrites,
+        logger: {
+            log: (...args) => syncLog(...args),
+            debug: (msg, data) => coverDbgSync(msg, data),
+        },
+    });
 
-    coverDbgSync('cacheLibraryCoversFirst START', {
-        entries: Array.isArray(entries) ? entries.length : 0,
+    return assetWriteBackService.cacheLibraryCoversFirst({
+        entries,
+        downloader,
         cacheFile,
-        hasDownloader: typeof downloader === 'function',
-        hasCoverEmitter: typeof coverCachedEmitter === 'function',
-        hasLibraryEmitter: typeof emitter === 'function',
-        coverConcurrency,
-        secondaryConcurrency,
-        batchSize,
+        matchFn,
+        emitter,
+        opts,
     });
-
-    const isFileValid = (url) => {
-        if (!url || !String(url).startsWith('file://')) return false;
-        const raw = String(url).replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
-        return existsFn(raw);
-    };
-
-    const getCover = (entry) => {
-        const candidates = [
-            entry.coverUrl,
-            entry.image,
-            entry.defaultImage,
-            entry.cover,
-            entry.posterUrl,
-            entry.boxArtUrl,
-        ].filter(Boolean);
-
-        // أهم حاجة: لو فيه أي local file:// صالح، استخدمه الأول حتى لو coverUrl لسه remote.
-        const validLocal = candidates.find((url) => isFileValid(url));
-        if (validLocal) return validLocal;
-
-        // بعد كده استخدم أول remote URL متاح.
-        const remote = candidates.find((url) => !String(url).startsWith('file://'));
-        if (remote) return remote;
-
-        return candidates[0] || null;
-    };
-
-    const setCover = (entry, cover) => {
-        if (!cover) return;
-        entry.coverUrl = cover;
-        entry.image = cover;
-        entry.defaultImage = cover;
-        entry._agCoverPipelineDone = true;
-        entry._agCoverInFlight = false;
-    };
-
-    const getGameKey = (entry) => {
-        return String(
-            entry.id ||
-            entry.appid ||
-            entry.appId ||
-            entry.appName ||
-            entry.namespace ||
-            entry.title ||
-            entry.name ||
-            ''
-        );
-    };
-
-    const emitCoverReady = (entry, cover) => {
-        if (typeof coverCachedEmitter !== 'function' || !cover) return;
-
-        const payload = {
-            platform:      entry.platform      || null,
-            accountId:     entry.accountId     || null,
-            id:            entry.id            || entry.appid || entry.appId || entry.appName || null,
-            title:         entry.title         || entry.appName || entry.name || null,
-            appid:         entry.appid         || entry.appId || entry.appName || null,
-            namespace:     entry.namespace     || null,
-            coverUrl:      cover,
-            image:         cover,
-            defaultImage:  cover,
-            _agCoverPipelineDone: true,
-        };
-
-        coverDbgSync('EMIT all-games-cover-cached', {
-            id: payload.id,
-            appid: payload.appid,
-            title: payload.title,
-            namespace: payload.namespace,
-            platform: payload.platform,
-            accountId: payload.accountId,
-            coverUrl: String(payload.coverUrl || '').startsWith('file://')
-                ? 'file://' + String(payload.coverUrl).split(/[\\/]/).pop()
-                : payload.coverUrl,
-        });
-        coverCachedEmitter(payload);
-        syncLog(`[CoverWarmup] emitted all-games-cover-cached ${payload.id || payload.appid}/${payload.title}`);
-    };
-
-    const pendingUpdates = [];
-    const pushPendingUpdate = (entry) => {
-        if (!entry) return;
-        pendingUpdates.push(entry);
-        if (pendingUpdates.length >= batchSize) scheduleFlush();
-    };
-
-    const scheduleFlush = () => {
-        const batch = pendingUpdates.splice(0);
-        _libraryWriteQueue = _libraryWriteQueue.then(async () => {
-            try {
-                if (!batch.length) return;
-
-                const lib = JSON.parse(
-                    await fsDeps.readFile(cacheFile, 'utf8').catch(() => '[]')
-                );
-
-                let changed = false;
-
-                for (const e of batch) {
-                    const idx = matchFn(lib, e);
-                    if (idx === -1) continue;
-
-                    if (e.coverUrl !== undefined) {
-                        lib[idx].coverUrl = e.coverUrl;
-                        changed = true;
-                    }
-
-                    if (e.image !== undefined) {
-                        lib[idx].image = e.image;
-                        changed = true;
-                    }
-
-                    if (e.defaultImage !== undefined) {
-                        lib[idx].defaultImage = e.defaultImage;
-                        changed = true;
-                    }
-
-                    if (e._agCoverPipelineDone !== undefined) {
-                        lib[idx]._agCoverPipelineDone = e._agCoverPipelineDone;
-                        changed = true;
-                    }
-                }
-
-                if (changed) {
-                    await fsDeps.writeFile(cacheFile, JSON.stringify(lib, null, 2), 'utf8');
-                }
-            } catch {}
-        });
-    };
-
-    // Debounced library-updated — keep only as backup.
-    // In your call sites you already changed emitter to null, so this should not refresh All Games during warmup.
-    let _libUpdTimer = null;
-    const debounceLibUpdated = () => {
-        if (!emitter) return;
-        if (_libUpdTimer) clearTimeout(_libUpdTimer);
-        _libUpdTimer = setTimeout(() => {
-            emitter();
-            _libUpdTimer = null;
-        }, libUpdatedDebounceMs);
-    };
-
-    // Stale-detection pass: clear file:// entries whose underlying file is missing.
-    for (const entry of entries) {
-        if (entry.coverUrl && String(entry.coverUrl).startsWith('file://') && !isFileValid(entry.coverUrl)) entry.coverUrl = null;
-        if (entry.image && String(entry.image).startsWith('file://') && !isFileValid(entry.image)) entry.image = null;
-        if (entry.defaultImage && String(entry.defaultImage).startsWith('file://') && !isFileValid(entry.defaultImage)) entry.defaultImage = null;
-        if (entry.cover && String(entry.cover).startsWith('file://') && !isFileValid(entry.cover)) entry.cover = null;
-        if (entry.posterUrl && String(entry.posterUrl).startsWith('file://') && !isFileValid(entry.posterUrl)) entry.posterUrl = null;
-        if (entry.boxArtUrl && String(entry.boxArtUrl).startsWith('file://') && !isFileValid(entry.boxArtUrl)) entry.boxArtUrl = null;
-        if (entry.heroUrl && String(entry.heroUrl).startsWith('file://') && !isFileValid(entry.heroUrl)) entry.heroUrl = null;
-        if (entry.logoUrl && String(entry.logoUrl).startsWith('file://') && !isFileValid(entry.logoUrl)) entry.logoUrl = null;
-    }
-
-    // Important: covers that are already cached as valid file:// must still notify the UI.
-    // This fixes: image cache has posters, but All Games still reads them one-by-one.
-    let alreadyReadyCount = 0;
-
-    for (const entry of entries) {
-        if (entry.customArtworkLocked) continue;
-
-        const cover = getCover(entry);
-
-        if (isFileValid(cover)) {
-            setCover(entry, cover);
-            alreadyReadyCount++;
-
-            emitCoverReady(entry, cover);
-            pushPendingUpdate(entry);
-        }
-    }
-
-    if (alreadyReadyCount > 0) {
-        syncLog(`[CoverWarmup] emitted ${alreadyReadyCount} already-cached covers`);
-    }
-
-    // ── Phase 1: covers ───────────────────────────────────────────────────
-    const coverTargets = entries.filter(e => {
-        if (e.customArtworkLocked) return false;
-
-        const cover = getCover(e);
-        if (!cover) return false;
-
-        // Already valid file:// covers were handled above.
-        if (isFileValid(cover)) return false;
-
-        return !String(cover).startsWith('file://');
-    });
-
-    const total = coverTargets.length;
-    syncLog(`[CoverWarmup] queued ${total} covers`);
-
-    let cachedCount = 0;
-
-    const processOneCover = async (entry) => {
-        const gameId = getGameKey(entry);
-        const sourceCover = getCover(entry);
-
-        if (!gameId || !sourceCover) return;
-
-        try {
-            entry._agCoverInFlight = true;
-            coverDbgSync('DOWNLOAD cover START', {
-                gameId,
-                title: entry.title || entry.appName || entry.name,
-                sourceKind: String(sourceCover || '').startsWith('file://') ? 'file' : 'remote',
-                sourceCover: String(sourceCover || '').slice(0, 160),
-            });
-            const result = await downloader({ cover: sourceCover }, gameId);
-            coverDbgSync('DOWNLOAD cover RESULT', {
-                gameId,
-                title: entry.title || entry.appName || entry.name,
-                hasCover: !!result?.cover,
-                coverKind: String(result?.cover || '').startsWith('file://') ? 'file' : (result?.cover ? 'remote/other' : 'none'),
-                cover: String(result?.cover || '').startsWith('file://')
-                    ? 'file://' + String(result.cover).split(/[\\/]/).pop()
-                    : String(result?.cover || '').slice(0, 160),
-            });
-
-            if (result?.cover && String(result.cover).startsWith('file://')) {
-                setCover(entry, result.cover);
-
-                cachedCount++;
-                syncLog(`[CoverWarmup] cached cover ${cachedCount}/${total} "${entry.title || entry.appName || gameId}" ${result.cover}`);
-
-                // Immediate per-cover UI event — no batching.
-                emitCoverReady(entry, result.cover);
-
-                pushPendingUpdate(entry);
-                debounceLibUpdated();
-            }
-        } catch (e) {
-            entry._agCoverInFlight = false;
-            syncLog(`[CoverWarmup] cover failed for "${entry.title || entry.appName || gameId}": ${e.message}`);
-        }
-    };
-
-    await _withConcurrency(coverTargets, processOneCover, coverConcurrency);
-
-    scheduleFlush(); // flush remaining
-
-    if (_libUpdTimer) {
-        clearTimeout(_libUpdTimer);
-        _libUpdTimer = null;
-        if (emitter) emitter();
-    }
-
-    // Wait for all cover writes to land before starting secondary.
-    await _libraryWriteQueue;
-
-    // ── Phase 2: hero/logo (fire-and-forget) ─────────────────────────────
-    const secondaryTargets = entries.filter(e =>
-        !e.customArtworkLocked && (
-            (e.heroUrl && !String(e.heroUrl).startsWith('file://')) ||
-            (e.logoUrl && !String(e.logoUrl).startsWith('file://'))
-        )
-    );
-
-    const processOneSecondary = async (entry) => {
-        const gameId = getGameKey(entry);
-        if (!gameId) return;
-
-        const assets = {};
-
-        if (entry.heroUrl && !String(entry.heroUrl).startsWith('file://')) {
-            assets.hero = entry.heroUrl;
-        }
-
-        if (entry.logoUrl && !String(entry.logoUrl).startsWith('file://')) {
-            assets.logo = entry.logoUrl;
-        }
-
-        if (!Object.keys(assets).length) return;
-
-        try {
-            const result = await downloader(assets, gameId);
-            let changed = false;
-
-            if (result?.hero && String(result.hero).startsWith('file://')) {
-                entry.heroUrl = result.hero;
-                entry.heroImage = result.hero;
-                changed = true;
-            }
-
-            if (result?.logo && String(result.logo).startsWith('file://')) {
-                entry.logoUrl = result.logo;
-                entry.logo = result.logo;
-                changed = true;
-            }
-
-            if (changed) {
-                _libraryWriteQueue = _libraryWriteQueue.then(async () => {
-                    try {
-                        const lib = JSON.parse(
-                            await fsDeps.readFile(cacheFile, 'utf8').catch(() => '[]')
-                        );
-
-                        const idx = matchFn(lib, entry);
-
-                        if (idx !== -1) {
-                            if (entry.heroUrl?.startsWith?.('file://')) {
-                                lib[idx].heroUrl = entry.heroUrl;
-                                lib[idx].heroImage = entry.heroUrl;
-                            }
-
-                            if (entry.logoUrl?.startsWith?.('file://')) {
-                                lib[idx].logoUrl = entry.logoUrl;
-                                lib[idx].logo = entry.logoUrl;
-                            }
-
-                            await fsDeps.writeFile(cacheFile, JSON.stringify(lib, null, 2), 'utf8');
-                        }
-                    } catch {}
-                });
-            }
-        } catch {}
-    };
-
-    _withConcurrency(secondaryTargets, processOneSecondary, secondaryConcurrency).catch(() => {});
 }
-
 
 // ─── Helpers ─────────────────────────────────────────────────
 
