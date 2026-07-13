@@ -35,6 +35,9 @@ const {
 const {
     PollSteamApprovalUseCase,
 } = require('./src/features/sync/application/useCases/PollSteamApprovalUseCase');
+const {
+    createSteamQrPollingLoop,
+} = require('./src/features/sync/application/services/SteamQrPollingLoop');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -1164,14 +1167,18 @@ function _startMobileApprovalPolling(win, resolve, reject) {
 // onStop(stopFn) is called immediately with a cancellation function.
 
 async function _startQrLoginFlow(win, resolve, reject, onStop) {
-    let active = true;
-    let pollTimeout = null;
-
-    const stop = () => {
-        active = false;
-        if (pollTimeout) { clearTimeout(pollTimeout); pollTimeout = null; }
-    };
-    if (typeof onStop === 'function') onStop(stop);
+    const qrPollingLoop = createSteamQrPollingLoop({
+        pollSteamAuth: () => steamBridge.pollSteamAuth(),
+        isWindowDestroyed: () => !win || win.isDestroyed(),
+        closeWindow: () => win.close(),
+        resolve,
+        reject,
+        restart: () => _startQrLoginFlow(win, resolve, reject, onStop),
+        logger: console,
+        setTimeoutFn: setTimeout,
+        clearTimeoutFn: clearTimeout,
+    });
+    if (typeof onStop === 'function') onStop(qrPollingLoop.stop);
 
     let qrData;
     try {
@@ -1227,34 +1234,7 @@ async function _startQrLoginFlow(win, resolve, reject, onStop) {
         console.error('[QR] Failed to inject QR image:', e.message);
     }
 
-    const poll = async () => {
-        if (!active || !win || win.isDestroyed()) return;
-        try {
-            const result = await steamBridge.pollSteamAuth();
-            if (!active) return;
-
-            if (result?.status === 'authenticated') {
-                stop();
-                if (!win.isDestroyed()) win.close();
-                resolve(result);
-            } else if (result?.status === 'approval_expired') {
-                // QR challenge expired — start a fresh QR session
-                stop();
-                if (!win.isDestroyed()) _startQrLoginFlow(win, resolve, reject, onStop);
-            } else if (result?.status === 'approval_denied' || result?.status === 'error') {
-                stop();
-                reject(new Error(result.message || 'QR login failed'));
-            } else {
-                // pending_approval — keep polling
-                pollTimeout = setTimeout(poll, pollIntervalMs);
-            }
-        } catch (e) {
-            console.error('[QR] poll error:', e.message);
-            if (active) pollTimeout = setTimeout(poll, pollIntervalMs);
-        }
-    };
-
-    pollTimeout = setTimeout(poll, pollIntervalMs);
+    qrPollingLoop.start(pollIntervalMs);
 }
 
 // ─── Steam Login Window ───────────────────────────────────────
