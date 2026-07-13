@@ -33,6 +33,9 @@ const {
     steamGameBelongsToAccount,
 } = require('./src/features/sync/domain/services/syncLibraryRules');
 const {
+    findMatchingEpicSwitcherProfile,
+} = require('./src/features/sync/domain/services/epicSwitcherRules');
+const {
     PollSteamApprovalUseCase,
 } = require('./src/features/sync/application/useCases/PollSteamApprovalUseCase');
 const {
@@ -757,24 +760,21 @@ async function _findMatchingEpicSwitcherProfile(accountId, displayName) {
     let entries;
     try { entries = await fs.readdir(epicDir, { withFileTypes: true }); } catch { return null; }
 
-    const idStr   = String(accountId   || '').toLowerCase().trim();
-    const nameStr = String(displayName || '').toLowerCase().trim();
+    const profiles = [];
 
     for (const entry of entries) {
         if (!entry.isDirectory()) continue;
         const profileDir = path.join(epicDir, entry.name);
-        const profileEntries = await fs.readdir(profileDir).catch(() => []);
-        if (!isRealEpicSwitcherProfile(profileEntries)) continue;
-
-        if (nameStr && entry.name.toLowerCase() === nameStr) return entry.name;
-
-        try {
-            const linkData = JSON.parse(await fs.readFile(path.join(profileDir, 'sync_link.json'), 'utf8'));
-            if (idStr && String(linkData.platformAccountId || '').toLowerCase() === idStr) return entry.name;
-            if (nameStr && String(linkData.epicDisplayName || '').toLowerCase() === nameStr) return entry.name;
-        } catch { /* no sync_link present */ }
+        const isReal = isRealEpicSwitcherProfile(await fs.readdir(profileDir).catch(() => []));
+        let syncLink = null;
+        if (isReal) {
+            try {
+                syncLink = JSON.parse(await fs.readFile(path.join(profileDir, 'sync_link.json'), 'utf8'));
+            } catch { /* no sync_link present */ }
+        }
+        profiles.push({ name: entry.name, isReal, syncLink });
     }
-    return null;
+    return findMatchingEpicSwitcherProfile(accountId, displayName, profiles);
 }
 
 async function mapWithConcurrency(items, limit, mapper) {
