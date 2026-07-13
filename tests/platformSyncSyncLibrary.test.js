@@ -432,6 +432,140 @@ test('steamConnector.syncLibrary preserves previous cache when Steam returns zer
     }
 });
 
+test('steamConnector.syncLibrary refreshes same-id target games while preserving non-target ownership', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        writeJson(steamAccountsFile(userData), [
+            { id: 's1', displayName: 'Steam One', gamesCount: 1, lastSyncedAt: '2026-01-01T00:00:00.000Z' },
+            { id: 's2', displayName: 'Steam Two' },
+        ]);
+        const cachedGame = {
+            id: 'steam_10',
+            title: 'Cached Portal',
+            platform: 'steam',
+            source: 'steam',
+            coverUrl: 'file:///cached-cover.webp',
+            heroUrl: 'file:///cached-hero.webp',
+            logoUrl: 'file:///cached-logo.webp',
+            appName: '10',
+            playtime: 123,
+            lastSynced: '2026-01-01T00:00:00.000Z',
+            ownedBy: ['Steam One'],
+            ownedByAccountIds: ['s1'],
+            steamLicensedAccountIds: ['s1'],
+            customStableField: 'keep-me',
+        };
+        writeJson(steamCacheFile(userData), [cachedGame]);
+        const steamOwnedFixture = [{ id: 'steam_10', appid: 10, title: 'Fresh Portal', steamAppType: 'game' }];
+        const steamBridge = makeFakeSteamBridge({
+            lastSessionSteamId: 's2',
+            credentialsByAccount: { s2: { accountId: 's2' } },
+            ownedResponses: [
+                { status: 'success', games: steamOwnedFixture },
+            ],
+        });
+        const { sync } = loadPlatformSync(userData, { steamBridge, gamesFeature: makeGamesFeature() });
+
+        const result = await sync.steamConnector.syncLibrary('s2');
+
+        assert.deepEqual(steamOwnedFixture, [{ id: 'steam_10', appid: 10, title: 'Fresh Portal', steamAppType: 'game' }]);
+        assert.equal(result.length, 1);
+        assert.equal(result[0].id, 'steam_10');
+        assert.equal(result[0].title, 'Fresh Portal');
+        assert.equal(result[0].coverUrl, null);
+        assert.equal(result[0].playtime, 0);
+        assert.equal(result[0].customStableField, undefined);
+        assert.equal(result[0].steamAppType, 'game');
+        assert.deepEqual(result[0].ownedBy, ['Steam Two', 'Steam One']);
+        assert.deepEqual(result[0].ownedByAccountIds, ['s2', 's1']);
+        assert.deepEqual(result[0].steamLicensedAccountIds, ['s2', 's1']);
+        assert.deepEqual(readJson(steamCacheFile(userData)), result);
+    } finally {
+        rmDir(userData);
+    }
+});
+
+test('steamConnector.syncLibrary collapses duplicate owned appIds into one merged record', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        writeJson(steamAccountsFile(userData), [{ id: 's1', displayName: 'Steam One' }]);
+        const duplicateOwnedGames = [
+            { id: 'steam_10', appid: 10, title: 'Portal First' },
+            { id: 'steam_10', appid: 10, title: 'Portal Second' },
+        ];
+        const steamBridge = makeFakeSteamBridge({
+            lastSessionSteamId: 's1',
+            ownedResponses: [
+                { status: 'success', games: duplicateOwnedGames },
+            ],
+        });
+        const { sync, baddelApi } = loadPlatformSync(userData, { steamBridge, gamesFeature: makeGamesFeature() });
+
+        const result = await sync.steamConnector.syncLibrary();
+        await flushAsync();
+
+        assert.deepEqual(duplicateOwnedGames, [
+            { id: 'steam_10', appid: 10, title: 'Portal First' },
+            { id: 'steam_10', appid: 10, title: 'Portal Second' },
+        ]);
+        assert.equal(result.length, 1);
+        assert.equal(result[0].id, 'steam_10');
+        assert.equal(result[0].title, 'Portal First');
+        assert.deepEqual(result[0].ownedBy, ['Steam One']);
+        assert.deepEqual(result[0].ownedByAccountIds, ['s1']);
+        assert.deepEqual(result[0].steamLicensedAccountIds, ['s1']);
+        assert.deepEqual(readJson(steamCacheFile(userData)).map((game) => game.id), ['steam_10']);
+        assert.deepEqual(baddelApi.calls.requestGameEnrichBatch[0].chunk, [
+            { id: '10', title: 'Portal First' },
+        ]);
+    } finally {
+        rmDir(userData);
+    }
+});
+
+test('steamConnector.syncLibrary local Steam merge keeps owned record shape and adds install-only records separately', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        writeJson(steamAccountsFile(userData), [{ id: 's1', displayName: 'Steam One' }]);
+        const steamBridge = makeFakeSteamBridge({
+            lastSessionSteamId: 's1',
+            ownedResponses: [
+                { status: 'success', games: [{ id: 'steam_10', appid: 10, title: 'Owned Portal' }] },
+            ],
+        });
+        const localSteamGames = [
+            { appid: 10, name: 'Installed Portal' },
+            { appid: 20, name: 'Local Only' },
+        ];
+        const gamesFeature = makeGamesFeature({ localSteamGames });
+        const { sync } = loadPlatformSync(userData, { steamBridge, gamesFeature });
+
+        const result = await sync.steamConnector.syncLibrary();
+
+        assert.deepEqual(localSteamGames, [
+            { appid: 10, name: 'Installed Portal' },
+            { appid: 20, name: 'Local Only' },
+        ]);
+        assert.equal(result.length, 2);
+        const owned = result.find((game) => game.id === 'steam_10');
+        const localOnly = result.find((game) => game.id === 'steam_20');
+        assert.equal(owned.title, 'Owned Portal');
+        assert.equal(owned.installOnly, undefined);
+        assert.deepEqual(owned.ownedByAccountIds, ['s1']);
+        assert.deepEqual(owned.steamLicensedAccountIds, ['s1']);
+        assert.equal(localOnly.title, 'Local Only');
+        assert.equal(localOnly.installOnly, true);
+        assert.deepEqual(localOnly.ownedBy, []);
+        assert.deepEqual(localOnly.ownedByAccountIds, []);
+        assert.deepEqual(localOnly.steamLicensedAccountIds, []);
+    } finally {
+        rmDir(userData);
+    }
+});
+
 test('steamConnector.syncLibrary rejects bridge startup failure without writing merged cache', async () => {
     const userData = makeTempUserData();
     try {
@@ -541,6 +675,187 @@ test('epicConnector.syncLibrary handles empty Legendary library without crashing
         assert.equal(result.length, 1);
         assert.equal(result[0].id, 'epic_cached');
         assert.equal(readJson(epicCacheFile(userData))[0].id, 'epic_cached');
+    } finally {
+        rmDir(userData);
+    }
+});
+
+test('epicConnector.syncLibrary preserves existing same-id cache fields while adding fresh ownership', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        mkdirp(legendaryConfigDir(userData, 'e1'));
+        mkdirp(legendaryConfigDir(userData, 'e2'));
+        writeJson(epicAccountsFile(userData), [
+            { id: 'e1', displayName: 'Epic One', gamesCount: 1, lastSyncedAt: '2026-01-01T00:00:00.000Z' },
+            { id: 'e2', displayName: 'Epic Two' },
+        ]);
+        writeJson(epicCacheFile(userData), [{
+            id: 'epic_control',
+            title: 'Cached Control',
+            platform: 'epic',
+            source: 'epic',
+            coverUrl: 'file:///control-cover.webp',
+            heroUrl: 'file:///control-hero.webp',
+            logoUrl: 'file:///control-logo.webp',
+            appName: 'control',
+            namespace: 'cachedns',
+            allIds: { epic: 'cachedns' },
+            catalogItemId: 'cached-catalog',
+            epicMetadata: { developer: 'Cached Dev' },
+            lastSynced: '2026-01-01T00:00:00.000Z',
+            ownedBy: ['Epic One'],
+            ownedByAccountIds: ['e1'],
+            thirdPartyLauncher: null,
+            requiresExternalLauncher: false,
+            customStableField: 'keep-me',
+        }]);
+        const playable = [{
+            app_name: 'control',
+            app_title: 'Fresh Control',
+            executable: 'Control.exe',
+            catalog_item_id: 'fresh-catalog',
+            metadata: {
+                namespace: 'freshns',
+                categories: ['games'],
+                keyImages: [{ type: 'OfferImageTall', url: 'https://cdn.example/fresh-cover.jpg' }],
+            },
+        }];
+        const execFile = makeLegendaryExec((args, options) => {
+            if (!String(options.env?.LEGENDARY_CONFIG_PATH).endsWith('legendary-config-e2')) return [];
+            if (args.includes('--include-non-ac') || args.includes('--third-party')) return [];
+            return playable;
+        });
+        const { sync } = loadPlatformSync(userData, { execFile });
+
+        const result = await sync.epicConnector.syncLibrary('e2');
+
+        assert.deepEqual(playable, [{
+            app_name: 'control',
+            app_title: 'Fresh Control',
+            executable: 'Control.exe',
+            catalog_item_id: 'fresh-catalog',
+            metadata: {
+                namespace: 'freshns',
+                categories: ['games'],
+                keyImages: [{ type: 'OfferImageTall', url: 'https://cdn.example/fresh-cover.jpg' }],
+            },
+        }]);
+        assert.equal(result.length, 1);
+        assert.equal(result[0].id, 'epic_control');
+        assert.equal(result[0].title, 'Cached Control');
+        assert.equal(result[0].namespace, 'cachedns');
+        assert.equal(result[0].coverUrl, 'file:///control-cover.webp');
+        assert.equal(result[0].catalogItemId, 'cached-catalog');
+        assert.deepEqual(result[0].epicMetadata, { developer: 'Cached Dev' });
+        assert.equal(result[0].customStableField, 'keep-me');
+        assert.deepEqual(result[0].ownedBy, ['Epic One', 'Epic Two']);
+        assert.deepEqual(result[0].ownedByAccountIds, ['e1', 'e2']);
+        assert.deepEqual(readJson(epicCacheFile(userData)), result);
+    } finally {
+        rmDir(userData);
+    }
+});
+
+test('epicConnector.syncLibrary deduplicates duplicate Legendary app_names before merge', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        mkdirp(legendaryConfigDir(userData, 'e1'));
+        writeJson(epicAccountsFile(userData), [{ id: 'e1', displayName: 'Epic One' }]);
+        const duplicateEntries = [
+            {
+                app_name: 'control',
+                app_title: 'Control First',
+                executable: 'Control.exe',
+                metadata: { namespace: 'controlns-first', categories: ['games'] },
+            },
+            {
+                app_name: 'control',
+                app_title: 'Control Second',
+                executable: 'Control.exe',
+                metadata: { namespace: 'controlns-second', categories: ['games'] },
+            },
+        ];
+        const execFile = makeLegendaryExec((args) => {
+            if (args.includes('--include-non-ac') || args.includes('--third-party')) return [];
+            return duplicateEntries;
+        });
+        const { sync, baddelApi } = loadPlatformSync(userData, { execFile });
+
+        const result = await sync.epicConnector.syncLibrary();
+        await flushAsync();
+
+        assert.deepEqual(duplicateEntries, [
+            {
+                app_name: 'control',
+                app_title: 'Control First',
+                executable: 'Control.exe',
+                metadata: { namespace: 'controlns-first', categories: ['games'] },
+            },
+            {
+                app_name: 'control',
+                app_title: 'Control Second',
+                executable: 'Control.exe',
+                metadata: { namespace: 'controlns-second', categories: ['games'] },
+            },
+        ]);
+        assert.equal(result.length, 1);
+        assert.equal(result[0].id, 'epic_control');
+        assert.equal(result[0].title, 'Control First');
+        assert.equal(result[0].namespace, 'controlns-first');
+        assert.deepEqual(result[0].ownedBy, ['Epic One']);
+        assert.deepEqual(result[0].ownedByAccountIds, ['e1']);
+        assert.deepEqual(readJson(epicCacheFile(userData)).map((game) => game.id), ['epic_control']);
+        assert.deepEqual(baddelApi.calls.requestGameEnrichBatch[0].chunk, [
+            { id: 'controlns-first', title: 'Control First' },
+        ]);
+    } finally {
+        rmDir(userData);
+    }
+});
+
+test('epicConnector.syncLibrary targeted sync preserves cached non-target ownership on shared games', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        mkdirp(legendaryConfigDir(userData, 'e1'));
+        mkdirp(legendaryConfigDir(userData, 'e2'));
+        writeJson(epicAccountsFile(userData), [
+            { id: 'e1', displayName: 'Epic One', gamesCount: 1, lastSyncedAt: '2026-01-01T00:00:00.000Z' },
+            { id: 'e2', displayName: 'Epic Two' },
+        ]);
+        writeJson(epicCacheFile(userData), [{
+            id: 'epic_shared',
+            title: 'Shared Game',
+            platform: 'epic',
+            source: 'epic',
+            appName: 'shared',
+            namespace: 'sharedns',
+            ownedBy: ['Epic One'],
+            ownedByAccountIds: ['e1'],
+        }]);
+        const execFile = makeLegendaryExec((args, options) => {
+            if (!String(options.env?.LEGENDARY_CONFIG_PATH).endsWith('legendary-config-e2')) return [];
+            if (args.includes('--include-non-ac') || args.includes('--third-party')) return [];
+            return [{
+                app_name: 'shared',
+                app_title: 'Shared Game Fresh',
+                executable: 'Shared.exe',
+                metadata: { namespace: 'sharedns-fresh', categories: ['games'] },
+            }];
+        });
+        const { sync } = loadPlatformSync(userData, { execFile });
+
+        const result = await sync.epicConnector.syncLibrary('e2');
+
+        assert.equal(result.length, 1);
+        assert.equal(result[0].id, 'epic_shared');
+        assert.equal(result[0].title, 'Shared Game');
+        assert.equal(result[0].namespace, 'sharedns');
+        assert.deepEqual(result[0].ownedBy, ['Epic One', 'Epic Two']);
+        assert.deepEqual(result[0].ownedByAccountIds, ['e1', 'e2']);
+        assert.deepEqual(readJson(epicCacheFile(userData)), result);
     } finally {
         rmDir(userData);
     }
