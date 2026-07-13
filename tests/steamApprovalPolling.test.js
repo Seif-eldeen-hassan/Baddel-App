@@ -25,10 +25,79 @@ Module._load = function (id, parent, isMain) {
 };
 
 const { _mobileApprovalPollStep } = require('../platformSync');
+const {
+    PollSteamApprovalUseCase,
+    resolveSteamApprovalPollStep,
+} = require('../src/features/sync/application/useCases/PollSteamApprovalUseCase');
 
 Module._load = _origLoad; // restore
 
 const MAX = 90;
+const directUseCase = new PollSteamApprovalUseCase();
+
+test('PollSteamApprovalUseCase resolves authenticated status', () => {
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'authenticated', attempt: 1, maxAttempts: MAX }),
+        { action: 'resolved' }
+    );
+});
+
+test('PollSteamApprovalUseCase stops on denied, expired, and bridge error statuses', () => {
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'approval_denied', attempt: 1, maxAttempts: MAX }),
+        {
+            action: 'stop',
+            message: 'Request denied in Steam app. Close and try again.',
+            reenableButton: true,
+            writeDiag: 'approval_denied',
+        }
+    );
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'approval_expired', attempt: 1, maxAttempts: MAX }),
+        {
+            action: 'stop',
+            message: 'Approval request expired. Click Continue to try again.',
+            reenableButton: true,
+            writeDiag: 'approval_expired',
+        }
+    );
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'error', attempt: 1, maxAttempts: MAX }),
+        {
+            action: 'stop',
+            message: 'Login error. Close this window and try again.',
+            reenableButton: true,
+            writeDiag: 'error',
+        }
+    );
+});
+
+test('PollSteamApprovalUseCase keeps pending/no-op statuses polling', () => {
+    const pending = directUseCase.pollStep({ status: 'pending_approval', attempt: 4, maxAttempts: MAX });
+    assert.equal(pending.action, 'poll');
+    assert.match(pending.message, /4/);
+
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'need_2fa', attempt: 1, maxAttempts: MAX }),
+        { action: 'poll' }
+    );
+    assert.deepEqual(
+        directUseCase.pollStep({ status: 'future_status', attempt: 1, maxAttempts: MAX }),
+        { action: 'poll' }
+    );
+});
+
+test('resolveSteamApprovalPollStep preserves max-attempt timeout behavior', () => {
+    assert.deepEqual(
+        resolveSteamApprovalPollStep('authenticated', MAX, MAX),
+        {
+            action: 'stop',
+            message: 'Approval request expired. Click Continue to try again.',
+            reenableButton: true,
+            writeDiag: 'max_attempts',
+        }
+    );
+});
 
 // ── Status → action mapping ────────────────────────────────────
 
