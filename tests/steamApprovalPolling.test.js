@@ -320,13 +320,70 @@ test('index.html choose_method and steam_qr views hide Continue button', () => {
 
     const _makeFakeWin = () => {
         const loaded = [];
+        const executedScripts = [];
+        const events = [];
+        let closed = false;
         return {
             isDestroyed: () => false,
-            close: () => {},
-            loadURL: async (u) => { loaded.push(u); },
-            webContents: { executeJavaScript: async () => {}, getURL: () => 'file:///index.html?view=choose_method' },
+            close: () => { closed = true; events.push('close'); },
+            loadURL: async (u) => { loaded.push(u); events.push('loadURL'); },
+            webContents: {
+                executeJavaScript: async (script) => { executedScripts.push(script); events.push('executeJavaScript'); },
+                getURL: () => 'file:///index.html?view=choose_method',
+            },
             _loaded: loaded,
+            _executedScripts: executedScripts,
+            _events: events,
+            _wasClosed: () => closed,
         };
+    };
+
+    const _flushMicrotasks = async () => {
+        await Promise.resolve();
+        await Promise.resolve();
+        await Promise.resolve();
+    };
+
+    const _withFakeTimeouts = async (fn) => {
+        const originalSetTimeout = global.setTimeout;
+        const originalClearTimeout = global.clearTimeout;
+        const scheduled = [];
+        global.setTimeout = (cb, ms, ...args) => {
+            const timer = { cb, ms, args, cleared: false };
+            scheduled.push(timer);
+            return timer;
+        };
+        global.clearTimeout = (timer) => {
+            if (timer) timer.cleared = true;
+        };
+        try {
+            return await fn(scheduled);
+        } finally {
+            global.setTimeout = originalSetTimeout;
+            global.clearTimeout = originalClearTimeout;
+        }
+    };
+
+    const _startQrWithFakeTimers = async ({ pollResponses = [], onStop = () => {} } = {}) => {
+        _pollResponses = [...pollResponses];
+        _fakeSteamBridge.pollSteamAuth = async () => _pollResponses.shift() ?? { status: 'pending_approval' };
+        const win = _makeFakeWin();
+        let resolved;
+        let rejected;
+        let resolveAuth;
+        let rejectAuth;
+        const promise = new Promise((resolve, reject) => {
+            resolveAuth = resolve;
+            rejectAuth = reject;
+        });
+        promise.catch(() => {});
+        await _sqf(
+            win,
+            (value) => { resolved = value; resolveAuth(value); },
+            (err) => { rejected = true; rejectAuth(err); },
+            onStop
+        );
+        return { win, promise, get resolved() { return resolved; }, get rejected() { return rejected; } };
     };
 
     test('_startQrLoginFlow calls steamBridge.startQrLogin()', async () => {
@@ -384,6 +441,133 @@ test('index.html choose_method and steam_qr views hide Continue button', () => {
         assert.ok(_startQrCalled >= 2, `startQrLogin should be called at least twice on expiry, got ${_startQrCalled}`);
         // restore
         _fakeSteamBridge.pollSteamAuth = async () => _pollResponses.shift() ?? { status: 'pending_approval' };
+    });
+
+    test('_startQrLoginFlow registers a stop function before polling', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            let stopFn = null;
+            await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'pending_approval' }],
+                onStop: (fn) => { stopFn = fn; },
+            });
+
+            assert.equal(typeof stopFn, 'function');
+            assert.equal(scheduled.length, 1);
+            assert.equal(scheduled[0].ms, 2000);
+        });
+    });
+
+    test('_startQrLoginFlow stop function clears scheduled poll and prevents bridge polling', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            let stopFn = null;
+            let pollCalls = 0;
+            _fakeSteamBridge.pollSteamAuth = async () => {
+                pollCalls++;
+                return { status: 'authenticated', steamId: 'stopped' };
+            };
+            await _startQrWithFakeTimers({ onStop: (fn) => { stopFn = fn; } });
+
+            stopFn();
+            assert.equal(scheduled[0].cleared, true);
+            await scheduled[0].cb();
+            assert.equal(pollCalls, 0);
+        });
+    });
+
+    test('_startQrLoginFlow pending poll keeps flow alive and schedules another poll', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            const flow = await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'pending_approval' }],
+            });
+
+            await scheduled[0].cb();
+            await _flushMicrotasks();
+
+            assert.equal(flow.resolved, undefined);
+            assert.equal(flow.rejected, undefined);
+            assert.equal(flow.win._wasClosed(), false);
+            assert.equal(scheduled.length, 2);
+            assert.equal(scheduled[1].ms, 2000);
+        });
+    });
+
+    test('_startQrLoginFlow authenticated poll closes window and resolves current result shape', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            const flow = await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'authenticated', steamId: '999', accountName: 'alice' }],
+            });
+
+            await scheduled[0].cb();
+            const result = await flow.promise;
+
+            assert.deepEqual(result, { status: 'authenticated', steamId: '999', accountName: 'alice' });
+            assert.equal(flow.win._wasClosed(), true);
+            assert.equal(scheduled.length, 1);
+            assert.equal(scheduled[0].cleared, true);
+        });
+    });
+
+    test('_startQrLoginFlow approval_denied rejects without closing the window', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            const flow = await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'approval_denied', message: 'No thanks' }],
+            });
+
+            await scheduled[0].cb();
+            await assert.rejects(flow.promise, /No thanks/);
+
+            assert.equal(flow.win._wasClosed(), false);
+            assert.equal(scheduled[0].cleared, true);
+        });
+    });
+
+    test('_startQrLoginFlow error poll rejects with fallback message when bridge omits one', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            const flow = await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'error' }],
+            });
+
+            await scheduled[0].cb();
+            await assert.rejects(flow.promise, /QR login failed/);
+
+            assert.equal(flow.win._wasClosed(), false);
+            assert.equal(scheduled[0].cleared, true);
+        });
+    });
+
+    test('_startQrLoginFlow poll exception keeps polling', async () => {
+        await _withFakeTimeouts(async (scheduled) => {
+            let pollCalls = 0;
+            _fakeSteamBridge.pollSteamAuth = async () => {
+                pollCalls++;
+                if (pollCalls === 1) throw new Error('temporary bridge failure');
+                return { status: 'pending_approval' };
+            };
+            const flow = await _startQrWithFakeTimers();
+
+            await scheduled[0].cb();
+            await _flushMicrotasks();
+
+            assert.equal(flow.resolved, undefined);
+            assert.equal(flow.rejected, undefined);
+            assert.equal(flow.win._wasClosed(), false);
+            assert.equal(scheduled.length, 2);
+            assert.equal(scheduled[1].ms, 2000);
+        });
+    });
+
+    test('_startQrLoginFlow loads QR view before injecting QR image and status', async () => {
+        await _withFakeTimeouts(async () => {
+            const flow = await _startQrWithFakeTimers({
+                pollResponses: [{ status: 'pending_approval' }],
+            });
+
+            assert.deepEqual(flow.win._events.slice(0, 2), ['loadURL', 'executeJavaScript']);
+            assert.ok(flow.win._loaded[0].includes('view=steam_qr'));
+            assert.match(flow.win._executedScripts[0], /steamQRCode/);
+            assert.match(flow.win._executedScripts[0], /Scan with your Steam mobile app/);
+            assert.match(flow.win._executedScripts[0], /data:image\/png;base64/);
+        });
     });
 }
 
