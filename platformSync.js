@@ -24,6 +24,12 @@ const {
     resolveEpicAccountIdentity,
     isRealEpicSwitcherProfile,
 } = require('./platformSyncShared');
+const {
+    createFriendlySyncError,
+    summarizeEpicEntryForLog,
+    summarizeGameTitles,
+    steamGameBelongsToAccount,
+} = require('./src/features/sync/domain/services/syncLibraryRules');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -779,39 +785,6 @@ async function mapWithConcurrency(items, limit, mapper) {
     return results;
 }
 
-function createFriendlySyncError(platform, err) {
-    const rawMessage = String(err?.message || err || 'Unknown error').trim();
-    const lower = rawMessage.toLowerCase();
-
-    if (lower.includes('timeout')) {
-        return {
-            userMessage: platform === 'steam'
-                ? 'Steam took too long to reply. We kept the previous library data and saved diagnostics.'
-                : 'Epic Games took too long to reply. We kept the previous library data and saved diagnostics.',
-            diagnosticMessage: rawMessage,
-        };
-    }
-
-    if (lower.includes('credentials folder is missing')) {
-        return {
-            userMessage: 'The saved account data is incomplete. Please relink this account and try again.',
-            diagnosticMessage: rawMessage,
-        };
-    }
-
-    if (lower.includes('not authenticated') || lower.includes('authentication')) {
-        return {
-            userMessage: 'Authentication did not finish correctly. Please sign in again.',
-            diagnosticMessage: rawMessage,
-        };
-    }
-
-    return {
-        userMessage: rawMessage || 'Sync failed. We kept the previous library data.',
-        diagnosticMessage: rawMessage || 'Unknown sync error',
-    };
-}
-
 function mergeOwnedGamesIntoLibrary(mergedLibrary, games, account, platform) {
     const aid = String(account.id);
     for (const game of games) {
@@ -885,19 +858,6 @@ async function buildSteamOwnedGameEntries(account, games = []) {
         ownedByAccountIds: [String(account.id)],
         steamLicensedAccountIds: [String(account.id)],
     }));
-}
-
-function _summarizeEpicEntryForLog(entry) {
-    return {
-        app_name:    entry?.app_name,
-        app_title:   entry?.app_title || entry?.title,
-        namespace:   entry?.namespace || entry?.metadata?.namespace,
-        productType: entry?.metadata?.productType
-                  || entry?.metadata?.customAttributes?.productType?.value
-                  || entry?.app_type
-                  || entry?.type,
-        categories:  entry?.metadata?.categories,
-    };
 }
 
 async function buildEpicOwnedGameEntries(account, entries = []) {
@@ -987,32 +947,6 @@ async function _getLegendaryMetadataFromDisk(confPath, appName) {
         }
     }
     return null;
-}
-
-function summarizeGameTitles(games, limit = 4) {
-    return [...new Set(
-        (games || [])
-            .map((game) => String(game?.title || '').trim())
-            .filter(Boolean)
-    )].slice(0, limit);
-}
-
-function steamGameBelongsToAccount(game, accountId) {
-    const aid = String(accountId);
-    if (!game || typeof game !== 'object') return false;
-
-    // Only licensed/owned arrays count as ownership.
-    // steamDetectedAccountIds is intentionally excluded — local install detection
-    // is not evidence of a Steam license and must never appear in account summaries
-    // or profile enrichment.
-    if (Array.isArray(game.steamLicensedAccountIds) && game.steamLicensedAccountIds.map(String).includes(aid)) {
-        return true;
-    }
-    if (Array.isArray(game.ownedByAccountIds) && game.ownedByAccountIds.map(String).includes(aid)) {
-        return true;
-    }
-
-    return false;
 }
 
 async function fetchSteamOwnedGamesWithRetry(account, previousCount, initialSessionSteamId) {
@@ -2529,9 +2463,9 @@ async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null)
             keptCount:         rawGamesCount,
             rejectedCount:     rejectedEntries.length,
             unknownCount:      unknownEntries.length,
-            nonAcSample:       nonAcParsed.slice(0, 20).map(_summarizeEpicEntryForLog),
-            rejectedSample:    rejectedEntries.slice(0, 20).map(x => ({ ..._summarizeEpicEntryForLog(x.entry), reason: x.reason })),
-            unknownSample:     unknownEntries.slice(0, 20).map(x => ({ ..._summarizeEpicEntryForLog(x.entry), reason: x.reason })),
+            nonAcSample:       nonAcParsed.slice(0, 20).map(summarizeEpicEntryForLog),
+            rejectedSample:    rejectedEntries.slice(0, 20).map(x => ({ ...summarizeEpicEntryForLog(x.entry), reason: x.reason })),
+            unknownSample:     unknownEntries.slice(0, 20).map(x => ({ ...summarizeEpicEntryForLog(x.entry), reason: x.reason })),
         });
 
         const games = await buildEpicOwnedGameEntries(acc, allEntries);
@@ -2565,7 +2499,7 @@ async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null)
             kept:     allEntries.map(e => ({ app_name: e.app_name, app_title: e.app_title || e.title, reason: 'positive_game_signal' })),
             rejected: rejectedEntries.map(x => ({ app_name: x.entry?.app_name, app_title: x.entry?.app_title || x.entry?.title, reason: x.reason })),
             unknown:  unknownEntries.map(x => ({ app_name: x.entry?.app_name, app_title: x.entry?.app_title || x.entry?.title, reason: x.reason })),
-            nonAcDiagnostic: nonAcParsed.map(_summarizeEpicEntryForLog),
+            nonAcDiagnostic: nonAcParsed.map(summarizeEpicEntryForLog),
         };
 
         // DB cleanup: permanently delete previously-imported non-game entries.
