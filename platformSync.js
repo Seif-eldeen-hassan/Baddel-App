@@ -50,8 +50,8 @@ const {
     PlatformSyncServerImportService,
 } = require('./src/features/sync/application/services/PlatformSyncServerImportService');
 const {
-    createSyncFeatureApi,
-} = require('./src/features/sync/infrastructure/composition/SyncFeatureApiContract');
+    createPlatformSyncFeature,
+} = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -2666,7 +2666,7 @@ async function autoSyncOnStartup() {
 
 // ─── Exports ─────────────────────────────────────────────────
 
-module.exports = createSyncFeatureApi({
+module.exports = createPlatformSyncFeature({
     registerPlatformSyncHandlers,
     epicConnector,
     steamConnector,

@@ -95,8 +95,9 @@ test('platformSync must not import SyncContainer until the dependency is inverte
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.doesNotMatch(platformSyncSource, /getSyncFeature/);
     assert.doesNotMatch(platformSyncSource, /\bcreateSyncFeature\s*\(/);
-    assert.match(platformSyncSource, /SyncFeatureApiContract/);
-    assert.match(platformSyncSource, /createSyncFeatureApi/);
+    assert.match(platformSyncSource, /createPlatformSyncFeature/);
+    assert.doesNotMatch(platformSyncSource, /SyncFeatureApiContract/);
+    assert.doesNotMatch(platformSyncSource, /createSyncFeatureApi/);
 });
 
 test('production call sites remain on the platformSync facade for this phase', () => {
