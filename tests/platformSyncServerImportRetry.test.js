@@ -515,13 +515,13 @@ test('delayed polling gives up after three lookup attempts when no normalized im
     }
 });
 
-test('platformSync server import remains in platformSync until the extraction phase', () => {
+test('platformSync delegates server import to the extracted service', () => {
     const source = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
 
     assert.match(source, /async function _importLibraryToServer\(platform, games\)/);
-    assert.match(source, /const retryAfterMs = \(err, attempt\) =>/);
-    assert.match(source, /const waitAndApplyEnrich = async \(gameIdExternal, initialDelayMs = 8000\) =>/);
-    assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncServerImportService.js')), false);
+    assert.match(source, /PlatformSyncServerImportService/);
+    assert.match(source, /serverImportService\.importLibraryToServer\(platform, games\)/);
+    assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncServerImportService.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncAssetWriteBackService.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_REPOSITORIES_DIR, 'PlatformSyncCacheRepository.js')), true);
     assert.equal(fs.existsSync(SYNC_CONTAINER_PATH), false);
