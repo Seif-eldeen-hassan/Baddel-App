@@ -90,7 +90,7 @@ test('terminal emitter exists and broad extraction targets do not exist yet', ()
     assert.equal(fs.existsSync(SYNC_TERMINAL_EVENT_EMITTER_PATH), true);
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false);
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false);
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true);
 
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true);
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true);
@@ -114,9 +114,10 @@ test('platformSync still owns terminal event emission and adjacent runtime seams
     assert.match(source, /const\s+syncTerminalEventEmitter\s*=\s*new\s+SyncTerminalEventEmitter\(\{/);
     assert.doesNotMatch(source, /SyncContainer/);
 
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
+    assert.match(source, /ALL_CONNECTORS/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
 });
@@ -188,7 +189,7 @@ test('public API, IPC channels, and connector method shapes remain stable', () =
         assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} IPC channel should remain unchanged`);
     }
 
-    for (const connectorName of ['steamConnector', 'epicConnector']) {
+    for (const connectorName of ['steamConnectorMethods', 'epicConnectorMethods']) {
         const connectorSource = extractObjectLiteral(source, connectorName);
         for (const method of CONNECTOR_METHODS) {
             assert.match(connectorSource, new RegExp(`\\b${escapeRegExp(method)}\\s*\\(`), `${connectorName}.${method} should remain defined`);

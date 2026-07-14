@@ -52,15 +52,18 @@ function extractObjectLiteral(source, declarationName) {
     throw new Error(`Unable to extract ${declarationName} object literal`);
 }
 
-test('connector construction still lives in platformSync without the future factory', () => {
+test('connector method implementations stay in platformSync while factory owns assembly', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
     const syncContainerSource = readSource(SYNC_CONTAINER_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
+    const factorySource = readSource(CREATE_SYNC_CONNECTORS_PATH);
 
-    assert.match(platformSyncSource, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(platformSyncSource, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(platformSyncSource, /const\s+ALL_CONNECTORS\s*=\s*\{/);
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before extraction');
+    assert.match(platformSyncSource, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(platformSyncSource, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(platformSyncSource, /createSyncConnectors\(\{/);
+    assert.match(platformSyncSource, /ALL_CONNECTORS/);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after extraction');
+    assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile/);
 
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(syncContainerSource, /function\s+loadDefaultPlatformSyncApi/);
@@ -71,8 +74,8 @@ test('connector construction still lives in platformSync without the future fact
 
 test('connector method names remain stable at the current boundary', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
-    const steamConnectorSource = extractObjectLiteral(platformSyncSource, 'steamConnector');
-    const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnector');
+    const steamConnectorSource = extractObjectLiteral(platformSyncSource, 'steamConnectorMethods');
+    const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnectorMethods');
 
     for (const method of CONNECTOR_METHODS) {
         assert.match(steamConnectorSource, new RegExp(`\\b(?:async\\s+)?${method}\\s*\\(`), `steamConnector.${method} must remain`);
@@ -82,7 +85,7 @@ test('connector method names remain stable at the current boundary', () => {
 
 test('Steam connector still depends on the Steam bridge runtime boundary', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
-    const steamConnectorSource = extractObjectLiteral(platformSyncSource, 'steamConnector');
+    const steamConnectorSource = extractObjectLiteral(platformSyncSource, 'steamConnectorMethods');
 
     assert.match(platformSyncSource, /const\s+steamBridge\s*=\s*require\(['"]\.\/steamBridge['"]\)/);
     assert.match(platformSyncSource, /let\s+_bridgeStarted\s*=\s*false/);
@@ -100,7 +103,7 @@ test('Steam connector still depends on the Steam bridge runtime boundary', () =>
 
 test('Epic connector still depends on the Legendary execFile runtime boundary', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
-    const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnector');
+    const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnectorMethods');
 
     assert.match(platformSyncSource, /const\s+\{\s*execFile\s*\}\s*=\s*require\(['"]child_process['"]\)/);
     assert.match(platformSyncSource, /function\s+runLegendary\s*\(/);

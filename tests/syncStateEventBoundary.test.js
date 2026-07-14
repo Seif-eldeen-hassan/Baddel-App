@@ -241,7 +241,7 @@ test('future state/runtime extraction targets do not exist yet', () => {
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false);
     assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true);
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false);
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true);
 
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true);
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true);
@@ -348,13 +348,14 @@ test('state mutation order remains source-visible in start, progress, and finish
     assert.match(finishSource, /state\.lastError\s*=\s*patch\.lastError\s*\|\|\s*null/);
 });
 
-test('platformSync still owns cover notifications and connector construction', () => {
+test('platformSync still owns cover notifications and connector method implementations', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
 
     assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
+    assert.match(source, /ALL_CONNECTORS/);
     for (const method of CONNECTOR_METHODS) {
         assert.match(source, new RegExp(`\\b${escapeRegExp(method)}\\s*\\(`), `${method} should remain source-visible`);
     }

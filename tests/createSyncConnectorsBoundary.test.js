@@ -166,22 +166,24 @@ function getTopLevelMethodNames(objectLiteral) {
     return names;
 }
 
-test('future createSyncConnectors factory does not exist and platformSync still owns connector construction', () => {
+test('createSyncConnectors factory exists and platformSync delegates connector assembly to it', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const factorySource = readSource(CREATE_SYNC_CONNECTORS_PATH);
 
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist in this characterization phase');
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
-    assert.doesNotMatch(source, /createSyncConnectors/);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after extraction');
+    assert.match(source, /createSyncConnectors/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /ALL_CONNECTORS/);
     assert.doesNotMatch(source, /SyncContainer/);
+    assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile|ipcMain/);
 });
 
 test('Steam and Epic connector method shapes are exact and ordered for the future factory seam', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
 
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnector')), CONNECTOR_METHODS);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnector')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
 });
 
 test('factory input candidates already backed by repositories, adapters, or services remain wired in platformSync', () => {

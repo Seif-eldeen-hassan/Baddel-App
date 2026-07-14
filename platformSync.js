@@ -65,6 +65,9 @@ const {
 const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
+const {
+    createSyncConnectors,
+} = require('./src/features/sync/infrastructure/composition/createSyncConnectors');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -1135,7 +1138,7 @@ async function _openSteamLoginWindow(parentWindow, steamId = null) {
 
 // ─── steamConnector ───────────────────────────────────────────
 
-const steamConnector = {
+const steamConnectorMethods = {
     isLinked() {
         return syncCacheRepository.isSteamLinked();
     },
@@ -2105,7 +2108,7 @@ async function syncSingleEpicAccount(acc, previousGames, targetAccountId = null)
     }
 }
 
-const epicConnector = {
+const epicConnectorMethods = {
     isLinked() {
         return syncCacheRepository.isEpicLinked();
     },
@@ -2443,6 +2446,15 @@ const epicConnector = {
     },
 };
 
+const {
+    steamConnector,
+    epicConnector,
+    ALL_CONNECTORS,
+} = createSyncConnectors({
+    steam: steamConnectorMethods,
+    epic: epicConnectorMethods,
+});
+
 // ─── IPC Handler Registry ────────────────────────────────────
 
 async function _cleanupEpicTmpConfigs() {
@@ -2556,11 +2568,6 @@ function registerPlatformSyncHandlers(ipcMainRef, getMainWindow) {
 }
 
 // ─── Data Enrichment Helper ───────────────────────────────────
-
-const ALL_CONNECTORS = {
-    epic: epicConnector,
-    steam: steamConnector 
-};
 
 async function enrichProfilesWithSyncData(platform, switcherProfiles) {
     const connector = ALL_CONNECTORS[platform];

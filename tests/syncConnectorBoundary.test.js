@@ -170,16 +170,19 @@ test('connector boundary source guards keep current production wiring stable', (
     const platformSyncSource = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
     const syncContainerSource = fs.readFileSync(SYNC_CONTAINER_PATH, 'utf8');
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
+    const factorySource = fs.readFileSync(CREATE_SYNC_CONNECTORS_PATH, 'utf8');
 
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
+    assert.match(platformSyncSource, /createSyncConnectors/);
     assert.match(syncContainerSource, /loadDefaultPlatformSyncApi/);
     assert.match(syncContainerSource, /require\(platformSyncPath\)/);
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true);
+    assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile/);
 });
 
-test('platformSync still owns connector definitions and current platform-sync IPC channels', () => {
+test('platformSync still owns connector method implementations and current platform-sync IPC channels', () => {
     const source = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
     const channels = [
         'platform-sync:status',
@@ -191,9 +194,9 @@ test('platformSync still owns connector definitions and current platform-sync IP
         'platform-sync:unlink',
     ];
 
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /ALL_CONNECTORS/);
     for (const channel of channels) {
         assert.match(source, new RegExp(`['"]${channel}['"]`));
     }

@@ -336,7 +336,7 @@ test('link-state emitter is extracted while platformSync owns remaining event he
     assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
     assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true, 'StateChangedEmitter.js should exist after state-event extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after connector extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should remain extracted');
 
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
@@ -352,8 +352,9 @@ test('link-state emitter is extracted while platformSync owns remaining event he
     assert.match(source, /_platformSyncWindowGetter\s*=\s*getMainWindow/);
     assert.match(source, /SyncLogQueue/);
     assert.match(source, /function\s+_pushPlatformSyncLog\s*\(/);
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
     assert.doesNotMatch(source, /SyncContainer/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
@@ -415,8 +416,8 @@ test('public API, IPC channels, and connector method shapes remain stable', () =
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnector')), CONNECTOR_METHODS);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnector')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
 
     for (const channel of PLATFORM_SYNC_IPC_CHANNELS) {
         assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} IPC channel should remain unchanged`);

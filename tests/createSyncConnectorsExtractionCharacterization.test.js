@@ -199,20 +199,23 @@ function assertNoRuntimeModuleBoundaryImport(source, modulePath) {
     assert.doesNotMatch(source, /registerPlatformSyncHandlers/, modulePath);
 }
 
-test('future createSyncConnectors extraction targets remain absent before production extraction', () => {
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist yet');
+test('createSyncConnectors exists while later runtime extraction targets remain absent', () => {
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after factory extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist yet');
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist yet');
 });
 
-test('platformSync still owns connector construction and ALL_CONNECTORS before extraction', () => {
+test('platformSync imports the factory while keeping connector method implementations local', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const factorySource = readSource(CREATE_SYNC_CONNECTORS_PATH);
 
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
-    assert.doesNotMatch(source, /createSyncConnectors/);
+    assert.match(source, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/createSyncConnectors['"]\)/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors\(\{\s*steam:\s*steamConnectorMethods,\s*epic:\s*epicConnectorMethods,\s*\}\)/);
+    assert.match(source, /ALL_CONNECTORS/);
     assert.doesNotMatch(source, /require\([^)]*SyncContainer/);
+    assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile|registerPlatformSyncHandlers/);
 });
 
 test('connector method shape and exported object identity expectations remain stable', () => {
@@ -234,8 +237,8 @@ test('connector method shape and exported object identity expectations remain st
         _findMatchingEpicSwitcherProfile() {},
     });
 
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnector')), CONNECTOR_METHODS);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnector')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
     assert.deepEqual(Object.keys(feature.steamConnector), CONNECTOR_METHODS);
     assert.deepEqual(Object.keys(feature.epicConnector), CONNECTOR_METHODS);
 

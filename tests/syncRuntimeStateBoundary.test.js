@@ -331,7 +331,7 @@ test('platformSync still owns the runtime state seam before extraction', () => {
 
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should exist after log queue extraction');
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after connector extraction');
 
     assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
     assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
@@ -353,8 +353,9 @@ test('platformSync still owns the runtime state seam before extraction', () => {
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
     assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
 
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
     assert.doesNotMatch(source, /SyncContainer/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
@@ -431,8 +432,8 @@ test('connectors and public sync API shapes remain stable while runtime state is
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnector')), CONNECTOR_METHODS);
-    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnector')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
     assert.match(source, /module\.exports\s*=\s*createPlatformSyncFeature\s*\(\s*\{/);
     for (const key of expectedKeys) {
         assert.match(source, new RegExp(`\\b${escapeRegExp(key)}\\b`), `${key} should remain exported through platformSync`);

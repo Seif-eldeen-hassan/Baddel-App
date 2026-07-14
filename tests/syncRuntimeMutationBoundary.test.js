@@ -75,7 +75,7 @@ function extractFunctionSource(source, functionName) {
 test('future runtime extraction targets do not exist while event emitters remain extracted', () => {
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false);
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false);
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true);
 
     assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true);
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true);
@@ -221,9 +221,10 @@ test('get-state IPC, connectors, and public API remain stable', () => {
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_platformSyncState\)\s*\}/);
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\s*\}/);
     assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
+    assert.match(source, /ALL_CONNECTORS/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
 
     for (const method of CONNECTOR_METHODS) {

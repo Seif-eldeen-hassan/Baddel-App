@@ -67,27 +67,28 @@ function extractFunctionBody(source, functionName) {
     throw new Error(`Unable to extract ${functionName} body`);
 }
 
-test('Games sync adapter extraction is in place without moving connector construction', () => {
+test('Games sync adapter and connector factory extractions are in place without moving SyncContainer ownership', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
     const syncContainerSource = readSource(SYNC_CONTAINER_PATH);
 
     assert.equal(fs.existsSync(GAMES_SYNC_ADAPTER_PATH), true, 'GamesSyncAdapter should exist after extraction');
-    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors should not exist before connector extraction');
+    assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors should exist after connector extraction');
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(syncContainerSource, /require\(platformSyncPath\)/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
 });
 
-test('platformSync owns connector construction and connector method shapes', () => {
+test('platformSync owns connector method implementations and connector method shapes', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
-    const steamConnectorSource = extractObjectLiteral(source, 'steamConnector');
-    const epicConnectorSource = extractObjectLiteral(source, 'epicConnector');
+    const steamConnectorSource = extractObjectLiteral(source, 'steamConnectorMethods');
+    const epicConnectorSource = extractObjectLiteral(source, 'epicConnectorMethods');
 
-    assert.match(source, /const\s+steamConnector\s*=\s*\{/);
-    assert.match(source, /const\s+epicConnector\s*=\s*\{/);
-    assert.match(source, /const\s+ALL_CONNECTORS\s*=\s*\{/);
+    assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors/);
+    assert.match(source, /ALL_CONNECTORS/);
 
     for (const method of CONNECTOR_METHODS) {
         assert.match(steamConnectorSource, new RegExp(`\\b(?:async\\s+)?${method}\\s*\\(`), `steamConnector.${method} must remain`);
@@ -106,7 +107,7 @@ test('platformSync delegates Games calls through the extracted adapter seam', ()
 
 test('Steam sync path still uses Games API for local installed Steam games', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
-    const steamConnectorSource = extractObjectLiteral(source, 'steamConnector');
+    const steamConnectorSource = extractObjectLiteral(source, 'steamConnectorMethods');
 
     assert.match(steamConnectorSource, /Merging local Steam installs/);
     assert.match(steamConnectorSource, /gamesSyncAdapter\.getLocalSteamGames\(\)/);
