@@ -11,6 +11,10 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_FEATURE_DIR = path.join(ROOT, 'src', 'features', 'sync');
+const {
+    SYNC_FEATURE_API_KEYS,
+    createSyncFeatureApi,
+} = require('../src/features/sync/infrastructure/composition/SyncFeatureApiContract');
 
 function makeTempUserData() {
     return fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-platform-sync-'));
@@ -197,6 +201,14 @@ test('platformSync public/runtime exports keep their current shapes', () => {
     const userData = makeTempUserData();
     try {
         const sync = loadPlatformSync(userData);
+        assert.deepEqual(Object.keys(sync), SYNC_FEATURE_API_KEYS);
+
+        const contractFacade = createSyncFeatureApi(sync);
+        assert.notEqual(contractFacade, sync);
+        for (const name of SYNC_FEATURE_API_KEYS) {
+            assert.equal(contractFacade[name], sync[name], `${name} identity must be preserved by the API contract`);
+        }
+
         const expectedFunctions = [
             'registerPlatformSyncHandlers',
             'enrichProfilesWithSyncData',
@@ -454,8 +466,9 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
     assert.doesNotMatch(platformSyncSource, /\bcreateGamesFeature\b/);
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.doesNotMatch(platformSyncSource, /getSyncFeature/);
-    assert.doesNotMatch(platformSyncSource, /createSyncFeature/);
-    assert.doesNotMatch(platformSyncSource, /SyncFeatureApiContract/);
+    assert.doesNotMatch(platformSyncSource, /\bcreateSyncFeature\s*\(/);
+    assert.match(platformSyncSource, /SyncFeatureApiContract/);
+    assert.match(platformSyncSource, /createSyncFeatureApi/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
     assert.equal(fs.existsSync(syncContainerPath), true);
