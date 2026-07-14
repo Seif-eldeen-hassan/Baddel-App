@@ -524,5 +524,9 @@ test('platformSync delegates server import to the extracted service', () => {
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncServerImportService.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncAssetWriteBackService.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_REPOSITORIES_DIR, 'PlatformSyncCacheRepository.js')), true);
-    assert.equal(fs.existsSync(SYNC_CONTAINER_PATH), false);
+    assert.equal(fs.existsSync(SYNC_CONTAINER_PATH), true);
+
+    const syncContainer = require(SYNC_CONTAINER_PATH);
+    assert.equal(typeof syncContainer.createSyncFeature, 'function');
+    assert.equal(typeof syncContainer.getSyncFeature, 'function');
 });

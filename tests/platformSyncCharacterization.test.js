@@ -444,6 +444,7 @@ test('autoSyncOnStartup fire-and-forgets sync for linked accounts', async () => 
 test('platformSync source guards preserve current Games and Sync boundaries', () => {
     const platformSyncSource = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
+    const syncContainerPath = path.join(SYNC_FEATURE_DIR, 'infrastructure', 'composition', 'SyncContainer.js');
 
     assert.match(
         platformSyncSource,
@@ -452,6 +453,11 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
     assert.doesNotMatch(platformSyncSource, /\bcreateGamesFeature\b/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.equal(fs.existsSync(syncContainerPath), true);
+
+    const syncContainer = require(syncContainerPath);
+    assert.equal(typeof syncContainer.createSyncFeature, 'function');
+    assert.equal(typeof syncContainer.getSyncFeature, 'function');
 
     const syncFiles = fs.readdirSync(SYNC_FEATURE_DIR, { recursive: true, withFileTypes: true })
         .filter((entry) => entry.isFile())
@@ -460,6 +466,12 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
 
     for (const filePath of syncFiles) {
         const source = fs.readFileSync(filePath, 'utf8');
+        if (path.basename(filePath) === 'SyncContainer.js') {
+            assert.match(source, /createSyncFeature/);
+            assert.match(source, /getSyncFeature/);
+            assert.doesNotMatch(source, /main\.js|preload\.js|src\/js|src\\js/);
+            continue;
+        }
         assert.doesNotMatch(source, /platformSync/);
         assert.doesNotMatch(source, /SyncContainer/);
     }
