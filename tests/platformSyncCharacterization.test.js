@@ -451,6 +451,9 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
         /getGamesFeature\s*}\s*=\s*require\(['"]\.\/src\/features\/games\/infrastructure\/composition\/GamesContainer['"]\)/
     );
     assert.doesNotMatch(platformSyncSource, /\bcreateGamesFeature\b/);
+    assert.doesNotMatch(platformSyncSource, /SyncContainer/);
+    assert.doesNotMatch(platformSyncSource, /getSyncFeature/);
+    assert.doesNotMatch(platformSyncSource, /createSyncFeature/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
     assert.equal(fs.existsSync(syncContainerPath), true);
@@ -469,6 +472,7 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
         if (path.basename(filePath) === 'SyncContainer.js') {
             assert.match(source, /createSyncFeature/);
             assert.match(source, /getSyncFeature/);
+            assert.match(source, /loadDefaultPlatformSyncApi/);
             assert.doesNotMatch(source, /main\.js|preload\.js|src\/js|src\\js/);
             continue;
         }

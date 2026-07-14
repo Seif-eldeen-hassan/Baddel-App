@@ -80,6 +80,23 @@ test('SyncContainer import is lazy and accepts injected platformSync API without
     assert.doesNotThrow(() => createSyncFeature({ platformSyncApi: makeFakePlatformSyncApi() }));
 });
 
+test('SyncContainer is currently a compatibility wrapper around the platformSync facade', () => {
+    const source = fs.readFileSync(SYNC_CONTAINER_PATH, 'utf8');
+
+    assert.match(source, /loadDefaultPlatformSyncApi/);
+    assert.match(source, /require\(platformSyncPath\)/);
+    assert.match(source, /options\.platformSyncApi/);
+    assert.match(source, /options\.loadPlatformSync/);
+});
+
+test('platformSync must not import SyncContainer until the dependency is inverted', () => {
+    const platformSyncSource = fs.readFileSync(path.join(ROOT, 'platformSync.js'), 'utf8');
+
+    assert.doesNotMatch(platformSyncSource, /SyncContainer/);
+    assert.doesNotMatch(platformSyncSource, /getSyncFeature/);
+    assert.doesNotMatch(platformSyncSource, /createSyncFeature/);
+});
+
 test('production call sites remain on the platformSync facade for this phase', () => {
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
     const preloadSource = fs.readFileSync(PRELOAD_JS_PATH, 'utf8');
