@@ -323,16 +323,18 @@ function makeFakeWindow() {
     };
 }
 
-test('event and log queue extraction targets do not exist and platformSync still owns the seam', () => {
+test('event extraction targets do not exist and platformSync delegates only the log queue seam', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
 
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist before extraction');
-    assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), false, 'SyncLogQueue.js should not exist before extraction');
+    assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should exist after log queue extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
 
-    assert.match(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
+    assert.match(source, /require\(['"]\.\/src\/features\/sync\/infrastructure\/runtime\/SyncLogQueue['"]\)/);
+    assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
+    assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
     assert.match(source, /function\s+_pushPlatformSyncLog\s*\(/);
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
@@ -344,19 +346,24 @@ test('event and log queue extraction targets do not exist and platformSync still
     assert.doesNotMatch(mainSource, /SyncContainer/);
 });
 
-test('current log entry shape and persistence queue remain source-visible', () => {
+test('current log entry shape and persistence queue remain source-visible across platformSync and SyncLogQueue', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const queueSource = readSource(SYNC_LOG_QUEUE_PATH);
 
-    assert.match(source, /const\s+entry\s*=\s*\{\s*timestamp:\s*new\s+Date\(\)\.toISOString\(\),\s*level,\s*message,/s);
+    assert.match(source, /now:\s*\(\)\s*=>\s*new\s+Date\(\)\.toISOString\(\)/);
+    assert.match(source, /const\s+entry\s*=\s*syncLogQueue\.push\(platform,\s*\{/);
     assert.match(source, /accountId:\s*extra\.accountId\s*\?\s*String\(extra\.accountId\)\s*:\s*null/);
     assert.match(source, /accountName:\s*extra\.accountName\s*\|\|\s*null/);
     assert.match(source, /state\.logs\s*=\s*\[\.\.\.\(state\.logs\s*\|\|\s*\[\]\),\s*entry\]\.slice\(-80\)/);
     assert.match(source, /const\s+logLine\s*=\s*JSON\.stringify\(entry\)\s*\+\s*['"]\\n['"]/);
-    assert.match(source, /const\s+currentQueue\s*=\s*_platformSyncLogWriteQueue\[platform\]\s*\|\|\s*Promise\.resolve\(\)/);
-    assert.match(source, /_platformSyncLogWriteQueue\[platform\]\s*=\s*currentQueue/);
-    assert.match(source, /\.then\(\(\)\s*=>\s*ensureDirs\(\)\)/);
-    assert.match(source, /fs\.appendFile\(path\.join\(SYNC_LOGS_DIR,\s*`\$\{platform\}\.log`\),\s*logLine,\s*['"]utf8['"]\)/);
-    assert.match(source, /\.catch\(\(\)\s*=>\s*\{\}\)/);
+    assert.match(source, /await\s+ensureDirs\(\)/);
+    assert.match(source, /await\s+fs\.appendFile\(path\.join\(SYNC_LOGS_DIR,\s*`\$\{platform\}\.log`\),\s*logLine,\s*['"]utf8['"]\)/);
+    assert.match(queueSource, /this\.writeQueues\s*=\s*\{\s*\}/);
+    assert.match(queueSource, /timestamp:\s*entry\.timestamp\s*\|\|\s*this\.now\(\)/);
+    assert.match(queueSource, /const\s+currentQueue\s*=\s*this\.writeQueues\[key\]\s*\|\|\s*Promise\.resolve\(\)/);
+    assert.match(queueSource, /this\.writeQueues\[key\]\s*=\s*currentQueue/);
+    assert.match(queueSource, /\.then\(\(\)\s*=>\s*this\.writeLog\(logEntry,\s*key\)\)/);
+    assert.match(queueSource, /\.catch\(\(\)\s*=>\s*\{\}\)/);
 });
 
 test('current renderer event channels and payload send sites remain source-visible', () => {

@@ -48,6 +48,9 @@ const {
     PlatformSyncServerImportService,
 } = require('./src/features/sync/application/services/PlatformSyncServerImportService');
 const {
+    SyncLogQueue,
+} = require('./src/features/sync/infrastructure/runtime/SyncLogQueue');
+const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
@@ -210,7 +213,14 @@ async function ensureDirs() {
 }
 
 let _platformSyncWindowGetter = null;
-const _platformSyncLogWriteQueue = {};
+const syncLogQueue = new SyncLogQueue({
+    now: () => new Date().toISOString(),
+    writeLog: async (entry, platform) => {
+        const logLine = JSON.stringify(entry) + '\n';
+        await ensureDirs();
+        await fs.appendFile(path.join(SYNC_LOGS_DIR, `${platform}.log`), logLine, 'utf8');
+    },
+});
 const _platformSyncState = {
     steam: null,
     epic: null,
@@ -275,25 +285,17 @@ function _pushPlatformSyncLog(platform, level, message, extra = {}) {
     else if (level === 'warn') console.warn(prefix, message, extra);
     else console.log(prefix, message, extra);
 
-    const entry = {
-        timestamp: new Date().toISOString(),
+    const entry = syncLogQueue.push(platform, {
         level,
         message,
         accountId: extra.accountId ? String(extra.accountId) : null,
         accountName: extra.accountName || null,
-    };
+    });
 
     _setPlatformSyncState(platform, (state) => {
         state.logs = [...(state.logs || []), entry].slice(-80);
         return state;
     });
-
-    const logLine = JSON.stringify(entry) + '\n';
-    const currentQueue = _platformSyncLogWriteQueue[platform] || Promise.resolve();
-    _platformSyncLogWriteQueue[platform] = currentQueue
-        .then(() => ensureDirs())
-        .then(() => fs.appendFile(path.join(SYNC_LOGS_DIR, `${platform}.log`), logLine, 'utf8'))
-        .catch(() => {});
 }
 
 function _startPlatformSync(platform, accounts, statusText) {

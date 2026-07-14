@@ -202,11 +202,14 @@ test('factory input candidates already backed by repositories, adapters, or serv
 test('platformSync still owns sync runtime state, logging, and event helpers before factory extraction', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
 
+    assert.match(source, /SyncLogQueue/);
+    assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
+    assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
+
     for (const symbol of [
         '_platformSyncWindowGetter',
         '_platformSyncAssetDownloader',
         '_platformSyncState',
-        '_platformSyncLogWriteQueue',
         '_setPlatformSyncState',
         '_getPlatformSyncState',
         '_emitPlatformSyncState',

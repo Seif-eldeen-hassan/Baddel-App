@@ -123,10 +123,12 @@ test('platformSync still owns Electron login, session, notification, state, and 
     assert.match(source, /electronSession\.fromPartition/);
     assert.match(source, /Notification\.isSupported\(\)/);
     assert.match(source, /new\s+Notification\s*\(/);
+    assert.match(source, /SyncLogQueue/);
+    assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
+    assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
 
     for (const symbol of [
         '_platformSyncWindowGetter',
-        '_platformSyncLogWriteQueue',
         '_platformSyncState',
         '_emitPlatformSyncState',
         '_pushPlatformSyncLog',

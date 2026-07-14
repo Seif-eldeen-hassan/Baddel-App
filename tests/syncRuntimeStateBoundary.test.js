@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
+const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
 
 const CONNECTOR_METHODS = ['isLinked', 'getAccounts', 'link', 'syncLibrary', 'getCachedLibrary', 'unlink'];
@@ -325,9 +326,11 @@ test('platformSync still owns the runtime state seam before extraction', () => {
     const mainSource = readSource(MAIN_JS_PATH);
 
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
+    assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should exist after log queue extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
 
-    assert.match(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
+    assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
+    assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);
     assert.match(source, /const\s+_platformSyncState\s*=\s*\{/);
     assert.match(source, /function\s+_createPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_getPlatformSyncState\s*\(/);
