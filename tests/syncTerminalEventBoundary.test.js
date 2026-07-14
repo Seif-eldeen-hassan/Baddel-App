@@ -118,8 +118,8 @@ test('platformSync still owns terminal event emission and adjacent runtime seams
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);
     assert.match(source, /ALL_CONNECTORS/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('terminal event channel selection and send behavior remain source-visible', () => {

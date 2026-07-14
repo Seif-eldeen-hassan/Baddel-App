@@ -111,8 +111,9 @@ test('composition modules keep the current dependency direction before ownership
         '_findMatchingEpicSwitcherProfile',
     ]);
 
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
+    assert.doesNotMatch(mainSource, /require\(['"]\.\/platformSync['"]\)/);
 });
 
 test('future runtime extraction targets remain absent for this phase', () => {

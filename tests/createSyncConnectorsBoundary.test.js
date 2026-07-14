@@ -289,6 +289,6 @@ test('public API, IPC channels, and production entrypoint remain on the platform
         assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} IPC channel should remain unchanged`);
     }
 
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });

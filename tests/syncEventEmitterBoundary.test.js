@@ -356,8 +356,8 @@ test('link-state emitter is extracted while platformSync owns remaining event he
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);
     assert.doesNotMatch(source, /SyncContainer/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('renderer event channels and send payload shapes remain source-visible', () => {

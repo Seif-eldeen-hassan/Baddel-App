@@ -108,8 +108,8 @@ test('platformSync still owns runtime state and mutation helper definitions', ()
     assert.match(source, /LibraryUpdateEmitter/);
     assert.match(source, /SyncTerminalEventEmitter/);
     assert.doesNotMatch(source, /SyncContainer/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('default runtime state shape remains source-visible', () => {
@@ -225,7 +225,7 @@ test('get-state IPC, connectors, and public API remain stable', () => {
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);
     assert.match(source, /ALL_CONNECTORS/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
 
     for (const method of CONNECTOR_METHODS) {
         assert.match(source, new RegExp(`\\b${escapeRegExp(method)}\\s*\\(`), `${method} should remain source-visible`);

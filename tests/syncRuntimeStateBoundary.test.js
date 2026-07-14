@@ -357,8 +357,8 @@ test('platformSync still owns the runtime state seam before extraction', () => {
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);
     assert.doesNotMatch(source, /SyncContainer/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('runtime state default shape and clone boundaries are source-visible', () => {

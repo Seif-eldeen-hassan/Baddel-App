@@ -303,12 +303,13 @@ test('ALL_CONNECTORS consumers remain limited to enrichment and startup auto-syn
     assert.match(autoSyncSource, /connector\.syncLibrary\(\)\.catch/);
 });
 
-test('main.js dependency on exported steamConnector remains known and stable', () => {
+test('main.js dependency on exported steamConnector routes through SyncContainer', () => {
     const mainSource = readSource(MAIN_JS_PATH);
 
-    assert.match(mainSource, /const\s+\{[^}]*steamConnector[^}]*\}\s*=\s*require\(['"]\.\/platformSync['"]\)/s);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /const\s+\{[^}]*steamConnector[^}]*\}\s*=\s*getSyncFeature\(\)/s);
     assert.match(mainSource, /steamConnector\?\.getAccounts\?\.\(\)/);
-    assert.doesNotMatch(mainSource, /createSyncConnectors|SyncContainer/);
+    assert.doesNotMatch(mainSource, /createSyncConnectors|require\(['"]\.\/platformSync['"]\)/);
 });
 
 test('SyncContainer remains a compatibility wrapper and does not own real connector construction', () => {

@@ -356,8 +356,8 @@ test('link-state emitter is extracted and platformSync delegates only log and li
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);
     assert.doesNotMatch(source, /SyncContainer/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('current log entry shape and persistence queue remain source-visible across platformSync and SyncLogQueue', () => {

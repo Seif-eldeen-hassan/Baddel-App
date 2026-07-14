@@ -274,8 +274,8 @@ test('platformSync still owns runtime state helpers and state mutations', () => 
     assert.match(source, /StateChangedEmitter/);
     assert.match(source, /const\s+stateChangedEmitter\s*=\s*new\s+StateChangedEmitter\(\{/);
     assert.doesNotMatch(source, /SyncContainer/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
 });
 
 test('runtime state default shape and cloning boundaries remain source-visible', () => {

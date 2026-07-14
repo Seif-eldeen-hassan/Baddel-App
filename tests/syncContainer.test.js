@@ -100,12 +100,13 @@ test('platformSync must not import SyncContainer until the dependency is inverte
     assert.doesNotMatch(platformSyncSource, /createSyncFeatureApi/);
 });
 
-test('production call sites remain on the platformSync facade for this phase', () => {
+test('production call sites route through SyncContainer while platformSync remains the facade', () => {
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
     const preloadSource = fs.readFileSync(PRELOAD_JS_PATH, 'utf8');
 
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
+    assert.doesNotMatch(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(preloadSource, /SyncContainer/);
 });
 

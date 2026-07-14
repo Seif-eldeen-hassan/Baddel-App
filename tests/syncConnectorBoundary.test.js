@@ -172,8 +172,8 @@ test('connector boundary source guards keep current production wiring stable', (
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
     const factorySource = fs.readFileSync(CREATE_SYNC_CONNECTORS_PATH, 'utf8');
 
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(platformSyncSource, /createSyncConnectors/);
     assert.match(syncContainerSource, /loadDefaultPlatformSyncApi/);

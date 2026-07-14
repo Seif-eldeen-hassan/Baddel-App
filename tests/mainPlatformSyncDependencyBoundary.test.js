@@ -43,19 +43,20 @@ function makeFakePlatformSyncApi() {
     return api;
 }
 
-test('main.js keeps the current direct platformSync destructuring boundary', () => {
+test('main.js obtains the current platform sync dependency set through SyncContainer', () => {
     const source = read(MAIN_JS_PATH);
-    const importMatch = source.match(/const\s+\{([^}]+)\}\s*=\s*require\(['"]\.\/platformSync['"]\)/);
+    const containerImportMatch = source.match(/const\s+\{\s*getSyncFeature,?\s*\}\s*=\s*require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    const featureMatch = source.match(/const\s+\{([^}]+)\}\s*=\s*getSyncFeature\(\)/);
 
-    assert.ok(importMatch, 'main.js should directly require ./platformSync for this phase');
-    const importedNames = importMatch[1].split(',').map((name) => name.trim()).filter(Boolean);
-    assert.deepEqual(importedNames, MAIN_USED_SYNC_KEYS);
-    assert.doesNotMatch(source, /SyncContainer/);
+    assert.ok(containerImportMatch, 'main.js should import getSyncFeature from SyncContainer');
+    assert.ok(featureMatch, 'main.js should destructure platform sync exports from getSyncFeature()');
+    const featureNames = featureMatch[1].split(',').map((name) => name.trim()).filter(Boolean);
+    assert.deepEqual(featureNames, MAIN_USED_SYNC_KEYS);
+    assert.doesNotMatch(source, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(source, /createSyncConnectors/);
-    assert.doesNotMatch(source, /getSyncFeature/);
 });
 
-test('main.js platformSync imports are used at the current startup and achievement seams', () => {
+test('main.js platform sync feature references are used at the current startup and achievement seams', () => {
     const source = read(MAIN_JS_PATH);
 
     assert.match(source, /registerPlatformSyncHandlers\(ipcMain,\s*\(\)\s*=>\s*mainWindow\)/);
@@ -77,7 +78,7 @@ test('platformSync continues to export every sync dependency used by main.js', (
     }
 });
 
-test('SyncContainer can expose the main.js dependency keys without changing production imports yet', () => {
+test('SyncContainer exposes the main.js dependency keys through stable feature objects', () => {
     const containerPath = require.resolve('../src/features/sync/infrastructure/composition/SyncContainer');
     delete require.cache[containerPath];
     const { createSyncFeature, getSyncFeature } = require('../src/features/sync/infrastructure/composition/SyncContainer');
@@ -94,7 +95,7 @@ test('SyncContainer can expose the main.js dependency keys without changing prod
     assert.equal(getSyncFeature({ platformSyncApi: makeFakePlatformSyncApi() }), singleton);
 });
 
-test('composition direction remains unchanged before main.js migration', () => {
+test('composition direction remains unchanged after main.js migration to SyncContainer', () => {
     const mainSource = read(MAIN_JS_PATH);
     const platformSyncSource = read(PLATFORM_SYNC_PATH);
     const syncContainerSource = read(SYNC_CONTAINER_PATH);
@@ -103,7 +104,9 @@ test('composition direction remains unchanged before main.js migration', () => {
 
     assert.match(syncContainerSource, /require\(platformSyncPath\)/);
     assert.match(apiContractSource, /SYNC_FEATURE_API_KEYS/);
-    assert.doesNotMatch(mainSource, /SyncContainer|getSyncFeature|createSyncConnectors/);
+    assert.match(mainSource, /SyncContainer/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
+    assert.doesNotMatch(mainSource, /require\(['"]\.\/platformSync['"]\)|createSyncConnectors/);
     assert.doesNotMatch(platformSyncSource, /require\([^)]*SyncContainer/);
     assert.doesNotMatch(connectorFactorySource, /platformSync|SyncContainer/);
 });

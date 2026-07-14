@@ -25,7 +25,10 @@ const { registerAccountHandlers, switchAccountByPlatform } = require('./accounts
 const accountShortcuts = require('./services/accountShortcuts');
 const quickSwitcher = require('./services/quickSwitcher');
 const quickSwitcherSettings = require('./services/quickSwitcherSettings');
-const { registerPlatformSyncHandlers, steamConnector, epicConnector, registerPlatformSyncAssetDownloader, autoSyncOnStartup } = require('./platformSync');
+const {
+    getSyncFeature,
+} = require('./src/features/sync/infrastructure/composition/SyncContainer');
+const { registerPlatformSyncHandlers, steamConnector, epicConnector, registerPlatformSyncAssetDownloader, autoSyncOnStartup } = getSyncFeature();
 const analytics = require('./analytics');
 const steamBridge = require('./steamBridge');
 const { fileURLToPath } = require('url');

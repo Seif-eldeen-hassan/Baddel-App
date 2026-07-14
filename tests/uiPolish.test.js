@@ -319,9 +319,9 @@ test('Task I: autoSyncOnStartup calls syncLibrary in fire-and-forget manner', ()
     assert.match(fn, /\.catch/);
 });
 
-test('Task I: main.js imports autoSyncOnStartup from platformSync', () => {
+test('Task I: main.js imports autoSyncOnStartup through SyncContainer', () => {
     assert.match(MAIN_JS, /autoSyncOnStartup/);
-    assert.match(MAIN_JS, /require\(.*platformSync.*\)/);
+    assert.match(MAIN_JS, /require\(.*SyncContainer.*\)/);
 });
 
 test('Task I: main.js schedules autoSyncOnStartup after ready-to-show', () => {

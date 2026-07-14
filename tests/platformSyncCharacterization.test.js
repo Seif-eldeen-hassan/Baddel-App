@@ -471,8 +471,8 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
     assert.match(platformSyncSource, /createPlatformSyncFeature\(\{/);
     assert.doesNotMatch(platformSyncSource, /SyncFeatureApiContract/);
     assert.doesNotMatch(platformSyncSource, /createSyncFeatureApi/);
-    assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
-    assert.doesNotMatch(mainSource, /SyncContainer/);
+    assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
+    assert.match(mainSource, /getSyncFeature\(\)/);
     assert.equal(fs.existsSync(syncContainerPath), true);
     assert.equal(fs.existsSync(syncFeatureApiContractPath), true);
 
