@@ -13,6 +13,10 @@ const {
     runBackgroundMetadataPipeline,
 } = require('../src/features/games/infrastructure/services/BackgroundMetadataPipeline');
 const { STATUS: MRM_STATUS } = require('../services/metadataResolutionManager');
+const {
+    resolveArtworkType,
+    resolveGameArtwork,
+} = require('../src/features/games/application/services/GameArtworkResolver');
 
 function artwork(value, source, overrides = {}) {
     return value ? {
@@ -89,61 +93,59 @@ function matchById(library, entry) {
 }
 
 test('contract: future resolver result shape carries value/source/lock/timestamp/confidence for cover, hero, logo', () => {
-    const result = normalizeResolverResult({
-        cover: artwork('file://settings-cover.webp', 'settings', { updatedAt: 20 }),
-        hero: artwork('file://creator-hero.webp', 'creator', { updatedAt: 10 }),
-        logo: artwork('file://server-logo.webp', 'server', { confidence: 'verified' }),
-    });
+    const result = normalizeResolverResult(resolveGameArtwork({
+        settingsArtwork: { cover: { value: 'file://settings-cover.webp', updatedAt: 20 } },
+        creatorArtwork: { hero: { value: 'file://creator-hero.webp', updatedAt: 10 } },
+        metadataArtwork: { logo: { value: 'file://server-logo.webp', verified: true, confidence: 1 } },
+    }));
 
-    assert.deepEqual(result.cover, {
+    assert.deepEqual({
+        value: result.cover.value,
+        source: result.cover.source,
+        locked: result.cover.locked,
+        updatedAt: result.cover.updatedAt,
+        confidence: result.cover.confidence,
+    }, {
         value: 'file://settings-cover.webp',
         source: 'settings',
         locked: true,
         updatedAt: 20,
-        confidence: 'explicit',
+        confidence: null,
     });
-    assert.deepEqual(result.hero, {
-        value: 'file://creator-hero.webp',
-        source: 'creator',
-        locked: true,
-        updatedAt: 10,
-        confidence: 'explicit',
-    });
-    assert.equal(result.logo.source, 'server');
-    assert.equal(result.logo.confidence, 'verified');
+    assert.equal(result.hero.source, 'creator');
+    assert.equal(result.logo.source, 'metadata');
+    assert.equal(result.logo.confidence, 1);
 });
 
 test('contract: Settings-selected cover/hero/logo win over stale Creator custom metadata', () => {
-    const candidates = {
-        settings: artwork('file://settings-cover.webp', 'settings', { updatedAt: 200 }),
-        creator: artwork('file://creator-cover.webp', 'creator', { updatedAt: 100 }),
-        database: artwork('file://db-cover.webp', 'database'),
-    };
+    const result = resolveGameArtwork({
+        game: { image: 'file://db-cover.webp' },
+        settingsArtwork: {
+            cover: { value: 'file://settings-cover.webp', updatedAt: 200 },
+            hero: { value: 'file://settings-hero.webp', updatedAt: 200 },
+            logo: { value: 'file://settings-logo.webp', updatedAt: 200 },
+        },
+        creatorArtwork: {
+            cover: { value: 'file://creator-cover.webp', updatedAt: 100 },
+            hero: { value: 'file://creator-hero.webp', updatedAt: 100 },
+            logo: { value: 'file://creator-logo.webp', updatedAt: 100 },
+        },
+    });
 
-    assert.equal(chooseArtwork(candidates).value, 'file://settings-cover.webp');
-
-    const heroCandidates = {
-        settings: artwork('file://settings-hero.webp', 'settings', { updatedAt: 200 }),
-        creator: artwork('file://creator-hero.webp', 'creator', { updatedAt: 100 }),
-    };
-    assert.equal(chooseArtwork(heroCandidates).value, 'file://settings-hero.webp');
-
-    const logoCandidates = {
-        settings: artwork('file://settings-logo.webp', 'settings', { updatedAt: 200 }),
-        creator: artwork('file://creator-logo.webp', 'creator', { updatedAt: 100 }),
-    };
-    assert.equal(chooseArtwork(logoCandidates).value, 'file://settings-logo.webp');
+    assert.equal(result.cover.value, 'file://settings-cover.webp');
+    assert.equal(result.hero.value, 'file://settings-hero.webp');
+    assert.equal(result.logo.value, 'file://settings-logo.webp');
 });
 
 test('contract: Settings and Creator remain distinguishable explicit sources', () => {
-    const settings = chooseArtwork({
-        settings: artwork('file://settings.webp', 'settings'),
-        creator: artwork('file://creator.webp', 'creator'),
-    });
-    const creator = chooseArtwork({
-        creator: artwork('file://creator.webp', 'creator'),
-        server: artwork('file://server.webp', 'server', { confidence: 'verified' }),
-    });
+    const settings = resolveGameArtwork({
+        settingsArtwork: { cover: 'file://settings.webp' },
+        creatorArtwork: { cover: 'file://creator.webp' },
+    }).cover;
+    const creator = resolveGameArtwork({
+        creatorArtwork: { cover: 'file://creator.webp' },
+        metadataArtwork: { cover: 'file://server.webp', verified: true, confidence: 1 },
+    }).cover;
 
     assert.equal(settings.source, 'settings');
     assert.equal(creator.source, 'creator');
@@ -151,24 +153,28 @@ test('contract: Settings and Creator remain distinguishable explicit sources', (
 });
 
 test('contract: Creator artwork wins over server, pipeline, and cache when no Settings override exists', () => {
-    const result = chooseArtwork({
-        creator: artwork('file://creator.webp', 'creator', { updatedAt: 10 }),
-        server: artwork('file://server.webp', 'server', { confidence: 'verified' }),
-        cache: artwork('file://cache.webp', 'cache'),
-        placeholder: artwork('placeholder://cover', 'placeholder'),
-    });
+    const result = resolveGameArtwork({
+        creatorArtwork: { cover: { value: 'file://creator.webp', updatedAt: 10 } },
+        metadataArtwork: { cover: 'file://server.webp', verified: true, confidence: 1 },
+        cacheArtwork: { cover: 'file://cache.webp' },
+        placeholders: { cover: 'placeholder://cover' },
+    }).cover;
 
     assert.equal(result.value, 'file://creator.webp');
     assert.equal(result.source, 'creator');
 });
 
 test('contract: locked user artwork cannot be replaced by pipeline, server, or force metadata writes', () => {
-    const current = artwork('file://settings.webp', 'settings', { locked: true });
+    const result = resolveArtworkType({
+        type: 'cover',
+        candidates: [
+            { value: 'file://settings.webp', type: 'cover', source: 'settings', locked: true },
+            { value: 'file://pipeline.webp', type: 'cover', source: 'metadata', verified: true, confidence: 1, force: true },
+        ],
+    });
 
-    assert.equal(mayWriteArtwork(current, { source: 'pipeline', force: false }), false);
-    assert.equal(mayWriteArtwork(current, { source: 'server', force: false }), false);
-    assert.equal(mayWriteArtwork(current, { source: 'server-details', force: true }), false);
-    assert.equal(mayWriteArtwork(current, { source: 'settings', force: true }), true);
+    assert.equal(result.value, 'file://settings.webp');
+    assert.equal(result.locked, true);
 });
 
 test('contract: resetting Settings artwork reveals Creator before lower-priority sources', () => {

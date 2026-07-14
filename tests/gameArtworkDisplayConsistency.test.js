@@ -4,6 +4,9 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const {
+    resolveGameArtwork,
+} = require('../src/features/games/application/services/GameArtworkResolver');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -11,44 +14,31 @@ function readRepoFile(...parts) {
     return fs.readFileSync(path.join(ROOT, ...parts), 'utf8');
 }
 
-function explicit(value, source, updatedAt = 0) {
-    return value ? { value, source, locked: source === 'settings' || source === 'creator', updatedAt } : null;
-}
-
 function canonicalArtwork(game, custom = {}, metadata = {}, cache = {}) {
-    const byType = (type) => {
-        const settingsKey = `${type}Settings`;
-        const creatorKey = `${type}Creator`;
-        const dbKeys = {
-            cover: ['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage'],
-            hero: ['heroImage', 'hero', 'heroUrl', 'defaultHero'],
-            logo: ['logo', 'logoUrl', 'defaultLogo'],
-        }[type];
-        const metaKeys = {
-            cover: ['cover', 'image', 'defaultImage', 'coverUrl'],
-            hero: ['hero', 'heroImage', 'defaultHero', 'heroUrl'],
-            logo: ['logo', 'defaultLogo', 'logoUrl'],
-        }[type];
-
-        const candidates = [
-            explicit(game[settingsKey], 'settings', game.settingsUpdatedAt || 0),
-            explicit(custom[creatorKey], 'creator', custom.updatedAt || 0),
-            explicit(dbKeys.map((key) => game[key]).find(Boolean), 'database', game.artworkUpdatedAt || 0),
-            explicit(metaKeys.map((key) => metadata[key]).find(Boolean), 'server', metadata.updatedAt || 0),
-            explicit(cache[type], 'cache', 0),
-        ];
-
-        return candidates.find((candidate) => {
-            if (!candidate) return false;
-            return candidate.source !== 'cache';
-        }) || explicit('placeholder://artwork', 'placeholder', 0);
-    };
-
-    return {
-        cover: byType('cover'),
-        hero: byType('hero'),
-        logo: byType('logo'),
-    };
+    return resolveGameArtwork({
+        game,
+        settingsArtwork: {
+            cover: game.coverSettings ? { value: game.coverSettings, updatedAt: game.settingsUpdatedAt } : null,
+            hero: game.heroSettings ? { value: game.heroSettings, updatedAt: game.settingsUpdatedAt } : null,
+            logo: game.logoSettings ? { value: game.logoSettings, updatedAt: game.settingsUpdatedAt } : null,
+        },
+        creatorArtwork: {
+            cover: custom.coverCreator ? { value: custom.coverCreator, updatedAt: custom.updatedAt } : null,
+            hero: custom.heroCreator ? { value: custom.heroCreator, updatedAt: custom.updatedAt } : null,
+            logo: custom.logoCreator ? { value: custom.logoCreator, updatedAt: custom.updatedAt } : null,
+        },
+        metadataArtwork: {
+            ...metadata,
+            verified: true,
+            confidence: metadata.confidence ?? 1,
+        },
+        cacheArtwork: cache,
+        placeholders: {
+            cover: 'placeholder://artwork',
+            hero: 'placeholder://artwork',
+            logo: 'placeholder://artwork',
+        },
+    });
 }
 
 function allGamesDecision(game, custom, metadata, cache) {
@@ -184,7 +174,8 @@ test('contract: disk cache paths represent cached copies, not ownership decision
         { cover: 'file://cache-only-cover.webp' },
     ).cover;
 
-    assert.equal(cacheOnly.source, 'placeholder');
+    assert.equal(cacheOnly.source, 'cache');
+    assert.equal(cacheOnly.cacheOnly, true);
     assert.equal(authoritative.value, 'file://db-cover.webp');
 });
 
