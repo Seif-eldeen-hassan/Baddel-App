@@ -16,6 +16,7 @@ const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncEventEmitter.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
+const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
@@ -330,6 +331,7 @@ test('link-state emitter is extracted while platformSync owns remaining event he
 
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist before extraction');
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
+    assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should remain extracted');
@@ -339,6 +341,8 @@ test('link-state emitter is extracted while platformSync owns remaining event he
     assert.match(source, /LinkStateEmitter/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /function\s+_emitLibraryUpdated\s*\(/);
+    assert.match(source, /LibraryUpdateEmitter/);
+    assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /let\s+_platformSyncWindowGetter\s*=\s*null/);
     assert.match(source, /_platformSyncWindowGetter\s*=\s*getMainWindow/);
     assert.match(source, /SyncLogQueue/);
@@ -352,14 +356,18 @@ test('link-state emitter is extracted while platformSync owns remaining event he
 
 test('renderer event channels and send payload shapes remain source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
-    const eventSource = source + '\n' + readSource(LINK_STATE_EMITTER_PATH);
+    const eventSource = [
+        source,
+        readSource(LINK_STATE_EMITTER_PATH),
+        readSource(LIBRARY_UPDATE_EMITTER_PATH),
+    ].join('\n');
 
     for (const channel of RENDERER_EVENT_CHANNELS) {
         assert.match(eventSource, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
     }
 
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
-    assert.match(source, /webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
+    assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
     assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);
@@ -369,13 +377,17 @@ test('renderer event channels and send payload shapes remain source-visible', ()
 
 test('library-updated debounce behavior remains source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const emitterSource = readSource(LIBRARY_UPDATE_EMITTER_PATH);
 
-    assert.match(source, /let\s+_libraryUpdateDebounceTimer\s*=\s*null/);
-    assert.match(source, /if\s*\(_libraryUpdateDebounceTimer\)\s*clearTimeout\(_libraryUpdateDebounceTimer\)/);
-    assert.match(source, /_libraryUpdateDebounceTimer\s*=\s*setTimeout\(async\s*\(\)\s*=>/);
-    assert.match(source, /const\s+updatedLibrary\s*=\s*await\s+gamesSyncAdapter\.getSavedGames\(\)/);
-    assert.match(source, /win\.webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
-    assert.match(source, /\},\s*1500\)/);
+    assert.match(source, /const\s+libraryUpdateEmitter\s*=\s*new\s+LibraryUpdateEmitter\(\{/);
+    assert.match(source, /getSavedGames:\s*\(\)\s*=>\s*gamesSyncAdapter\.getSavedGames\(\)/);
+    assert.match(source, /debounceMs:\s*1500/);
+    assert.match(source, /function\s+_emitLibraryUpdated\(win\)\s*\{\s*libraryUpdateEmitter\.emit\(win\)/s);
+    assert.match(emitterSource, /if\s*\(this\.timer\)\s*this\.clearTimeoutFn\(this\.timer\)/);
+    assert.match(emitterSource, /this\.timer\s*=\s*this\.setTimeoutFn\(async\s*\(\)\s*=>/);
+    assert.match(emitterSource, /const\s+updatedLibrary\s*=\s*this\.getSavedGames/);
+    assert.match(emitterSource, /win\.webContents\.send\(LIBRARY_UPDATED_CHANNEL,\s*updatedLibrary\)/);
+    assert.match(emitterSource, /this\.debounceMs/);
 });
 
 test('public API, IPC channels, and connector method shapes remain stable', () => {

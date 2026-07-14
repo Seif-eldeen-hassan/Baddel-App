@@ -126,8 +126,9 @@ test('library update events still fetch saved games through the Games API seam',
     const source = readSource(PLATFORM_SYNC_PATH);
     const emitLibraryUpdatedSource = extractFunctionBody(source, '_emitLibraryUpdated');
 
-    assert.match(emitLibraryUpdatedSource, /gamesSyncAdapter\.getSavedGames\(\)/);
-    assert.match(emitLibraryUpdatedSource, /win\.webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
+    assert.match(source, /LibraryUpdateEmitter/);
+    assert.match(source, /getSavedGames:\s*\(\)\s*=>\s*gamesSyncAdapter\.getSavedGames\(\)/);
+    assert.match(emitLibraryUpdatedSource, /libraryUpdateEmitter\.emit\(win\)/);
 });
 
 test('public platform sync API keys and IPC channels remain unchanged', () => {

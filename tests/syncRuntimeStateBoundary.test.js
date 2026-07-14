@@ -16,6 +16,7 @@ const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
+const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
 
@@ -344,6 +345,8 @@ test('platformSync still owns the runtime state seam before extraction', () => {
     assert.match(source, /function\s+_finishPlatformSync\s*\(/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
     assert.match(source, /function\s+_emitLibraryUpdated\s*\(/);
+    assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
+    assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
 
     assert.match(source, /const\s+steamConnector\s*=\s*\{/);
     assert.match(source, /const\s+epicConnector\s*=\s*\{/);
@@ -387,8 +390,9 @@ test('runtime events and IPC channels remain on their current payload channels',
 
     assert.doesNotMatch(source, /function\s+_emitPlatformSyncEvent\s*\(/, 'current source uses split event helpers, not a monolithic event emitter');
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
+    assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
-    assert.match(source, /webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
+    assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
     assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);

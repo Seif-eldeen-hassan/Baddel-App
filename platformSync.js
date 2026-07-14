@@ -54,6 +54,9 @@ const {
     LinkStateEmitter,
 } = require('./src/features/sync/infrastructure/runtime/LinkStateEmitter');
 const {
+    LibraryUpdateEmitter,
+} = require('./src/features/sync/infrastructure/runtime/LibraryUpdateEmitter');
+const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
@@ -99,7 +102,6 @@ const EPIC_MERGED_CACHE            = syncCacheRepository.epicMergedCacheFile;
 const STEAM_MERGED_CACHE  = syncCacheRepository.steamMergedCacheFile;
 let _libraryWriteQueue = Promise.resolve();
 let _enrichRequestQueue = Promise.resolve();
-let _libraryUpdateDebounceTimer = null;
 
 // Injected from main.js — same signature as gameScanner's registerImageDownloader.
 // Downloads { cover?, hero?, logo? } assets to local image_cache and returns file:// paths.
@@ -114,15 +116,7 @@ function registerPlatformSyncAssetDownloader(fn) {
  * Prevents All Games from re-rendering dozens of times during a sync batch.
  */
 function _emitLibraryUpdated(win) {
-    if (_libraryUpdateDebounceTimer) clearTimeout(_libraryUpdateDebounceTimer);
-    _libraryUpdateDebounceTimer = setTimeout(async () => {
-        try {
-            if (win && !win.isDestroyed()) {
-                const updatedLibrary = await gamesSyncAdapter.getSavedGames();
-                win.webContents.send('library-updated', updatedLibrary);
-            }
-        } catch {}
-    }, 1500);
+    libraryUpdateEmitter.emit(win);
 }
 
 /**
@@ -225,6 +219,10 @@ const syncLogQueue = new SyncLogQueue({
     },
 });
 const linkStateEmitter = new LinkStateEmitter();
+const libraryUpdateEmitter = new LibraryUpdateEmitter({
+    getSavedGames: () => gamesSyncAdapter.getSavedGames(),
+    debounceMs: 1500,
+});
 const _platformSyncState = {
     steam: null,
     epic: null,

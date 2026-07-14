@@ -673,10 +673,12 @@ test('platformSync still owns enrichment/asset helpers until extraction phases',
     assert.match(source, /function registerPlatformSyncAssetDownloader\(fn\)/);
     assert.match(source, /let _platformSyncAssetDownloader = null/);
     assert.match(source, /let _libraryWriteQueue = Promise\.resolve\(\)/);
-    assert.match(source, /let _libraryUpdateDebounceTimer = null/);
+    assert.match(source, /LibraryUpdateEmitter/);
+    assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
 
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncServerImportService.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'PlatformSyncAssetWriteBackService.js')), true);
+    assert.equal(fs.existsSync(path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js')), true);
     assert.equal(fs.existsSync(path.join(SYNC_SERVICES_DIR, 'CoverFirstCacheAssetService.js')), false);
     assert.equal(fs.existsSync(SYNC_CONTAINER_PATH), true);
 
