@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncEventEmitter.js');
+const STATE_CHANGED_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'StateChangedEmitter.js');
 const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
@@ -333,11 +334,14 @@ test('link-state emitter is extracted while platformSync owns remaining event he
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist before extraction');
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
     assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
+    assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true, 'StateChangedEmitter.js should exist after state-event extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should remain extracted');
 
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
+    assert.match(source, /StateChangedEmitter/);
+    assert.match(source, /stateChangedEmitter\.emit\(_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
     assert.match(source, /LinkStateEmitter/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
@@ -359,6 +363,7 @@ test('renderer event channels and send payload shapes remain source-visible', ()
     const source = readSource(PLATFORM_SYNC_PATH);
     const eventSource = [
         source,
+        readSource(STATE_CHANGED_EMITTER_PATH),
         readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH),
         readSource(LINK_STATE_EMITTER_PATH),
         readSource(LIBRARY_UPDATE_EMITTER_PATH),
@@ -368,7 +373,7 @@ test('renderer event channels and send payload shapes remain source-visible', ()
         assert.match(eventSource, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
     }
 
-    assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
+    assert.match(source, /stateChangedEmitter\.emit\(_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);

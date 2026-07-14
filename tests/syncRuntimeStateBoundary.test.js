@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
+const STATE_CHANGED_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'StateChangedEmitter.js');
 const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
@@ -339,6 +340,9 @@ test('platformSync still owns the runtime state seam before extraction', () => {
     assert.match(source, /function\s+_getPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_setPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
+    assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true, 'StateChangedEmitter.js should exist after state-event extraction');
+    assert.match(source, /StateChangedEmitter/);
+    assert.match(source, /stateChangedEmitter\.emit\(_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /function\s+_pushPlatformSyncLog\s*\(/);
     assert.match(source, /function\s+_startPlatformSync\s*\(/);
     assert.match(source, /function\s+_updatePlatformSyncAccount\s*\(/);
@@ -388,12 +392,14 @@ test('runtime state default shape and clone boundaries are source-visible', () =
 
 test('runtime events and IPC channels remain on their current payload channels', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const stateEmitterSource = readSource(STATE_CHANGED_EMITTER_PATH);
     const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
     assert.doesNotMatch(source, /function\s+_emitPlatformSyncEvent\s*\(/, 'current source uses split event helpers, not a monolithic event emitter');
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
     assert.equal(fs.existsSync(LIBRARY_UPDATE_EMITTER_PATH), true, 'LibraryUpdateEmitter.js should exist after library-updated extraction');
-    assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
+    assert.match(source, /stateChangedEmitter\.emit\(_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
+    assert.match(stateEmitterSource, /webContents\.send\(['"]platform-sync:state['"],\s*payload\)/);
     assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);

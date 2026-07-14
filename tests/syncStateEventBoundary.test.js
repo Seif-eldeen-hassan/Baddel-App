@@ -239,7 +239,7 @@ function assertDefaultStateShape(state, platform) {
 
 test('future state/runtime extraction targets do not exist yet', () => {
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false);
-    assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), false);
+    assert.equal(fs.existsSync(STATE_CHANGED_EMITTER_PATH), true);
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false);
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
 
@@ -271,6 +271,8 @@ test('platformSync still owns runtime state helpers and state mutations', () => 
     assert.match(source, /LinkStateEmitter/);
     assert.match(source, /LibraryUpdateEmitter/);
     assert.match(source, /SyncTerminalEventEmitter/);
+    assert.match(source, /StateChangedEmitter/);
+    assert.match(source, /const\s+stateChangedEmitter\s*=\s*new\s+StateChangedEmitter\(\{/);
     assert.doesNotMatch(source, /SyncContainer/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
@@ -311,17 +313,18 @@ test('runtime state default shape and cloning boundaries remain source-visible',
     assert.match(setSource, /const\s+baseState\s*=\s*_clonePlain\(_getPlatformSyncState\(platform\)\)/);
     assert.match(setSource, /_platformSyncState\[platform\]\s*=\s*nextState/);
     assert.match(setSource, /_emitPlatformSyncState\(platform\)/);
-    assert.match(emitSource, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
+    assert.match(emitSource, /stateChangedEmitter\.emit\(_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(finishSource, /const\s+finalState\s*=\s*_clonePlain\(_getPlatformSyncState\(platform\)\)/);
 });
 
 test('state event and get-state IPC channels remain stable', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const stateEmitterSource = readSource(STATE_CHANGED_EMITTER_PATH);
 
     assert.match(source, /ipcMainRef\.handle\(['"]platform-sync:get-state['"]/);
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_platformSyncState\)\s*\}/);
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\s*\}/);
-    assert.match(source, /['"]platform-sync:state['"]/);
+    assert.match(stateEmitterSource, /['"]platform-sync:state['"]/);
 
     for (const channel of PLATFORM_SYNC_IPC_CHANNELS) {
         assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} IPC channel should remain unchanged`);

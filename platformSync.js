@@ -60,6 +60,9 @@ const {
     SyncTerminalEventEmitter,
 } = require('./src/features/sync/infrastructure/runtime/SyncTerminalEventEmitter');
 const {
+    StateChangedEmitter,
+} = require('./src/features/sync/infrastructure/runtime/StateChangedEmitter');
+const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
@@ -230,6 +233,9 @@ const syncTerminalEventEmitter = new SyncTerminalEventEmitter({
     getWindow: () => _platformSyncWindowGetter?.(),
     Notification,
 });
+const stateChangedEmitter = new StateChangedEmitter({
+    getWindow: () => _platformSyncWindowGetter?.(),
+});
 const _platformSyncState = {
     steam: null,
     epic: null,
@@ -271,10 +277,7 @@ function _getPlatformSyncState(platform) {
 
 function _emitPlatformSyncState(platform) {
     try {
-        const win = _platformSyncWindowGetter?.();
-        if (win && !win.isDestroyed()) {
-            win.webContents.send('platform-sync:state', _clonePlain(_getPlatformSyncState(platform)));
-        }
+        stateChangedEmitter.emit(_clonePlain(_getPlatformSyncState(platform)));
     } catch {}
 }
 
