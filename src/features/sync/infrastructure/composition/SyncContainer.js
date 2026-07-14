@@ -1,19 +1,8 @@
 'use strict';
 
-const PLATFORM_SYNC_EXPORTS = [
-    'registerPlatformSyncHandlers',
-    'epicConnector',
-    'steamConnector',
-    'enrichProfilesWithSyncData',
-    'registerPlatformSyncAssetDownloader',
-    'autoSyncOnStartup',
-    '_mobileApprovalPollStep',
-    '_startQrLoginFlow',
-    'cacheLibraryCoversFirst',
-    '_withConcurrency',
-    '_writeSyncLinkToExistingSwitcherProfile',
-    '_findMatchingEpicSwitcherProfile',
-];
+const {
+    createSyncFeatureApi,
+} = require('./SyncFeatureApiContract');
 
 function loadDefaultPlatformSyncApi() {
     const platformSyncPath = ['..', '..', '..', '..', '..', 'platformSync'].join('/');
@@ -28,13 +17,7 @@ function resolvePlatformSyncApi(options) {
 
 function createSyncFeature(options = {}) {
     const platformSyncApi = resolvePlatformSyncApi(options);
-    const feature = {};
-
-    for (const name of PLATFORM_SYNC_EXPORTS) {
-        feature[name] = platformSyncApi[name];
-    }
-
-    return feature;
+    return createSyncFeatureApi(platformSyncApi);
 }
 
 let singleton;

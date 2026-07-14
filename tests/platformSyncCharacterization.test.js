@@ -445,6 +445,7 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
     const platformSyncSource = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
     const mainSource = fs.readFileSync(MAIN_JS_PATH, 'utf8');
     const syncContainerPath = path.join(SYNC_FEATURE_DIR, 'infrastructure', 'composition', 'SyncContainer.js');
+    const syncFeatureApiContractPath = path.join(SYNC_FEATURE_DIR, 'infrastructure', 'composition', 'SyncFeatureApiContract.js');
 
     assert.match(
         platformSyncSource,
@@ -454,9 +455,11 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.doesNotMatch(platformSyncSource, /getSyncFeature/);
     assert.doesNotMatch(platformSyncSource, /createSyncFeature/);
+    assert.doesNotMatch(platformSyncSource, /SyncFeatureApiContract/);
     assert.match(mainSource, /require\(['"]\.\/platformSync['"]\)/);
     assert.doesNotMatch(mainSource, /SyncContainer/);
     assert.equal(fs.existsSync(syncContainerPath), true);
+    assert.equal(fs.existsSync(syncFeatureApiContractPath), true);
 
     const syncContainer = require(syncContainerPath);
     assert.equal(typeof syncContainer.createSyncFeature, 'function');
@@ -473,7 +476,13 @@ test('platformSync source guards preserve current Games and Sync boundaries', ()
             assert.match(source, /createSyncFeature/);
             assert.match(source, /getSyncFeature/);
             assert.match(source, /loadDefaultPlatformSyncApi/);
+            assert.match(source, /SyncFeatureApiContract/);
             assert.doesNotMatch(source, /main\.js|preload\.js|src\/js|src\\js/);
+            continue;
+        }
+        if (path.basename(filePath) === 'SyncFeatureApiContract.js') {
+            assert.match(source, /SYNC_FEATURE_API_KEYS/);
+            assert.doesNotMatch(source, /platformSync|SyncContainer|electron|main\.js|preload\.js|src\/js|src\\js/);
             continue;
         }
         assert.doesNotMatch(source, /platformSync/);

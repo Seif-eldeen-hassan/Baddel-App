@@ -7,28 +7,18 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const SYNC_CONTAINER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'SyncContainer.js');
+const SYNC_FEATURE_API_CONTRACT_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'SyncFeatureApiContract.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const PRELOAD_JS_PATH = path.join(ROOT, 'preload.js');
 const RENDERER_DIR = path.join(ROOT, 'src', 'js');
 
-const EXPECTED_EXPORTS = [
-    'registerPlatformSyncHandlers',
-    'epicConnector',
-    'steamConnector',
-    'enrichProfilesWithSyncData',
-    'registerPlatformSyncAssetDownloader',
-    'autoSyncOnStartup',
-    '_mobileApprovalPollStep',
-    '_startQrLoginFlow',
-    'cacheLibraryCoversFirst',
-    '_withConcurrency',
-    '_writeSyncLinkToExistingSwitcherProfile',
-    '_findMatchingEpicSwitcherProfile',
-];
+const {
+    SYNC_FEATURE_API_KEYS,
+} = require('../src/features/sync/infrastructure/composition/SyncFeatureApiContract');
 
 function makeFakePlatformSyncApi() {
     const api = {};
-    for (const name of EXPECTED_EXPORTS) {
+    for (const name of SYNC_FEATURE_API_KEYS) {
         api[name] = name.endsWith('Connector') ? { name } : function fakeExport() {};
     }
     return api;
@@ -39,8 +29,8 @@ test('createSyncFeature returns the current platformSync public API shape', () =
     const platformSyncApi = makeFakePlatformSyncApi();
     const feature = createSyncFeature({ platformSyncApi });
 
-    assert.deepEqual(Object.keys(feature), EXPECTED_EXPORTS);
-    for (const name of EXPECTED_EXPORTS) {
+    assert.deepEqual(Object.keys(feature), SYNC_FEATURE_API_KEYS);
+    for (const name of SYNC_FEATURE_API_KEYS) {
         assert.equal(feature[name], platformSyncApi[name], `${name} should be exposed from the wrapped facade`);
     }
 });
@@ -87,6 +77,16 @@ test('SyncContainer is currently a compatibility wrapper around the platformSync
     assert.match(source, /require\(platformSyncPath\)/);
     assert.match(source, /options\.platformSyncApi/);
     assert.match(source, /options\.loadPlatformSync/);
+});
+
+test('SyncContainer uses the shared sync feature API contract', () => {
+    const source = fs.readFileSync(SYNC_CONTAINER_PATH, 'utf8');
+    const contractSource = fs.readFileSync(SYNC_FEATURE_API_CONTRACT_PATH, 'utf8');
+
+    assert.match(source, /SyncFeatureApiContract/);
+    assert.match(source, /createSyncFeatureApi\(platformSyncApi\)/);
+    assert.doesNotMatch(source, /PLATFORM_SYNC_EXPORTS/);
+    assert.match(contractSource, /SYNC_FEATURE_API_KEYS/);
 });
 
 test('platformSync must not import SyncContainer until the dependency is inverted', () => {
