@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncEventEmitter.js');
+const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
@@ -323,11 +324,12 @@ function makeFakeWindow() {
     };
 }
 
-test('event extraction targets do not exist and platformSync delegates only the log queue seam', () => {
+test('link-state emitter is extracted and platformSync delegates only log and link-state seams', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
 
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist before extraction');
+    assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should exist after log queue extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
@@ -338,6 +340,8 @@ test('event extraction targets do not exist and platformSync delegates only the 
     assert.match(source, /function\s+_pushPlatformSyncLog\s*\(/);
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
+    assert.match(source, /LinkStateEmitter/);
+    assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /function\s+_emitLibraryUpdated\s*\(/);
     assert.match(source, /const\s+steamConnector\s*=\s*\{/);
     assert.match(source, /const\s+epicConnector\s*=\s*\{/);
@@ -368,15 +372,15 @@ test('current log entry shape and persistence queue remain source-visible across
 
 test('current renderer event channels and payload send sites remain source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const eventSource = source + '\n' + readSource(LINK_STATE_EMITTER_PATH);
 
     for (const channel of RENDERER_EVENT_CHANNELS) {
-        assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
+        assert.match(eventSource, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
     }
 
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
-    assert.match(source, /mainWindow\.webContents\.send\(['"]platform-sync:link-state-changed['"],\s*\{/);
-    assert.match(source, /platform,\s*status,\s*message,\s*\.\.\.extra/);
+    assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
     assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);
     assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);

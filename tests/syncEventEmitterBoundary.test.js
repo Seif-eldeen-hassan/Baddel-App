@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncEventEmitter.js');
+const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
@@ -323,17 +324,20 @@ function makeFakeWindow() {
     };
 }
 
-test('future event emitter targets do not exist and platformSync owns current event helpers', () => {
+test('link-state emitter is extracted while platformSync owns remaining event helpers', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
 
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false, 'SyncEventEmitter.js should not exist before extraction');
+    assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false, 'SyncRuntimeState.js should not exist before extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors.js should not exist before connector extraction');
     assert.equal(fs.existsSync(SYNC_LOG_QUEUE_PATH), true, 'SyncLogQueue.js should remain extracted');
 
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
+    assert.match(source, /LinkStateEmitter/);
+    assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /function\s+_emitLibraryUpdated\s*\(/);
     assert.match(source, /let\s+_platformSyncWindowGetter\s*=\s*null/);
     assert.match(source, /_platformSyncWindowGetter\s*=\s*getMainWindow/);
@@ -348,14 +352,15 @@ test('future event emitter targets do not exist and platformSync owns current ev
 
 test('renderer event channels and send payload shapes remain source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const eventSource = source + '\n' + readSource(LINK_STATE_EMITTER_PATH);
 
     for (const channel of RENDERER_EVENT_CHANNELS) {
-        assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
+        assert.match(eventSource, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain source-visible`);
     }
 
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
-    assert.match(source, /mainWindow\.webContents\.send\(['"]platform-sync:link-state-changed['"],\s*\{\s*platform,\s*status,\s*message,\s*\.\.\.extra,\s*\}\)/s);
+    assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
     assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);
     assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);

@@ -51,6 +51,9 @@ const {
     SyncLogQueue,
 } = require('./src/features/sync/infrastructure/runtime/SyncLogQueue');
 const {
+    LinkStateEmitter,
+} = require('./src/features/sync/infrastructure/runtime/LinkStateEmitter');
+const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
@@ -221,6 +224,7 @@ const syncLogQueue = new SyncLogQueue({
         await fs.appendFile(path.join(SYNC_LOGS_DIR, `${platform}.log`), logLine, 'utf8');
     },
 });
+const linkStateEmitter = new LinkStateEmitter();
 const _platformSyncState = {
     steam: null,
     epic: null,
@@ -395,13 +399,7 @@ function _finishPlatformSync(platform, patch = {}) {
 }
 
 function _emitLinkState(mainWindow, platform, status, message, extra = {}) {
-    try {
-        if (mainWindow && !mainWindow.isDestroyed()) {
-            mainWindow.webContents.send('platform-sync:link-state-changed', {
-                platform, status, message, ...extra,
-            });
-        }
-    } catch {}
+    linkStateEmitter.emit(mainWindow, platform, status, message, extra);
 }
 
 async function _writeSwitcherSyncLink(platform, switcherProfileName, platformAccountId, extra = {}) {
