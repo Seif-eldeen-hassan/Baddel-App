@@ -57,6 +57,9 @@ const {
     LibraryUpdateEmitter,
 } = require('./src/features/sync/infrastructure/runtime/LibraryUpdateEmitter');
 const {
+    SyncTerminalEventEmitter,
+} = require('./src/features/sync/infrastructure/runtime/SyncTerminalEventEmitter');
+const {
     createPlatformSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/createPlatformSyncFeature');
 const baddelApi = require('./services/baddelApi');
@@ -223,6 +226,10 @@ const libraryUpdateEmitter = new LibraryUpdateEmitter({
     getSavedGames: () => gamesSyncAdapter.getSavedGames(),
     debounceMs: 1500,
 });
+const syncTerminalEventEmitter = new SyncTerminalEventEmitter({
+    getWindow: () => _platformSyncWindowGetter?.(),
+    Notification,
+});
 const _platformSyncState = {
     steam: null,
     epic: null,
@@ -369,29 +376,23 @@ function _finishPlatformSync(platform, patch = {}) {
     });
 
     try {
-        const win = _platformSyncWindowGetter?.();
         const finalState = _clonePlain(_getPlatformSyncState(platform));
         const isFailed = patch.phase === 'error' || !!patch.lastError;
-        const channel = isFailed ? 'platform-sync:failed' : 'platform-sync:completed';
-        if (win && !win.isDestroyed()) {
-            win.webContents.send(channel, finalState);
-        }
-        if (!isFailed && Notification.isSupported() && (!win || win.isDestroyed() || !win.isFocused())) {
-            let notifyGames;
-            if (patch.targetAccountId) {
+        if (isFailed) {
+            syncTerminalEventEmitter.emitFailed(finalState);
+        } else {
+            const notifyGames = patch.targetAccountId
                 // Targeted sync — show target account count, not total merged library
-                notifyGames = finalState.accounts?.[String(patch.targetAccountId)]?.gamesCount || 0;
-            } else {
-                notifyGames = finalState.summary?.totalGames || 0;
-            }
+                ? finalState.accounts?.[String(patch.targetAccountId)]?.gamesCount || 0
+                : finalState.summary?.totalGames || 0;
             const platformName = platform.charAt(0).toUpperCase() + platform.slice(1);
-            new Notification({
+            syncTerminalEventEmitter.emitCompleted(finalState, {
                 title: 'Baddel Launcher',
                 body: notifyGames > 0
                     ? `${platformName} sync complete — ${notifyGames} games synced.`
                     : `${platformName} library sync complete.`,
                 icon: path.join(__dirname, 'Logo.ico'),
-            }).show();
+            });
         }
     } catch {}
 }

@@ -15,6 +15,7 @@ const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_CONTAINER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'SyncContainer.js');
 const CONNECTOR_REPOSITORY_BUNDLE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'ConnectorRepositoryBundle.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
+const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 
 const CONNECTOR_METHODS = ['isLinked', 'getAccounts', 'link', 'syncLibrary', 'getCachedLibrary', 'unlink'];
 const PLATFORM_SYNC_IPC_CHANNELS = [
@@ -113,6 +114,7 @@ test('Epic connector still depends on the Legendary execFile runtime boundary', 
 
 test('platformSync still owns Electron login, session, notification, state, and event seams', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
     assert.match(source, /const\s+\{\s*app,\s*BrowserWindow,\s*Notification\s*\}\s*=\s*require\(['"]electron['"]\)/);
     assert.match(source, /app\.getPath\(['"]userData['"]\)/);
@@ -121,8 +123,10 @@ test('platformSync still owns Electron login, session, notification, state, and 
     assert.match(source, /new\s+BrowserWindow\s*\(/);
     assert.match(source, /const\s+\{\s*session:\s*electronSession\s*\}\s*=\s*require\(['"]electron['"]\)/);
     assert.match(source, /electronSession\.fromPartition/);
-    assert.match(source, /Notification\.isSupported\(\)/);
-    assert.match(source, /new\s+Notification\s*\(/);
+    assert.match(source, /SyncTerminalEventEmitter/);
+    assert.match(source, /Notification,/);
+    assert.match(terminalEmitterSource, /this\.Notification\.isSupported\(\)/);
+    assert.match(terminalEmitterSource, /new\s+this\.Notification\(notificationOptions\)\.show\(\)/);
     assert.match(source, /SyncLogQueue/);
     assert.match(source, /const\s+syncLogQueue\s*=\s*new\s+SyncLogQueue\(/);
     assert.doesNotMatch(source, /const\s+_platformSyncLogWriteQueue\s*=\s*\{\s*\}/);

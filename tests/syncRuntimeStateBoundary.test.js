@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_RUNTIME_STATE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncRuntimeState.js');
+const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
@@ -387,6 +388,7 @@ test('runtime state default shape and clone boundaries are source-visible', () =
 
 test('runtime events and IPC channels remain on their current payload channels', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
     assert.doesNotMatch(source, /function\s+_emitPlatformSyncEvent\s*\(/, 'current source uses split event helpers, not a monolithic event emitter');
     assert.equal(fs.existsSync(LINK_STATE_EMITTER_PATH), true, 'LinkStateEmitter.js should exist after link-state extraction');
@@ -394,8 +396,10 @@ test('runtime events and IPC channels remain on their current payload channels',
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
-    assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
-    assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);
+    assert.match(source, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);
+    assert.match(source, /syncTerminalEventEmitter\.emitFailed\(finalState\)/);
+    assert.match(terminalEmitterSource, /this\._send\(['"]platform-sync:completed['"],\s*payload\)/);
+    assert.match(terminalEmitterSource, /this\._send\(['"]platform-sync:failed['"],\s*payload\)/);
     assert.match(source, /ipcMainRef\.handle\(['"]platform-sync:get-state['"]/);
 
     for (const channel of PLATFORM_SYNC_IPC_CHANNELS) {

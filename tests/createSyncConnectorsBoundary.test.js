@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
+const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 
 const CONNECTOR_METHODS = ['isLinked', 'getAccounts', 'link', 'syncLibrary', 'getCachedLibrary', 'unlink'];
 const PLATFORM_SYNC_IPC_CHANNELS = [
@@ -227,6 +228,7 @@ test('platformSync still owns sync runtime state, logging, and event helpers bef
 
 test('platformSync still owns Steam bridge, Legendary, and Electron runtime boundaries', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
     assert.match(source, /const\s+steamBridge\s*=\s*require\(['"]\.\/steamBridge['"]\)/);
     assert.match(source, /let\s+_bridgeStarted\s*=\s*false/);
@@ -252,8 +254,10 @@ test('platformSync still owns Steam bridge, Legendary, and Electron runtime boun
     assert.match(source, /new\s+BrowserWindow\s*\(/);
     assert.match(source, /const\s+\{\s*session:\s*electronSession\s*\}\s*=\s*require\(['"]electron['"]\)/);
     assert.match(source, /electronSession\.fromPartition/);
-    assert.match(source, /Notification\.isSupported\(\)/);
-    assert.match(source, /new\s+Notification\s*\(/);
+    assert.match(source, /SyncTerminalEventEmitter/);
+    assert.match(source, /Notification,/);
+    assert.match(terminalEmitterSource, /this\.Notification\.isSupported\(\)/);
+    assert.match(terminalEmitterSource, /new\s+this\.Notification\(notificationOptions\)\.show\(\)/);
 });
 
 test('public API, IPC channels, and production entrypoint remain on the platformSync facade', () => {

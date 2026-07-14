@@ -86,8 +86,8 @@ function extractObjectLiteral(source, declarationName) {
     throw new Error(`Could not extract ${declarationName}`);
 }
 
-test('future terminal and broad event extraction targets do not exist yet', () => {
-    assert.equal(fs.existsSync(SYNC_TERMINAL_EVENT_EMITTER_PATH), false);
+test('terminal emitter exists and broad extraction targets do not exist yet', () => {
+    assert.equal(fs.existsSync(SYNC_TERMINAL_EVENT_EMITTER_PATH), true);
     assert.equal(fs.existsSync(SYNC_EVENT_EMITTER_PATH), false);
     assert.equal(fs.existsSync(SYNC_RUNTIME_STATE_PATH), false);
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false);
@@ -110,7 +110,8 @@ test('platformSync still owns terminal event emission and adjacent runtime seams
     assert.match(source, /SyncLogQueue/);
     assert.match(source, /LinkStateEmitter/);
     assert.match(source, /LibraryUpdateEmitter/);
-    assert.doesNotMatch(source, /SyncTerminalEventEmitter/);
+    assert.match(source, /SyncTerminalEventEmitter/);
+    assert.match(source, /const\s+syncTerminalEventEmitter\s*=\s*new\s+SyncTerminalEventEmitter\(\{/);
     assert.doesNotMatch(source, /SyncContainer/);
 
     assert.match(source, /const\s+steamConnector\s*=\s*\{/);
@@ -122,19 +123,23 @@ test('platformSync still owns terminal event emission and adjacent runtime seams
 
 test('terminal event channel selection and send behavior remain source-visible', () => {
     const finishSource = extractFunctionSource(readSource(PLATFORM_SYNC_PATH), '_finishPlatformSync');
+    const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
     assert.match(finishSource, /const\s+isFailed\s*=\s*patch\.phase\s*===\s*['"]error['"]\s*\|\|\s*!!patch\.lastError/);
-    assert.match(finishSource, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
-    assert.match(finishSource, /const\s+win\s*=\s*_platformSyncWindowGetter\?\.\(\)/);
     assert.match(finishSource, /const\s+finalState\s*=\s*_clonePlain\(_getPlatformSyncState\(platform\)\)/);
-    assert.match(finishSource, /if\s*\(win\s*&&\s*!win\.isDestroyed\(\)\)\s*\{\s*win\.webContents\.send\(channel,\s*finalState\)/s);
+    assert.match(finishSource, /syncTerminalEventEmitter\.emitFailed\(finalState\)/);
+    assert.match(finishSource, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);
+    assert.match(terminalEmitterSource, /this\._send\(['"]platform-sync:completed['"],\s*payload\)/);
+    assert.match(terminalEmitterSource, /this\._send\(['"]platform-sync:failed['"],\s*payload\)/);
+    assert.match(terminalEmitterSource, /const\s+win\s*=\s*this\.getWindow\?\.\(\)/);
+    assert.match(terminalEmitterSource, /win\.webContents\.send\(channel,\s*payload\)/);
 });
 
 test('terminal events happen after runtime state mutation and use cloned final state payloads', () => {
     const finishSource = extractFunctionSource(readSource(PLATFORM_SYNC_PATH), '_finishPlatformSync');
     const setStateIndex = finishSource.indexOf('_setPlatformSyncState(platform');
     const cloneIndex = finishSource.indexOf('const finalState = _clonePlain(_getPlatformSyncState(platform))');
-    const sendIndex = finishSource.indexOf('win.webContents.send(channel, finalState)');
+    const sendIndex = finishSource.indexOf('syncTerminalEventEmitter.emit');
 
     assert.ok(setStateIndex !== -1, 'terminal finish should mutate runtime state');
     assert.ok(cloneIndex > setStateIndex, 'final terminal payload should be cloned after state mutation');
@@ -153,13 +158,15 @@ test('terminal events happen after runtime state mutation and use cloned final s
 
 test('terminal notifications stay coupled only to successful completed events', () => {
     const finishSource = extractFunctionSource(readSource(PLATFORM_SYNC_PATH), '_finishPlatformSync');
+    const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
-    assert.match(finishSource, /if\s*\(!isFailed\s*&&\s*Notification\.isSupported\(\)\s*&&\s*\(!win\s*\|\|\s*win\.isDestroyed\(\)\s*\|\|\s*!win\.isFocused\(\)\)\)/);
-    assert.match(finishSource, /new\s+Notification\s*\(\{/);
     assert.match(finishSource, /title:\s*['"]Baddel Launcher['"]/);
     assert.match(finishSource, /body:\s*notifyGames\s*>\s*0/);
     assert.match(finishSource, /icon:\s*path\.join\(__dirname,\s*['"]Logo\.ico['"]\)/);
-    assert.match(finishSource, /\.show\(\)/);
+    assert.match(finishSource, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);
+    assert.match(terminalEmitterSource, /this\.Notification\.isSupported\(\)/);
+    assert.match(terminalEmitterSource, /\(!win\s*\|\|\s*win\.isDestroyed\(\)\s*\|\|\s*!win\.isFocused\(\)\)/);
+    assert.match(terminalEmitterSource, /new\s+this\.Notification\(notificationOptions\)\.show\(\)/);
 });
 
 test('terminal events are not responsible for logs, library updates, or cover notifications', () => {

@@ -15,6 +15,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncEventEmitter.js');
+const SYNC_TERMINAL_EVENT_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncTerminalEventEmitter.js');
 const LINK_STATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LinkStateEmitter.js');
 const LIBRARY_UPDATE_EMITTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'LibraryUpdateEmitter.js');
 const SYNC_LOG_QUEUE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'SyncLogQueue.js');
@@ -378,6 +379,7 @@ test('current renderer event channels and payload send sites remain source-visib
     const source = readSource(PLATFORM_SYNC_PATH);
     const eventSource = [
         source,
+        readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH),
         readSource(LINK_STATE_EMITTER_PATH),
         readSource(LIBRARY_UPDATE_EMITTER_PATH),
     ].join('\n');
@@ -389,8 +391,8 @@ test('current renderer event channels and payload send sites remain source-visib
     assert.match(source, /webContents\.send\(['"]platform-sync:state['"],\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\)/);
     assert.match(source, /libraryUpdateEmitter\.emit\(win\)/);
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
-    assert.match(source, /const\s+channel\s*=\s*isFailed\s*\?\s*['"]platform-sync:failed['"]\s*:\s*['"]platform-sync:completed['"]/);
-    assert.match(source, /win\.webContents\.send\(channel,\s*finalState\)/);
+    assert.match(source, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);
+    assert.match(source, /syncTerminalEventEmitter\.emitFailed\(finalState\)/);
     assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
     assert.match(source, /const\s+win\s*=\s*_platformSyncWindowGetter\?\.\(\)/);
     assert.match(source, /const\s+_cfWin\s*=\s*_platformSyncWindowGetter\?\.\(\)/);
