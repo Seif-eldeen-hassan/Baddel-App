@@ -155,9 +155,11 @@ test('platformSync still owns repository, service, and Games feature dependencie
     assert.match(source, /PlatformSyncServerImportService/);
     assert.match(source, /new\s+PlatformSyncServerImportService\s*\(/);
     assert.match(source, /getGamesFeature/);
-    assert.match(source, /function\s+getGamesApi\s*\(/);
+    assert.match(source, /GamesSyncAdapter/);
+    assert.match(source, /new\s+GamesSyncAdapter\(\{\s*getGamesFeature\s*\}\)/);
+    assert.doesNotMatch(source, /function\s+getGamesApi\s*\(/);
 
-    for (const gamesCall of ['getGamesApi().getSavedGames', 'getGamesApi().getLocalSteamGames', 'getGamesApi().removeEpicNonGameEntries']) {
+    for (const gamesCall of ['gamesSyncAdapter.getSavedGames', 'gamesSyncAdapter.getLocalSteamGames', 'gamesSyncAdapter.removeEpicNonGameEntries']) {
         assert.match(source, new RegExp(escapeRegExp(gamesCall)), `${gamesCall} should remain at the current boundary`);
     }
 });

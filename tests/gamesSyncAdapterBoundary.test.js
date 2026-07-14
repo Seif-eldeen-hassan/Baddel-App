@@ -13,7 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_CONTAINER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'SyncContainer.js');
-const GAMES_SYNC_ADAPTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'GamesSyncAdapter.js');
+const GAMES_SYNC_ADAPTER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'adapters', 'GamesSyncAdapter.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
 
 const CONNECTOR_METHODS = ['isLinked', 'getAccounts', 'link', 'syncLibrary', 'getCachedLibrary', 'unlink'];
@@ -67,12 +67,12 @@ function extractFunctionBody(source, functionName) {
     throw new Error(`Unable to extract ${functionName} body`);
 }
 
-test('Games sync adapter extraction has not happened yet', () => {
+test('Games sync adapter extraction is in place without moving connector construction', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
     const syncContainerSource = readSource(SYNC_CONTAINER_PATH);
 
-    assert.equal(fs.existsSync(GAMES_SYNC_ADAPTER_PATH), false, 'GamesSyncAdapter should not exist before extraction');
+    assert.equal(fs.existsSync(GAMES_SYNC_ADAPTER_PATH), true, 'GamesSyncAdapter should exist after extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), false, 'createSyncConnectors should not exist before connector extraction');
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(syncContainerSource, /require\(platformSyncPath\)/);
@@ -95,13 +95,13 @@ test('platformSync owns connector construction and connector method shapes', () 
     }
 });
 
-test('platformSync keeps the current lazy Games feature seam', () => {
+test('platformSync delegates Games calls through the extracted adapter seam', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
-    const getGamesApiBody = extractFunctionBody(source, 'getGamesApi');
 
     assert.match(source, /const\s+\{\s*getGamesFeature\s*\}\s*=\s*require\(['"]\.\/src\/features\/games\/infrastructure\/composition\/GamesContainer['"]\)/);
-    assert.match(getGamesApiBody, /return\s+getGamesFeature\(\)/);
-    assert.doesNotMatch(source, /GamesSyncAdapter/);
+    assert.match(source, /const\s+\{\s*GamesSyncAdapter\s*\}\s*=\s*require\(['"]\.\/src\/features\/sync\/infrastructure\/adapters\/GamesSyncAdapter['"]\)/);
+    assert.match(source, /const\s+gamesSyncAdapter\s*=\s*new\s+GamesSyncAdapter\(\{\s*getGamesFeature\s*\}\)/);
+    assert.doesNotMatch(source, /function\s+getGamesApi\s*\(/);
 });
 
 test('Steam sync path still uses Games API for local installed Steam games', () => {
@@ -109,7 +109,7 @@ test('Steam sync path still uses Games API for local installed Steam games', () 
     const steamConnectorSource = extractObjectLiteral(source, 'steamConnector');
 
     assert.match(steamConnectorSource, /Merging local Steam installs/);
-    assert.match(steamConnectorSource, /getGamesApi\(\)\.getLocalSteamGames\(\)/);
+    assert.match(steamConnectorSource, /gamesSyncAdapter\.getLocalSteamGames\(\)/);
     assert.match(steamConnectorSource, /installOnly:\s*true/);
     assert.match(steamConnectorSource, /steamLicensedAccountIds/);
 });
@@ -118,7 +118,7 @@ test('Epic sync path still uses Games API for non-game cleanup', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
 
     assert.match(source, /const\s+badEntries\s*=\s*\[\.\.\.rejectedEntries,\s*\.\.\.unknownEntries\]\.map\(x\s*=>\s*x\.entry\)/);
-    assert.match(source, /getGamesApi\(\)\.removeEpicNonGameEntries\(badEntries\)/);
+    assert.match(source, /gamesSyncAdapter\.removeEpicNonGameEntries\(badEntries\)/);
     assert.match(source, /DB cleanup error/);
 });
 
@@ -126,7 +126,7 @@ test('library update events still fetch saved games through the Games API seam',
     const source = readSource(PLATFORM_SYNC_PATH);
     const emitLibraryUpdatedSource = extractFunctionBody(source, '_emitLibraryUpdated');
 
-    assert.match(emitLibraryUpdatedSource, /getGamesApi\(\)\.getSavedGames\(\)/);
+    assert.match(emitLibraryUpdatedSource, /gamesSyncAdapter\.getSavedGames\(\)/);
     assert.match(emitLibraryUpdatedSource, /win\.webContents\.send\(['"]library-updated['"],\s*updatedLibrary\)/);
 });
 
