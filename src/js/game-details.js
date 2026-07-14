@@ -12,6 +12,7 @@
 let _gdCurrentGameId   = null;
 let _gdCurrentMeta     = null;
 let _gdCurrentGame     = null;
+let _gdCurrentBaseGame = null;
 let _gdAchievementsLoaded = false;
 /** يزيد مع كل فتح تفاصيل لمنع رسم إنجازات لعبة سابقة بعد اكتمال طلب بطيء */
 let _gdAchievementsGen = 0;
@@ -1310,6 +1311,7 @@ window.openGameDetails = async function(gameId) {
         }
     }
 
+    _gdCurrentBaseGame = typeof _gdClonePlain === 'function' ? _gdClonePlain(game) : { ...game };
     _gdCurrentCustomDetails = _gdLoadCustomDetails(game);
     if (_gdCurrentCustomDetails) game = _gdApplyCustomToGame(game, _gdCurrentCustomDetails);
     _gdCurrentGame = game;
@@ -2109,6 +2111,7 @@ window.closeGameDetails = function() {
     _gdCurrentGameId = null;
     _gdCurrentMeta   = null;
     _gdCurrentGame   = null;
+    _gdCurrentBaseGame = null;
     _gdAchievementsLoaded = false;
     _gdViewToken = null;
     clearInterval(_gdDownloadInterval);
@@ -2386,6 +2389,133 @@ function _gdResolvePlaytimeForGame(game) {
 // ──────────────────────────────────────────
 //  BASIC DATA (no API needed)
 // ──────────────────────────────────────────
+function _gdHasArtworkValue(value) {
+    return typeof value === 'string' && value.trim().length > 0;
+}
+
+function _gdConfidenceFromMeta(metaData) {
+    const raw = metaData?.quality?.confidence ?? metaData?.confidence ?? null;
+    if (raw === null || raw === undefined || raw === '') return null;
+    const numeric = Number(raw);
+    if (!Number.isFinite(numeric)) return null;
+    return numeric > 1 ? Math.max(0, Math.min(1, numeric / 100)) : Math.max(0, Math.min(1, numeric));
+}
+
+function _gdMetadataArtworkFromMeta(metaData) {
+    if (!metaData || typeof metaData !== 'object') return null;
+    const confidence = _gdConfidenceFromMeta(metaData);
+    const verified = metaData.verified === true || metaData._serverData?.verified === true || (confidence !== null && confidence >= 0.75);
+    return {
+        cover: metaData.cover || metaData.image || null,
+        hero: metaData.heroImage || metaData.hero || null,
+        logo: metaData.logo || null,
+        confidence,
+        verified,
+        updatedAt: metaData.updatedAt || metaData.artworkUpdatedAt || null,
+    };
+}
+
+function _gdResolveArtworkForDisplay(game, metaData = null) {
+    const adapter = window.BaddelGameDetailsArtworkAdapter;
+    if (metaData?._creatorCustom && adapter?.legacyGameDetailsArtwork) {
+        return adapter.legacyGameDetailsArtwork({ game, metaData });
+    }
+    const baseGame = _gdCurrentBaseGame || game || {};
+    const legacyMeta = metaData?._creatorCustom ? null : metaData;
+    const creatorDetails = metaData?._creatorCustom ? null : (_gdCurrentCustomDetails || _gdLoadCustomDetails(baseGame));
+
+    if (!adapter || typeof adapter.resolveGameDetailsArtwork !== 'function') {
+        return {
+            cover: { value: game?.image || game?.coverUrl || game?.defaultImage || legacyMeta?.cover || null, source: 'legacy-fallback', reason: 'adapter unavailable' },
+            hero: { value: game?.heroImage || game?.heroUrl || game?.defaultHero || legacyMeta?.heroImage || legacyMeta?.hero || null, source: 'legacy-fallback', reason: 'adapter unavailable' },
+            logo: { value: game?.logo || game?.logoUrl || game?.defaultLogo || legacyMeta?.logo || null, source: 'legacy-fallback', reason: 'adapter unavailable' },
+        };
+    }
+
+    try {
+        return adapter.resolveGameDetailsArtwork({
+            game: baseGame,
+            settingsArtwork: adapter.explicitSettingsArtworkFromGame?.(baseGame) || null,
+            creatorArtwork: adapter.creatorArtworkFromCustomDetails?.(creatorDetails) || null,
+            metadataArtwork: _gdMetadataArtworkFromMeta(legacyMeta),
+            metaData: legacyMeta,
+        });
+    } catch {
+        return adapter.legacyGameDetailsArtwork({ game, metaData: legacyMeta });
+    }
+}
+
+function _gdApplyArtworkDiagnostics(el, type, decision) {
+    if (!el || !decision) return;
+    el.dataset.artworkType = type;
+    el.dataset.artworkSource = decision.source || '';
+    el.dataset.artworkReason = decision.reason || '';
+}
+
+function _gdApplyResolvedArtworkToDom(game, metaData = null) {
+    const art = _gdResolveArtworkForDisplay(game, metaData);
+    const name = game?.name || game?.title || '';
+
+    const logoEl = document.getElementById('gdLogo');
+    const titleEl = document.getElementById('gdTitle');
+    const logoSrc = art?.logo?.value || null;
+    if (logoSrc && logoEl) {
+        logoEl.onerror = function _gdLogoOnErrorResolved() {
+            this.onerror = null;
+            this.style.display = 'none';
+            if (titleEl) titleEl.style.display = 'block';
+        };
+        logoEl.src = logoSrc;
+        logoEl.style.display = 'block';
+        if (titleEl) titleEl.style.display = 'none';
+    } else {
+        if (logoEl) {
+            logoEl.onerror = null;
+            logoEl.removeAttribute('src');
+            logoEl.style.display = 'none';
+        }
+        if (titleEl) titleEl.style.display = 'block';
+    }
+    _gdApplyArtworkDiagnostics(logoEl, 'logo', art?.logo);
+
+    const heroBg = document.getElementById('gdHeroBg');
+    const heroSrc = art?.hero?.value || null;
+    if (heroBg) heroBg.style.background = '';
+    if (heroSrc && heroBg) {
+        _gdClearProceduralHero();
+        heroBg.style.backgroundImage = `url('${heroSrc.replace(/\\/g, '/')}')`;
+    } else if (heroBg) {
+        _gdApplyProceduralHero(name);
+    }
+    _gdApplyArtworkDiagnostics(heroBg, 'hero', art?.hero);
+
+    const coverImg = document.getElementById('gdCover');
+    const coverPlaceholder = document.getElementById('gdCoverPlaceholder');
+    const coverSrc = art?.cover?.value || null;
+    if (coverSrc && coverImg) {
+        _gdClearProceduralCard();
+        coverImg.onerror = function _gdCoverErrResolved() {
+            this.onerror = null;
+            this.style.display = 'none';
+            _gdApplyProceduralCard(name);
+            if (coverPlaceholder) coverPlaceholder.style.display = 'flex';
+        };
+        coverImg.src = coverSrc;
+        coverImg.style.display = 'block';
+        if (coverPlaceholder) coverPlaceholder.style.display = 'none';
+    } else {
+        if (coverImg) {
+            coverImg.removeAttribute('src');
+            coverImg.style.display = 'none';
+        }
+        _gdApplyProceduralCard(name);
+        if (coverPlaceholder) coverPlaceholder.style.display = 'flex';
+    }
+    _gdApplyArtworkDiagnostics(coverImg, 'cover', art?.cover);
+
+    return art;
+}
+
 function _gdPopulateBasic(game) {
     // Breadcrumb + title
     document.getElementById('gdBreadcrumbName').textContent = game.name;
@@ -2393,49 +2523,7 @@ function _gdPopulateBasic(game) {
     document.getElementById('gdTitle').style.display = 'block';
     document.getElementById('gdLogo').style.display  = 'none';
 
-    // Logo
-    if (game.logo) {
-        const logoEl = document.getElementById('gdLogo');
-        logoEl.onerror = function _gdLogoOnErrorEarly() {
-            this.onerror = null;
-            this.style.display = 'none';
-            document.getElementById('gdTitle').style.display = 'block';
-        };
-        logoEl.src = game.logo;
-        logoEl.style.display = 'block';
-        document.getElementById('gdTitle').style.display = 'none';
-    }
-
-    const heroBg = document.getElementById('gdHeroBg');
-    const heroSrc = game.heroImage || '';
-    if (heroBg) heroBg.style.background = '';
-    if (heroSrc && heroBg) {
-        _gdClearProceduralHero();
-        heroBg.style.backgroundImage = `url('${heroSrc.replace(/\\/g, '/')}')`;
-    } else if (heroBg) {
-        _gdApplyProceduralHero(game.name);
-    }
-
-    const coverImg = document.getElementById('gdCover');
-    if (game.image && coverImg) {
-        _gdClearProceduralCard();
-        coverImg.onerror = function _gdCoverErrBasic() {
-            this.onerror = null;
-            this.style.display = 'none';
-            _gdApplyProceduralCard(game.name);
-            const ph = document.getElementById('gdCoverPlaceholder');
-            if (ph) ph.style.display = 'flex';
-        };
-        coverImg.src = game.image;
-    } else {
-        if (coverImg) {
-            coverImg.removeAttribute('src');
-            coverImg.style.display = 'none';
-        }
-        _gdApplyProceduralCard(game.name);
-        const ph = document.getElementById('gdCoverPlaceholder');
-        if (ph) ph.style.display = 'flex';
-    }
+    _gdApplyResolvedArtworkToDom(game, null);
 
     // Cover initials
     document.getElementById('gdCoverInitials').textContent =
@@ -4207,6 +4295,8 @@ const heroSrc = artLocked
     }
 
     // في _gdPopulateMeta، قبل "if (media.length > 0)"
+    _gdApplyResolvedArtworkToDom(game, metaData);
+
     const screenshotContainer = document.getElementById('gdScreenshots');
     const media = info.screenshots || [];
 
@@ -9014,6 +9104,7 @@ window._gdApplyExternalPatch = function(matchGame, patch) {
         _gdCurrentGame.artworkUpdatedAt = patch.artworkUpdatedAt || Date.now();
         _gdCurrentGame.customArtworkLocked = true;
     }
+    _gdCurrentBaseGame = typeof _gdClonePlain === 'function' ? _gdClonePlain(_gdCurrentGame) : { ..._gdCurrentGame };
     if (typeof _gdClonePlain === 'function') {
         _gdCreatorSessionBaseGame  = _gdClonePlain(_gdCurrentGame);
         _gdCreatorSessionSavedGame = _gdClonePlain(_gdCurrentGame);
@@ -9021,6 +9112,7 @@ window._gdApplyExternalPatch = function(matchGame, patch) {
     const view = document.getElementById('gameDetailsView');
     if (view && view.style.display !== 'none') {
         try { _gdPopulateBasic(_gdCurrentGame); } catch (_) {}
+        try { _gdApplyResolvedArtworkToDom(_gdCurrentGame, _gdCurrentMeta); } catch (_) {}
     }
 };
 
