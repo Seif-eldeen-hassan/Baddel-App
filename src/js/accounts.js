@@ -2601,11 +2601,42 @@ const _vs = {
 };
 window._vs = _vs;
 
+function _agLegacyCoverForResolver(game) {
+    return game?.coverUrl || game?.image || game?.defaultImage || game?.cover || game?.posterImage || '';
+}
+
+function _agResolveAllGamesCoverDecision(game) {
+    const legacyCover = _agLegacyCoverForResolver(game);
+    const adapter = window.BaddelAllGamesArtworkAdapter;
+
+    if (!adapter || typeof adapter.resolveAllGamesArtwork !== 'function') {
+        return {
+            value: legacyCover,
+            source: legacyCover ? 'legacy-fallback' : 'placeholder',
+            reason: adapter ? 'All Games artwork adapter unavailable' : 'All Games artwork adapter not loaded',
+            usedFallback: true,
+        };
+    }
+
+    try {
+        const result = adapter.resolveAllGamesArtwork({ game });
+        if (result?.value) return result;
+    } catch {}
+
+    return {
+        value: legacyCover,
+        source: legacyCover ? 'legacy-fallback' : 'placeholder',
+        reason: legacyCover ? 'legacy All Games cover fallback' : 'no All Games cover candidate',
+        usedFallback: true,
+    };
+}
+
 
 function _vsApplyCoverToCard(card, game, force = false) {
     if (!card || !game) return false;
 
-    const rawCover = game.coverUrl || game.image || game.defaultImage;
+    const coverDecision = _agResolveAllGamesCoverDecision(game);
+    const rawCover = coverDecision.value;
     if (!rawCover) return false;
 
     const cover = String(rawCover || '');
@@ -2654,6 +2685,8 @@ game._agCoverInFlight = false;
 
     card.classList.remove('loading', 'skeleton', 'is-loading');
     card.dataset.coverUrl = cover;
+    card.dataset.artworkSource = coverDecision.source || '';
+    card.dataset.artworkReason = coverDecision.reason || '';
 
     return true;
 }
@@ -2679,7 +2712,8 @@ function _vsBuildCard(game) {
     }
 
     const isMulti = (game.platforms || []).length > 1;
-    const rawCover = game.coverUrl || game.image || game.defaultImage || '';
+    const coverDecision = _agResolveAllGamesCoverDecision(game);
+    const rawCover = coverDecision.value || '';
     const cover = _agIsUsableCardCover(rawCover, game) ? _agAttrUrl(rawCover) : '';
 
     const card = document.createElement('div');
@@ -2688,6 +2722,8 @@ function _vsBuildCard(game) {
     card.dataset.title = (game.title || '').toLowerCase();
     card.dataset.platforms = (game.platforms || []).join(',');
     card.dataset.allIds = JSON.stringify(game.allIds || {});
+    card.dataset.artworkSource = coverDecision.source || '';
+    card.dataset.artworkReason = coverDecision.reason || '';
 
     card.innerHTML = `
         <div class="game-card-img-wrap">

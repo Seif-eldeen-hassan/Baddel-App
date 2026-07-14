@@ -1,10 +1,16 @@
 'use strict';
 
+;(function () {
+const _artworkResolverRoot = typeof window !== 'undefined' ? window : globalThis;
+const _artworkPolicy = (typeof require === 'function')
+    ? require('../../domain/services/ArtworkOwnershipPolicy')
+    : _artworkResolverRoot.BaddelArtworkOwnershipPolicy;
+
 const {
     ARTWORK_TYPES,
     normalizeArtworkCandidate,
     resolveArtworkType,
-} = require('../../domain/services/ArtworkOwnershipPolicy');
+} = _artworkPolicy;
 
 const ALIASES = Object.freeze({
     cover: Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage']),
@@ -189,9 +195,18 @@ function resolveGameArtwork({
     return Object.freeze(output);
 }
 
-module.exports = {
+const GameArtworkResolver = {
     ALIASES,
     normalizeArtworkAliases,
     resolveArtworkType,
     resolveGameArtwork,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = GameArtworkResolver;
+}
+
+if (_artworkResolverRoot) {
+    _artworkResolverRoot.BaddelGameArtworkResolver = GameArtworkResolver;
+}
+}());

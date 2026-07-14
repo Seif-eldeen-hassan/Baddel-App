@@ -1,5 +1,8 @@
 'use strict';
 
+;(function () {
+const _artworkPolicyRoot = typeof window !== 'undefined' ? window : globalThis;
+
 const ARTWORK_TYPES = Object.freeze(['cover', 'hero', 'logo']);
 
 const SOURCE_TIERS = Object.freeze({
@@ -180,10 +183,19 @@ function resolveArtworkType({ type, candidates = [], fallback = null, context = 
     return Object.freeze(output);
 }
 
-module.exports = {
+const ArtworkOwnershipPolicy = {
     ARTWORK_TYPES,
     SOURCE_TIERS,
     normalizeArtworkCandidate,
     isCandidateEligible,
     resolveArtworkType,
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = ArtworkOwnershipPolicy;
+}
+
+if (_artworkPolicyRoot) {
+    _artworkPolicyRoot.BaddelArtworkOwnershipPolicy = ArtworkOwnershipPolicy;
+}
+}());
