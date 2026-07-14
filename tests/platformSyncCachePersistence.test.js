@@ -10,6 +10,7 @@ const { EventEmitter } = require('node:events');
 
 const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
+const CONNECTOR_REPOSITORY_BUNDLE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'ConnectorRepositoryBundle.js');
 const SYNC_REPOSITORIES_DIR = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'repositories');
 const PLATFORM_SYNC_CACHE_REPOSITORY_PATH = path.join(SYNC_REPOSITORIES_DIR, 'PlatformSyncCacheRepository.js');
 
@@ -464,10 +465,12 @@ test('epic unlink for a missing account keeps cached ownership unchanged', async
 
 test('platformSync delegates sync cache persistence to the cache repository', () => {
     const platformSyncSource = fs.readFileSync(PLATFORM_SYNC_PATH, 'utf8');
+    const bundleSource = fs.readFileSync(CONNECTOR_REPOSITORY_BUNDLE_PATH, 'utf8');
     const repositorySource = fs.readFileSync(PLATFORM_SYNC_CACHE_REPOSITORY_PATH, 'utf8');
 
-    assert.match(platformSyncSource, /PlatformSyncCacheRepository/);
-    assert.match(platformSyncSource, /syncCacheRepository\s*=\s*new PlatformSyncCacheRepository\(\{\s*userDataDir:\s*app\.getPath\(['"]userData['"]\)\s*\}\)/);
+    assert.match(platformSyncSource, /createConnectorRepositoryBundle/);
+    assert.match(platformSyncSource, /cacheRepositoryOptions:\s*\{\s*userDataDir:\s*app\.getPath\(['"]userData['"]\)\s*\}/);
+    assert.doesNotMatch(platformSyncSource, /new\s+PlatformSyncCacheRepository/);
     assert.match(platformSyncSource, /syncCacheRepository\.readSteamAccountsSync\(\)/);
     assert.match(platformSyncSource, /syncCacheRepository\.readEpicAccountsSync\(\)/);
     assert.match(platformSyncSource, /syncCacheRepository\.writeSteamMergedLibrary/);
@@ -476,6 +479,8 @@ test('platformSync delegates sync cache persistence to the cache repository', ()
     assert.match(platformSyncSource, /async getCachedLibrary\(\)/);
     assert.match(platformSyncSource, /async unlink\(accountId\)/);
 
+    assert.match(bundleSource, /PlatformSyncCacheRepository/);
+    assert.match(bundleSource, /new\s+PlatformSyncCacheRepository\(cacheRepositoryOptions\)/);
     assert.match(repositorySource, /path\.join\(userDataDir,\s*['"]platform-sync['"]\)/);
     assert.match(repositorySource, /steam_accounts\.json/);
     assert.match(repositorySource, /steam_library_merged\.json/);

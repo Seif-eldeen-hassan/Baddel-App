@@ -32,11 +32,8 @@ const {
     steamGameBelongsToAccount,
 } = require('./src/features/sync/domain/services/syncLibraryRules');
 const {
-    EpicSwitcherRepository,
-} = require('./src/features/sync/infrastructure/repositories/EpicSwitcherRepository');
-const {
-    PlatformSyncCacheRepository,
-} = require('./src/features/sync/infrastructure/repositories/PlatformSyncCacheRepository');
+    createConnectorRepositoryBundle,
+} = require('./src/features/sync/infrastructure/composition/ConnectorRepositoryBundle');
 const {
     PollSteamApprovalUseCase,
 } = require('./src/features/sync/application/useCases/PollSteamApprovalUseCase');
@@ -79,7 +76,15 @@ function getGamesApi() {
 
 // ─── Paths ───────────────────────────────────────────────────
 const LEGENDARY_BIN      = path.join(__dirname, 'bin', 'legendary.exe');
-const syncCacheRepository = new PlatformSyncCacheRepository({ userDataDir: app.getPath('userData') });
+const {
+    syncCacheRepository,
+    epicSwitcherRepository,
+} = createConnectorRepositoryBundle({
+    cacheRepositoryOptions: { userDataDir: app.getPath('userData') },
+    epicSwitcherRepositoryOptions: {
+        accountsRootDir: path.join(app.getPath('userData'), 'accounts'),
+    },
+});
 const SYNC_CACHE_DIR     = syncCacheRepository.syncCacheDir;
 const SYNC_LOGS_DIR      = syncCacheRepository.syncLogsDir;
 
@@ -418,10 +423,7 @@ async function _writeSwitcherSyncLink(platform, switcherProfileName, platformAcc
 // real switcher profile folder already exists. For Epic it also verifies the folder
 // contains actual session data (Data/, Config/, etc.) so phantom folders are ignored.
 async function _writeSyncLinkToExistingSwitcherProfile(platform, profileName, platformAccountId, extra = {}) {
-    const repository = new EpicSwitcherRepository({
-        accountsRootDir: path.join(app.getPath('userData'), 'accounts'),
-    });
-    const result = await repository.writeSyncLinkToExistingProfile(platform, profileName, platformAccountId, extra);
+    const result = await epicSwitcherRepository.writeSyncLinkToExistingProfile(platform, profileName, platformAccountId, extra);
     if (result.ok) return true;
     if (result.reason === 'missing_profile') {
         syncLog(`[PlatformSync] No existing ${platform} switcher profile "${profileName}"; skipping sync_link write.`);
@@ -436,10 +438,7 @@ async function _writeSyncLinkToExistingSwitcherProfile(platform, profileName, pl
 // Searches existing Epic switcher profiles for one that matches by account ID or
 // display name. Returns the profile folder name if found, null otherwise.
 async function _findMatchingEpicSwitcherProfile(accountId, displayName) {
-    const repository = new EpicSwitcherRepository({
-        accountsRootDir: path.join(app.getPath('userData'), 'accounts'),
-    });
-    return repository.findMatchingEpicProfile(accountId, displayName);
+    return epicSwitcherRepository.findMatchingEpicProfile(accountId, displayName);
 }
 
 async function mapWithConcurrency(items, limit, mapper) {

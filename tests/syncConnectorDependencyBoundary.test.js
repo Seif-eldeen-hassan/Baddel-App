@@ -13,6 +13,7 @@ const ROOT = path.resolve(__dirname, '..');
 const PLATFORM_SYNC_PATH = path.join(ROOT, 'platformSync.js');
 const MAIN_JS_PATH = path.join(ROOT, 'main.js');
 const SYNC_CONTAINER_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'SyncContainer.js');
+const CONNECTOR_REPOSITORY_BUNDLE_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'ConnectorRepositoryBundle.js');
 const CREATE_SYNC_CONNECTORS_PATH = path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'composition', 'createSyncConnectors.js');
 
 const CONNECTOR_METHODS = ['isLinked', 'getAccounts', 'link', 'syncLibrary', 'getCachedLibrary', 'unlink'];
@@ -143,10 +144,12 @@ test('platformSync still owns Electron login, session, notification, state, and 
 test('platformSync still owns repository, service, and Games feature dependencies', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
 
-    assert.match(source, /PlatformSyncCacheRepository/);
-    assert.match(source, /new\s+PlatformSyncCacheRepository\s*\(/);
-    assert.match(source, /EpicSwitcherRepository/);
-    assert.match(source, /new\s+EpicSwitcherRepository\s*\(/);
+    assert.equal(fs.existsSync(CONNECTOR_REPOSITORY_BUNDLE_PATH), true, 'ConnectorRepositoryBundle should exist after repository seam extraction');
+    assert.match(source, /createConnectorRepositoryBundle/);
+    assert.match(source, /syncCacheRepository/);
+    assert.match(source, /epicSwitcherRepository/);
+    assert.doesNotMatch(source, /new\s+PlatformSyncCacheRepository\s*\(/);
+    assert.doesNotMatch(source, /new\s+EpicSwitcherRepository\s*\(/);
     assert.match(source, /PlatformSyncAssetWriteBackService/);
     assert.match(source, /new\s+PlatformSyncAssetWriteBackService\s*\(/);
     assert.match(source, /PlatformSyncServerImportService/);

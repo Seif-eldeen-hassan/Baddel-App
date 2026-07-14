@@ -269,9 +269,24 @@ test('Epic switcher filesystem wrappers delegate to extracted repository', () =>
         'repositories',
         'EpicSwitcherRepository.js'
     );
+    const bundlePath = path.join(
+        __dirname,
+        '..',
+        'src',
+        'features',
+        'sync',
+        'infrastructure',
+        'composition',
+        'ConnectorRepositoryBundle.js'
+    );
+    const bundleSource = fs.readFileSync(bundlePath, 'utf8');
 
     assert.match(platformSyncSource, /async function _writeSyncLinkToExistingSwitcherProfile/);
     assert.match(platformSyncSource, /async function _findMatchingEpicSwitcherProfile/);
     assert.equal(fs.existsSync(repositoryPath), true);
-    assert.match(platformSyncSource, /EpicSwitcherRepository/);
+    assert.equal(fs.existsSync(bundlePath), true);
+    assert.match(platformSyncSource, /createConnectorRepositoryBundle/);
+    assert.match(platformSyncSource, /epicSwitcherRepository\.writeSyncLinkToExistingProfile/);
+    assert.match(platformSyncSource, /epicSwitcherRepository\.findMatchingEpicProfile/);
+    assert.match(bundleSource, /EpicSwitcherRepository/);
 });
