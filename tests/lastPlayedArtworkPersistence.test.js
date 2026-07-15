@@ -8,6 +8,7 @@ const path = require('path');
 const GAME_CARD_JS = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'game-card.js'), 'utf8');
 const ARTWORK_SYNC_JS = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
 const { resolveGameSurfaceArtwork } = require('../src/features/games/application/services/GameSurfaceArtworkAdapter');
+const { projectCanonicalArtwork } = require('../src/features/games/application/services/CanonicalArtworkProjection');
 
 function fnBlock(src, name, nextName) {
     const start = src.indexOf(`function ${name}`);
@@ -39,6 +40,33 @@ test('Last Played display helper is cover-first, with hero only as fallback', ()
     assert.ok(posterIdx < heroIdx);
 });
 
+test('Last Played display helper rejects unusable cover before hero fallback', () => {
+    const block = fnBlock(GAME_CARD_JS, '_getRecentDisplayImage', 'createRecentCard');
+    assert.match(block, /isUsableArtworkValue\(cover\)/);
+    assert.match(block, /isUsableArtworkValue\(hero\)/);
+    assert.ok(block.indexOf('isUsableArtworkValue(cover)') < block.indexOf('isUsableArtworkValue(hero)'));
+});
+
+test('Last Played canonical V2 projection supplies hero when legacy aliases are stale', () => {
+    const runtime = { id: 'runtime-g1', installedId: 'g1', image: null, heroImage: null };
+    const canonical = {
+        id: 'g1',
+        image: null,
+        heroImage: null,
+        artworkState: {
+            version: 2,
+            cover: { locked: false, overrideValue: null, fallbackValue: null, revision: 1 },
+            hero: { locked: true, overrideValue: 'file://hero.webp', overrideSource: 'creator', revision: 2 },
+            logo: { locked: false, overrideValue: null, fallbackValue: null, revision: 0 },
+        },
+    };
+
+    const projected = projectCanonicalArtwork(runtime, canonical, { matchReason: 'installed-id' });
+    const resolved = resolveGameSurfaceArtwork({ surface: 'jump-back-in', game: projected });
+    assert.equal(resolved.cover.value, null);
+    assert.equal(resolved.hero.value, 'file://hero.webp');
+});
+
 test('createRecentCard hydrates hero in the background without replacing an existing cover', () => {
     const block = fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass');
     const posterBranch = block.indexOf('if (recentPoster)');
@@ -47,6 +75,8 @@ test('createRecentCard hydrates hero in the background without replacing an exis
     assert.ok(heroBranch !== -1);
     assert.ok(posterBranch < heroBranch);
     assert.match(block, /hydrateRecentHeroArtwork\(game,\s*imgEl\)/);
+    assert.match(block, /imgEl\.onerror/);
+    assert.match(block, /jbiFallbackTried/);
 });
 
 test('hydrateRecentHeroArtwork updates hero cache but does not assign hero over imgEl.src', () => {

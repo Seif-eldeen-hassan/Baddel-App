@@ -229,6 +229,7 @@ class JsonGameRepository {
         source = 'server',
         mode = null,
         updatedAt = Date.now(),
+        expectedRevision = null,
     } = {}) {
         const normalized = normalizeArtworkWriteSource(source);
         const writeMode = mode || normalized.mode;
@@ -242,18 +243,23 @@ class JsonGameRepository {
             if (writeMode === 'clear-explicit') {
                 result = clearExplicitOverride(state, type, { updatedAt });
             } else if (writeMode === 'explicit') {
-                result = applyExplicitOverride(state, type, value, { source: normalized.source, updatedAt });
+                result = applyExplicitOverride(state, type, value, { source: normalized.source, updatedAt, expectedRevision });
             } else {
                 result = applyFallback(state, type, value, { source: normalized.source, updatedAt });
             }
             state = result.state;
+            const previous = result.previous || {};
             perType[type] = {
+                applied: result.applied === true,
                 status: result.applied ? 'applied' : 'skipped',
                 reason: result.reason,
                 value,
+                previousSource: previous.overrideSource || previous.fallbackSource || null,
                 source: normalized.source,
                 mode: writeMode,
+                previousRevision: previous.revision || 0,
                 revision: state[type]?.revision || 0,
+                effectiveValue: state[type]?.locked ? state[type]?.overrideValue : (state[type]?.fallbackValue || null),
             };
         }
 
@@ -267,6 +273,7 @@ class JsonGameRepository {
         updatedAt = Date.now(),
         mode = null,
         operationId = null,
+        expectedRevision = null,
     } = {}) {
         const requestedGameId = identity && typeof identity === 'object'
             ? (identity.gameId || identity.id || identity.localGameId || identity.installedId || null)
@@ -284,12 +291,12 @@ class JsonGameRepository {
         }
 
         const game = resolved.game;
-        const perType = this._applyArtworkUpdatesToGame(game, updates, { source, updatedAt, mode });
+        const perType = this._applyArtworkUpdatesToGame(game, updates, { source, updatedAt, mode, expectedRevision });
 
         try {
             await this.flushDatabase();
             return {
-                status: 'success',
+                status: Object.values(perType).some(r => r.applied === false) ? 'partial' : 'success',
                 requestedGameId,
                 canonicalGameId: game.id,
                 matchReason: resolved.reason,
@@ -332,7 +339,7 @@ class JsonGameRepository {
 
     // ─── Image mutations ──────────────────────────────────────────────────────
 
-    async updateGameMetadata(gameId, metadata, { source = 'server', force = false } = {}) {
+    async updateGameMetadata(gameId, metadata, { source = 'server', force = false, expectedRevision = null, operationId = null } = {}) {
         const requestedGameId = gameId && typeof gameId === 'object'
             ? (gameId.gameId || gameId.id || gameId.localGameId || gameId.installedId || null)
             : gameId;
@@ -358,6 +365,7 @@ class JsonGameRepository {
             (artLocked && source !== 'creator' && source !== 'settings') ||
             (!force && serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'));
         const artUpdates = {};
+        let perType = {};
         if (!skipArt) {
             if ('cover' in metadata && metadata.cover) artUpdates.cover = metadata.cover;
             if (('hero' in metadata || 'heroImage' in metadata) && (metadata.hero || metadata.heroImage)) {
@@ -373,14 +381,18 @@ class JsonGameRepository {
                 if ('logo' in artUpdates && !game.creatorOriginalLogo) game.creatorOriginalLogo = game.defaultLogo || game.logo || null;
             }
             const mode = source === 'creator' || source === 'settings' ? 'explicit' : 'fallback';
-            this._applyArtworkUpdatesToGame(game, artUpdates, {
+            perType = this._applyArtworkUpdatesToGame(game, artUpdates, {
                 source,
                 mode,
                 updatedAt: metadata.artworkUpdatedAt || Date.now(),
+                expectedRevision,
             });
         }
         if (!skipArt && source === 'creator' && Object.prototype.hasOwnProperty.call(metadata, 'logo') && metadata.logo === null) {
-            this._applyArtworkUpdatesToGame(game, { logo: null }, { source: 'creator', mode: 'clear-explicit', updatedAt: metadata.artworkUpdatedAt || Date.now() });
+            perType = {
+                ...perType,
+                ...this._applyArtworkUpdatesToGame(game, { logo: null }, { source: 'creator', mode: 'clear-explicit', updatedAt: metadata.artworkUpdatedAt || Date.now() }),
+            };
             this._applyArtworkUpdatesToGame(game, { logo: null }, { source: 'creator', mode: 'fallback', updatedAt: metadata.artworkUpdatedAt || Date.now() });
         }
 
@@ -438,10 +450,12 @@ class JsonGameRepository {
         try {
             await this.flushDatabase();
             return {
-                status: 'success',
+                status: Object.values(perType).some(r => r.applied === false) ? 'partial' : 'success',
                 requestedGameId,
                 canonicalGameId: game.id,
                 matchReason: resolved.reason,
+                operationId,
+                perType,
                 updatedGame: JSON.parse(JSON.stringify(game)),
                 persisted: true,
             };

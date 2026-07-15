@@ -9,7 +9,7 @@ const TYPE_ALIASES = Object.freeze({
 });
 
 const FALLBACK_SOURCES = new Set(['scanner', 'platform', 'pipeline', 'server', 'server-details', 'addManual', 'jump-back-in', 'manual', 'metadata', 'sync', 'reset']);
-const EXPLICIT_PRIORITY = Object.freeze({ creator: 10, settings: 20 });
+const EXPLICIT_USER_SOURCES = new Set(['settings', 'creator']);
 
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -62,7 +62,7 @@ function _legacyVisible(game, type) {
 }
 
 function _isExplicitSource(source) {
-    return source === 'settings' || source === 'creator';
+    return EXPLICIT_USER_SOURCES.has(source);
 }
 
 function migrateLegacyArtworkState(game = {}) {
@@ -110,31 +110,35 @@ function getEffectiveArtwork(stateLike, type) {
     return item.locked && _hasValue(item.overrideValue) ? item.overrideValue : (item.fallbackValue || null);
 }
 
-function canApplyArtworkWrite(stateLike, type, { source = 'server', mode = 'fallback' } = {}) {
+function canApplyArtworkWrite(stateLike, type, { source = 'server', mode = 'fallback', expectedRevision = null } = {}) {
     const state = createArtworkState(stateLike);
     const item = state[type];
     if (!item) return false;
     if (mode !== 'explicit') return true;
     if (!item.locked || !_hasValue(item.overrideValue)) return true;
-    const current = EXPLICIT_PRIORITY[item.overrideSource] || 0;
-    const incoming = EXPLICIT_PRIORITY[source] || 0;
-    return incoming >= current;
+    if (!_isExplicitSource(source)) return false;
+    if (expectedRevision != null && Number(expectedRevision) < Number(item.revision || 0)) return false;
+    return _isExplicitSource(item.overrideSource);
 }
 
-function applyExplicitOverride(stateLike, type, value, { source = 'settings', updatedAt = Date.now() } = {}) {
+function applyExplicitOverride(stateLike, type, value, { source = 'settings', updatedAt = Date.now(), expectedRevision = null } = {}) {
     const state = createArtworkState(stateLike);
     const item = state[type];
     if (!item) return { state, applied: false, reason: 'unknown-type' };
     if (!_hasValue(value)) return { state, applied: false, reason: 'empty-value' };
-    if (!canApplyArtworkWrite(state, type, { source, mode: 'explicit' })) {
-        return { state, applied: false, reason: 'lower-priority-explicit-owner' };
+    const previous = { ...item };
+    if (!canApplyArtworkWrite(state, type, { source, mode: 'explicit', expectedRevision })) {
+        const reason = expectedRevision != null && Number(expectedRevision) < Number(item.revision || 0)
+            ? 'stale-revision'
+            : 'non-user-source-blocked';
+        return { state, applied: false, reason, previous };
     }
     item.overrideValue = value;
     item.overrideSource = source;
     item.locked = true;
     item.updatedAt = updatedAt;
     item.revision = (item.revision || 0) + 1;
-    return { state, applied: true, reason: 'explicit' };
+    return { state, applied: true, reason: previous.locked ? 'explicit-user-replaced' : 'explicit-user', previous };
 }
 
 function applyFallback(stateLike, type, value, { source = 'server', updatedAt = Date.now() } = {}) {

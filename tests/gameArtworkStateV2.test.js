@@ -66,14 +66,55 @@ test('Artwork State V2: Creator poster updates cover only and does not replace h
     assert.equal(saved.artworkState.hero.overrideSource, 'creator');
 });
 
-test('Artwork State V2: Settings owner rejects lower-priority Creator cover for the same type', async () => {
+test('Artwork State V2: Settings cover can be replaced by a newer Creator cover', async () => {
     const repo = makeRepo([game()]);
 
     await repo.setGameArtwork('g1', { cover: 'file://settings-cover.webp' }, { source: 'settings' });
     const res = await repo.updateGameMetadata('g1', { cover: 'file://creator-cover.webp' }, { source: 'creator' });
 
     assert.equal(res.status, 'success');
+    assert.equal(res.perType.cover.applied, true);
+    const saved = repo.getGameById('g1');
+    assert.equal(saved.image, 'file://creator-cover.webp');
+    assert.equal(saved.artworkState.cover.overrideSource, 'creator');
+});
+
+test('Artwork State V2: Creator cover can be replaced by a newer Settings cover', async () => {
+    const repo = makeRepo([game()]);
+
+    await repo.updateGameMetadata('g1', { cover: 'file://creator-cover.webp' }, { source: 'creator' });
+    const res = await repo.setGameArtwork('g1', { cover: 'file://settings-cover.webp' }, { source: 'settings' });
+
+    assert.equal(res.status, 'success');
     const saved = repo.getGameById('g1');
     assert.equal(saved.image, 'file://settings-cover.webp');
     assert.equal(saved.artworkState.cover.overrideSource, 'settings');
+});
+
+test('Artwork State V2: stale explicit operation cannot replace newer revision', async () => {
+    const repo = makeRepo([game()]);
+
+    await repo.setGameArtwork('g1', { cover: 'file://settings-cover.webp' }, { source: 'settings' });
+    const currentRevision = repo.getGameById('g1').artworkState.cover.revision;
+    await repo.updateGameMetadata('g1', { cover: 'file://creator-cover.webp' }, { source: 'creator' });
+    const res = await repo.setGameArtwork('g1', { cover: 'file://stale-settings.webp' }, {
+        source: 'settings',
+        expectedRevision: currentRevision,
+    });
+
+    assert.equal(res.status, 'partial');
+    assert.equal(res.perType.cover.applied, false);
+    assert.equal(res.perType.cover.reason, 'stale-revision');
+    assert.equal(repo.getGameById('g1').image, 'file://creator-cover.webp');
+});
+
+test('Artwork State V2: metadata force cannot replace explicit user artwork', async () => {
+    const repo = makeRepo([game()]);
+
+    await repo.updateGameMetadata('g1', { cover: 'file://creator-cover.webp' }, { source: 'creator' });
+    await repo.updateGameMetadata('g1', { cover: 'file://metadata-cover.webp' }, { source: 'pipeline', force: true });
+
+    const saved = repo.getGameById('g1');
+    assert.equal(saved.image, 'file://creator-cover.webp');
+    assert.notEqual(saved.artworkState.cover.fallbackValue, 'file://metadata-cover.webp');
 });

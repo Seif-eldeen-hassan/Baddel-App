@@ -9140,7 +9140,7 @@ window.gdCreatorSave = async function() {
     // ── Guard: nothing to save ───────────────────────────────────────────────
     if (!_gdCurrentGame || !_gdCreatorDraft) {
         console.debug('[GD][Creator] save ignored — no draft');
-        if (typeof showToast === 'function') showToast('Nothing to save.', 'info');
+        if (typeof showToast === 'function') showToast('No changes to save.', 'info');
         return;
     }
 
@@ -9215,6 +9215,16 @@ window.gdCreatorSave = async function() {
             logo:  logoCleared || _creatorChanged(newLogo, _creatorOriginal.logoImage || baseGame.logo || ''),
         };
         let _gdCreatorDbResult = null;
+        const _creatorRequestedTypes = Object.keys(_creatorDirtyTypes).filter(type => _creatorDirtyTypes[type] && (
+            type !== 'logo' ? (type === 'cover' ? newCover : newHero) : (newLogo || logoCleared)
+        ));
+        const _creatorFailureMessage = (res) => {
+            if (res?.message === 'Game not found' || res?.canonicalGameId === null) return 'Could not find the installed game record.';
+            const rejected = Object.entries(res?.perType || {}).filter(([, r]) => r?.applied === false);
+            if (rejected.some(([, r]) => r?.reason === 'stale-revision')) return 'Artwork changed elsewhere. Reload and try again.';
+            if (rejected.length) return 'Some artwork could not be saved: ' + rejected.map(([type]) => type).join(', ');
+            return 'Artwork could not be saved.';
+        };
 
         if (!_gdCreatorDbResult && window.electronAPI?.saveMetadata && gameId) {
             const ipcMeta = {
@@ -9229,8 +9239,16 @@ window.gdCreatorSave = async function() {
             try {
                 const res = await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
                 _gdCreatorDbResult = res;
-                if (!_gdCreatorDbResult || _gdCreatorDbResult.status !== 'success' || _gdCreatorDbResult.persisted !== true || !_gdCreatorDbResult.updatedGame) {
-                    throw new Error(_gdCreatorDbResult?.message || 'Creator artwork was not persisted.');
+                console.info('[ArtworkStateV2][CreatorSave]', {
+                    canonicalGameId: res?.canonicalGameId || null,
+                    requestedTypes: _creatorRequestedTypes,
+                    perType: res?.perType || {},
+                });
+                const rejected = Object.values(res?.perType || {}).filter(r => r?.applied === false);
+                if (!_gdCreatorDbResult || !['success', 'partial'].includes(_gdCreatorDbResult.status) || _gdCreatorDbResult.persisted !== true || !_gdCreatorDbResult.updatedGame || rejected.length) {
+                    const err = new Error(_creatorFailureMessage(_gdCreatorDbResult));
+                    err.creatorSaveResult = _gdCreatorDbResult;
+                    throw err;
                 }
                 const refreshId = res?.canonicalGameId || gameId;
                 await _gdRefreshGameFromDbAfterMutation(refreshId, {
@@ -9239,7 +9257,7 @@ window.gdCreatorSave = async function() {
                 });
             } catch (err) {
                 console.warn('[GD][Creator] saveMetadata IPC error:', err);
-                if (typeof showToast === 'function') showToast('Artwork save failed. Nothing was changed.', 'error');
+                if (typeof showToast === 'function') showToast(err?.message || 'Artwork could not be saved.', 'error');
                 return;
             }
         }

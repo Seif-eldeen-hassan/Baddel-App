@@ -610,6 +610,14 @@ function _getRecentPosterFallback(game) {
     return artwork.cover?.value || legacyPoster;
 }
 
+function isUsableArtworkValue(value) {
+    if (!value || typeof value !== 'string' || !value.trim()) return false;
+    const trimmed = value.trim();
+    if (trimmed === 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=') return false;
+    if (typeof safeImageUrl === 'function' && !safeImageUrl(trimmed)) return false;
+    return true;
+}
+
 function _canonicalizeRecentGame(game) {
     const projection = window.BaddelCanonicalArtworkProjection;
     if (!projection || typeof projection.projectFromRecords !== 'function') return game;
@@ -624,11 +632,16 @@ function _canonicalizeRecentGame(game) {
 }
 
 function _getRecentDisplayImage(game) {
-    return (
-        _getRecentPosterFallback(game) ||
-        _getRecentHeroCandidate(game) ||
-        'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
-    );
+    const cover = _getRecentPosterFallback(game);
+    const hero = _getRecentHeroCandidate(game);
+    if (typeof isUsableArtworkValue === 'function') {
+        if (isUsableArtworkValue(cover)) return cover;
+        if (isUsableArtworkValue(hero)) return hero;
+    } else {
+        if (cover) return cover;
+        if (hero) return hero;
+    }
+    return 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 }
 
 // hydrateRecentHeroArtwork lives in src/js/app/artwork-sync.js
@@ -660,7 +673,7 @@ function createRecentCard(game, isFeatured = false) {
     card.innerHTML = `
         <div class="jbi-cover">
             <div class="jbi-cover-placeholder"></div>
-            <img class="jbi-cover-img" src="${_jbiImg}" alt="${_jbiName}" onerror="this.style.opacity='0'">
+            <img class="jbi-cover-img" src="${_jbiImg}" alt="${_jbiName}">
         </div>
         <div class="jbi-body">
             <span class="jbi-last-played">LAST PLAYED · ${escapeHtml(lastPlayedLabel)}</span>
@@ -699,19 +712,37 @@ function createRecentCard(game, isFeatured = false) {
     const recentPoster = _getRecentPosterFallback(game);
 
     if (recentPoster) {
-        imgEl.src = safeImageUrl(recentPoster);
-        checkBackgroundAssets?.(game);
-        hydrateRecentHeroArtwork(game, imgEl).catch(err => {
-            console.warn('[JumpBackIn] hero hydration failed:', err);
-        });
+        if (isUsableArtworkValue(recentPoster)) {
+            imgEl.src = safeImageUrl(recentPoster);
+            checkBackgroundAssets?.(game);
+            hydrateRecentHeroArtwork(game, imgEl).catch(err => {
+                console.warn('[JumpBackIn] hero hydration failed:', err);
+            });
+        } else if (recentHero && isUsableArtworkValue(recentHero)) {
+            imgEl.src = safeImageUrl(recentHero);
+            checkBackgroundAssets?.(game);
+        }
     } else if (recentHero) {
-        imgEl.src = safeImageUrl(recentHero);
-        checkBackgroundAssets?.(game);
+        if (isUsableArtworkValue(recentHero)) {
+            imgEl.src = safeImageUrl(recentHero);
+            checkBackgroundAssets?.(game);
+        }
     } else {
         hydrateRecentHeroArtwork(game, imgEl).catch(err => {
             console.warn('[JumpBackIn] hero hydration failed:', err);
         });
     }
+
+    let jbiFallbackTried = false;
+    imgEl.onerror = () => {
+        if (!jbiFallbackTried && isUsableArtworkValue(recentHero) && imgEl.src !== safeImageUrl(recentHero)) {
+            jbiFallbackTried = true;
+            imgEl.src = safeImageUrl(recentHero);
+            return;
+        }
+        imgEl.onerror = null;
+        imgEl.style.opacity = '0';
+    };
 
     // Hero update on hover (same as createGameCard)
     card.addEventListener('mouseenter', () => {

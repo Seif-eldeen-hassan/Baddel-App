@@ -21,6 +21,7 @@ const _COPY_FIELDS = [
     'image', 'cover', 'coverUrl', 'defaultImage',
     'hero', 'heroImage', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl',
     'logo', 'logoUrl', 'defaultLogo',
+    'artworkState',
     'customArtworkLocked', 'artworkSource', 'artworkUpdatedAt',
     'id', 'installedGameKey', 'allIds', 'steamAppId', 'steam_appid', 'appId', 'appid',
     'appName', 'launcherGameId', 'namespace', 'catalogNamespace', 'catalogItemId',
@@ -67,7 +68,8 @@ function normalizeArtworkAliases(game) {
 }
 
 function projectCanonicalArtwork(displayGame, canonicalGame, { matchReason = null } = {}) {
-    if (!displayGame || !canonicalGame || !_hasExplicitArtwork(canonicalGame)) return normalizeArtworkAliases(displayGame);
+    if (!displayGame || !canonicalGame) return normalizeArtworkAliases(displayGame);
+    if (!_hasExplicitArtwork(canonicalGame) && canonicalGame.artworkState?.version !== 2) return normalizeArtworkAliases(displayGame);
     const projected = { ...displayGame };
     const displayId = displayGame.id;
     _copyDefined(projected, canonicalGame, _COPY_FIELDS);
