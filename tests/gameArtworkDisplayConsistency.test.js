@@ -203,20 +203,14 @@ test('source guard: Game Details currently has an independent custom metadata me
     assert.match(fnBody, /custom\.logoImage/);
 });
 
-test('source guard: Play Launcher currently has its own artwork fallback list', () => {
+test('source guard: Play Launcher delegates display selection to its artwork adapter', () => {
     const src = readRepoFile('src', 'js', 'play-launcher.js');
-    const heroIdx = src.indexOf('const hero = _plFirstAsset');
-    const logoIdx = src.indexOf('const logo = _plFirstAsset');
-    assert.ok(heroIdx !== -1, 'hero _plFirstAsset call must exist');
-    assert.ok(logoIdx !== -1, 'logo _plFirstAsset call must exist');
+    const helperIdx = src.indexOf('function _plResolveArtworkForDisplay');
+    assert.ok(helperIdx !== -1, '_plResolveArtworkForDisplay must exist');
 
-    const heroBody = src.slice(heroIdx, heroIdx + 900);
-    const logoBody = src.slice(logoIdx, logoIdx + 500);
+    const helperBody = src.slice(helperIdx, src.indexOf('async function _plResolveLaunchOverlayAssets'));
 
-    assert.match(heroBody, /game\?\.heroImage/);
-    assert.match(heroBody, /fullMeta/);
-    assert.match(heroBody, /cachedHero/);
-    assert.match(heroBody, /game\?\.image/);
-    assert.match(logoBody, /game\?\.logo/);
-    assert.match(logoBody, /cachedLogo/);
+    assert.match(helperBody, /BaddelPlayLauncherArtworkAdapter/);
+    assert.match(helperBody, /resolvePlayLauncherArtwork/);
+    assert.match(helperBody, /legacyPlayLauncherArtwork/);
 });

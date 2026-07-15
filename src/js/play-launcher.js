@@ -258,8 +258,9 @@ function _plBuildModal(game, platforms) {
     document.getElementById('playLauncherModal')?.remove();
 
     const gameName  = game.name || 'Unknown Game';
-    const gameImage = game.image || '';
-    const heroBg    = game.heroImage || game.image || '';
+    const artwork   = _plResolveArtworkForDisplay(game);
+    const gameImage = artwork.cover?.value || '';
+    const heroBg    = artwork.hero?.value || gameImage || '';
 
     const modal = document.createElement('div');
     modal.id        = 'playLauncherModal';
@@ -720,6 +721,73 @@ function _plCssUrl(value) {
     return s.replace(/\\/g, '/').replace(/'/g, "\\'");
 }
 
+function _plValidArtworkItem(item) {
+    return item && typeof item === 'object' && String(item.value || '').trim();
+}
+
+function _plResolveArtworkForDisplay(game, { fullMeta = null, cacheArtwork = null, placeholders = null } = {}) {
+    const adapter = window.BaddelPlayLauncherArtworkAdapter;
+    const legacy = adapter?.legacyPlayLauncherArtwork || function() {
+        const cover = _plFirstAsset(
+            game?.image,
+            game?.cover,
+            game?.coverUrl,
+            game?.defaultImage,
+            game?.posterImage,
+            game?.coverImage,
+            fullMeta?.cover,
+            fullMeta?.image,
+            fullMeta?.posterImage,
+            fullMeta?.coverImage,
+            cacheArtwork?.cover
+        );
+        const hero = _plFirstAsset(
+            game?.heroImage,
+            game?.hero,
+            game?.defaultHero,
+            game?.background,
+            fullMeta?.heroImage,
+            fullMeta?.hero,
+            fullMeta?.defaultHero,
+            fullMeta?.background,
+            fullMeta?.assets?.hero,
+            fullMeta?.assets?.heroImage,
+            cacheArtwork?.hero,
+            cacheArtwork?.cover,
+            cover
+        );
+        const logo = _plFirstAsset(
+            game?.logo,
+            game?.defaultLogo,
+            fullMeta?.logo,
+            fullMeta?.defaultLogo,
+            fullMeta?.assets?.logo,
+            cacheArtwork?.logo
+        );
+        return {
+            cover: { value: cover || null, source: cover ? 'legacy-fallback' : 'placeholder', reason: cover ? 'legacy Play Launcher artwork fallback' : 'no Play Launcher artwork candidate' },
+            hero: { value: hero || null, source: hero ? 'legacy-fallback' : 'placeholder', reason: hero ? 'legacy Play Launcher artwork fallback' : 'no Play Launcher artwork candidate' },
+            logo: { value: logo || null, source: logo ? 'legacy-fallback' : 'placeholder', reason: logo ? 'legacy Play Launcher artwork fallback' : 'no Play Launcher artwork candidate' },
+        };
+    };
+
+    try {
+        const resolved = adapter?.resolvePlayLauncherArtwork?.({
+            game,
+            fullMeta,
+            cacheArtwork,
+            placeholders,
+        });
+        if (resolved && ['cover', 'hero', 'logo'].some((type) => _plValidArtworkItem(resolved[type]))) {
+            return resolved;
+        }
+    } catch (e) {
+        console.warn('[PlayLauncher] artwork resolver failed:', e?.message || e);
+    }
+
+    return legacy({ game, fullMeta, cacheArtwork, placeholders });
+}
+
 async function _plResolveLaunchOverlayAssets(game) {
     const gameId = game?.id;
 
@@ -747,52 +815,18 @@ async function _plResolveLaunchOverlayAssets(game) {
     const cachedCover = await cached('cover');
     const cachedLogo  = await cached('logo');
 
-    const hero = _plFirstAsset(
-        game?.heroImage,
-        game?.hero,
-        game?.defaultHero,
-        game?.background,
-        fullMeta?.heroImage,
-        fullMeta?.hero,
-        fullMeta?.defaultHero,
-        fullMeta?.background,
-        fullMeta?.assets?.hero,
-        fullMeta?.assets?.heroImage,
-        cachedHero,
-        cachedCover,
-        game?.image,
-        game?.cover,
-        game?.coverUrl,
-        game?.defaultImage
-    );
-
-    const logo = _plFirstAsset(
-        game?.logo,
-        game?.defaultLogo,
-        fullMeta?.logo,
-        fullMeta?.defaultLogo,
-        fullMeta?.assets?.logo,
-        cachedLogo
-    );
-
-    const sourceHero =
-        game?.heroImage ? 'game.heroImage' :
-        game?.hero ? 'game.hero' :
-        game?.defaultHero ? 'game.defaultHero' :
-        fullMeta?.heroImage ? 'fullMeta.heroImage' :
-        fullMeta?.hero ? 'fullMeta.hero' :
-        cachedHero ? 'cache.hero' :
-        cachedCover ? 'cache.cover' :
-        game?.image ? 'game.image' :
-        'none';
-
-    const sourceLogo =
-        game?.logo ? 'game.logo' :
-        game?.defaultLogo ? 'game.defaultLogo' :
-        fullMeta?.logo ? 'fullMeta.logo' :
-        fullMeta?.defaultLogo ? 'fullMeta.defaultLogo' :
-        cachedLogo ? 'cache.logo' :
-        'none';
+    const resolved = _plResolveArtworkForDisplay(game, {
+        fullMeta,
+        cacheArtwork: {
+            cover: cachedCover || null,
+            hero: cachedHero || null,
+            logo: cachedLogo || null,
+        },
+    });
+    const hero = resolved.hero?.value || '';
+    const logo = resolved.logo?.value || '';
+    const sourceHero = resolved.hero?.source || 'none';
+    const sourceLogo = resolved.logo?.source || 'none';
 
     console.log('[LaunchOverlay] resolved assets', {
         gameId,
@@ -800,10 +834,13 @@ async function _plResolveLaunchOverlayAssets(game) {
         hasHero: !!hero,
         hasLogo: !!logo,
         sourceHero,
-        sourceLogo
+        sourceLogo,
+        reasonHero: resolved.hero?.reason,
+        reasonLogo: resolved.logo?.reason
     });
 
     return {
+        cover: resolved.cover?.value || '',
         hero,
         logo,
         sourceHero,

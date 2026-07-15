@@ -277,9 +277,11 @@ test('All Games integration remains present', () => {
     assert.match(src, /BaddelAllGamesArtworkAdapter/);
 });
 
-test('Play Launcher remains unintegrated', () => {
+test('Play Launcher integration remains present after Game Details integration', () => {
     const src = fs.readFileSync(playLauncherPath, 'utf8');
-    assert.doesNotMatch(src, /GameArtworkResolver|GameDetailsArtworkAdapter|BaddelGameDetailsArtworkAdapter/);
+    assert.match(src, /BaddelPlayLauncherArtworkAdapter/);
+    assert.match(read('src/features/games/application/services/PlayLauncherArtworkAdapter.js'), /resolvePlayLauncherArtwork/);
+    assert.doesNotMatch(src, /GameDetailsArtworkAdapter|BaddelGameDetailsArtworkAdapter/);
 });
 
 test('Settings and Creator write paths remain unchanged at ownership fields', () => {
