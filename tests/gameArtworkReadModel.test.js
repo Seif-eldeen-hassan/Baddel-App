@@ -101,6 +101,35 @@ test('presentation fallback can use cover for Home hero without mutating read mo
     assert.equal(model.hero.effectiveValue, null);
 });
 
+test('Jump Back In presentation uses hero before cover without mutating state', () => {
+    const model = buildGameArtworkReadModel({
+        displayGame: {
+            id: 'g1',
+            image: 'cover.jpg',
+            heroImage: 'hero.jpg',
+        },
+        canonicalGame: { id: 'g1', artworkState: v2() },
+    });
+
+    assert.deepEqual(selectPresentationCandidates(model, 'jump-back-in'), ['hero.jpg', 'cover.jpg']);
+    assert.deepEqual(selectPresentationCandidates(model, 'last-played'), ['hero.jpg', 'cover.jpg']);
+    assert.equal(model.cover.effectiveValue, 'cover.jpg');
+    assert.equal(model.hero.effectiveValue, 'hero.jpg');
+});
+
+test('library card presentation remains cover-first', () => {
+    const model = buildGameArtworkReadModel({
+        displayGame: {
+            id: 'g1',
+            image: 'cover.jpg',
+            heroImage: 'hero.jpg',
+        },
+        canonicalGame: { id: 'g1', artworkState: v2() },
+    });
+
+    assert.deepEqual(selectPresentationCandidates(model, 'library-card'), ['cover.jpg']);
+});
+
 test('CanonicalArtworkProjection does not erase display cover when canonical cover is empty', () => {
     const projected = projectFromRecords(
         { id: 'steam-1', installedId: 'local-1', image: 'platform-cover.jpg', coverUrl: 'platform-cover.jpg' },

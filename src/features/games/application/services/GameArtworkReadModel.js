@@ -173,9 +173,11 @@ function selectPresentationCandidates(model, surface) {
     if (surface === 'home-hero') {
         push(model.hero.effectiveValue);
         push(model.cover.effectiveValue);
-    } else if (surface === 'last-played' || surface === 'card') {
-        push(model.cover.effectiveValue);
+    } else if (surface === 'last-played' || surface === 'jump-back-in') {
         push(model.hero.effectiveValue);
+        push(model.cover.effectiveValue);
+    } else if (surface === 'library-card' || surface === 'card') {
+        push(model.cover.effectiveValue);
     } else {
         push(model.cover.effectiveValue);
         push(model.hero.effectiveValue);

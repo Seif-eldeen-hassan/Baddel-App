@@ -17,7 +17,7 @@ function fnBlock(src, name, nextName) {
     return src.slice(start, end > start ? end : start + 4000);
 }
 
-test('Last Played card resolves the Settings-selected cover as its display image', () => {
+test('Last Played card keeps independent cover and hero values', () => {
     const game = {
         id: 'g1',
         image: 'file://settings-cover.webp',
@@ -31,20 +31,20 @@ test('Last Played card resolves the Settings-selected cover as its display image
     assert.equal(resolved.hero.value, 'file://metadata-hero.webp');
 });
 
-test('Last Played display helper is cover-first, with hero only as fallback', () => {
+test('Last Played display helper is hero-first, with cover only as fallback', () => {
     const block = fnBlock(GAME_CARD_JS, '_getRecentDisplayImage', 'createRecentCard');
     const posterIdx = block.indexOf('_getRecentPosterFallback');
     const heroIdx = block.indexOf('_getRecentHeroCandidate');
     assert.ok(posterIdx !== -1);
     assert.ok(heroIdx !== -1);
-    assert.ok(posterIdx < heroIdx);
+    assert.ok(heroIdx < posterIdx);
 });
 
-test('Last Played display helper rejects unusable cover before hero fallback', () => {
+test('Last Played display helper rejects unusable hero before cover fallback', () => {
     const block = fnBlock(GAME_CARD_JS, '_getRecentDisplayImage', 'createRecentCard');
     assert.match(block, /isUsableArtworkValue\(cover\)/);
     assert.match(block, /isUsableArtworkValue\(hero\)/);
-    assert.ok(block.indexOf('isUsableArtworkValue(cover)') < block.indexOf('isUsableArtworkValue(hero)'));
+    assert.ok(block.indexOf('isUsableArtworkValue(hero)') < block.indexOf('isUsableArtworkValue(cover)'));
 });
 
 test('Last Played canonical V2 projection supplies hero when legacy aliases are stale', () => {
@@ -70,8 +70,9 @@ test('Last Played canonical V2 projection supplies hero when legacy aliases are 
 test('createRecentCard hydrates hero in the background without replacing an existing cover', () => {
     const block = fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass');
     assert.match(block, /_jbiResolveArtworkSelection\(displayGame\)/);
-    assert.match(block, /selection\.selectedType !== 'placeholder'/);
+    assert.match(block, /selection\.selectedType === 'hero'/);
     assert.match(block, /hydrateRecentHeroArtwork\(game,\s*imgEl\)/);
+    assert.match(block, /refreshed\.selectedType === 'hero'/);
     assert.match(block, /imgEl\.onerror/);
     assert.match(block, /jbiCandidateIndex/);
 });
@@ -111,9 +112,9 @@ test('Last Played projection selects local V2 record when synced display id diff
     assert.equal(resolved.hero.value, 'file://fall-guys-hero.webp');
 });
 
-test('Last Played source has a single candidate pipeline and advances cover to hero to placeholder', () => {
+test('Last Played source has a single candidate pipeline and advances hero to cover to placeholder', () => {
     assert.match(GAME_CARD_JS, /function _jbiUniqueUsableCandidates/);
-    assert.match(GAME_CARD_JS, /const candidates = _jbiUniqueUsableCandidates\(\[cover, hero\]\)/);
+    assert.match(GAME_CARD_JS, /const candidates = _jbiUniqueUsableCandidates\(\[hero, cover\]\)/);
     assert.match(GAME_CARD_JS, /candidates\.push\(placeholder\)/);
     assert.match(GAME_CARD_JS, /jbiCandidateIndex \+= 1/);
     assert.doesNotMatch(fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass'), /const recentHero|const recentPoster/);

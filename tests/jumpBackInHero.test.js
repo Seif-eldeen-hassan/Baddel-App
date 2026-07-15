@@ -58,14 +58,14 @@ test('game-card.js: _getRecentDisplayImage function is defined', () => {
     assert.ok(GAME_CARD_JS.includes('function _getRecentDisplayImage(game)'));
 });
 
-test('game-card.js: _getRecentDisplayImage calls _getRecentPosterFallback first', () => {
+test('game-card.js: _getRecentDisplayImage calls _getRecentHeroCandidate first', () => {
     const idx = GAME_CARD_JS.indexOf('function _getRecentDisplayImage(game)');
     const block = GAME_CARD_JS.slice(idx, idx + 300);
     const heroIdx   = block.indexOf('_getRecentHeroCandidate');
     const posterIdx = block.indexOf('_getRecentPosterFallback');
     assert.ok(heroIdx !== -1, '_getRecentHeroCandidate not called');
     assert.ok(posterIdx !== -1, '_getRecentPosterFallback not called');
-    assert.ok(posterIdx < heroIdx, '_getRecentPosterFallback must come before _getRecentHeroCandidate');
+    assert.ok(heroIdx < posterIdx, '_getRecentHeroCandidate must come before _getRecentPosterFallback');
 });
 
 // ── hydrateRecentHeroArtwork ───────────────────────────────────────────────────
@@ -162,11 +162,11 @@ test('game-card.js: createRecentCard calls hydrateRecentHeroArtwork when no hero
     assert.ok(block.includes('hydrateRecentHeroArtwork'), 'hydrateRecentHeroArtwork not called in createRecentCard');
 });
 
-test('game-card.js: JBI candidate list orders cover before hero before placeholder', () => {
+test('game-card.js: JBI candidate list orders hero before cover before placeholder', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(GAME_CARD_JS.indexOf('function _jbiResolveArtworkSelection'), nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('_jbiUniqueUsableCandidates([cover, hero])'), 'cover/hero candidate list not found');
+    assert.ok(block.includes('_jbiUniqueUsableCandidates([hero, cover])'), 'hero/cover candidate list not found');
     assert.ok(block.includes('candidates.push(placeholder)'), 'placeholder fallback not found');
 });
 

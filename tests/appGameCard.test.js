@@ -655,9 +655,9 @@ test('getPlatformClass: returns "pm" as default', () => {
         `return (${displaySrc.trim()})`
     )(_getRecentHeroCandidate, _getRecentPosterFallback);
 
-    test('_getRecentDisplayImage prefers poster over hero for Jump Back In cards', () => {
+    test('_getRecentDisplayImage prefers hero over poster for Jump Back In cards', () => {
         const game = { heroImage: 'hero.jpg', image: 'poster.jpg' };
-        assert.equal(_getRecentDisplayImage(game), 'poster.jpg');
+        assert.equal(_getRecentDisplayImage(game), 'hero.jpg');
     });
 
     test('_getRecentDisplayImage falls back to poster when no hero', () => {

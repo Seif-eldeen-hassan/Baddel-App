@@ -654,14 +654,14 @@ function _canonicalizeRecentGame(game) {
 }
 
 function _getRecentDisplayImage(game) {
-    const cover = _getRecentPosterFallback(game);
     const hero = _getRecentHeroCandidate(game);
+    const cover = _getRecentPosterFallback(game);
     if (typeof isUsableArtworkValue === 'function') {
-        if (isUsableArtworkValue(cover)) return cover;
         if (isUsableArtworkValue(hero)) return hero;
+        if (isUsableArtworkValue(cover)) return cover;
     } else {
-        if (cover) return cover;
         if (hero) return hero;
+        if (cover) return cover;
     }
     return 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 }
@@ -673,9 +673,9 @@ function _jbiResolveArtworkSelection(displayGame) {
     const safeCover = _jbiSafeArtworkValue(cover);
     const safeHero = _jbiSafeArtworkValue(hero);
     const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
-    const candidates = _jbiUniqueUsableCandidates([cover, hero]);
+    const candidates = _jbiUniqueUsableCandidates([hero, cover]);
     candidates.push(placeholder);
-    const selectedType = safeCover ? 'cover' : (safeHero ? 'hero' : 'placeholder');
+    const selectedType = safeHero ? 'hero' : (safeCover ? 'cover' : 'placeholder');
     const selectedValue = candidates[0] || placeholder;
 
     console.info('[ArtworkStateV2][JBI]', {
@@ -759,15 +759,16 @@ function createRecentCard(game, isFeatured = false) {
     if (imgEl.complete && imgEl.naturalWidth > 0) imgEl.classList.add('img-loaded');
 
     imgEl.src = displayImg;
-    if (selection.selectedType !== 'placeholder') {
+    if (selection.selectedType === 'hero') {
         checkBackgroundAssets?.(game);
     } else {
         hydrateRecentHeroArtwork(game, imgEl).catch(err => {
             console.warn('[JumpBackIn] hero hydration failed:', err);
         }).then(() => {
+            if (card.getAttribute('data-id') !== String(game.id)) return;
             const refreshed = _jbiResolveArtworkSelection(displayGame);
             const refreshedValue = refreshed.selectedValue;
-            if (refreshedValue && refreshedValue !== imgEl.src) {
+            if (refreshed.selectedType === 'hero' && refreshedValue && refreshedValue !== imgEl.src) {
                 imgEl.src = refreshedValue;
                 imgEl.style.opacity = '';
             }

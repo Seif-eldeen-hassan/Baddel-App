@@ -205,9 +205,17 @@ window.__debugArtworkForGame = function __debugArtworkForGame(identity) {
 
 function _projectCanonicalOntoGame(game, canonicalGame) {
     if (!game || !canonicalGame) return game;
-    return window.BaddelCanonicalArtworkProjection?.projectCanonicalArtwork
-        ? window.BaddelCanonicalArtworkProjection.projectCanonicalArtwork(game, canonicalGame, { matchReason: 'canonical-commit' })
-        : _normalizeArtworkAliases({ ...game, ...canonicalGame });
+    const resolver = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity;
+    if (typeof resolver === 'function' && window.BaddelCanonicalArtworkProjection?.projectCanonicalArtwork) {
+        const result = resolver(game, [canonicalGame]);
+        if (result?.status !== 'success') return game;
+        return window.BaddelCanonicalArtworkProjection.projectCanonicalArtwork(game, result.game, { matchReason: result.reason });
+    }
+    if (window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
+        const projected = window.BaddelCanonicalArtworkProjection.projectFromRecords(game, [canonicalGame]);
+        return projected?._artworkIdentityMatchReason ? projected : game;
+    }
+    return game;
 }
 
 window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameUpdate(updatedGame, {
@@ -217,12 +225,23 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
     if (!updatedGame || !updatedGame.id) return null;
     const canonicalGame = _normalizeArtworkAliases({ ...updatedGame });
     _upsertCanonicalGameRegistry(canonicalGame);
+    const matchedDisplayIds = new Set();
+    let scannedCount = 0;
 
     const patchArray = (arr) => {
         if (!Array.isArray(arr)) return arr;
         return arr.map(game => {
+            scannedCount += 1;
             const projected = _projectCanonicalOntoGame(game, canonicalGame);
-            return projected?._artworkIdentityMatchReason ? projected : game;
+            if (!projected?._artworkIdentityMatchReason) return game;
+            const displayId = String(game?.id || projected.id || '');
+            if (displayId) matchedDisplayIds.add(displayId);
+            console.info('[ArtworkCommitMatch]', {
+                canonicalGameId: canonicalGame.id,
+                displayId,
+                matchReason: projected._artworkIdentityMatchReason,
+            });
+            return projected;
         });
     };
 
@@ -231,7 +250,7 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
     if (Array.isArray(window._allGamesRawCache)) window._allGamesRawCache = patchArray(window._allGamesRawCache);
     if (Array.isArray(window.allGamesData) && typeof allGamesData !== 'undefined') allGamesData = window.allGamesData;
 
-    _patchVisibleGameCard(canonicalGame);
+    _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds]);
     try {
         window._gdApplyExternalPatch?.(canonicalGame, {
             cover: canonicalGame.image,
@@ -255,24 +274,38 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
         canonicalGameId: canonicalGame.id,
         changedTypes,
     });
+    const uniqueMatchedDisplayIds = [...matchedDisplayIds];
+    console.info('[ArtworkCommitSummary]', {
+        canonicalGameId: canonicalGame.id,
+        scannedCount,
+        matchedCount: uniqueMatchedDisplayIds.length,
+        matchedDisplayIds: uniqueMatchedDisplayIds,
+    });
     return canonicalGame;
 };
 
 // ── Visible card DOM patcher ──────────────────────────────────────────────────
 
-function _patchVisibleGameCard(updatedGame) {
+function _patchVisibleGameCard(updatedGame, displayIds = null) {
     const g = _normalizeArtworkAliases(updatedGame);
     if (!g || !g.id) return;
     const cover = g.image || g.defaultImage || g.coverUrl || null;
     if (!cover) return;
-    const card = document.querySelector(`[data-id="${CSS.escape(String(g.id))}"]`);
-    const img  = card?.querySelector?.('.actual-img');
-    if (img) {
-        img.classList.remove('img-loaded');
-        img.addEventListener('load', () => img.classList.add('img-loaded'), { once: true });
-        img.src = safeImageUrl(cover) + (cover.startsWith('file://') ? `?t=${Date.now()}` : '');
-        img.style.opacity  = '';
-        img.style.display  = 'block';
+    const ids = Array.isArray(displayIds) && displayIds.length ? displayIds : [g.id];
+    ids.forEach(id => {
+        const card = document.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
+        const img  = card?.querySelector?.('.actual-img');
+        if (img) {
+            img.classList.remove('img-loaded');
+            img.addEventListener('load', () => img.classList.add('img-loaded'), { once: true });
+            img.src = safeImageUrl(cover) + (cover.startsWith('file://') ? `?t=${Date.now()}` : '');
+            img.style.opacity  = '';
+            img.style.display  = 'block';
+        }
+        if (window._vs?.cardCache instanceof Map) window._vs.cardCache.delete(String(id));
+    });
+    if (window._vs?.cardCache instanceof Map) {
+        window._vs.cardCache.delete(String(g.id));
     }
 }
 
