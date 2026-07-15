@@ -212,15 +212,14 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
     };
 
     const candidateKeys = new Set();
-    ['id','installedId','appName','appid','appId','steamAppId','steam_appid',
+    ['id','localGameId','installedId','installedGameKey','appName','appid','appId','steamAppId','steam_appid',
      'namespace','catalogNamespace','catalogItemId','launcherGameId'].forEach(f => _addKey(candidateKeys, gameLike[f]));
     if (gameLike.allIds && typeof gameLike.allIds === 'object') {
         Object.values(gameLike.allIds).forEach(v => _addKey(candidateKeys, v));
     }
-    const looseTitleKey = _loose(gameLike.title || gameLike.name || patch.name || '');
 
     const _matches = (g) => {
-        for (const f of ['id','installedId','appName','appid','appId','steamAppId','steam_appid',
+        for (const f of ['id','localGameId','installedId','installedGameKey','appName','appid','appId','steamAppId','steam_appid',
                           'namespace','catalogNamespace','catalogItemId','launcherGameId']) {
             const r = _norm(g[f]);  if (r && candidateKeys.has(r)) return true;
             const l = _loose(g[f]); if (l && candidateKeys.has(l)) return true;
@@ -231,8 +230,7 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
                 const l = _loose(v); if (l && candidateKeys.has(l)) return true;
             }
         }
-        const t = _loose(g.title || g.name || '');
-        return Boolean(looseTitleKey && t && t === looseTitleKey);
+        return false;
     };
 
     const _applyPatch = (g) => {

@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 const test   = require('node:test');
 const assert = require('node:assert/strict');
 const fs     = require('fs');
@@ -8,7 +8,7 @@ const os     = require('os');
 
 const { JsonGameRepository } = require('../src/features/games/infrastructure/repositories/JsonGameRepository');
 
-// ── helpers ───────────────────────────────────────────────────────────────────
+// â”€â”€ helpers â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 // Create a fresh temp directory and a pre-seeded DB file, then return a repo
 // pointing at it.  Calling flushDatabase() in tests forces immediate disk write.
@@ -30,7 +30,7 @@ function game(overrides = {}) {
     return { id: 'aabbccdd11223344', name: 'Test Game', command: '"C:\\games\\test.exe"', isHidden: false, ...overrides };
 }
 
-// ── load / init ───────────────────────────────────────────────────────────────
+// â”€â”€ load / init â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: loads existing DB without throwing', () => {
     const repo = makeRepo([game()]);
@@ -53,7 +53,7 @@ test('JsonGameRepository: resets to empty array on corrupted JSON', () => {
     assert.equal(repo.getSavedGames().length, 0);
 });
 
-// ── flushDatabase / persistence ───────────────────────────────────────────────
+// â”€â”€ flushDatabase / persistence â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: flushDatabase persists current dbCache to disk', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-jgr-flush-'));
@@ -61,7 +61,7 @@ test('JsonGameRepository: flushDatabase persists current dbCache to disk', async
     fs.writeFileSync(dbPath, '[]', 'utf8');
     const repo = new JsonGameRepository({ fs, path, crypto, databasePath: dbPath, logger: { log: () => {}, error: () => {} } });
 
-    await repo.removeGame('nonexistent'); // noop — just to exercise code path
+    await repo.removeGame('nonexistent'); // noop â€” just to exercise code path
     repo._dbCache.push(game({ id: 'flush01', name: 'Flush Test' }));
     await repo.flushDatabase();
 
@@ -74,7 +74,7 @@ test('JsonGameRepository: flushDatabase persists current dbCache to disk', async
 test('JsonGameRepository: saveDatabase debounce does not write synchronously', () => {
     const repo = makeRepo([]);
     repo._dbCache.push(game({ id: 'pending01' }));
-    repo.saveDatabase(); // fires debounce — nothing written yet
+    repo.saveDatabase(); // fires debounce â€” nothing written yet
     // no await, so file on disk still shows empty
     // We just check the timer is set and no throw
     assert.ok(repo._saveTimer !== null, 'saveTimer must be set after saveDatabase()');
@@ -82,7 +82,7 @@ test('JsonGameRepository: saveDatabase debounce does not write synchronously', (
     repo._saveTimer = null;
 });
 
-// ── getSavedGames / getStoredGames ────────────────────────────────────────────
+// â”€â”€ getSavedGames / getStoredGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getSavedGames excludes hidden games', () => {
     const repo = makeRepo([
@@ -98,7 +98,7 @@ test('JsonGameRepository: getSavedGames excludes games where isInstalled === fal
     const repo = makeRepo([
         game({ id: 'g1', isInstalled: true }),
         game({ id: 'g2', isInstalled: false }),
-        game({ id: 'g3' }), // isInstalled absent — should be included
+        game({ id: 'g3' }), // isInstalled absent â€” should be included
     ]);
     const result = repo.getSavedGames();
     const ids = result.map(g => g.id);
@@ -112,7 +112,7 @@ test('JsonGameRepository: getSavedGames returns empty array when no games', () =
     assert.deepEqual(repo.getSavedGames(), []);
 });
 
-// ── getHiddenGames ────────────────────────────────────────────────────────────
+// â”€â”€ getHiddenGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getHiddenGames returns only hidden games', () => {
     const repo = makeRepo([
@@ -130,7 +130,7 @@ test('JsonGameRepository: getHiddenGames returns empty array when nothing hidden
     assert.deepEqual(repo.getHiddenGames(), []);
 });
 
-// ── getMissingInstalledGames ──────────────────────────────────────────────────
+// â”€â”€ getMissingInstalledGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getMissingInstalledGames returns scanner-owned games where isInstalled === false', () => {
     const repo = makeRepo([
@@ -181,7 +181,7 @@ test('JsonGameRepository: getMissingInstalledGames returns the same object refer
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
-// ── getAllGames ───────────────────────────────────────────────────────────────
+// â”€â”€ getAllGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getAllGames returns all normal games', () => {
     const repo = makeRepo([
@@ -228,7 +228,7 @@ test('JsonGameRepository: getAllGames returns the same object references as _dbC
     assert.ok(result[0] === repo._dbCache[0], 'must return the same object reference, not a copy');
 });
 
-// ── getGameById ───────────────────────────────────────────────────────────────
+// â”€â”€ getGameById â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getGameById returns matching game', () => {
     const repo = makeRepo([game({ id: 'g1', name: 'Test' })]);
@@ -269,7 +269,7 @@ test('JsonGameRepository: getGameById does not call saveDatabase', () => {
     assert.equal(saved, false);
 });
 
-// ── findManualGameByPaths ─────────────────────────────────────────────────────
+// â”€â”€ findManualGameByPaths â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: findManualGameByPaths returns null when no match exists', () => {
     const repo = makeRepo([game({ id: 'g1', command: 'C:\\games\\other.exe', executablePath: 'C:\\games\\other.exe' })]);
@@ -297,7 +297,7 @@ test('JsonGameRepository: findManualGameByPaths matches by executablePath', () =
 
 test('JsonGameRepository: findManualGameByPaths strips double quotes from stored command (not from incoming)', () => {
     // Stored command has outer quotes (legacy format); incoming path does not.
-    // Only the stored side is quote-stripped — this is the legacy asymmetry.
+    // Only the stored side is quote-stripped â€” this is the legacy asymmetry.
     const repo = makeRepo([game({ id: 'g1', command: '"C:\\games\\test.exe"', executablePath: null })]);
     const result = repo.findManualGameByPaths('C:\\games\\test.exe', 'C:\\no-match.exe');
     assert.ok(result !== null, 'must match despite quotes in stored command');
@@ -357,12 +357,13 @@ test('JsonGameRepository: findManualGameByPaths does not call saveDatabase', () 
     assert.equal(saved, false, 'saveDatabase must not be called');
 });
 
-// ── updateGameMetadata ────────────────────────────────────────────────────────
+// â”€â”€ updateGameMetadata â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: updateGameMetadata returns error when game not found', async () => {
     const repo = makeRepo([]);
     const result = await repo.updateGameMetadata('no-such', {});
-    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, 'Game not found');
 });
 
 test('JsonGameRepository: updateGameMetadata uses String() coercion on gameId', async () => {
@@ -537,44 +538,48 @@ test('JsonGameRepository: updateGameMetadata absent logo key does not touch logo
     assert.equal(repo._dbCache[0].logo, 'file://keep.webp');
 });
 
-// ── updateGameImage ───────────────────────────────────────────────────────────
+// â”€â”€ updateGameImage â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-test('JsonGameRepository: updateGameImage returns error shape when game not found', () => {
+test('JsonGameRepository: updateGameImage returns error shape when game not found', async () => {
     const repo = makeRepo([]);
-    const result = repo.updateGameImage('no-such', 'C:\\art\\cover.jpg');
-    assert.deepEqual(result, { status: 'error', message: 'Game not found' });
+    const result = await repo.updateGameImage('no-such', 'C:\\art\\cover.jpg');
+    assert.equal(result.status, 'error');
+    assert.equal(result.message, 'Game not found');
+    assert.equal(result.requestedGameId, 'no-such');
+    assert.equal(result.canonicalGameId, null);
+    assert.equal(result.persisted, false);
 });
 
-test('JsonGameRepository: updateGameImage uses String() coercion on gameId comparison', () => {
+test('JsonGameRepository: updateGameImage uses String() coercion on gameId comparison', async () => {
     const repo = makeRepo([game({ id: 123 })]);
-    const result = repo.updateGameImage('123', 'C:\\art\\cover.jpg');
+    const result = await repo.updateGameImage('123', 'C:\\art\\cover.jpg');
     assert.equal(result.status, 'success');
 });
 
-test('JsonGameRepository: updateGameImage sets image field for default type (cover)', () => {
+test('JsonGameRepository: updateGameImage sets image field for default type (cover)', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
+    await repo.updateGameImage('g1', 'file://cover.webp');
     assert.equal(repo._dbCache[0].image, 'file://cover.webp');
 });
 
-test('JsonGameRepository: updateGameImage synchronizes cover aliases', () => {
+test('JsonGameRepository: updateGameImage synchronizes cover aliases', async () => {
     const repo = makeRepo([game({ id: 'g1', coverUrl: 'file://old.webp', defaultImage: 'file://old.webp' })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
+    await repo.updateGameImage('g1', 'file://cover.webp');
     assert.equal(repo._dbCache[0].image, 'file://cover.webp');
     assert.equal(repo._dbCache[0].cover, 'file://cover.webp');
     assert.equal(repo._dbCache[0].coverUrl, 'file://cover.webp');
     assert.equal(repo._dbCache[0].defaultImage, 'file://cover.webp');
 });
 
-test('JsonGameRepository: updateGameImage sets heroImage field when type is hero', () => {
+test('JsonGameRepository: updateGameImage sets heroImage field when type is hero', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://hero.webp', 'hero');
+    await repo.updateGameImage('g1', 'file://hero.webp', 'hero');
     assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
 });
 
-test('JsonGameRepository: updateGameImage synchronizes hero aliases', () => {
+test('JsonGameRepository: updateGameImage synchronizes hero aliases', async () => {
     const repo = makeRepo([game({ id: 'g1', heroUrl: 'file://old-hero.webp', background: 'file://old-bg.webp' })]);
-    repo.updateGameImage('g1', 'file://hero.webp', 'hero');
+    await repo.updateGameImage('g1', 'file://hero.webp', 'hero');
     assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
     assert.equal(repo._dbCache[0].hero, 'file://hero.webp');
     assert.equal(repo._dbCache[0].heroUrl, 'file://hero.webp');
@@ -582,55 +587,55 @@ test('JsonGameRepository: updateGameImage synchronizes hero aliases', () => {
     assert.equal(repo._dbCache[0].background, 'file://hero.webp');
 });
 
-test('JsonGameRepository: updateGameImage sets logo field when type is logo', () => {
+test('JsonGameRepository: updateGameImage sets logo field when type is logo', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://logo.webp', 'logo');
+    await repo.updateGameImage('g1', 'file://logo.webp', 'logo');
     assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
 });
 
-test('JsonGameRepository: updateGameImage synchronizes logo aliases', () => {
+test('JsonGameRepository: updateGameImage synchronizes logo aliases', async () => {
     const repo = makeRepo([game({ id: 'g1', logoUrl: 'file://old-logo.webp', defaultLogo: 'file://old-logo.webp' })]);
-    repo.updateGameImage('g1', 'file://logo.webp', 'logo');
+    await repo.updateGameImage('g1', 'file://logo.webp', 'logo');
     assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
     assert.equal(repo._dbCache[0].logoUrl, 'file://logo.webp');
     assert.equal(repo._dbCache[0].defaultLogo, 'file://logo.webp');
 });
 
-test('JsonGameRepository: updateGameImage prepends file:// when path has no protocol', () => {
+test('JsonGameRepository: updateGameImage prepends file:// when path has no protocol', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    const result = repo.updateGameImage('g1', 'C:\\art\\cover.webp');
+    const result = await repo.updateGameImage('g1', 'C:\\art\\cover.webp');
     assert.equal(result.path, 'file://C:\\art\\cover.webp');
     assert.equal(repo._dbCache[0].image, 'file://C:\\art\\cover.webp');
 });
 
-test('JsonGameRepository: updateGameImage does not double-prefix file:// paths', () => {
+test('JsonGameRepository: updateGameImage does not double-prefix file:// paths', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    const result = repo.updateGameImage('g1', 'file://already.webp');
+    const result = await repo.updateGameImage('g1', 'file://already.webp');
     assert.equal(result.path, 'file://already.webp');
 });
 
-test('JsonGameRepository: updateGameImage does not prefix http:// paths', () => {
+test('JsonGameRepository: updateGameImage does not prefix http:// paths', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    const result = repo.updateGameImage('g1', 'http://cdn.example.com/cover.jpg');
+    const result = await repo.updateGameImage('g1', 'http://cdn.example.com/cover.jpg');
     assert.equal(result.path, 'http://cdn.example.com/cover.jpg');
 });
 
-test('JsonGameRepository: updateGameImage sets customArtworkLocked to true', () => {
+test('JsonGameRepository: updateGameImage sets customArtworkLocked to true', async () => {
     const repo = makeRepo([game({ id: 'g1', customArtworkLocked: false })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
+    await repo.updateGameImage('g1', 'file://cover.webp');
     assert.equal(repo._dbCache[0].customArtworkLocked, true);
 });
 
-test('JsonGameRepository: updateGameImage sets artworkSource to settings by default', () => {
+test('JsonGameRepository: updateGameImage sets artworkSource to settings by default', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
+    await repo.updateGameImage('g1', 'file://cover.webp');
     assert.equal(repo._dbCache[0].artworkSource, 'settings');
 });
 
-test('JsonGameRepository: updateGameImage accepts explicit creator ownership options', () => {
+test('JsonGameRepository: updateGameImage accepts explicit creator ownership options', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     const ts = Date.now() - 1000;
-    const result = repo.updateGameImage('g1', 'file://cover.webp', 'cover', {
+    const result = await repo.updateGameImage('g1', 'file://cover.webp', 'cover', {
         source: 'creator',
         locked: true,
         updatedAt: ts,
@@ -641,18 +646,21 @@ test('JsonGameRepository: updateGameImage accepts explicit creator ownership opt
     assert.equal(result.artworkUpdatedAt, ts);
 });
 
-test('JsonGameRepository: updateGameImage sets artworkUpdatedAt to a recent timestamp', () => {
+test('JsonGameRepository: updateGameImage sets artworkUpdatedAt to a recent timestamp', async () => {
     const before = Date.now();
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
+    await repo.updateGameImage('g1', 'file://cover.webp');
     assert.ok(repo._dbCache[0].artworkUpdatedAt >= before);
 });
 
-test('JsonGameRepository: updateGameImage returns exact success shape', () => {
+test('JsonGameRepository: updateGameImage returns exact success shape', async () => {
     const before = Date.now();
     const repo = makeRepo([game({ id: 'g1' })]);
-    const result = repo.updateGameImage('g1', 'file://cover.webp', 'cover');
+    const result = await repo.updateGameImage('g1', 'file://cover.webp', 'cover');
     assert.equal(result.status, 'success');
+    assert.equal(result.canonicalGameId, 'g1');
+    assert.equal(result.persisted, true);
+    assert.ok(result.updatedGame);
     assert.equal(result.path, 'file://cover.webp');
     assert.equal(result.type, 'cover');
     assert.equal(result.customArtworkLocked, true);
@@ -660,29 +668,27 @@ test('JsonGameRepository: updateGameImage returns exact success shape', () => {
     assert.ok(typeof result.artworkUpdatedAt === 'number' && result.artworkUpdatedAt >= before);
 });
 
-test('JsonGameRepository: updateGameImage returns artworkUpdatedAt matching game field', () => {
+test('JsonGameRepository: updateGameImage returns artworkUpdatedAt matching game field', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    const result = repo.updateGameImage('g1', 'file://cover.webp');
+    const result = await repo.updateGameImage('g1', 'file://cover.webp');
     assert.equal(result.artworkUpdatedAt, repo._dbCache[0].artworkUpdatedAt);
 });
 
-test('JsonGameRepository: updateGameImage does not call saveDatabase on missing game', () => {
+test('JsonGameRepository: updateGameImage does not call saveDatabase on missing game', async () => {
     const repo = makeRepo([]);
     let saveCalled = false;
     repo.saveDatabase = () => { saveCalled = true; };
-    repo.updateGameImage('no-such', 'file://cover.webp');
+    await repo.updateGameImage('no-such', 'file://cover.webp');
     assert.equal(saveCalled, false);
 });
 
-test('JsonGameRepository: updateGameImage schedules saveDatabase on success', () => {
+test('JsonGameRepository: updateGameImage flushes database on success', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
-    repo.updateGameImage('g1', 'file://cover.webp');
-    assert.ok(repo._saveTimer !== null, 'saveDatabase timer must be set after successful update');
-    clearTimeout(repo._saveTimer);
-    repo._saveTimer = null;
+    await repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._saveTimer, null, 'explicit image updates must flush immediately without a debounce timer');
 });
 
-// ── applyImageReset ───────────────────────────────────────────────────────────
+// â”€â”€ applyImageReset â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: applyImageReset returns error shape when game not found', () => {
     const repo = makeRepo([]);
@@ -837,7 +843,7 @@ test('JsonGameRepository: applyImageReset uses String() coercion for gameId look
     assert.equal(result.status, 'success');
 });
 
-// ── generateStableId ──────────────────────────────────────────────────────────
+// â”€â”€ generateStableId â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: generateStableId is deterministic for same command', () => {
     const repo = makeRepo([]);
@@ -873,13 +879,13 @@ test('JsonGameRepository: generateStableId matches BaddelEngine output for same 
     const command = '"C:\\Program Files\\SomeGame\\game.exe"';
     const repoId = repo.generateStableId({ command });
 
-    // Compute expected independently — same algorithm as BaddelEngine
+    // Compute expected independently â€” same algorithm as BaddelEngine
     const str = command.toLowerCase().replace(/"/g, '').trim();
     const expected = crypto.createHash('md5').update(str).digest('hex').substring(0, 16);
     assert.equal(repoId, expected);
 });
 
-// ── renameGame ────────────────────────────────────────────────────────────────
+// â”€â”€ renameGame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: renameGame returns error when game not found', async () => {
     const repo = makeRepo([]);
@@ -936,7 +942,7 @@ test('JsonGameRepository: renameGame uses String() coercion on gameId comparison
     assert.equal(result.status, 'success');
 });
 
-// ── removeGame ────────────────────────────────────────────────────────────────
+// â”€â”€ removeGame â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: removeGame sets isHidden=true on matching game', async () => {
     const repo = makeRepo([game({ id: 'g1', isHidden: false })]);
@@ -963,7 +969,7 @@ test('JsonGameRepository: removeGame does not delete the game record', async () 
     assert.equal(repo._dbCache.length, 1, 'record must still exist, just hidden');
 });
 
-// ── deleteGameById ────────────────────────────────────────────────────────────
+// â”€â”€ deleteGameById â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: deleteGameById removes the matching game record', () => {
     const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' })]);
@@ -1001,7 +1007,7 @@ test('JsonGameRepository: deleteGameById uses String() coercion for id compariso
     assert.equal(repo._dbCache.length, 0);
 });
 
-test('JsonGameRepository: deleteGameById does not call saveDatabase — caller owns persistence timing', () => {
+test('JsonGameRepository: deleteGameById does not call saveDatabase â€” caller owns persistence timing', () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     let saveCalled = false;
     const orig = repo.saveDatabase.bind(repo);
@@ -1026,7 +1032,7 @@ test('JsonGameRepository: deleteGameById does not mutate the surviving game obje
     assert.strictEqual(repo._dbCache[0], beforeRef, 'surviving object must be the same reference after filter');
 });
 
-// ── deleteGamesByIds ──────────────────────────────────────────────────────────
+// â”€â”€ deleteGamesByIds â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: deleteGamesByIds removes all matching ids', () => {
     const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' }), game({ id: 'g3' })]);
@@ -1080,7 +1086,7 @@ test('JsonGameRepository: deleteGamesByIds removes only matching ids and leaves 
     assert.ok(repo._dbCache.some(g => g.id === 'g3'), 'g3 must remain');
 });
 
-test('JsonGameRepository: deleteGamesByIds does not call saveDatabase — caller owns persistence timing', () => {
+test('JsonGameRepository: deleteGamesByIds does not call saveDatabase â€” caller owns persistence timing', () => {
     const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' })]);
     let saveCalled = false;
     const orig = repo.saveDatabase.bind(repo);
@@ -1096,7 +1102,7 @@ test('JsonGameRepository: deleteGamesByIds preserves surviving object references
     assert.strictEqual(repo._dbCache[0], beforeRef, 'surviving object must be the same reference after filter');
 });
 
-// ── unhideAllGames ────────────────────────────────────────────────────────────
+// â”€â”€ unhideAllGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: unhideAllGames clears isHidden on all hidden games', async () => {
     const repo = makeRepo([
@@ -1133,7 +1139,7 @@ test('JsonGameRepository: unhideAllGames does not call saveDatabase when nothing
     assert.equal(saveCalled, false, 'saveDatabase must not be called when nothing to unhide');
 });
 
-// ── restoreSpecificGames ──────────────────────────────────────────────────────
+// â”€â”€ restoreSpecificGames â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: restoreSpecificGames unhides only the listed game ids', async () => {
     const repo = makeRepo([
@@ -1178,7 +1184,7 @@ test('JsonGameRepository: restoreSpecificGames does not touch games with non-mat
     assert.equal(repo.getHiddenGames()[0].id, 'g2');
 });
 
-// ── reorderLibrary ────────────────────────────────────────────────────────────
+// â”€â”€ reorderLibrary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: reorderLibrary returns { status: success }', async () => {
     const repo = makeRepo([game({ id: 'g1' }), game({ id: 'g2' })]);
@@ -1203,7 +1209,7 @@ test('JsonGameRepository: reorderLibrary appends games not in newOrderedIds at t
         game({ id: 'g2' }),
         game({ id: 'g3' }),
     ]);
-    // Only specify 2 of 3 — g3 goes to end
+    // Only specify 2 of 3 â€” g3 goes to end
     await repo.reorderLibrary(['g2', 'g1']);
     const ids = repo.getSavedGames().map(g => g.id);
     assert.deepEqual(ids, ['g2', 'g1', 'g3']);
@@ -1233,7 +1239,7 @@ test('JsonGameRepository: reorderLibrary persists to disk after flush', async ()
     assert.equal(written[1].id, 'g1');
 });
 
-// ── persistence round-trip ────────────────────────────────────────────────────
+// â”€â”€ persistence round-trip â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: rename persists to disk and is readable by a second instance', async () => {
     const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'baddel-jgr-persist-'));
@@ -1264,7 +1270,7 @@ test('JsonGameRepository: removeGame persists hidden flag to disk', async () => 
     assert.equal(repo2.getSavedGames().length, 0);
 });
 
-// ── _migrateLnkRecords ────────────────────────────────────────────────────────
+// â”€â”€ _migrateLnkRecords â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: _migrateLnkRecords fixes path on broken lnk records', () => {
     const lnkGame = {
@@ -1273,7 +1279,7 @@ test('JsonGameRepository: _migrateLnkRecords fixes path on broken lnk records', 
         command: 'C:\\shortcuts\\game.lnk',
         platform: 'Manual',
         executablePath: 'C:\\games\\Game\\game.exe',
-        path: 'C:\\shortcuts',  // wrong — should be dirname(executablePath)
+        path: 'C:\\shortcuts',  // wrong â€” should be dirname(executablePath)
         isHidden: false,
     };
     const repo = makeRepo([lnkGame]);
@@ -1289,7 +1295,7 @@ test('JsonGameRepository: _migrateLnkRecords is a no-op for non-lnk games', () =
     assert.equal(stored.path, undefined, 'path must not be touched for non-lnk games');
 });
 
-// ── updatePlaytime ────────────────────────────────────────────────────────────
+// â”€â”€ updatePlaytime â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: updatePlaytime returns error when game not found', async () => {
     const repo = makeRepo([]);
@@ -1374,7 +1380,7 @@ test('JsonGameRepository: updatePlaytime schedules saveDatabase', async () => {
     repo._saveTimer = null;
 });
 
-// ── saveQualifiedSession ──────────────────────────────────────────────────────
+// â”€â”€ saveQualifiedSession â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: saveQualifiedSession returns error when game not found', async () => {
     const repo = makeRepo([]);
@@ -1503,7 +1509,7 @@ test('JsonGameRepository: saveQualifiedSession returns correct shape', async () 
     assert.equal(result.sessionQualified, true);
 });
 
-// ── setTimeTrackingEnabled ────────────────────────────────────────────────────
+// â”€â”€ setTimeTrackingEnabled â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: setTimeTrackingEnabled returns error when game not found', async () => {
     const repo = makeRepo([]);
@@ -1549,7 +1555,7 @@ test('JsonGameRepository: setTimeTrackingEnabled schedules saveDatabase', async 
     repo._saveTimer = null;
 });
 
-// ── getTimeTrackingEnabled ────────────────────────────────────────────────────
+// â”€â”€ getTimeTrackingEnabled â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: getTimeTrackingEnabled returns error when game not found', () => {
     const repo = makeRepo([]);
@@ -1600,9 +1606,9 @@ test('JsonGameRepository: getTimeTrackingEnabled returns gameId in result', () =
     assert.equal(result.gameId, 'g1');
 });
 
-// ── upsertGameRecord ──────────────────────────────────────────────────────────
+// â”€â”€ upsertGameRecord â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-// makeInstalledGameKey is a pure identity utility — injected so JsonGameRepository
+// makeInstalledGameKey is a pure identity utility â€” injected so JsonGameRepository
 // stays FS-free and avoids importing from another infrastructure module.
 const { makeInstalledGameKey } = require('../src/features/games/infrastructure/scanner/GameScannerCore');
 
@@ -1626,7 +1632,7 @@ function upsertGame(overrides = {}) {
     };
 }
 
-// ── INSERT path ───────────────────────────────────────────────────────────────
+// â”€â”€ INSERT path â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: upsertGameRecord inserts a new game when DB is empty', () => {
     const repo = makeUpsertRepo([]);
@@ -1664,7 +1670,7 @@ test('JsonGameRepository: upsertGameRecord uses game.image when cachedCover is n
     assert.equal(repo._dbCache[0].image, 'file://game.webp');
 });
 
-// ── UPDATE path — id match ────────────────────────────────────────────────────
+// â”€â”€ UPDATE path â€” id match â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: upsertGameRecord updates by id and prevents duplicate', () => {
     const repo = makeUpsertRepo([game({ id: 'u1', installSource: 'manual' })]);
@@ -1694,7 +1700,7 @@ test('JsonGameRepository: upsertGameRecord preserves existing.firstSeenAt on upd
     assert.equal(repo._dbCache[0].firstSeenAt, '2023-01-01T00:00:00.000Z');
 });
 
-// ── UPDATE path — installedGameKey match (requires keyResolver) ───────────────
+// â”€â”€ UPDATE path â€” installedGameKey match (requires keyResolver) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: upsertGameRecord updates by installedGameKey when ids differ', () => {
     const repo = makeUpsertRepo([game({
@@ -1716,7 +1722,7 @@ test('JsonGameRepository: upsertGameRecord updates by installedGameKey when ids 
     assert.equal(repo._dbCache[0].installSource, 'scanner');
 });
 
-// ── UPDATE path — normalised command match ────────────────────────────────────
+// â”€â”€ UPDATE path â€” normalised command match â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: upsertGameRecord updates by normalised command when id and key differ', () => {
     const repo = makeUpsertRepo([game({
@@ -1735,9 +1741,9 @@ test('JsonGameRepository: upsertGameRecord updates by normalised command when id
     assert.equal(repo._dbCache[0].installSource, 'scanner');
 });
 
-// ── saveDatabase ──────────────────────────────────────────────────────────────
+// â”€â”€ saveDatabase â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
-test('JsonGameRepository: upsertGameRecord does not call saveDatabase — caller owns persistence', () => {
+test('JsonGameRepository: upsertGameRecord does not call saveDatabase â€” caller owns persistence', () => {
     const repo = makeUpsertRepo([]);
     let saveCalled = false;
     const orig = repo.saveDatabase.bind(repo);
@@ -1755,7 +1761,7 @@ test('JsonGameRepository: upsertGameRecord does not call saveDatabase on update 
     assert.equal(saveCalled, false);
 });
 
-// ── idempotency ───────────────────────────────────────────────────────────────
+// â”€â”€ idempotency â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: upsertGameRecord called twice with same id produces one record', () => {
     const repo = makeUpsertRepo([]);
@@ -1765,7 +1771,7 @@ test('JsonGameRepository: upsertGameRecord called twice with same id produces on
     assert.equal(repo._dbCache[0].installSource, 'scanner');
 });
 
-// ── hasUpsertMatch ────────────────────────────────────────────────────────────
+// â”€â”€ hasUpsertMatch â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 test('JsonGameRepository: hasUpsertMatch returns true for id match', () => {
     const repo = makeUpsertRepo([game({ id: 'hm1' })]);

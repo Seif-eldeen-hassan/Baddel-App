@@ -1,5 +1,7 @@
 'use strict';
 
+const { resolveCanonicalGameIdentity } = require('../../application/services/CanonicalGameIdentityResolver');
+
 // ─── JsonGameRepository ───────────────────────────────────────────────────────
 //
 // Passive DB persistence layer extracted from BaddelEngine (gameScanner.js).
@@ -311,15 +313,26 @@ class JsonGameRepository {
         return { status: 'success' };
     }
 
-    updateGameImage(gameId, newImagePath, type = 'cover', {
+    async updateGameImage(gameId, newImagePath, type = 'cover', {
         source = 'settings',
         locked = true,
         updatedAt = Date.now(),
     } = {}) {
-        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
-        if (index === -1) return { status: 'error', message: 'Game not found' };
+        const requestedGameId = gameId && typeof gameId === 'object'
+            ? (gameId.gameId || gameId.id || gameId.localGameId || gameId.installedId || null)
+            : gameId;
+        const resolved = resolveCanonicalGameIdentity(gameId, this._dbCache);
+        if (resolved.status !== 'success') {
+            return {
+                status: 'error',
+                message: 'Game not found',
+                requestedGameId,
+                canonicalGameId: null,
+                persisted: false,
+            };
+        }
 
-        const game = this._dbCache[index];
+        const game = resolved.game;
 
         let finalPath = newImagePath;
         if (finalPath && !finalPath.startsWith('http') && !finalPath.startsWith('file://')) {
@@ -348,15 +361,31 @@ class JsonGameRepository {
         game.artworkSource = source;
         game.artworkUpdatedAt = updatedAt;
 
-        this.saveDatabase();
-        return {
-            status: 'success',
-            path: finalPath,
-            type,
-            customArtworkLocked: !!locked,
-            artworkSource: source,
-            artworkUpdatedAt: game.artworkUpdatedAt,
-        };
+        try {
+            await this.flushDatabase();
+            return {
+                status: 'success',
+                requestedGameId,
+                canonicalGameId: game.id,
+                matchReason: resolved.reason,
+                path: finalPath,
+                type,
+                customArtworkLocked: !!locked,
+                artworkSource: source,
+                artworkUpdatedAt: game.artworkUpdatedAt,
+                updatedGame: JSON.parse(JSON.stringify(game)),
+                persisted: true,
+            };
+        } catch (err) {
+            this._log.error('[DB] updateGameImage flush failed:', err);
+            return {
+                status: 'error',
+                message: 'Failed to persist game image',
+                requestedGameId,
+                canonicalGameId: game.id,
+                persisted: false,
+            };
+        }
     }
 
     applyImageReset(gameId, resolvedPaths, { type = 'cover', resetAll = false } = {}) {

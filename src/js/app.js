@@ -903,49 +903,48 @@ function _updateHomeReadyCountTextOnly(count) {
 }
 window._updateHomeReadyCountTextOnly = _updateHomeReadyCountTextOnly;
 
+function _mergeCanonicalArtworkAcrossLibrary(updatedGames, previousGames = []) {
+    const projection = window.BaddelCanonicalArtworkProjection;
+    const explicitPrevious = previousGames.filter(g =>
+        g?.customArtworkLocked === true &&
+        (g.artworkSource === 'settings' || g.artworkSource === 'creator')
+    );
+    const records = [...explicitPrevious, ...updatedGames];
+
+    return updatedGames.map(g => {
+        const prev = previousGames.find(p => String(p.id) === String(g.id));
+        let merged = g;
+
+        if (projection && typeof projection.projectFromRecords === 'function') {
+            merged = projection.projectFromRecords(g, records);
+            if (merged?._artworkIdentityMatchReason && merged.customArtworkLocked === true) {
+                console.info('[ArtworkIdentity] uiId=' + String(g.id || '') +
+                    ' canonicalId=' + String(merged.localGameId || merged.id || '') +
+                    ' matchReason=' + String(merged._artworkIdentityMatchReason || '') +
+                    ' source=' + String(merged.artworkSource || 'settings') +
+                    ' artworkUpdatedAt=' + String(merged.artworkUpdatedAt || ''));
+                return _normalizeArtworkAliases(merged);
+            }
+        }
+
+        if (!prev) return _normalizeArtworkAliases(merged);
+        return _normalizeArtworkAliases({
+            ...merged,
+            image:        merged.image        || prev.image        || null,
+            defaultImage: merged.defaultImage || prev.defaultImage || null,
+            coverUrl:     merged.coverUrl     || prev.coverUrl     || null,
+            heroImage:    merged.heroImage    || prev.heroImage    || null,
+            defaultHero:  merged.defaultHero  || prev.defaultHero  || null,
+            logo:         merged.logo         || prev.logo         || null,
+            defaultLogo:  merged.defaultLogo  || prev.defaultLogo  || null,
+        });
+    });
+}
+
 // Full library refresh (background scan completed)
 if (window.electronAPI.onLibraryUpdated) {
     window.electronAPI.onLibraryUpdated((updatedGames) => {
-        // Preserve lazily-fetched image assets — same logic as reloadLibrary()
-        const _prevById = new Map(allGamesData.map(g => [String(g.id), g]));
-        const mergedGames = updatedGames.map(g => {
-            const prev = _prevById.get(String(g.id));
-            if (!prev) return g;
-            // If either side carries the creator lock, the DB version (g) is authoritative
-            // for art — the pipeline cannot have overwritten it.  If only prev has the lock
-            // (edge case: lock set in-memory but DB flush not yet on disk at scan time),
-            // prefer prev's art so we don't momentarily revert.
-            const authoritative = g.customArtworkLocked === true ? g : (prev.customArtworkLocked === true ? prev : null);
-            if (authoritative) {
-                return _normalizeArtworkAliases({
-                    ...g,
-                    image:        authoritative.image        ?? null,
-                    cover:        authoritative.cover        ?? null,
-                    coverUrl:     authoritative.coverUrl     ?? null,
-                    defaultImage: authoritative.defaultImage ?? null,
-                    hero:         authoritative.hero         ?? null,
-                    heroImage:    authoritative.heroImage    ?? null,
-                    heroUrl:      authoritative.heroUrl      ?? null,
-                    defaultHero:  authoritative.defaultHero  ?? null,
-                    logo:         authoritative.logo         ?? null,
-                    logoUrl:      authoritative.logoUrl      ?? null,
-                    defaultLogo:  authoritative.defaultLogo  ?? null,
-                    customArtworkLocked: true,
-                    artworkSource: authoritative.artworkSource || g.artworkSource || prev.artworkSource || null,
-                    artworkUpdatedAt: authoritative.artworkUpdatedAt || g.artworkUpdatedAt || prev.artworkUpdatedAt || null,
-                });
-            }
-            return _normalizeArtworkAliases({
-                ...g,
-                image:        g.image        || prev.image        || null,
-                defaultImage: g.defaultImage || prev.defaultImage || null,
-                coverUrl:     g.coverUrl     || prev.coverUrl     || null,
-                heroImage:    g.heroImage    || prev.heroImage    || null,
-                defaultHero:  g.defaultHero  || prev.defaultHero  || null,
-                logo:         g.logo         || prev.logo         || null,
-                defaultLogo:  g.defaultLogo  || prev.defaultLogo  || null,
-            });
-        });
+        const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
         window._readyToInstallRenderedGames = null; // invalidate stale RTI page count
@@ -1319,29 +1318,7 @@ async function reloadLibrary() {
     try {
         const updatedGames = await window.electronAPI.scanAllGames();
 
-        // ── Preserve previously loaded image assets across the rescan ────────────
-        // scanAllGames() returns the DB snapshot at the time of the scan.  Any
-        // image fields that were lazily fetched AFTER the last save (e.g. by
-        // fetchMetadata / onGameImageUpdated) live only in the current allGamesData
-        // array.  Without this merge they are lost and the card falls back to hero
-        // art, producing the broken hero+logo composition in Installed Games cards.
-        const _prevById = new Map(allGamesData.map(g => [String(g.id), g]));
-        const mergedGames = updatedGames.map(g => {
-            const prev = _prevById.get(String(g.id));
-            if (!prev) return g;
-            return {
-                ...g,
-                // Poster — prefer freshly scanned value, fall back to what was in memory
-                image:        g.image        || prev.image        || null,
-                defaultImage: g.defaultImage || prev.defaultImage || null,
-                coverUrl:     g.coverUrl     || prev.coverUrl     || null,
-                // Background / logo — preserve for hero section & details page
-                heroImage:    g.heroImage    || prev.heroImage    || null,
-                defaultHero:  g.defaultHero  || prev.defaultHero  || null,
-                logo:         g.logo         || prev.logo         || null,
-                defaultLogo:  g.defaultLogo  || prev.defaultLogo  || null,
-            };
-        });
+        const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
 
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync

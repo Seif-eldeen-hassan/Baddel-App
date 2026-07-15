@@ -610,6 +610,19 @@ function _getRecentPosterFallback(game) {
     return artwork.cover?.value || legacyPoster;
 }
 
+function _canonicalizeRecentGame(game) {
+    const projection = window.BaddelCanonicalArtworkProjection;
+    if (!projection || typeof projection.projectFromRecords !== 'function') return game;
+    const projected = projection.projectFromRecords(game, window.allGamesData || []);
+    if (projected && projected._artworkIdentityMatchReason && projected.customArtworkLocked === true) {
+        console.info('[ArtworkIdentity] uiId=' + String(game?.id || '') +
+            ' canonicalId=' + String(projected.localGameId || projected.id || '') +
+            ' matchReason=' + String(projected._artworkIdentityMatchReason || '') +
+            ' source=' + String(projected.artworkSource || 'settings'));
+    }
+    return projected || game;
+}
+
 function _getRecentDisplayImage(game) {
     return (
         _getRecentPosterFallback(game) ||
@@ -621,6 +634,8 @@ function _getRecentDisplayImage(game) {
 // hydrateRecentHeroArtwork lives in src/js/app/artwork-sync.js
 
 function createRecentCard(game, isFeatured = false) {
+    game = _canonicalizeRecentGame(game);
+    const displayImg = _getRecentDisplayImage(game);
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
     card.setAttribute('data-id', game.id);
@@ -630,8 +645,6 @@ function createRecentCard(game, isFeatured = false) {
     const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
 
     // Cover image — hero artwork first for the cinematic 16:9 look
-    const displayImg = _getRecentDisplayImage(game);
-
     // Labels — use the resolver so pre-fix data with null lastPlayed still shows a date
     const lastPlayedLabel = formatLastPlayed(_agResolveLastPlayedTimestamp(game));
     const playtimeLabel   = formatPlaytime(pData.totalMinutes);

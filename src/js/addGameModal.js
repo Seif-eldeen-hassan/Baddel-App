@@ -763,6 +763,46 @@ function _gsPatchAllGamesTitleAfterRename(localGame, newName) {
     }
 }
 
+function _gsBuildArtworkIdentity(game, uiId) {
+    const allIds = (game && typeof game.allIds === 'object') ? { ...game.allIds } : {};
+    return {
+        id: uiId,
+        gameId: uiId,
+        localGameId: game?.localGameId,
+        installedId: game?.installedId,
+        installedGameKey: game?.installedGameKey,
+        command: game?.command,
+        executablePath: game?.executablePath,
+        path: game?.path,
+        launchCommand: game?.launchCommand,
+        shortcutPath: game?.shortcutPath,
+        allIds,
+        platform: game?.platform,
+        appId: game?.appId,
+        appid: game?.appid,
+        steamAppId: game?.steamAppId,
+        steam_appid: game?.steam_appid,
+        appName: game?.appName,
+        launcherGameId: game?.launcherGameId,
+        namespace: game?.namespace,
+        catalogNamespace: game?.catalogNamespace,
+        catalogItemId: game?.catalogItemId,
+    };
+}
+
+function _gsLogArtworkIdentityFailure(uiId, game, res) {
+    console.warn('[ArtworkIdentity] Settings artwork save failed', {
+        uiId: String(uiId || ''),
+        localGameId: game?.localGameId || null,
+        installedId: game?.installedId || null,
+        installedGameKey: game?.installedGameKey || null,
+        steam: game?.allIds?.steam || game?.steamAppId || game?.steam_appid || null,
+        epic: game?.appName || game?.launcherGameId || null,
+        status: res?.status || 'error',
+        message: res?.message || 'Game not found',
+    });
+}
+
 async function saveGameSettings() {
     if (!selectedGameId) return;
 
@@ -802,32 +842,42 @@ async function saveGameSettings() {
         const change = pendingImageChanges[type];
 
         if (change.action === 'update') {
-            const res = await window.electronAPI.updateGameImage(selectedGameId, change.path, type, {
+            const identity = _gsBuildArtworkIdentity(g, selectedGameId);
+            const res = await window.electronAPI.updateGameImage(identity, change.path, type, {
                 source: 'settings',
                 locked: true,
                 updatedAt: _artworkTs,
             });
-            localStorage.setItem(`${type}_${selectedGameId}`, change.path);
+            if (!res || res.status !== 'success' || res.persisted !== true || !res.updatedGame) {
+                _gsLogArtworkIdentityFailure(selectedGameId, g, res);
+                showToast(res?.message || 'Artwork save failed', 'error');
+                return;
+            }
+
+            const savedPath = res.path || change.path;
+            const canonicalGame = res.updatedGame || {};
+            localStorage.setItem(`${type}_${selectedGameId}`, savedPath);
+            if (res.canonicalGameId) localStorage.setItem(`${type}_${res.canonicalGameId}`, savedPath);
 
             if (type === 'cover') {
-                g.cover        = change.path;
-                g.image        = change.path;
-                g.coverUrl     = change.path;
-                g.defaultImage = change.path;
-                _patch.cover   = change.path;
+                g.cover        = savedPath;
+                g.image        = savedPath;
+                g.coverUrl     = savedPath;
+                g.defaultImage = savedPath;
+                _patch.cover   = savedPath;
             }
             if (type === 'hero') {
-                g.hero        = change.path;
-                g.heroImage   = change.path;
-                g.heroUrl     = change.path;
-                g.defaultHero = change.path;
-                _patch.hero   = change.path;
+                g.hero        = savedPath;
+                g.heroImage   = savedPath;
+                g.heroUrl     = savedPath;
+                g.defaultHero = savedPath;
+                _patch.hero   = savedPath;
             }
             if (type === 'logo') {
-                g.logo        = change.path;
-                g.logoUrl     = change.path;
-                g.defaultLogo = change.path;
-                _patch.logo   = change.path;
+                g.logo        = savedPath;
+                g.logoUrl     = savedPath;
+                g.defaultLogo = savedPath;
+                _patch.logo   = savedPath;
             }
 
             _changedTypes.push(type);
@@ -837,7 +887,13 @@ async function saveGameSettings() {
             // priority logic knows a newer Settings save overrides older Creator art.
             g.customArtworkLocked = true;
             g.artworkSource    = 'settings';
-            g.artworkUpdatedAt = _artworkTs;
+            g.artworkUpdatedAt = res.artworkUpdatedAt || _artworkTs;
+            g.localGameId = res.canonicalGameId || g.localGameId;
+            g.installedId = g.installedId || res.canonicalGameId || canonicalGame.id;
+            console.info('[ArtworkIdentity] uiId=' + String(selectedGameId) +
+                ' canonicalId=' + String(res.canonicalGameId || '') +
+                ' matchReason=' + String(res.matchReason || '') +
+                ' source=settings');
         } else if (change.action === 'reset') {
             localStorage.removeItem(`${type}_${selectedGameId}`);
             let restoredPath = null;

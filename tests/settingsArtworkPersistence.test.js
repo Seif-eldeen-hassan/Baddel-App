@@ -1,4 +1,4 @@
-'use strict';
+﻿'use strict';
 
 const test = require('node:test');
 const assert = require('node:assert/strict');
@@ -49,7 +49,7 @@ test('Settings cover persists ownership, lock, timestamp, and aliases across rep
     })]);
     const ts = Date.now() - 500;
 
-    repo.updateGameImage('g1', 'file://settings-cover.webp', 'cover', {
+    await repo.updateGameImage('g1', 'file://settings-cover.webp', 'cover', {
         source: 'settings',
         locked: true,
         updatedAt: ts,
@@ -75,12 +75,12 @@ test('Settings hero and logo persist with one operation timestamp and synchroniz
     const heroTs = Date.now() - 400;
     const logoTs = Date.now() - 300;
 
-    repo.updateGameImage('g1', 'file://settings-hero.webp', 'hero', {
+    await repo.updateGameImage('g1', 'file://settings-hero.webp', 'hero', {
         source: 'settings',
         locked: true,
         updatedAt: heroTs,
     });
-    repo.updateGameImage('g1', 'file://settings-logo.webp', 'logo', {
+    await repo.updateGameImage('g1', 'file://settings-logo.webp', 'logo', {
         source: 'settings',
         locked: true,
         updatedAt: logoTs,
@@ -100,10 +100,10 @@ test('Settings hero and logo persist with one operation timestamp and synchroniz
     assert.equal(after.artworkUpdatedAt, logoTs);
 });
 
-test('Creator ownership remains available through explicit updateGameImage options', () => {
+test('Creator ownership remains available through explicit updateGameImage options', async () => {
     const { repo } = makeRepo([baseGame()]);
     const ts = Date.now() - 200;
-    repo.updateGameImage('g1', 'file://creator-cover.webp', 'cover', {
+    await repo.updateGameImage('g1', 'file://creator-cover.webp', 'cover', {
         source: 'creator',
         locked: true,
         updatedAt: ts,
@@ -122,7 +122,7 @@ test('Settings cover resolves consistently across All Games, Game Details, Play 
         artworkSource: 'creator',
         artworkUpdatedAt: Date.now() - 1000,
     })]);
-    repo.updateGameImage('g1', 'file://settings-cover.webp', 'cover', {
+    await repo.updateGameImage('g1', 'file://settings-cover.webp', 'cover', {
         source: 'settings',
         locked: true,
         updatedAt: Date.now(),
@@ -155,10 +155,11 @@ test('Metadata hydration cannot overwrite Settings or Creator artwork but can fi
 
 test('library-updated merge source keeps authoritative aliases and does not retain stale previous coverUrl', () => {
     const app = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
-    const mergeStart = app.indexOf('const authoritative = g.customArtworkLocked === true ? g');
-    assert.ok(mergeStart !== -1, 'library-updated merge must choose an authoritative locked record');
-    const mergeBody = app.slice(mergeStart, mergeStart + 1800);
-    assert.match(mergeBody, /coverUrl:\s+authoritative\.coverUrl\s+\?\?\s+null/);
-    assert.match(mergeBody, /artworkSource:\s+authoritative\.artworkSource/);
-    assert.match(mergeBody, /artworkUpdatedAt:\s+authoritative\.artworkUpdatedAt/);
+    const mergeStart = app.indexOf('function _mergeCanonicalArtworkAcrossLibrary');
+    assert.ok(mergeStart !== -1, 'library-updated merge must use the canonical artwork merge helper');
+    const mergeBody = app.slice(mergeStart, mergeStart + 3200);
+    assert.match(mergeBody, /projectFromRecords/);
+    assert.match(mergeBody, /customArtworkLocked/);
+    assert.match(mergeBody, /artworkSource/);
+    assert.match(mergeBody, /artworkUpdatedAt/);
 });

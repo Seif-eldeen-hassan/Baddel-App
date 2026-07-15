@@ -167,7 +167,7 @@ class BaddelEngine {
     // ============================================================
     // IMAGES
     // ============================================================
-    updateGameImage(gameId, newImagePath, type = 'cover', opts) { return this._jsonGameRepository.updateGameImage(gameId, newImagePath, type, opts); }
+    async updateGameImage(gameId, newImagePath, type = 'cover', opts) { return this._jsonGameRepository.updateGameImage(gameId, newImagePath, type, opts); }
 
     async resetGameImage(gameId, type = 'cover', opts = {}) {
         return _resetGameImageUseCase({

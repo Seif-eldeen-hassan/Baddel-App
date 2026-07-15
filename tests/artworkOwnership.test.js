@@ -229,7 +229,8 @@ test('app.js: library-updated merge propagates customArtworkLocked', () => {
     const mergeStart = src.indexOf('onLibraryUpdated');
     assert.ok(mergeStart !== -1, 'onLibraryUpdated must exist');
     const mergeBody = src.slice(mergeStart, mergeStart + 1200);
-    assert.match(mergeBody, /customArtworkLocked/, 'library-updated merge must handle customArtworkLocked');
+    assert.match(mergeBody, /_mergeCanonicalArtworkAcrossLibrary/, 'library-updated merge must delegate to the canonical artwork merge helper');
+    assert.match(src, /customArtworkLocked/, 'canonical artwork merge helper must handle customArtworkLocked');
 });
 
 test('app.js: fetchMetadata short-circuits for customArtworkLocked games', () => {
@@ -506,7 +507,7 @@ test('saveGameSettings: calls window.__baddelApplyGameCustomOverride with accumu
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 5000);
+    const fnBody = src.slice(fnStart, fnStart + 7000);
     assert.match(fnBody, /__baddelApplyGameCustomOverride/, 'saveGameSettings must call window.__baddelApplyGameCustomOverride');
     assert.match(fnBody, /_patch/, 'saveGameSettings must accumulate a patch object for __baddelApplyGameCustomOverride');
 });
