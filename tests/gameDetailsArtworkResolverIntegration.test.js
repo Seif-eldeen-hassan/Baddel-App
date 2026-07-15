@@ -284,13 +284,15 @@ test('Play Launcher integration remains present after Game Details integration',
     assert.doesNotMatch(src, /GameDetailsArtworkAdapter|BaddelGameDetailsArtworkAdapter/);
 });
 
-test('Settings and Creator write paths remain unchanged at ownership fields', () => {
+test('Creator write path commits canonical artwork through the render coordinator', () => {
     const src = fs.readFileSync(gameDetailsPath, 'utf8');
     const creatorStart = src.indexOf('window.gdCreatorSave = async function');
     const creatorBody = src.slice(creatorStart, src.indexOf('window.gdCreatorCancel', creatorStart));
     assert.match(creatorBody, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/);
     assert.match(creatorBody, /source:\s*'creator'/);
-    assert.match(creatorBody, /artworkSource:\s*_creatorHasArtworkUpdates \? 'creator' : null/);
+    assert.match(creatorBody, /canonicalSavedGame\s*=\s*res\.updatedGame/);
+    assert.match(creatorBody, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/);
+    assert.doesNotMatch(creatorBody, /cover:\s*_creatorDirtyTypes\.cover \? newCover : null/);
     const ownershipTests = fs.readFileSync(path.join(ROOT, 'tests/artworkOwnership.test.js'), 'utf8');
     assert.match(ownershipTests, /saveGameSettings: writes artworkSource settings not creator/);
 });

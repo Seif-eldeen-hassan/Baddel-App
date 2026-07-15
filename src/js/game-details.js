@@ -9266,6 +9266,7 @@ window.gdCreatorSave = async function() {
             if (message) return message;
             return 'Artwork could not be saved.';
         };
+        let canonicalSavedGame = null;
 
         if (_creatorHasArtworkUpdates && !window.electronAPI?.setGameArtwork) {
             const err = new Error('Artwork save service is unavailable.');
@@ -9304,7 +9305,8 @@ window.gdCreatorSave = async function() {
                     err.creatorSaveResult = _gdCreatorDbResult;
                     throw err;
                 }
-                window.__baddelUpsertCanonicalGameRegistry?.(res.updatedGame);
+                canonicalSavedGame = res.updatedGame;
+                window.__baddelUpsertCanonicalGameRegistry?.(canonicalSavedGame);
                 const refreshId = res?.canonicalGameId || gameId;
                 await _gdRefreshGameFromDbAfterMutation(refreshId, {
                     reason: 'creator-save',
@@ -9338,12 +9340,13 @@ window.gdCreatorSave = async function() {
             }
         }
 
-        _gdPersistCustomDetails(baseGame, draft);
-        _gdCurrentCustomDetails = _gdLoadCustomDetails(baseGame);
+        const committedBaseGame = canonicalSavedGame || baseGame;
+        _gdPersistCustomDetails(committedBaseGame, draft);
+        _gdCurrentCustomDetails = _gdLoadCustomDetails(committedBaseGame);
 
         // ── Build committed savedGame/savedMeta from baseGame + saved custom ─
         const savedCustom = _gdCurrentCustomDetails || draft;
-        const savedGame   = _gdApplyCustomToGame(baseGame, savedCustom);
+        const savedGame   = _gdApplyCustomToGame(committedBaseGame, savedCustom);
         const savedMeta   = _gdBuildCustomMeta(savedGame, savedCustom);
 
         // ── Commit to module-level state (only here, once) ───────────────────
@@ -9421,23 +9424,6 @@ window.gdCreatorSave = async function() {
                 g.title = draft.title;
                 g.creatorCustomName = draft.title;
             }
-            if (_creatorDirtyTypes.cover && newCover) {
-                g.image = newCover;
-                g.defaultImage = newCover;
-                g.coverUrl = newCover;
-                g._agCoverPipelineDone = true;
-                g._agCoverInFlight = false;
-                g._agRemoteFallbackReady = true;
-                g._agLocalRetryCount = 999;
-            }
-            if (_creatorDirtyTypes.hero && newHero) { g.heroImage = newHero; g.defaultHero = newHero; g.heroUrl = newHero; }
-            if (_creatorDirtyTypes.logo && newLogo) { g.logo = newLogo; g.defaultLogo = newLogo; g.logoUrl = newLogo; }
-            if (_creatorDirtyTypes.logo && logoCleared) { g.logo = null; g.defaultLogo = null; g.logoUrl = null; }
-            if (_creatorHasArtworkUpdates) {
-                g.customArtworkLocked = true;
-                g.artworkSource = 'creator';
-                g.artworkUpdatedAt = creatorArtworkUpdatedAt;
-            }
             if (gameId && !g.installedId) g.installedId = gameId;
         };
 
@@ -9460,18 +9446,18 @@ window.gdCreatorSave = async function() {
         // Using _gdCollectCreatorOverrideTargets ensures installed+synced hybrid games are both updated.
         // skipSyncedRender=true because renderSyncedSuggestions() is called explicitly in the render block below.
         const _gdCreatorPatch = {
-            cover: _creatorDirtyTypes.cover ? newCover : null,
-            hero: _creatorDirtyTypes.hero ? newHero : null,
-            logo: _creatorDirtyTypes.logo ? newLogo : null,
-            logoCleared: _creatorDirtyTypes.logo && logoCleared,
             name: draft.title,
-            artworkSource: _creatorHasArtworkUpdates ? 'creator' : null,
-            artworkUpdatedAt: _creatorHasArtworkUpdates ? creatorArtworkUpdatedAt : null,
         };
         const _gdOverrideTargets = _gdCollectCreatorOverrideTargets(baseGame, savedGame);
-        if (typeof window.__baddelApplyGameCustomOverride === 'function') {
+        if (!_creatorHasArtworkUpdates && typeof window.__baddelApplyGameCustomOverride === 'function') {
             _gdOverrideTargets.forEach(target => {
                 window.__baddelApplyGameCustomOverride(target, _gdCreatorPatch, { skipSyncedRender: true });
+            });
+        }
+        if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+            window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
+                reason: 'creator-save',
+                changedTypes: Object.keys(_creatorArtworkUpdates),
             });
         }
 
@@ -9516,7 +9502,6 @@ window.gdCreatorSave = async function() {
 
         // ── Re-render outside views ───────────────────────────────────────────
         if (typeof renderRecentlyPlayed    === 'function') try { renderRecentlyPlayed();    } catch (_) {}
-        if (typeof renderExploreCarousel   === 'function') try { renderExploreCarousel();   } catch (_) {}
         if (typeof applyFilters            === 'function') try { applyFilters();            } catch (_) {}
         if (typeof applyHeroForHome        === 'function') try { applyHeroForHome();        } catch (_) {}
         if (typeof renderSyncedSuggestions === 'function') try { renderSyncedSuggestions(); } catch (_) {}

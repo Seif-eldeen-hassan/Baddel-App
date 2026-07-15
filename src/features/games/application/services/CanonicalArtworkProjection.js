@@ -2,12 +2,16 @@
 
 let _identityApi = null;
 let _artworkStateApi = null;
+let _readModelApi = null;
 if (typeof require === 'function') {
     try {
         _identityApi = require('./CanonicalGameIdentityResolver');
     } catch (_) {}
     try {
         _artworkStateApi = require('../../domain/services/GameArtworkState');
+    } catch (_) {}
+    try {
+        _readModelApi = require('./GameArtworkReadModel');
     } catch (_) {}
 }
 if (!_identityApi && typeof window !== 'undefined') {
@@ -16,26 +20,26 @@ if (!_identityApi && typeof window !== 'undefined') {
 if (!_artworkStateApi && typeof window !== 'undefined') {
     _artworkStateApi = window.BaddelGameArtworkState;
 }
+if (!_readModelApi && typeof window !== 'undefined') {
+    _readModelApi = window.BaddelGameArtworkReadModel;
+}
 
 const _COPY_FIELDS = [
-    'image', 'cover', 'coverUrl', 'defaultImage',
-    'hero', 'heroImage', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl',
-    'logo', 'logoUrl', 'defaultLogo',
     'artworkState',
     'customArtworkLocked', 'artworkSource', 'artworkUpdatedAt',
     'id', 'installedGameKey', 'allIds', 'steamAppId', 'steam_appid', 'appId', 'appid',
     'appName', 'launcherGameId', 'namespace', 'catalogNamespace', 'catalogItemId',
 ];
 
-function _hasExplicitArtwork(game) {
-    return Boolean(game && game.customArtworkLocked === true &&
-        (game.artworkSource === 'settings' || game.artworkSource === 'creator'));
-}
-
 function _copyDefined(target, source, fields) {
     for (const field of fields) {
         if (source[field] !== undefined) target[field] = source[field];
     }
+}
+
+function _hasExplicitArtwork(game) {
+    return Boolean(game && game.customArtworkLocked === true &&
+        (game.artworkSource === 'settings' || game.artworkSource === 'creator'));
 }
 
 function normalizeArtworkAliases(game) {
@@ -69,7 +73,6 @@ function normalizeArtworkAliases(game) {
 
 function projectCanonicalArtwork(displayGame, canonicalGame, { matchReason = null } = {}) {
     if (!displayGame || !canonicalGame) return normalizeArtworkAliases(displayGame);
-    if (!_hasExplicitArtwork(canonicalGame) && canonicalGame.artworkState?.version !== 2) return normalizeArtworkAliases(displayGame);
     const projected = { ...displayGame };
     const displayId = displayGame.id;
     _copyDefined(projected, canonicalGame, _COPY_FIELDS);
@@ -77,6 +80,22 @@ function projectCanonicalArtwork(displayGame, canonicalGame, { matchReason = nul
     projected.localGameId = canonicalGame.id;
     projected.installedId = displayGame.installedId || canonicalGame.id;
     projected._artworkIdentityMatchReason = matchReason || 'canonical';
+    if (canonicalGame.artworkState?.version === 2 && _readModelApi?.buildGameArtworkReadModel) {
+        const model = _readModelApi.buildGameArtworkReadModel({
+            displayGame,
+            canonicalGame,
+            matchReason,
+        });
+        const withAliases = _readModelApi.applyReadModelAliases(projected, model);
+        withAliases.artworkState = canonicalGame.artworkState;
+        withAliases.customArtworkLocked = canonicalGame.customArtworkLocked;
+        withAliases.artworkSource = canonicalGame.artworkSource;
+        withAliases.artworkUpdatedAt = canonicalGame.artworkUpdatedAt;
+        return withAliases;
+    }
+    if (_hasExplicitArtwork(canonicalGame)) {
+        return normalizeArtworkAliases({ ...projected, ...canonicalGame, id: projected.id, localGameId: canonicalGame.id });
+    }
     return normalizeArtworkAliases(projected);
 }
 

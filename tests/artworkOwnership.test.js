@@ -243,15 +243,17 @@ test('app.js: fetchMetadata short-circuits for customArtworkLocked games', () =>
 
 // ── game-details.js: gdCreatorSave ownership and cache invalidation ─────────
 
-test('gdCreatorSave: sets customArtworkLocked and artworkSource in IPC payload', () => {
+test('gdCreatorSave: sends creator ownership through setGameArtwork options', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'game-details.js'), 'utf8');
     // Use the assignment form to find the actual function definition, not an earlier reference call
     const fnStart = src.indexOf('window.gdCreatorSave = async function');
     assert.ok(fnStart !== -1, 'gdCreatorSave must exist');
     const fnBody = src.slice(fnStart, fnStart + 25000);
-    assert.match(fnBody, /customArtworkLocked.*true|true.*customArtworkLocked/, 'must set customArtworkLocked: true');
-    assert.match(fnBody, /artworkSource.*creator|creator.*artworkSource/, 'must set artworkSource: creator');
-    assert.match(fnBody, /artworkUpdatedAt/, 'must set artworkUpdatedAt');
+    assert.match(fnBody, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/, 'must persist artwork through canonical V2 IPC');
+    assert.match(fnBody, /source:\s*'creator'/, 'must tag Creator as the canonical artwork source');
+    assert.match(fnBody, /updatedAt:\s*creatorArtworkUpdatedAt/, 'must carry the Creator artwork timestamp');
+    assert.doesNotMatch(fnBody, /_gdCreatorPatch\.customArtworkLocked\s*=/,
+        'content patch must not become a second committed artwork authority');
 });
 
 test('gdCreatorSave: routes artwork through setGameArtwork with source=creator', () => {
@@ -502,36 +504,40 @@ test('JsonGameRepository.js: updateGameMetadata skip logic references serverVeri
 
 // ── Metadata sync: saveGameSettings alias fields ────────────────────────────
 
-test('saveGameSettings: cover update sets coverUrl and defaultImage aliases', () => {
+test('saveGameSettings: canonical artwork save uses updatedGame instead of direct alias patching', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 3000);
-    assert.match(fnBody, /g\.coverUrl\s*=/, 'saveGameSettings must set g.coverUrl on cover update');
-    assert.match(fnBody, /g\.defaultImage\s*=/, 'saveGameSettings must set g.defaultImage on cover update');
-    assert.match(fnBody, /g\.heroUrl\s*=/, 'saveGameSettings must set g.heroUrl on hero update');
-    assert.match(fnBody, /g\.defaultHero\s*=/, 'saveGameSettings must set g.defaultHero on hero update');
-    assert.match(fnBody, /g\.logoUrl\s*=/, 'saveGameSettings must set g.logoUrl on logo update');
-    assert.match(fnBody, /g\.defaultLogo\s*=/, 'saveGameSettings must set g.defaultLogo on logo update');
+    const fnBody = src.slice(fnStart, fnStart + 12000);
+    assert.match(fnBody, /canonicalSavedGame\s*=\s*canonicalGame/,
+        'Settings save must capture canonical updatedGame');
+    assert.match(fnBody, /Object\.assign\(g,\s*canonicalGame\)/,
+        'Settings save must patch the runtime record from canonical updatedGame');
+    assert.doesNotMatch(fnBody, /g\.coverUrl\s*=\s*change\.path/,
+        'Settings save must not patch committed Cover from the draft path after canonical save');
+    assert.doesNotMatch(fnBody, /g\.heroUrl\s*=\s*change\.path/,
+        'Settings save must not patch committed Hero from the draft path after canonical save');
 });
 
-test('saveGameSettings: calls window.__baddelApplyGameCustomOverride with accumulated patch', () => {
+test('saveGameSettings: only calls window.__baddelApplyGameCustomOverride for title-only updates', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 7000);
-    assert.match(fnBody, /__baddelApplyGameCustomOverride/, 'saveGameSettings must call window.__baddelApplyGameCustomOverride');
+    const fnBody = src.slice(fnStart, fnStart + 12000);
+    assert.match(fnBody, /if\s*\(\s*!_changedTypes\.length\s*&&\s*typeof window\.__baddelApplyGameCustomOverride\s*===\s*'function'\s*\)/,
+        'saveGameSettings must restrict legacy override propagation to content-only saves');
     assert.match(fnBody, /_patch/, 'saveGameSettings must accumulate a patch object for __baddelApplyGameCustomOverride');
 });
 
 // ── Metadata sync: gdCreatorSave propagates to synced stores ────────────────
 
-test('gdCreatorSave: calls window.__baddelApplyGameCustomOverride for synced store propagation', () => {
+test('gdCreatorSave: bypasses window.__baddelApplyGameCustomOverride for canonical artwork saves', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'game-details.js'), 'utf8');
     const fnStart = src.indexOf('window.gdCreatorSave = async function');
     assert.ok(fnStart !== -1, 'gdCreatorSave must exist');
     const fnBody = src.slice(fnStart, fnStart + 25000);
-    assert.match(fnBody, /__baddelApplyGameCustomOverride/, 'gdCreatorSave must call window.__baddelApplyGameCustomOverride');
+    assert.match(fnBody, /!_creatorHasArtworkUpdates[^{}]*&&[^{}]*__baddelApplyGameCustomOverride/s,
+        'gdCreatorSave must call the legacy helper only for content-only propagation');
     assert.match(fnBody, /skipSyncedRender.*true|true.*skipSyncedRender/, 'gdCreatorSave must pass skipSyncedRender:true (renderSyncedSuggestions handles re-render)');
 });
 
@@ -610,28 +616,27 @@ test('artwork-sync.js: __baddelApplyGameCustomOverride updates _suggArtCache for
         'must call _updateSuggArtCache for _suggFeaturedGame');
 });
 
-// ── __baddelApplyGameCustomOverride: full alias fields and pipeline guard ────
+// ── __baddelApplyGameCustomOverride: content-only compatibility ────
 
-test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch sets cover and hero alias fields', () => {
+test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch does not set cover or hero aliases', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 3000);
-    assert.match(fnBody, /g\.cover\s*=\s*patch\.cover/, 'must set g.cover (alias used by some platform records)');
-    assert.match(fnBody, /g\.hero\s*=\s*patch\.hero/, 'must set g.hero (alias used by some platform records)');
-    assert.match(fnBody, /g\.image\s*=\s*patch\.cover/, 'must set g.image from patch.cover');
-    assert.match(fnBody, /g\.heroImage\s*=\s*patch\.hero/, 'must set g.heroImage from patch.hero');
+    assert.doesNotMatch(fnBody, /g\.cover\s*=\s*patch\.cover/, 'legacy helper must not own committed Cover');
+    assert.doesNotMatch(fnBody, /g\.hero\s*=\s*patch\.hero/, 'legacy helper must not own committed Hero');
+    assert.doesNotMatch(fnBody, /g\.image\s*=\s*patch\.cover/, 'legacy helper must not own committed image');
+    assert.doesNotMatch(fnBody, /g\.heroImage\s*=\s*patch\.hero/, 'legacy helper must not own committed heroImage');
 });
 
-test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch sets pipeline guard flags for cover', () => {
+test('artwork-sync.js: __baddelApplyGameCustomOverride _applyPatch does not set artwork pipeline ownership flags', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 3000);
-    // Pipeline guard flags prevent background metadata pipeline from overwriting creator art
-    assert.match(fnBody, /_agCoverPipelineDone\s*=\s*true/, 'must set _agCoverPipelineDone=true to stop pipeline overwrites');
-    assert.match(fnBody, /_agCoverInFlight\s*=\s*false/, 'must set _agCoverInFlight=false');
-    assert.match(fnBody, /_agLocalRetryCount\s*=\s*999/, 'must set _agLocalRetryCount=999 to prevent re-fetch');
+    assert.doesNotMatch(fnBody, /_agCoverPipelineDone\s*=\s*true/, 'legacy helper must not own pipeline guard state');
+    assert.doesNotMatch(fnBody, /_agCoverInFlight\s*=\s*false/, 'legacy helper must not own pipeline guard state');
+    assert.doesNotMatch(fnBody, /_agLocalRetryCount\s*=\s*999/, 'legacy helper must not own pipeline guard state');
 });
 
 // ── gdCreatorSave: unconditional VS re-render ────────────────────────────────
@@ -656,33 +661,33 @@ test('saveGameSettings: writes artworkSource settings not creator', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 8000);
+    const fnBody = src.slice(fnStart, fnStart + 12000);
     assert.match(fnBody, /artworkSource\s*[:=]\s*['"]settings['"]/,
         "saveGameSettings must set artworkSource to 'settings', not 'creator'");
     assert.doesNotMatch(fnBody, /artworkSource\s*[:=]\s*['"]creator['"]/,
         "saveGameSettings must not set artworkSource to 'creator' — that would prevent settings from overriding creator art");
 });
 
-test('saveGameSettings: includes artworkSource and artworkUpdatedAt in _patch sent to __baddelApplyGameCustomOverride', () => {
+test('saveGameSettings: sends settings ownership through setGameArtwork instead of legacy patch', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 8000);
-    assert.match(fnBody, /_patch\.artworkSource\s*=\s*['"]settings['"]/,
-        'saveGameSettings must set _patch.artworkSource = settings before calling __baddelApplyGameCustomOverride');
-    assert.match(fnBody, /_patch\.artworkUpdatedAt\s*=\s*_artworkTs/,
-        'saveGameSettings must set _patch.artworkUpdatedAt = _artworkTs to carry timestamp into all stores');
+    const fnBody = src.slice(fnStart, fnStart + 12000);
+    assert.match(fnBody, /setGameArtwork\(identity,\s*_artworkUpdates/, 'Settings artwork must persist through canonical V2 IPC');
+    assert.match(fnBody, /source:\s*['"]settings['"]/, 'Settings artwork must be tagged as settings in the canonical save');
+    assert.match(fnBody, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/,
+        'Settings must route canonical artwork through the commit coordinator');
 });
 
 test('saveGameSettings: calls _gdClearCustomDetailArtwork after image update', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const fnStart = src.indexOf('async function saveGameSettings');
     assert.ok(fnStart !== -1, 'saveGameSettings must exist');
-    const fnBody = src.slice(fnStart, fnStart + 8000);
+    const fnBody = src.slice(fnStart, fnStart + 12000);
     assert.match(fnBody, /_gdClearCustomDetailArtwork/,
         'saveGameSettings must call _gdClearCustomDetailArtwork to evict stale Creator posterImage');
     // Must pass _changedTypes so only the changed art types are cleared
-    assert.match(fnBody, /_gdClearCustomDetailArtwork\s*\([^)]*_changedTypes/,
+    assert.match(fnBody, /_gdClearCustomDetailArtwork\s*\(\s*g,\s*_changedTypes\s*\)/,
         'saveGameSettings must pass _changedTypes to _gdClearCustomDetailArtwork');
 });
 
@@ -695,26 +700,26 @@ test('saveGameSettings: calls _gdApplyExternalPatch to refresh open Game Detail'
         'saveGameSettings must call _gdApplyExternalPatch so an open Game Detail page reflects the new settings artwork');
 });
 
-test('__baddelApplyGameCustomOverride respects patch.artworkSource instead of forcing creator', () => {
+test('__baddelApplyGameCustomOverride does not write artworkSource ownership', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 4000);
-    // Must NOT unconditionally assign 'creator'
-    assert.doesNotMatch(fnBody, /g\.artworkSource\s*=\s*['"]creator['"]/,
-        "_applyPatch must not hardcode 'creator' — it must use patch.artworkSource so Settings saves are tagged correctly");
-    // Must use patch.artworkSource with fallback
-    assert.match(fnBody, /patch\.artworkSource\s*\|\|\s*['"]creator['"]/,
-        "_applyPatch must use patch.artworkSource || 'creator' to preserve the caller's intended ownership tag");
+    assert.doesNotMatch(fnBody, /g\.artworkSource\s*=/,
+        'legacy helper must not write committed artwork ownership');
+    assert.doesNotMatch(fnBody, /patch\.artworkSource\s*\|\|\s*['"]creator['"]/,
+        'legacy helper must not synthesize committed artwork ownership');
 });
 
-test('__baddelApplyGameCustomOverride respects patch.artworkUpdatedAt instead of always using now', () => {
+test('__baddelApplyGameCustomOverride does not write artworkUpdatedAt ownership', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app', 'artwork-sync.js'), 'utf8');
     const fnStart = src.indexOf('window.__baddelApplyGameCustomOverride');
     assert.ok(fnStart !== -1, '__baddelApplyGameCustomOverride must exist');
     const fnBody = src.slice(fnStart, fnStart + 4000);
-    assert.match(fnBody, /patch\.artworkUpdatedAt\s*\|\|\s*now/,
-        "_applyPatch must use patch.artworkUpdatedAt || now so the shared settings timestamp is preserved");
+    assert.doesNotMatch(fnBody, /g\.artworkUpdatedAt\s*=/,
+        'legacy helper must not write committed artwork timestamps');
+    assert.doesNotMatch(fnBody, /patch\.artworkUpdatedAt\s*\|\|\s*now/,
+        'legacy helper must not synthesize committed artwork timestamps');
 });
 
 test('game-details.js: _gdClearCustomDetailArtwork exists and nulls posterImage/heroImage/logoImage', () => {

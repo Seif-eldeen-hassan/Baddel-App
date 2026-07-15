@@ -436,29 +436,30 @@ describe('Phase 2.12B: artwork-sync — custom artwork override in artwork-sync.
     it('__baddelApplyGameCustomOverride is defined on window', () => {
         assert.match(ARTWORK_SYNC_JS, /window\.__baddelApplyGameCustomOverride\s*=/);
     });
-    it('__baddelApplyGameCustomOverride applies cover patch fields', () => {
+    it('__baddelApplyGameCustomOverride no longer applies committed cover fields', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');
         assert.match(fn, /patch\.cover/);
-        assert.match(fn, /g\.image\s*=/);
-        assert.match(fn, /g\.coverUrl\s*=/);
+        assert.doesNotMatch(fn, /g\.image\s*=/);
+        assert.doesNotMatch(fn, /g\.coverUrl\s*=/);
     });
-    it('__baddelApplyGameCustomOverride applies hero patch fields', () => {
+    it('__baddelApplyGameCustomOverride no longer applies committed hero fields', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');
         assert.match(fn, /patch\.hero/);
-        assert.match(fn, /g\.heroImage\s*=/);
+        assert.doesNotMatch(fn, /g\.heroImage\s*=/);
     });
     it('__baddelApplyGameCustomOverride applies logo patch and supports logoCleared', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');
         assert.match(fn, /patch\.logo/);
         assert.match(fn, /patch\.logoCleared/);
     });
-    it('__baddelApplyGameCustomOverride sets customArtworkLocked on patched game', () => {
+    it('__baddelApplyGameCustomOverride does not set artwork ownership on patched game', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');
-        assert.match(fn, /customArtworkLocked\s*=\s*true/);
+        assert.doesNotMatch(fn, /customArtworkLocked\s*=\s*true/);
     });
-    it('__baddelApplyGameCustomOverride writes cover/hero/logo to localStorage', () => {
+    it('__baddelApplyGameCustomOverride removes stale cover/hero/logo localStorage keys instead of writing them', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');
-        assert.match(fn, /localStorage\.setItem\('cover_'/);
+        assert.doesNotMatch(fn, /localStorage\.setItem\('cover_'/);
+        assert.match(fn, /localStorage\.removeItem\('cover_'/);
     });
     it('__baddelApplyGameCustomOverride invalidates virtual-scroll card cache after patch', () => {
         const fn = getWindowAssignedFunctionBody(ARTWORK_SYNC_JS, '__baddelApplyGameCustomOverride');

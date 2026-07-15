@@ -158,16 +158,25 @@ function _upsertCanonicalGameRegistry(game) {
 window.__baddelCanonicalGames = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
 window.__baddelSetCanonicalGamesRegistry = _setCanonicalGamesRegistry;
 window.__baddelUpsertCanonicalGameRegistry = _upsertCanonicalGameRegistry;
+window.__baddelCanonicalRegistryRefreshInFlight = null;
 window.__baddelRefreshCanonicalGamesRegistry = async function __baddelRefreshCanonicalGamesRegistry(reason = 'manual') {
+    if (window.__baddelCanonicalRegistryRefreshInFlight) {
+        return window.__baddelCanonicalRegistryRefreshInFlight;
+    }
     if (!window.electronAPI?.getGames) return window.__baddelCanonicalGames || [];
-    try {
+    window.__baddelCanonicalRegistryRefreshInFlight = (async () => {
         const records = await window.electronAPI.getGames();
         const registry = _setCanonicalGamesRegistry(records || []);
         console.log('[ArtworkRegistry] refreshed canonical games', { reason, count: registry.length });
         return registry;
+    })();
+    try {
+        return await window.__baddelCanonicalRegistryRefreshInFlight;
     } catch (err) {
         console.warn('[ArtworkRegistry] refresh failed', { reason, message: err && err.message });
         return window.__baddelCanonicalGames || [];
+    } finally {
+        window.__baddelCanonicalRegistryRefreshInFlight = null;
     }
 };
 window.__debugArtworkForGame = function __debugArtworkForGame(identity) {
@@ -192,6 +201,61 @@ window.__debugArtworkForGame = function __debugArtworkForGame(identity) {
         logo: sanitize(projected?.logo),
         artworkState: projected?.artworkState || null,
     };
+};
+
+function _projectCanonicalOntoGame(game, canonicalGame) {
+    if (!game || !canonicalGame) return game;
+    return window.BaddelCanonicalArtworkProjection?.projectCanonicalArtwork
+        ? window.BaddelCanonicalArtworkProjection.projectCanonicalArtwork(game, canonicalGame, { matchReason: 'canonical-commit' })
+        : _normalizeArtworkAliases({ ...game, ...canonicalGame });
+}
+
+window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameUpdate(updatedGame, {
+    reason = 'canonical-update',
+    changedTypes = [],
+} = {}) {
+    if (!updatedGame || !updatedGame.id) return null;
+    const canonicalGame = _normalizeArtworkAliases({ ...updatedGame });
+    _upsertCanonicalGameRegistry(canonicalGame);
+
+    const patchArray = (arr) => {
+        if (!Array.isArray(arr)) return arr;
+        return arr.map(game => {
+            const projected = _projectCanonicalOntoGame(game, canonicalGame);
+            return projected?._artworkIdentityMatchReason ? projected : game;
+        });
+    };
+
+    if (Array.isArray(window.allGamesData)) window.allGamesData = patchArray(window.allGamesData);
+    if (Array.isArray(window._allGamesCache)) window._allGamesCache = patchArray(window._allGamesCache);
+    if (Array.isArray(window._allGamesRawCache)) window._allGamesRawCache = patchArray(window._allGamesRawCache);
+    if (Array.isArray(window.allGamesData) && typeof allGamesData !== 'undefined') allGamesData = window.allGamesData;
+
+    _patchVisibleGameCard(canonicalGame);
+    try {
+        window._gdApplyExternalPatch?.(canonicalGame, {
+            cover: canonicalGame.image,
+            hero: canonicalGame.heroImage,
+            logo: canonicalGame.logo,
+            logoCleared: changedTypes.includes('logo') && !canonicalGame.logo,
+            artworkSource: canonicalGame.artworkSource,
+            artworkUpdatedAt: canonicalGame.artworkUpdatedAt,
+        });
+    } catch (_) {}
+    if (typeof updateHeroSection === 'function' && typeof currentHeroGameId !== 'undefined' && currentHeroGameId) {
+        const match = String(currentHeroGameId) === String(canonicalGame.id) ||
+            (Array.isArray(window.allGamesData) && window.allGamesData.some(g => String(g.id) === String(currentHeroGameId) && g.localGameId === canonicalGame.id));
+        if (match) updateHeroSection(currentHeroGameId);
+    }
+    if (typeof renderRecentlyPlayed === 'function') {
+        try { renderRecentlyPlayed(); } catch (_) {}
+    }
+    console.info('[ArtworkCommit]', {
+        reason,
+        canonicalGameId: canonicalGame.id,
+        changedTypes,
+    });
+    return canonicalGame;
 };
 
 // ── Visible card DOM patcher ──────────────────────────────────────────────────
@@ -300,43 +364,11 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
 
     const _applyPatch = (g) => {
         if (!g) return;
-        if (patch.cover) {
-            g.cover        = patch.cover;
-            g.image        = patch.cover;
-            g.coverUrl     = patch.cover;
-            g.defaultImage = patch.cover;
-            // Stop background pipeline from overwriting creator-chosen art
-            g._agCoverPipelineDone   = true;
-            g._agCoverInFlight       = false;
-            g._agRemoteFallbackReady = true;
-            g._agLocalRetryCount     = 999;
-        }
-        if (patch.hero) {
-            g.hero        = patch.hero;
-            g.heroImage   = patch.hero;
-            g.heroUrl     = patch.hero;
-            g.defaultHero = patch.hero;
-        }
-        if (patch.logo) {
-            g.logo        = patch.logo;
-            g.logoUrl     = patch.logo;
-            g.defaultLogo = patch.logo;
-        }
-        if (patch.logoCleared) {
-            g.logo        = null;
-            g.logoUrl     = null;
-            g.defaultLogo = null;
-        }
         if (patch.name) {
             g.name              = patch.name;
             g.title             = patch.name;
             g.customTitle       = patch.name;
             g.creatorCustomName = patch.name;
-        }
-        if (patch.cover || patch.hero || patch.logo || patch.logoCleared) {
-            g.customArtworkLocked = true;
-            g.artworkSource       = patch.artworkSource || 'creator';
-            g.artworkUpdatedAt    = patch.artworkUpdatedAt || now;
         }
     };
 
@@ -353,11 +385,12 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
     _patchArr(_suggPool);
     if (_suggFeaturedGame && _matches(_suggFeaturedGame)) _applyPatch(_suggFeaturedGame);
 
-    // Update localStorage cover/hero/logo keys for every candidate ID
+    // Legacy localStorage artwork keys are read only for migration/fallback.
+    // Canonical commits must not write them as a second artwork authority.
     candidateKeys.forEach(key => {
-        if (patch.cover)      localStorage.setItem('cover_' + key, patch.cover);
-        if (patch.hero)       localStorage.setItem('hero_'  + key, patch.hero);
-        if (patch.logo)       localStorage.setItem('logo_'  + key, patch.logo);
+        if (patch.cover)      localStorage.removeItem('cover_' + key);
+        if (patch.hero)       localStorage.removeItem('hero_'  + key);
+        if (patch.logo)       localStorage.removeItem('logo_'  + key);
         if (patch.logoCleared) localStorage.removeItem('logo_' + key);
     });
 

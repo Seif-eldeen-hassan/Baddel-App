@@ -431,18 +431,33 @@ async function agFinalizeAddGame() {
 // GAME SETTINGS — LOGO SUPPORT & BETTER IMAGE PREVIEW
 // ============================================================
 
-function openGameSettings(id) {
+async function openGameSettings(id) {
     pendingImageChanges = {};
     selectedGameId = id;
+    const modal = document.getElementById('gameSettingsModal');
+    if (modal) modal.classList.add('is-loading-artwork');
     let g = allGamesData.find(x => String(x.id) === String(id));
     if (!g && Array.isArray(window._allGamesCache)) {
         g = window._allGamesCache.find(x => String(x.id || x.appName || x.title) === String(id));
+    }
+    if (!g) {
+        if (modal) modal.classList.remove('is-loading-artwork');
+        return;
+    }
+    const recordsBeforeRefresh = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
+    const resolvedBeforeRefresh = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity
+        ? window.BaddelCanonicalGameIdentityResolver.resolveCanonicalGameIdentity(g, recordsBeforeRefresh)
+        : null;
+    const needsCanonicalRefresh = recordsBeforeRefresh.length === 0 ||
+        window.__baddelCanonicalRegistryRefreshInFlight ||
+        (resolvedBeforeRefresh && resolvedBeforeRefresh.status !== 'success');
+    if (window.__baddelRefreshCanonicalGamesRegistry && needsCanonicalRefresh) {
+        await window.__baddelRefreshCanonicalGamesRegistry('game-settings-open');
     }
     if (g && window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
         const records = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
         g = window.BaddelCanonicalArtworkProjection.projectFromRecords(g, records) || g;
     }
-    if (!g) return;
 
     document.getElementById('editGameNameInput').value = g.name;
 
@@ -452,9 +467,12 @@ function openGameSettings(id) {
     _gsInitImagePan('gs-cover-wrapper', 'previewCover');
 
     // update images
-    _gsSetArtworkPreview(document.getElementById('previewHero'), [g.heroImage, g.defaultHero, g.image], '../assets/No_Image_Available.jpg');
-    _gsSetArtworkPreview(document.getElementById('previewCover'), [g.image, g.defaultImage, g.coverUrl], '../assets/No_Image_Available.jpg');
-    _gsUpdateLogoPreview(g.logo);
+    const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame: g, canonicalGame: g })
+        : null;
+    _gsSetArtworkPreview(document.getElementById('previewHero'), [readModel?.hero?.effectiveValue, g.heroImage, g.defaultHero], 'assets/No_Image_Available.jpg');
+    _gsSetArtworkPreview(document.getElementById('previewCover'), [readModel?.cover?.effectiveValue, g.image, g.defaultImage, g.coverUrl], 'assets/No_Image_Available.jpg');
+    _gsUpdateLogoPreview(readModel?.logo?.effectiveValue || g.logo);
     
     const btnCover = document.getElementById('btn-reset-cover');
     const btnHero = document.getElementById('btn-reset-hero');
@@ -467,6 +485,7 @@ function openGameSettings(id) {
     // open modal
     document.getElementById('gameSettingsModal').classList.add('active');
     overlay.classList.add('active');
+    if (modal) modal.classList.remove('is-loading-artwork');
 
     checkResetAllButtonState();
 
@@ -612,10 +631,10 @@ async function resetGameImage(type) {
     }
 
     if (type === 'cover') {
-        document.getElementById('previewCover').src = '/assets/No_Image_Available.jpg';
+        document.getElementById('previewCover').src = 'assets/No_Image_Available.jpg';
     } else if (type === 'hero') {
         const heroImg = document.getElementById('previewHero');
-        heroImg.src = '/assets/No_Image_Available.jpg';
+        heroImg.src = 'assets/No_Image_Available.jpg';
         heroImg.style.objectPosition = '50% 50%'; 
     } else if (type === 'logo') {
         _gsUpdateLogoPreview(null); 
@@ -654,10 +673,10 @@ async function resetGameImage(type, skipToast = false) {
     }
 
     if (type === 'cover') {
-        _gsSetArtworkPreview(document.getElementById('previewCover'), [restoredPath], '../assets/No_Image_Available.jpg');
+        _gsSetArtworkPreview(document.getElementById('previewCover'), [restoredPath], 'assets/No_Image_Available.jpg');
     } else if (type === 'hero') {
         const heroImg = document.getElementById('previewHero');
-        _gsSetArtworkPreview(heroImg, [restoredPath], '../assets/No_Image_Available.jpg');
+        _gsSetArtworkPreview(heroImg, [restoredPath], 'assets/No_Image_Available.jpg');
         heroImg.style.objectPosition = '50% 50%'; 
     } else if (type === 'logo') {
         _gsUpdateLogoPreview(restoredPath || null);
@@ -829,14 +848,7 @@ async function saveGameSettings() {
     const _artworkTs    = Date.now();  // single timestamp for the whole settings save
     const _changedTypes = [];          // tracks which art types were updated (cover/hero/logo)
     const _atomicArtworkUpdatedTypes = new Set();
-    if (false) {
-        g.coverUrl = g.defaultImage = g.heroUrl = g.defaultHero = g.logoUrl = g.defaultLogo = null;
-        _patch.artworkSource = 'settings';
-        _patch.artworkUpdatedAt = _artworkTs;
-        window.__baddelApplyGameCustomOverride(g, _patch);
-        window._gdClearCustomDetailArtwork(g, _changedTypes);
-        window._gdApplyExternalPatch(g, _patch);
-    }
+    let canonicalSavedGame = null;
 
     const nameInput = document.getElementById('editGameNameInput');
     if (nameInput) {
@@ -881,6 +893,7 @@ async function saveGameSettings() {
         }
 
         const canonicalGame = res.updatedGame || {};
+        canonicalSavedGame = canonicalGame;
         Object.assign(g, canonicalGame);
         g.localGameId = res.canonicalGameId || g.localGameId;
         g.installedId = g.installedId || res.canonicalGameId || canonicalGame.id;
@@ -928,8 +941,9 @@ async function saveGameSettings() {
 
             const savedPath = res.path || change.path;
             const canonicalGame = res.updatedGame || {};
-            localStorage.setItem(`${type}_${selectedGameId}`, savedPath);
-            if (res.canonicalGameId) localStorage.setItem(`${type}_${res.canonicalGameId}`, savedPath);
+            if (canonicalGame.id) canonicalSavedGame = canonicalGame;
+            localStorage.removeItem(`${type}_${selectedGameId}`);
+            if (res.canonicalGameId) localStorage.removeItem(`${type}_${res.canonicalGameId}`);
 
             if (type === 'cover') {
                 g.cover        = savedPath;
@@ -997,11 +1011,7 @@ async function saveGameSettings() {
 
     // Propagate changes to all live in-memory stores (sugg rail, _allGamesCache, VS)
     if (Object.keys(_patch).length) {
-        if (_changedTypes.length) {
-            _patch.artworkSource    = 'settings';
-            _patch.artworkUpdatedAt = _artworkTs;
-        }
-        if (typeof window.__baddelApplyGameCustomOverride === 'function') {
+        if (!_changedTypes.length && typeof window.__baddelApplyGameCustomOverride === 'function') {
             window.__baddelApplyGameCustomOverride(g, _patch);
         }
         // Clear stale Creator Mode artwork from localStorage customGameDetails so
@@ -1009,15 +1019,28 @@ async function saveGameSettings() {
         if (_changedTypes.length && typeof window._gdClearCustomDetailArtwork === 'function') {
             window._gdClearCustomDetailArtwork(g, _changedTypes);
         }
-        // If Game Detail is open for this game, update _gdCurrentGame and re-render.
-        if (typeof window._gdApplyExternalPatch === 'function') {
+        // Content-only saves still need the direct detail patcher. Artwork saves
+        // are projected once through __baddelCommitCanonicalGameUpdate below.
+        if (!_changedTypes.length && typeof window._gdApplyExternalPatch === 'function') {
             window._gdApplyExternalPatch(g, _patch);
         }
+    }
+    if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+        window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
+            reason: 'settings-save',
+            changedTypes: _changedTypes,
+        });
     }
 
     pendingImageChanges = {};
 
     showToast('Settings saved successfully!', 'success');
-    refreshAllViews();
+    if (_changedTypes.length) {
+        if (typeof applyFilters === 'function') applyFilters();
+        if (typeof renderRecentlyPlayed === 'function') renderRecentlyPlayed();
+        if (currentHeroGameId && allGamesData.find(game => String(game.id) === currentHeroGameId)) updateHeroSection(currentHeroGameId);
+    } else {
+        refreshAllViews();
+    }
     closeGameSettings();
 }

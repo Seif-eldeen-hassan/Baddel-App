@@ -152,8 +152,8 @@ test('stale localStorage cover cannot be the Last Played winner over persisted S
 
 test('changing Settings cover refresh paths remain wired for Last Played and Home surfaces', () => {
     const settings = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
-    assert.match(settings, /refreshAllViews\(\)/);
-    assert.match(settings, /__baddelApplyGameCustomOverride/);
-    assert.match(settings, /_patch\.artworkSource\s*=\s*'settings'/);
+    assert.match(settings, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/);
+    assert.match(settings, /renderRecentlyPlayed\(\)/);
+    assert.match(settings, /updateHeroSection\(currentHeroGameId\)/);
     assert.match(ARTWORK_SYNC_JS, /if \(window\._vs\?\.cardCache instanceof Map\)\s+window\._vs\.cardCache\.clear\(\)/);
 });

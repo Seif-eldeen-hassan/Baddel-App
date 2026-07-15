@@ -656,10 +656,21 @@ function navigateToInstalled() {
 function renderExploreCarousel() {
     const grid = document.getElementById('exploreGrid');
     if (!grid) return;
+    const previousScrollLeft = grid.scrollLeft || 0;
+    const activeId = document.activeElement?.closest?.('[data-id]')?.dataset?.id || null;
     grid.innerHTML = '';
 
     // نجيب مثلاً 15 لعبة عشوائية نعرضهم في الـ Carousel (أو ممكن تعرضهم كلهم)
-    const shuffled = [...allGamesData].sort(() => Math.random() - 0.5).slice(0, 15);
+    if (!window._exploreSelectionState && window.BaddelExploreSelection?.createExploreSelectionState) {
+        window._exploreSelectionState = window.BaddelExploreSelection.createExploreSelectionState({
+            sessionSeed: String(Date.now()),
+        });
+    }
+    const selectedIds = window.BaddelExploreSelection?.selectExploreGameIds
+        ? window.BaddelExploreSelection.selectExploreGameIds(allGamesData, window._exploreSelectionState, { limit: 15 })
+        : allGamesData.slice(0, 15).map(g => String(g.id));
+    const byId = new Map(allGamesData.map(g => [String(g.id), g]));
+    const shuffled = selectedIds.map(id => byId.get(String(id))).filter(Boolean);
 
     if (shuffled.length === 0) {
         grid.innerHTML = '<div class="empty-state" style="width:100%"><div class="empty-title">No games yet.</div></div>';
@@ -667,6 +678,8 @@ function renderExploreCarousel() {
     }
 
     shuffled.forEach(game => grid.appendChild(createGameCard(game)));
+    grid.scrollLeft = previousScrollLeft;
+    if (activeId) grid.querySelector(`[data-id="${CSS.escape(activeId)}"]`)?.focus?.();
 }
 
 function exploreCarouselPrev() {

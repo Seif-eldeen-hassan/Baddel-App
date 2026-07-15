@@ -72,8 +72,14 @@ function updateHeroSection(gameId) {
 
     if (!bgImg || !logoImg) return;
 
+    const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame: game, canonicalGame: game })
+        : null;
     const heroArtwork = _heroSurfaceArtwork(game, 'home-hero');
-    const rawBg = heroArtwork.hero?.value || heroArtwork.cover?.value || null;
+    const presentation = window.BaddelGameArtworkReadModel?.selectPresentationCandidates
+        ? window.BaddelGameArtworkReadModel.selectPresentationCandidates(readModel, 'home-hero')
+        : [];
+    const rawBg = presentation[0] || heroArtwork.hero?.value || heroArtwork.cover?.value || null;
     const safeBg = safeImageUrl(rawBg);
     if (safeBg) {
         const sanitized = safeBg.replace(/\\/g, '/').replace(/'/g, "\\'");
@@ -91,7 +97,7 @@ function updateHeroSection(gameId) {
         bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
     }
 
-    const safeLogo = safeImageUrl(heroArtwork.logo?.value);
+    const safeLogo = safeImageUrl(readModel?.logo?.effectiveValue || heroArtwork.logo?.value);
     if (safeLogo) {
         logoImg.onerror = () => {
             logoImg.style.display = 'none';
