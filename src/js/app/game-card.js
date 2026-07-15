@@ -308,6 +308,33 @@ function _agFormatLastPlayedShort(value) {
     return `${Math.floor(days / 30)}mo ago`;
 }
 
+function _surfaceArtwork(game, surface, fallback = {}) {
+    const root = typeof window !== 'undefined' ? window : globalThis;
+    const adapter = root.BaddelGameSurfaceArtworkAdapter;
+    const legacyCover = game?.image || game?.defaultImage || game?.coverUrl || game?.cover || game?.posterImage || fallback.cover || fallback.placeholder || null;
+    const legacyHero = game?.heroImage || game?.defaultHero || game?.heroUrl || game?.hero || fallback.hero || null;
+    const legacyLogo = game?.logo || game?.defaultLogo || game?.logoUrl || fallback.logo || null;
+    if (!adapter || typeof adapter.resolveGameSurfaceArtwork !== 'function') {
+        return {
+            cover: { value: legacyCover, source: legacyCover ? 'legacy-fallback' : 'placeholder' },
+            hero:  { value: legacyHero, source: legacyHero ? 'legacy-fallback' : 'placeholder' },
+            logo:  { value: legacyLogo, source: legacyLogo ? 'legacy-fallback' : 'placeholder' },
+        };
+    }
+    try {
+        return adapter.resolveGameSurfaceArtwork({
+            surface,
+            game,
+            placeholders: fallback.placeholder ? { cover: fallback.placeholder, hero: fallback.placeholder } : null,
+        });
+    } catch {
+        return adapter.legacyGameSurfaceArtwork({
+            game,
+            placeholders: fallback.placeholder ? { cover: fallback.placeholder, hero: fallback.placeholder } : null,
+        });
+    }
+}
+
 function _agDecorateAllGamesCardFields(card, game) {
     if (!card || !game) return;
 
@@ -466,8 +493,10 @@ function createGameCard(game, isRecent = false) {
     // from the card visual — they are used only by the hero section and game
     // details page.  Using hero art here causes the broken hero+logo composition
     // after a rescan because hero survives even when the cover is not yet loaded.
-    const displayImg = game.image || game.defaultImage || game.coverUrl || transparentPixel;
-    const hasRealPoster = !!(game.image || game.defaultImage || game.coverUrl);
+    const legacyDisplayImg = game.image || game.defaultImage || game.coverUrl || transparentPixel;
+    const cardArtwork = _surfaceArtwork(game, 'home-card', { cover: legacyDisplayImg, placeholder: transparentPixel });
+    const displayImg = cardArtwork.cover?.value || transparentPixel;
+    const hasRealPoster = displayImg !== transparentPixel;
 
     const favColl   = allCollections.find(c => c.id === 'fav_system_default');
     const isFav     = favColl?.gameIds?.includes(String(game.id)) || false;
@@ -567,12 +596,18 @@ function createGameCard(game, isRecent = false) {
 
 function _getRecentHeroCandidate(game) {
     if (!game) return null;
-    return game.heroImage || game.defaultHero || game.heroUrl || game.hero || null;
+    const legacyHero = game.heroImage || game.defaultHero || game.heroUrl || game.hero || null;
+    if (typeof _surfaceArtwork !== 'function') return legacyHero;
+    const artwork = _surfaceArtwork(game, 'jump-back-in');
+    return artwork.hero?.value || legacyHero;
 }
 
 function _getRecentPosterFallback(game) {
     if (!game) return null;
-    return game.image || game.defaultImage || game.coverUrl || game.cover || null;
+    const legacyPoster = game.image || game.defaultImage || game.coverUrl || game.cover || null;
+    if (typeof _surfaceArtwork !== 'function') return legacyPoster;
+    const artwork = _surfaceArtwork(game, 'jump-back-in');
+    return artwork.cover?.value || legacyPoster;
 }
 
 function _getRecentDisplayImage(game) {

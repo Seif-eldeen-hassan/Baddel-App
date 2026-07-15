@@ -7,6 +7,7 @@ const path = require('node:path');
 const {
     resolveGameArtwork,
 } = require('../src/features/games/application/services/GameArtworkResolver');
+const surfaceAdapter = require('../src/features/games/application/services/GameSurfaceArtworkAdapter');
 
 const ROOT = path.join(__dirname, '..');
 
@@ -51,6 +52,24 @@ function gameDetailsDecision(game, custom, metadata, cache) {
 
 function playLauncherDecision(game, custom, metadata, cache) {
     return canonicalArtwork(game, custom, metadata, cache);
+}
+
+function surfaceDecision(game, cache = {}, metadata = {}) {
+    return surfaceAdapter.resolveGameSurfaceArtwork({
+        surface: 'display-consistency',
+        game,
+        cacheArtwork: cache,
+        metadataArtwork: {
+            ...metadata,
+            verified: true,
+            confidence: metadata.confidence ?? 1,
+        },
+        placeholders: {
+            cover: 'placeholder://artwork',
+            hero: 'placeholder://artwork',
+            logo: 'placeholder://artwork',
+        },
+    });
 }
 
 test('contract: All Games and Game Details converge on the same canonical cover candidate', () => {
@@ -121,6 +140,41 @@ test('contract: Game Details and Play Launcher use the same canonical artwork de
     assert.equal(playLauncherDecision(game, custom, metadata, {}).logo.value, 'file://settings-logo.webp');
 });
 
+test('contract: remaining display surfaces converge on the same canonical artwork decision', () => {
+    const game = {
+        id: 'g1',
+        image: 'file://db-cover.webp',
+        heroImage: 'file://db-hero.webp',
+        logo: 'file://db-logo.webp',
+        coverSettings: 'file://db-cover.webp',
+        heroSettings: 'file://db-hero.webp',
+        logoSettings: 'file://db-logo.webp',
+        customArtworkLocked: true,
+        artworkSource: 'settings',
+        artworkUpdatedAt: 300,
+        settingsUpdatedAt: 300,
+    };
+    const metadata = {
+        cover: 'https://cdn.example/server-cover.jpg',
+        hero: 'https://cdn.example/server-hero.jpg',
+        logo: 'https://cdn.example/server-logo.png',
+    };
+    const cache = {
+        cover: 'file://cache-cover.webp',
+        hero: 'file://cache-hero.webp',
+        logo: 'file://cache-logo.webp',
+    };
+    const canonical = canonicalArtwork(game, {}, metadata, cache);
+    const surface = surfaceDecision(game, cache, metadata);
+
+    assert.equal(surface.cover.value, canonical.cover.value);
+    assert.equal(surface.hero.value, canonical.hero.value);
+    assert.equal(surface.logo.value, canonical.logo.value);
+    assert.equal(surface.cover.source, canonical.cover.source);
+    assert.equal(surface.hero.source, canonical.hero.source);
+    assert.equal(surface.logo.source, canonical.logo.source);
+});
+
 test('contract: cover aliases cannot independently produce different winners', () => {
     const game = {
         image: 'file://image.webp',
@@ -179,16 +233,18 @@ test('contract: disk cache paths represent cached copies, not ownership decision
     assert.equal(authoritative.value, 'file://db-cover.webp');
 });
 
-test('source guard: All Games currently chooses poster art from its own alias order', () => {
-    const src = readRepoFile('src', 'js', 'app', 'artwork-sync.js');
-    const fnStart = src.indexOf('function getPosterUrl');
-    assert.ok(fnStart !== -1, 'getPosterUrl must exist');
-    const fnBody = src.slice(fnStart, fnStart + 700);
+test('source guard: remaining renderer display surfaces delegate to GameSurfaceArtworkAdapter', () => {
+    const gameCard = readRepoFile('src', 'js', 'app', 'game-card.js');
+    const hero = readRepoFile('src', 'js', 'app', 'hero.js');
+    const suggestions = readRepoFile('src', 'js', 'app', 'suggestions.js');
+    const roulette = readRepoFile('src', 'js', 'app', 'roulette.js');
+    const accounts = readRepoFile('src', 'js', 'accounts.js');
 
-    assert.match(fnBody, /game\.image/);
-    assert.match(fnBody, /game\.defaultImage/);
-    assert.match(fnBody, /game\.coverUrl/);
-    assert.match(fnBody, /game\.heroImage/);
+    assert.match(gameCard, /BaddelGameSurfaceArtworkAdapter/);
+    assert.match(hero, /BaddelGameSurfaceArtworkAdapter/);
+    assert.match(suggestions, /BaddelGameSurfaceArtworkAdapter/);
+    assert.match(roulette, /BaddelGameSurfaceArtworkAdapter/);
+    assert.match(accounts, /_agResolveAllGamesCoverDecision/);
 });
 
 test('source guard: Game Details currently has an independent custom metadata merge order', () => {

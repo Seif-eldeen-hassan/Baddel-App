@@ -3810,7 +3810,8 @@ function _renderAllGamesList(games) {
             : (lp ? new Date(lp).toLocaleDateString(undefined, { month:'short', day:'numeric', year:'numeric' }) : '—');
 
         // Cover
-        const cover = game.coverUrl ? _agAttrUrl(game.coverUrl) : '';
+        const coverDecision = _agResolveAllGamesCoverDecision(game);
+        const cover = coverDecision.value ? _agAttrUrl(coverDecision.value) : '';
 
         const row = document.createElement('div');
         row.className = 'ag-list-row';
@@ -4102,7 +4103,8 @@ function _renderInstalledGamesList(games) {
             : '—';
 
         // Cover
-        const cover = game.image || game.defaultImage || game.coverUrl || '';
+        const coverDecision = _agResolveAllGamesCoverDecision(game);
+        const cover = coverDecision.value || '';
 
         const row = document.createElement('div');
         row.className = 'ag-list-row';

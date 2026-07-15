@@ -504,6 +504,29 @@ function _suggBadge(platform) {
            `style="height:11px;width:auto;object-fit:contain;"></span>`;
 }
 
+function _suggResolveArtwork(g, surface = 'suggestions') {
+    const artKey = _suggKey(g);
+    const cachedArt = _suggArtCacheGet(artKey) || {};
+    const adapter = window.BaddelGameSurfaceArtworkAdapter;
+    const cacheArtwork = {
+        cover: cachedArt.poster || null,
+        hero: cachedArt.hero || null,
+        logo: cachedArt.logo || null,
+    };
+    if (!adapter || typeof adapter.resolveGameSurfaceArtwork !== 'function') {
+        return {
+            cover: { value: isUsableImageUrl(cachedArt.poster) || getPosterUrl(g) || null, source: 'legacy-fallback' },
+            hero:  { value: isUsableImageUrl(cachedArt.hero) || g.heroImage || g.defaultHero || null, source: 'legacy-fallback' },
+            logo:  { value: isUsableImageUrl(g.logo || g.defaultLogo || cachedArt.logo || null), source: 'legacy-fallback' },
+        };
+    }
+    try {
+        return adapter.resolveGameSurfaceArtwork({ surface, game: g, cacheArtwork });
+    } catch {
+        return adapter.legacyGameSurfaceArtwork({ game: g, cacheArtwork });
+    }
+}
+
 // ── Stale badge chip ──────────────────────────────────────────────────────────
 function _suggStaleBadge() {
     return `<span class="sugg-stale-badge"
@@ -813,8 +836,9 @@ function _suggReRenderOne(g, domId, isFeature) {
         _suggArtCachePopulate(g); // fold new hydration results into cache
         const artKey     = _suggKey(g);
         const cachedArt  = _suggArtCacheGet(artKey);
-        const heroUrl    = isUsableImageUrl(cachedArt?.hero || g.heroImage || g.defaultHero || '');
-        const posterFb   = isUsableImageUrl(cachedArt?.poster);
+        const resolvedArt = _suggResolveArtwork(g, 'suggestions-feature-patch');
+        const heroUrl    = isUsableImageUrl(resolvedArt.hero?.value || '');
+        const posterFb   = isUsableImageUrl(resolvedArt.cover?.value || cachedArt?.poster);
         if (heroUrl || posterFb) {
             if (heroImgEl) {
                 setHeroBgStable(heroImgEl, heroUrl, posterFb);
@@ -827,7 +851,7 @@ function _suggReRenderOne(g, domId, isFeature) {
         }
 
         // ── Logo / title ──
-        const featuredLogo = isUsableImageUrl(g.logo || g.defaultLogo || cachedArt?.logo || null);
+        const featuredLogo = isUsableImageUrl(resolvedArt.logo?.value || null);
         const titleEl = document.querySelector('#sfHeroPanel .sf-title');
         const logoEl  = document.querySelector('#sfHeroPanel .sf-logo');
         if (featuredLogo) {
@@ -845,10 +869,11 @@ function _suggReRenderOne(g, domId, isFeature) {
     } else {
         const row = document.getElementById(domId);
         if (!row) return;
-        const artKey    = _suggKey(g);
-        const cachedArt = _suggArtCacheGet(artKey);
-        const img       = isUsableImageUrl(cachedArt?.poster) || getPosterUrl(g);
-        const imgFb     = isUsableImageUrl(cachedArt?.poster) || null;
+        const artKey     = _suggKey(g);
+        const cachedArt  = _suggArtCacheGet(artKey);
+        const resolvedArt = _suggResolveArtwork(g, 'suggestions-rail-patch');
+        const img        = isUsableImageUrl(resolvedArt.cover?.value || cachedArt?.poster) || getPosterUrl(g);
+        const imgFb      = isUsableImageUrl(cachedArt?.poster || resolvedArt.cover?.fallbackValue) || null;
         if (!img) return;
         const thumbEl = row.querySelector('.srr-thumb');
         if (thumbEl) { setCardImageStable(thumbEl, img, imgFb); thumbEl.innerHTML = ''; }
@@ -898,7 +923,8 @@ window._suggCarouselNext = function() {
 // Returns ordered array of image URLs: screenshots first, then hero/cover fallback
 function _suggCarouselSlides(g) {
     const shots = Array.isArray(g._metaScreenshots) ? g._metaScreenshots : [];
-    const fallback = (g.heroImage || g.image || g.capsuleImage || '').replace(/\\/g, '/');
+    const resolvedArt = _suggResolveArtwork(g, 'suggestions-carousel');
+    const fallback = (resolvedArt.hero?.value || resolvedArt.cover?.value || g.capsuleImage || '').replace(/\\/g, '/');
     const all = shots.length ? shots : (fallback ? [fallback] : []);
     return all;
 }
@@ -938,18 +964,18 @@ function _renderSyncedFeature(g) {
 
     const artKey    = _suggKey(g);
     const cachedArt = _suggArtCacheGet(artKey);
+    const resolvedArt = _suggResolveArtwork(g, 'suggestions-feature');
 
     // ── Hero background: prefer cached file:// then game fields ─────────────
     // Never embed the URL in innerHTML — apply it after render via
     // setHeroBgStable so broken remote URLs degrade gracefully to the fallback.
     const heroCandidate = isUsableImageUrl(
-        cachedArt?.hero ||
-        g.heroImage || g.defaultHero ||
-        (g._heroHydrated ? (g.image || g.capsuleImage || '') : '')
+        resolvedArt.hero?.value ||
+        (g._heroHydrated ? (resolvedArt.cover?.value || g.capsuleImage || '') : '')
     );
 
     // ── Logo vs text title ───────────────────────────────────────────────────
-    const featuredLogo = isUsableImageUrl(g.logo || g.defaultLogo || cachedArt?.logo || null);
+    const featuredLogo = isUsableImageUrl(resolvedArt.logo?.value || null);
     const titleBlock = featuredLogo
         ? `<img class="sf-logo" src="${featuredLogo.replace(/\\/g, '/')}" alt="${g.title || ''}">`
         : `<div class="sf-title">${g.title || 'Unknown'}</div>`;
@@ -1010,9 +1036,10 @@ function _renderSyncedRail(games) {
     games.forEach((g, idx) => {
         const artKey    = _suggKey(g);
         const cachedArt = _suggArtCacheGet(artKey);
+        const resolvedArt = _suggResolveArtwork(g, 'suggestions-rail');
         // Prefer cached file:// poster; fall back to live game fields
-        const img         = isUsableImageUrl(cachedArt?.poster) || getPosterUrl(g);
-        const imgFallback = isUsableImageUrl(cachedArt?.poster) || null;
+        const img         = isUsableImageUrl(resolvedArt.cover?.value || cachedArt?.poster) || getPosterUrl(g);
+        const imgFallback = isUsableImageUrl(cachedArt?.poster || resolvedArt.cover?.fallbackValue) || null;
         const rowId  = `sugg-rail-row-${idx}`;
         const cfg    = _SUGG_PLAT_CFG[g._platform] || { name: g._platform || '?', img: null, invert: false };
         const isActive = idx === _suggPoolIdx;

@@ -7,6 +7,22 @@
 let currentHeroGameId = null;
 let currentHeroSlideshowInterval = null;
 
+function _heroSurfaceArtwork(game, surface = 'home-hero') {
+    const adapter = window.BaddelGameSurfaceArtworkAdapter;
+    if (!adapter || typeof adapter.resolveGameSurfaceArtwork !== 'function') {
+        return {
+            cover: { value: game?.image || game?.defaultImage || game?.coverUrl || null, source: 'legacy-fallback' },
+            hero:  { value: game?.heroImage || game?.image || null, source: 'legacy-fallback' },
+            logo:  { value: game?.logo || game?.defaultLogo || null, source: 'legacy-fallback' },
+        };
+    }
+    try {
+        return adapter.resolveGameSurfaceArtwork({ surface, game });
+    } catch {
+        return adapter.legacyGameSurfaceArtwork({ game });
+    }
+}
+
 function applyHeroForHome() {
     const recent = getRecentGames();
     if (recent.length > 0) {
@@ -50,7 +66,8 @@ function updateHeroSection(gameId) {
 
     if (!bgImg || !logoImg) return;
 
-    const rawBg = game.heroImage || game.image || null;
+    const heroArtwork = _heroSurfaceArtwork(game, 'home-hero');
+    const rawBg = heroArtwork.hero?.value || heroArtwork.cover?.value || null;
     if (rawBg) {
         const sanitized = rawBg.replace(/\\/g, '/').replace(/'/g, "\\'");
         const probe = new Image();
@@ -67,8 +84,8 @@ function updateHeroSection(gameId) {
         bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
     }
 
-    if (game.logo) {
-        logoImg.src = game.logo; logoImg.style.display = 'block'; titleTxt.style.display = 'none';
+    if (heroArtwork.logo?.value) {
+        logoImg.src = heroArtwork.logo.value; logoImg.style.display = 'block'; titleTxt.style.display = 'none';
     } else {
         logoImg.style.display = 'none'; titleTxt.innerText = game.name; titleTxt.style.display = 'block';
     }
@@ -119,7 +136,8 @@ function updateHeroForCollection(coll) {
             if (g) {
                 activeGamesCount++;
                 if (playtimeData[id]?.totalMinutes) totalMins += playtimeData[id].totalMinutes;
-                if (g.heroImage || g.image) validImages.push(g.heroImage || g.image);
+                const artwork = _heroSurfaceArtwork(g, 'collection-hero-member');
+                if (artwork.hero?.value || artwork.cover?.value) validImages.push(artwork.hero?.value || artwork.cover?.value);
             }
         });
     }

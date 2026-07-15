@@ -786,11 +786,18 @@ test('roulette: _rouletteInstallImage tries getPosterUrl on candidate and _raw',
     assert.match(body, /c\._raw/);
 });
 
-test('roulette: _rouletteHeroUrl falls back through candidate fields, raw fields, and _suggArtCache', () => {
+test('roulette: _rouletteHeroUrl delegates hero selection through the artwork resolver helper', () => {
     const body = extractFn(ROULETTE_JS, 'function _rouletteHeroUrl(');
-    assert.match(body, /game\.heroImage/);
-    assert.match(body, /raw\.heroImage/);
+    assert.match(body, /_rouletteResolveArtwork\(game,\s*'roulette-hero'\)/);
+    assert.match(body, /resolvedArt\.hero\?\.value/);
+});
+
+test('roulette: _rouletteResolveArtwork preserves candidate, raw, and _suggArtCache fallbacks', () => {
+    const body = extractFn(ROULETTE_JS, 'function _rouletteResolveArtwork(');
+    assert.match(body, /mergedGame\.heroImage/);
+    assert.match(body, /raw/);
     assert.match(body, /_suggArtCacheGet/);
+    assert.match(body, /resolveGameSurfaceArtwork/);
 });
 
 test('roulette: applyRouletteFinalPoster adds "winner" and "has-poster" classes on success', () => {

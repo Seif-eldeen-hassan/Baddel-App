@@ -119,14 +119,15 @@ describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
         assert.match(fn, /querySelector\('\.hero-actions'\)/);
     });
-    it('updateHeroSection reads game.heroImage or game.image for background', () => {
+    it('updateHeroSection resolves hero/cover artwork for background', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
-        assert.match(fn, /game\.heroImage/);
-        assert.match(fn, /game\.image/);
+        assert.match(fn, /_heroSurfaceArtwork\(game,\s*'home-hero'\)/);
+        assert.match(fn, /heroArtwork\.hero\?\.value/);
+        assert.match(fn, /heroArtwork\.cover\?\.value/);
     });
-    it('updateHeroSection uses game.logo to show logo or falls back to game.name as title', () => {
+    it('updateHeroSection uses resolved logo to show logo or falls back to game.name as title', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
-        assert.match(fn, /game\.logo/);
+        assert.match(fn, /heroArtwork\.logo\?\.value/);
         assert.match(fn, /game\.name/);
     });
     it('updateHeroSection reads playtimeData for the game', () => {
@@ -192,10 +193,12 @@ describe('Phase 2.13B: hero — updateHeroForCollection behaviour', () => {
         assert.match(fn, /coll\.gameIds/);
         assert.match(fn, /playtimeData\[/);
     });
-    it('updateHeroForCollection builds validImages from heroImage or image', () => {
+    it('updateHeroForCollection builds validImages from resolved member hero or cover artwork', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroForCollection');
         assert.match(fn, /validImages/);
-        assert.match(fn, /heroImage/);
+        assert.match(fn, /_heroSurfaceArtwork\(g,\s*'collection-hero-member'\)/);
+        assert.match(fn, /artwork\.hero\?\.value/);
+        assert.match(fn, /artwork\.cover\?\.value/);
     });
     it('updateHeroForCollection rotates images via setInterval slideshow when multiple images', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroForCollection');

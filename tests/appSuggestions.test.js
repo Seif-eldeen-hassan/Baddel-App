@@ -527,9 +527,11 @@ test('suggestions.js: _suggCarouselSlides returns metaScreenshots when available
     assert.match(fn, /_metaScreenshots/);
 });
 
-test('suggestions.js: _suggCarouselSlides falls back to heroImage when no screenshots', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _suggCarouselSlides(', 250);
-    assert.match(fn, /heroImage/);
+test('suggestions.js: _suggCarouselSlides falls back to resolved hero/cover when no screenshots', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggCarouselSlides(', 450);
+    assert.match(fn, /_suggResolveArtwork\(g,\s*'suggestions-carousel'\)/);
+    assert.match(fn, /resolvedArt\.hero\?\.value/);
+    assert.match(fn, /resolvedArt\.cover\?\.value/);
     assert.match(fn, /fallback/);
 });
 
@@ -601,12 +603,12 @@ test('suggestions.js: _renderSyncedRail uses #syncedRail element', () => {
 });
 
 test('suggestions.js: _renderSyncedRail wires window._suggSelectGame in generated onclick', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1400);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1800);
     assert.match(fn, /_suggSelectGame\s*\(/);
 });
 
 test('suggestions.js: _renderSyncedRail uses escapeHtml for game titles', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1700);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 2300);
     assert.match(fn, /escapeHtml\s*\(/);
 });
 
@@ -858,23 +860,33 @@ test('suggestions.js: suggestion code depends on window.allGamesData as installe
 });
 
 test('suggestions.js: _renderSyncedRail depends on escapeHtml', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1700);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 2600);
     assert.match(fn, /escapeHtml\s*\(/);
 });
 
 test('suggestions.js: _renderSyncedFeature depends on isUsableImageUrl from artwork-sync.js', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 700);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 1200);
     assert.match(fn, /isUsableImageUrl\s*\(/);
 });
 
 test('suggestions.js: _suggReRenderOne depends on setHeroBgStable from artwork-sync.js', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 1200);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 1800);
     assert.match(fn, /setHeroBgStable\s*\(/);
 });
 
 test('suggestions.js: _suggReRenderOne depends on setCardImageStable from artwork-sync.js', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 2800);
+    const fn = extractFn(SUGGESTIONS_JS, 'function _suggReRenderOne(', 3400);
     assert.match(fn, /setCardImageStable\s*\(/);
+});
+
+test('suggestions.js: visible artwork surfaces delegate through GameSurfaceArtworkAdapter helper', () => {
+    const helper = extractFn(SUGGESTIONS_JS, 'function _suggResolveArtwork(', 1200);
+    assert.match(helper, /BaddelGameSurfaceArtworkAdapter/);
+    assert.match(helper, /resolveGameSurfaceArtwork/);
+    assert.match(helper, /legacyGameSurfaceArtwork/);
+    assert.match(extractFn(SUGGESTIONS_JS, 'function _renderSyncedFeature(', 1400), /_suggResolveArtwork\(g,\s*'suggestions-feature'\)/);
+    assert.match(extractFn(SUGGESTIONS_JS, 'function _renderSyncedRail(', 1800), /_suggResolveArtwork\(g,\s*'suggestions-rail'\)/);
+    assert.match(extractFn(SUGGESTIONS_JS, 'function _suggCarouselSlides(', 500), /_suggResolveArtwork\(g,\s*'suggestions-carousel'\)/);
 });
 
 test('suggestions.js: suggViewDetails depends on openGameDetails from app.js', () => {

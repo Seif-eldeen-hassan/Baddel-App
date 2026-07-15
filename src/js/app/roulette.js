@@ -110,6 +110,31 @@ function _buildPlayPool() {
     return pool;
 }
 
+function _rouletteResolveArtwork(game, surface = 'roulette') {
+    const raw = game?._raw || game || {};
+    const cacheKey = typeof _suggKey === 'function' ? _suggKey(raw.id ? raw : (game?.id ? game : raw)) : null;
+    const cachedArt = cacheKey && typeof _suggArtCacheGet === 'function' ? (_suggArtCacheGet(cacheKey) || {}) : {};
+    const adapter = window.BaddelGameSurfaceArtworkAdapter;
+    const cacheArtwork = {
+        cover: cachedArt.poster || null,
+        hero: cachedArt.hero || null,
+        logo: cachedArt.logo || null,
+    };
+    const mergedGame = raw === game ? game : { ...raw, ...game };
+    if (!adapter || typeof adapter.resolveGameSurfaceArtwork !== 'function') {
+        return {
+            cover: { value: getPosterUrl(mergedGame) || null, source: 'legacy-fallback' },
+            hero:  { value: isUsableImageUrl(mergedGame.heroImage || mergedGame.defaultHero || mergedGame._rouletteHeroUrl || mergedGame.heroUrl || mergedGame.background || cachedArt.hero || null), source: 'legacy-fallback' },
+            logo:  { value: isUsableImageUrl(mergedGame.logo || mergedGame.defaultLogo || cachedArt.logo || null), source: 'legacy-fallback' },
+        };
+    }
+    try {
+        return adapter.resolveGameSurfaceArtwork({ surface, game: mergedGame, cacheArtwork });
+    } catch {
+        return adapter.legacyGameSurfaceArtwork({ game: mergedGame, cacheArtwork });
+    }
+}
+
 function _buildInstallPool() {
     // Reuse the already-fetched synced suggestions list (_suggAllGames from accounts/synced section)
     // Map them into a shape consistent with local games so the spinner can display them.
@@ -121,9 +146,10 @@ function _buildInstallPool() {
             const cacheKey    = _suggKey(g);
             const cachedArt   = (typeof _suggArtCacheGet === 'function' ? _suggArtCacheGet(cacheKey) : null) || {};
 
-            const bestPoster  = _preferLocalImage([g.image, g.defaultImage, g.coverUrl, g.capsuleImage, g.boxArt, g.grid, cachedArt.poster]) || '';
-            const bestHero    = _preferLocalImage([g.heroImage, g.defaultHero, cachedArt.hero]) || '';
-            const bestLogo    = _preferLocalImage([g.logo, g.defaultLogo, cachedArt.logo]) || '';
+            const resolvedArt = _rouletteResolveArtwork(g, 'roulette-install-pool');
+            const bestPoster  = _preferLocalImage([resolvedArt.cover?.value, g.image, g.defaultImage, g.coverUrl, g.capsuleImage, g.boxArt, g.grid, cachedArt.poster]) || '';
+            const bestHero    = _preferLocalImage([resolvedArt.hero?.value, g.heroImage, g.defaultHero, cachedArt.hero]) || '';
+            const bestLogo    = _preferLocalImage([resolvedArt.logo?.value, g.logo, g.defaultLogo, cachedArt.logo]) || '';
 
             return {
                 id:          g.id,
@@ -157,20 +183,24 @@ function _rouletteInstallImage(c) {
 }
 
 function _roulettePosterPick(game, mode) {
-    const raw = game?._raw || game || {};
-    const fields = ['image', 'defaultImage', 'coverUrl', 'capsuleImage', 'boxArt', 'grid', 'poster'];
-    for (const field of fields) {
-        const url = isUsableImageUrl(game?.[field]) || isUsableImageUrl(raw[field]);
-        if (url) return { url, source: field };
+    let resolvedArt = null;
+    if (typeof _rouletteResolveArtwork === 'function') {
+        resolvedArt = _rouletteResolveArtwork(game, mode === 'install' ? 'roulette-install-poster' : 'roulette-play-poster');
+    } else {
+        for (const source of ['image', 'defaultImage', 'coverUrl', 'cover', 'posterImage', '_roulettePosterUrl']) {
+            const url = isUsableImageUrl(game?.[source] || null);
+            if (url) return { url, source };
+        }
+        resolvedArt = { cover: null, hero: null };
     }
+    const coverUrl = isUsableImageUrl(resolvedArt.cover?.value || null);
+    if (coverUrl) return { url: coverUrl, source: resolvedArt.cover?.source || 'resolver' };
 
     if (mode === 'install') {
-        for (const field of ['heroImage', 'defaultHero', 'heroUrl', 'background']) {
-            const url = isUsableImageUrl(game?.[field]) || isUsableImageUrl(raw[field]);
-            if (url) {
-                console.warn(`[RoulettePoster] ${_rouletteGameId(game)} mode=${mode} using hero fallback source=${field}`);
-                return { url, source: field };
-            }
+        const heroUrl = isUsableImageUrl(resolvedArt.hero?.value || null);
+        if (heroUrl) {
+            console.warn(`[RoulettePoster] ${_rouletteGameId(game)} mode=${mode} using hero fallback source=${resolvedArt.hero?.source || 'resolver'}`);
+            return { url: heroUrl, source: resolvedArt.hero?.source || 'resolver-hero' };
         }
     }
 
@@ -611,27 +641,8 @@ function applyRouletteFinalPoster(finalGame, posterUrl) {
 
 function _rouletteHeroUrl(game) {
     if (!game) return null;
-    const raw = game._raw || game;
-
-    // 1. Try the candidate's own normalised hero fields first
-    const directHero = isUsableImageUrl(
-        game.heroImage || game.defaultHero || game._rouletteHeroUrl ||
-        game.heroUrl   || game.background  || null
-    );
-    if (directHero) return directHero;
-
-    // 2. Try raw game object fields
-    const rawHero = isUsableImageUrl(
-        raw.heroImage || raw.defaultHero || raw.heroUrl || raw.background || null
-    );
-    if (rawHero) return rawHero;
-
-    // 3. Fall back to _suggArtCache (populated by RTIA / _suggHydrateArt)
-    const cacheKey = _suggKey(raw.id ? raw : (game.id ? game : raw));
-    const cachedArt = (typeof _suggArtCacheGet === 'function') ? _suggArtCacheGet(cacheKey) : null;
-    if (cachedArt && cachedArt.hero) return isUsableImageUrl(cachedArt.hero) || null;
-
-    return null;
+    const resolvedArt = _rouletteResolveArtwork(game, 'roulette-hero');
+    return isUsableImageUrl(resolvedArt.hero?.value || null);
 }
 
 function resetRouletteVisualStateForSpin(card) {
@@ -1140,6 +1151,8 @@ function openRoulettePool() {
 
     availableGames.forEach(g => {
         const isChecked = customSpinIds.includes(String(g.id)) ? 'checked' : '';
+        const poolArtwork = _rouletteResolveArtwork(g, 'roulette-custom-pool');
+        const poolCover = poolArtwork.cover?.value || '../assets/default_hero.jpg';
         const div = document.createElement('div');
         div.className = 'bin-item pool-item';
         div.setAttribute('data-name', g.name.toLowerCase());
@@ -1148,7 +1161,7 @@ function openRoulettePool() {
                 <input type="checkbox" value="${g.id}" ${isChecked}>
                 <span class="checkmark"></span>
             </label>
-            <img src="${g.image || '../assets/default_hero.jpg'}" style="width:32px;height:32px;border-radius:6px;margin-right:12px;object-fit:cover; border: 1px solid #333;">
+            <img src="${poolCover}" style="width:32px;height:32px;border-radius:6px;margin-right:12px;object-fit:cover; border: 1px solid #333;">
             <span style="flex-grow:1; color:#ddd; font-weight:500; font-size:0.9rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;">${g.name}</span>
         `;
         list.appendChild(div);
