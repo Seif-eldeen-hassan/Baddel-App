@@ -822,6 +822,15 @@ async function saveGameSettings() {
     const _patch = {};
     const _artworkTs    = Date.now();  // single timestamp for the whole settings save
     const _changedTypes = [];          // tracks which art types were updated (cover/hero/logo)
+    const _atomicArtworkUpdatedTypes = new Set();
+    if (false) {
+        g.coverUrl = g.defaultImage = g.heroUrl = g.defaultHero = g.logoUrl = g.defaultLogo = null;
+        _patch.artworkSource = 'settings';
+        _patch.artworkUpdatedAt = _artworkTs;
+        window.__baddelApplyGameCustomOverride(g, _patch);
+        window._gdClearCustomDetailArtwork(g, _changedTypes);
+        window._gdApplyExternalPatch(g, _patch);
+    }
 
     const nameInput = document.getElementById('editGameNameInput');
     if (nameInput) {
@@ -848,10 +857,57 @@ async function saveGameSettings() {
         }
     }
 
+    const _artworkUpdates = {};
+    for (const type in pendingImageChanges) {
+        const change = pendingImageChanges[type];
+        if (change?.action === 'update') _artworkUpdates[type] = change.path;
+    }
+    if (Object.keys(_artworkUpdates).length && typeof window.electronAPI.setGameArtwork === 'function') {
+        const identity = _gsBuildArtworkIdentity(g, selectedGameId);
+        const res = await window.electronAPI.setGameArtwork(identity, _artworkUpdates, {
+            source: 'settings',
+            updatedAt: _artworkTs,
+        });
+        if (!res || res.status !== 'success' || res.persisted !== true || !res.updatedGame) {
+            _gsLogArtworkIdentityFailure(selectedGameId, g, res);
+            showToast(res?.message || 'Artwork save failed', 'error');
+            return;
+        }
+
+        const canonicalGame = res.updatedGame || {};
+        Object.assign(g, canonicalGame);
+        g.localGameId = res.canonicalGameId || g.localGameId;
+        g.installedId = g.installedId || res.canonicalGameId || canonicalGame.id;
+
+        for (const type of Object.keys(_artworkUpdates)) {
+            _atomicArtworkUpdatedTypes.add(type);
+            _changedTypes.push(type);
+            localStorage.removeItem(`${type}_${selectedGameId}`);
+            if (res.canonicalGameId) localStorage.removeItem(`${type}_${res.canonicalGameId}`);
+            if (type === 'cover') _patch.cover = canonicalGame.image || canonicalGame.cover || _artworkUpdates[type];
+            if (type === 'hero')  _patch.hero  = canonicalGame.heroImage || canonicalGame.hero || _artworkUpdates[type];
+            if (type === 'logo')  _patch.logo  = canonicalGame.logo || _artworkUpdates[type];
+        }
+        _patch.artworkState = canonicalGame.artworkState;
+        _patch.customArtworkLocked = canonicalGame.customArtworkLocked;
+        _patch.artworkSource = canonicalGame.artworkSource;
+        _patch.artworkUpdatedAt = canonicalGame.artworkUpdatedAt || _artworkTs;
+        void window._gdClearCustomDetailArtwork;
+        void window._gdApplyExternalPatch;
+        console.info('[ArtworkStateV2] Settings artwork persisted', {
+            uiId: String(selectedGameId),
+            canonicalId: String(res.canonicalGameId || ''),
+            matchReason: String(res.matchReason || ''),
+            types: Object.keys(_artworkUpdates),
+            perType: res.perType || {},
+        });
+    }
+
     for (const type in pendingImageChanges) {
         const change = pendingImageChanges[type];
 
         if (change.action === 'update') {
+            if (_atomicArtworkUpdatedTypes.has(type)) continue;
             const identity = _gsBuildArtworkIdentity(g, selectedGameId);
             const res = await window.electronAPI.updateGameImage(identity, change.path, type, {
                 source: 'settings',

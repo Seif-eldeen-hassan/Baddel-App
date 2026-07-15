@@ -447,11 +447,11 @@ test('JsonGameRepository: updateGameMetadata sets non-creator cover as defaultIm
     assert.equal(repo._dbCache[0].defaultImage, 'file://cover.webp');
 });
 
-test('JsonGameRepository: updateGameMetadata creator source does NOT set defaultImage', async () => {
+test('JsonGameRepository: updateGameMetadata creator source mirrors canonical cover aliases', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     await repo.updateGameMetadata('g1', { cover: 'file://creator.webp' }, { source: 'creator' });
     assert.equal(repo._dbCache[0].image, 'file://creator.webp');
-    assert.equal(repo._dbCache[0].defaultImage, undefined, 'creator must not set defaultImage');
+    assert.equal(repo._dbCache[0].defaultImage, 'file://creator.webp');
 });
 
 test('JsonGameRepository: updateGameMetadata creator source backs up creatorOriginalCover', async () => {
@@ -749,10 +749,10 @@ test('JsonGameRepository: applyImageReset single reset writes null when resolved
     assert.equal(repo._dbCache[0].image, null);
 });
 
-test('JsonGameRepository: applyImageReset single sets artworkSource=creator when customArtworkLocked is true', () => {
+test('JsonGameRepository: applyImageReset single clears the per-type override and reports reset', () => {
     const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
     repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
-    assert.equal(repo._dbCache[0].artworkSource, 'creator');
+    assert.equal(repo._dbCache[0].artworkSource, 'reset');
 });
 
 test('JsonGameRepository: applyImageReset single sets artworkSource=reset when customArtworkLocked is false', () => {
@@ -761,10 +761,10 @@ test('JsonGameRepository: applyImageReset single sets artworkSource=reset when c
     assert.equal(repo._dbCache[0].artworkSource, 'reset');
 });
 
-test('JsonGameRepository: applyImageReset single does not change customArtworkLocked', () => {
+test('JsonGameRepository: applyImageReset single unlocks the reset artwork type when no overrides remain', () => {
     const repo = makeRepo([game({ id: 'g1', customArtworkLocked: true })]);
     repo.applyImageReset('g1', { cover: null }, { type: 'cover', resetAll: false });
-    assert.equal(repo._dbCache[0].customArtworkLocked, true, 'single reset must not unlock artwork');
+    assert.equal(repo._dbCache[0].customArtworkLocked, false, 'single reset clears the cover override in Artwork State V2');
 });
 
 test('JsonGameRepository: applyImageReset single sets artworkUpdatedAt to a recent timestamp', () => {

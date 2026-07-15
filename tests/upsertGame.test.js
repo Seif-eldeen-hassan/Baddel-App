@@ -246,7 +246,7 @@ test('upsertGame: image update preserves existing image when incoming is null/fa
         'existing image must be preserved when incoming image is null');
 });
 
-test('upsertGame: defaultImage in update uses existing.defaultImage first', async () => {
+test('upsertGame: defaultImage in update mirrors the latest scanner fallback when unlocked', async () => {
     const engine = makeEngine();
     const existing = seedGame(engine, {
         id:           'g1',
@@ -256,8 +256,8 @@ test('upsertGame: defaultImage in update uses existing.defaultImage first', asyn
 
     await engine.upsertGame(makeGame({ id: existing.id, image: 'file://fresh.webp' }));
 
-    assert.equal(engine.getAllGames()[0].defaultImage, 'file://locked-default.webp',
-        'defaultImage must not be overwritten when existing.defaultImage is set');
+    assert.equal(engine.getAllGames()[0].defaultImage, 'file://fresh.webp',
+        'unlocked scanner fallback should refresh the projected defaultImage alias');
 });
 
 test('upsertGame: defaultImage in update falls through to existing.image when defaultImage is null', async () => {

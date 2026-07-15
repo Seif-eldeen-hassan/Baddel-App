@@ -1622,6 +1622,7 @@ app.whenReady().then(async () => {
         _readReadyToInstallProtectedImageIds,
         IMAGE_CACHE_PRUNE_GRACE_MS,
         updateGameImage,
+        setGameArtwork: (id, updates, opts) => getJsonGameRepository().setGameArtwork(id, updates, opts),
         resetGameImage,
         // localMetadataHandlers
         updateGameMetadata,

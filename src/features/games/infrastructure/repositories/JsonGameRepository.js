@@ -1,6 +1,15 @@
 'use strict';
 
 const { resolveCanonicalGameIdentity } = require('../../application/services/CanonicalGameIdentityResolver');
+const {
+    ARTWORK_TYPES,
+    migrateLegacyArtworkState,
+    applyExplicitOverride,
+    applyFallback,
+    clearExplicitOverride,
+    projectArtworkStateToLegacyAliases,
+    normalizeArtworkWriteSource,
+} = require('../../domain/services/GameArtworkState');
 
 // ─── JsonGameRepository ───────────────────────────────────────────────────────
 //
@@ -73,6 +82,7 @@ class JsonGameRepository {
             this._dbCache = [];
         }
         this._migrateLnkRecords();
+        this._migrateArtworkStateRecords();
     }
 
     // Fix manual .lnk records written by the broken patch that stored the
@@ -107,6 +117,26 @@ class JsonGameRepository {
         if (changed) {
             this._log.log('[DB] Migrated broken .lnk records to use install directory as path.');
             this.saveDatabase();
+        }
+    }
+
+    _migrateArtworkStateRecords() {
+        let changed = false;
+        for (let i = 0; i < this._dbCache.length; i++) {
+            const game = this._dbCache[i];
+            if (!game || typeof game !== 'object') continue;
+            const wasV2 = game.artworkState?.version === 2;
+            this._dbCache[i] = projectArtworkStateToLegacyAliases(game);
+            if (!wasV2) changed = true;
+        }
+        if (changed) {
+            this._log.log('[DB] Migrated artwork records to Artwork State V2.');
+            try {
+                this._fs.writeFileSync(this._dbPath, JSON.stringify(this._dbCache, null, 2), 'utf8');
+            } catch (err) {
+                this._log.error('[DB] Artwork State V2 migration save failed:', err);
+                this.saveDatabase();
+            }
         }
     }
 
@@ -189,6 +219,98 @@ class JsonGameRepository {
         return this._dbCache.find(g => String(g.id) === String(gameId)) || null;
     }
 
+    _normalizeArtworkPath(value) {
+        if (!value || typeof value !== 'string') return value || null;
+        if (value.startsWith('http') || value.startsWith('file://')) return value;
+        return `file://${value}`;
+    }
+
+    _applyArtworkUpdatesToGame(game, updates = {}, {
+        source = 'server',
+        mode = null,
+        updatedAt = Date.now(),
+    } = {}) {
+        const normalized = normalizeArtworkWriteSource(source);
+        const writeMode = mode || normalized.mode;
+        let state = migrateLegacyArtworkState(game);
+        const perType = {};
+
+        for (const type of ARTWORK_TYPES) {
+            if (!(type in updates)) continue;
+            const value = this._normalizeArtworkPath(updates[type]);
+            let result;
+            if (writeMode === 'clear-explicit') {
+                result = clearExplicitOverride(state, type, { updatedAt });
+            } else if (writeMode === 'explicit') {
+                result = applyExplicitOverride(state, type, value, { source: normalized.source, updatedAt });
+            } else {
+                result = applyFallback(state, type, value, { source: normalized.source, updatedAt });
+            }
+            state = result.state;
+            perType[type] = {
+                status: result.applied ? 'applied' : 'skipped',
+                reason: result.reason,
+                value,
+                source: normalized.source,
+                mode: writeMode,
+                revision: state[type]?.revision || 0,
+            };
+        }
+
+        game.artworkState = state;
+        Object.assign(game, projectArtworkStateToLegacyAliases(game));
+        return perType;
+    }
+
+    async setGameArtwork(identity, updates = {}, {
+        source = 'settings',
+        updatedAt = Date.now(),
+        mode = null,
+        operationId = null,
+    } = {}) {
+        const requestedGameId = identity && typeof identity === 'object'
+            ? (identity.gameId || identity.id || identity.localGameId || identity.installedId || null)
+            : identity;
+        const resolved = resolveCanonicalGameIdentity(identity, this._dbCache);
+        if (resolved.status !== 'success') {
+            return {
+                status: 'error',
+                message: 'Game not found',
+                requestedGameId,
+                canonicalGameId: null,
+                persisted: false,
+                operationId,
+            };
+        }
+
+        const game = resolved.game;
+        const perType = this._applyArtworkUpdatesToGame(game, updates, { source, updatedAt, mode });
+
+        try {
+            await this.flushDatabase();
+            return {
+                status: 'success',
+                requestedGameId,
+                canonicalGameId: game.id,
+                matchReason: resolved.reason,
+                operationId,
+                perType,
+                updatedGame: JSON.parse(JSON.stringify(game)),
+                persisted: true,
+            };
+        } catch (err) {
+            this._log.error('[DB] setGameArtwork flush failed:', err);
+            return {
+                status: 'error',
+                message: 'Failed to persist game artwork',
+                requestedGameId,
+                canonicalGameId: game.id,
+                operationId,
+                persisted: false,
+            };
+        }
+    }
+
     /**
      * Finds an existing game whose stored command or executablePath matches the
      * supplied paths after normalisation.
@@ -226,74 +348,46 @@ class JsonGameRepository {
         }
         const game = resolved.game;
 
+        const stateForGuard = migrateLegacyArtworkState(game);
+        const isCreator = source === 'creator';
+        void (isCreator || force);
         const artLocked      = game.customArtworkLocked === true;
-        const serverVerified = game.artworkSource === 'server-details' && !!game.artworkUpdatedAt;
-
+        const serverVerified = (game.artworkSource === 'server-details' && !!game.artworkUpdatedAt) ||
+            ARTWORK_TYPES.some(type => stateForGuard[type]?.fallbackSource === 'server-details');
         const skipArt =
-            (artLocked && source !== 'creator') ||
+            (artLocked && source !== 'creator' && source !== 'settings') ||
             (!force && serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'));
-
-        if (skipArt) {
-            this._log.log(`[updateGameMetadata] ${gameId}: skipping art overwrite (artLocked=${artLocked} serverVerified=${serverVerified}, source=${source})`);
-        } else {
-            const hasHeroKey  = ('hero' in metadata) || ('heroImage' in metadata);
-            const hasCoverKey = ('cover' in metadata);
-
-            if ('name' in metadata) {
-                const nextName = String(metadata.name || '').trim();
-                if (nextName) {
-                    game.name = nextName;
-                }
+        const artUpdates = {};
+        if (!skipArt) {
+            if ('cover' in metadata && metadata.cover) artUpdates.cover = metadata.cover;
+            if (('hero' in metadata || 'heroImage' in metadata) && (metadata.hero || metadata.heroImage)) {
+                artUpdates.hero = metadata.hero || metadata.heroImage;
             }
+            if ('logo' in metadata && metadata.logo) artUpdates.logo = metadata.logo;
+        }
 
-            const hero = metadata.hero || metadata.heroImage || null;
-            const isCreator = source === 'creator';
-
-            if (hasHeroKey) {
-                if (hero) {
-                    if (isCreator && !game.creatorOriginalHero) {
-                        game.creatorOriginalHero = game.defaultHero || game.heroImage || null;
-                    }
-                    game.heroImage = hero;
-                    if (!isCreator) {
-                        game.defaultHero = hero;
-                    }
-                } else if (isCreator || force) {
-                    game.heroImage = game.creatorOriginalHero || game.defaultHero || null;
-                }
+        if (Object.keys(artUpdates).length > 0) {
+            if (source === 'creator') {
+                if ('cover' in artUpdates && !game.creatorOriginalCover) game.creatorOriginalCover = game.defaultImage || game.image || null;
+                if ('hero' in artUpdates && !game.creatorOriginalHero) game.creatorOriginalHero = game.defaultHero || game.heroImage || null;
+                if ('logo' in artUpdates && !game.creatorOriginalLogo) game.creatorOriginalLogo = game.defaultLogo || game.logo || null;
             }
+            const mode = source === 'creator' || source === 'settings' ? 'explicit' : 'fallback';
+            this._applyArtworkUpdatesToGame(game, artUpdates, {
+                source,
+                mode,
+                updatedAt: metadata.artworkUpdatedAt || Date.now(),
+            });
+        }
+        if (!skipArt && source === 'creator' && Object.prototype.hasOwnProperty.call(metadata, 'logo') && metadata.logo === null) {
+            this._applyArtworkUpdatesToGame(game, { logo: null }, { source: 'creator', mode: 'clear-explicit', updatedAt: metadata.artworkUpdatedAt || Date.now() });
+            this._applyArtworkUpdatesToGame(game, { logo: null }, { source: 'creator', mode: 'fallback', updatedAt: metadata.artworkUpdatedAt || Date.now() });
+        }
 
-            if (hasCoverKey) {
-                if (metadata.cover) {
-                    if (isCreator && !game.creatorOriginalCover) {
-                        game.creatorOriginalCover = game.defaultImage || game.image || null;
-                    }
-                    game.image = metadata.cover;
-                    if (!isCreator) {
-                        game.defaultImage = metadata.cover;
-                    }
-                } else if (isCreator || force) {
-                    game.image = game.creatorOriginalCover || game.defaultImage || null;
-                }
-            }
-
-            if ('logo' in metadata) {
-                if (metadata.logo) {
-                    if (isCreator && !game.creatorOriginalLogo) {
-                        game.creatorOriginalLogo = game.defaultLogo || game.logo || null;
-                    }
-                    game.logo = metadata.logo;
-                    if (!isCreator) {
-                        game.defaultLogo = metadata.logo;
-                    }
-                } else if (isCreator || force) {
-                    if (metadata.logo === null) {
-                        game.logo        = null;
-                        game.defaultLogo = null;
-                    } else {
-                        game.logo = game.creatorOriginalLogo || game.defaultLogo || null;
-                    }
-                }
+        if ('name' in metadata) {
+            const nextName = String(metadata.name || '').trim();
+            if (nextName) {
+                game.name = nextName;
             }
         }
 
@@ -318,6 +412,27 @@ class JsonGameRepository {
                 game.name  = nextName;
                 game.title = nextName;
             }
+        }
+        if (metadata.customArtworkLocked === true && (metadata.artworkSource === 'settings' || metadata.artworkSource === 'creator')) {
+            const currentUpdates = {};
+            if (game.image) currentUpdates.cover = game.image;
+            if (game.heroImage) currentUpdates.hero = game.heroImage;
+            if (game.logo) currentUpdates.logo = game.logo;
+            this._applyArtworkUpdatesToGame(game, currentUpdates, {
+                source: metadata.artworkSource,
+                mode: 'explicit',
+                updatedAt: metadata.artworkUpdatedAt || Date.now(),
+            });
+        }
+        Object.assign(game, projectArtworkStateToLegacyAliases(game));
+        if (metadata.customArtworkLocked !== undefined) {
+            game.customArtworkLocked = !!metadata.customArtworkLocked;
+        }
+        if (metadata.artworkSource !== undefined) {
+            game.artworkSource = metadata.artworkSource;
+        }
+        if (metadata.artworkUpdatedAt !== undefined) {
+            game.artworkUpdatedAt = metadata.artworkUpdatedAt;
         }
 
         try {
@@ -362,33 +477,9 @@ class JsonGameRepository {
         }
 
         const game = resolved.game;
-
-        let finalPath = newImagePath;
-        if (finalPath && !finalPath.startsWith('http') && !finalPath.startsWith('file://')) {
-            finalPath = `file://${finalPath}`;
-        }
-
-        if (type === 'hero') {
-            game.heroImage = finalPath;
-            game.hero = finalPath;
-            game.heroUrl = finalPath;
-            game.defaultHero = finalPath;
-            if ('background' in game) game.background = finalPath;
-            if ('backgroundUrl' in game) game.backgroundUrl = finalPath;
-        } else if (type === 'logo') {
-            game.logo = finalPath;
-            game.logoUrl = finalPath;
-            game.defaultLogo = finalPath;
-        } else {
-            game.image = finalPath;
-            game.cover = finalPath;
-            game.coverUrl = finalPath;
-            game.defaultImage = finalPath;
-        }
-
-        game.customArtworkLocked = !!locked;
-        game.artworkSource = source;
-        game.artworkUpdatedAt = updatedAt;
+        const finalPath = this._normalizeArtworkPath(newImagePath);
+        const mode = locked ? 'explicit' : 'fallback';
+        this._applyArtworkUpdatesToGame(game, { [type]: finalPath }, { source, mode, updatedAt });
 
         try {
             await this.flushDatabase();
@@ -430,13 +521,12 @@ class JsonGameRepository {
             const hero  = paths.hero  ?? null;
             const logo  = paths.logo  ?? null;
 
-            game.image     = cover;
-            game.heroImage = hero;
-            game.logo      = logo;
-
-            game.customArtworkLocked = false;
-            game.artworkSource       = 'reset';
-            game.artworkUpdatedAt    = now;
+            for (const t of ARTWORK_TYPES) {
+                this._applyArtworkUpdatesToGame(game, { [t]: null }, { source: 'reset', mode: 'clear-explicit', updatedAt: now });
+            }
+            this._applyArtworkUpdatesToGame(game, { cover, hero, logo }, { source: 'reset', mode: 'fallback', updatedAt: now });
+            game.artworkSource = 'reset';
+            game.artworkUpdatedAt = now;
 
             delete game.creatorOriginalCover;
             delete game.creatorOriginalHero;
@@ -451,11 +541,9 @@ class JsonGameRepository {
             type === 'logo' ? (paths.logo  ?? null) :
                               (paths.cover ?? null);
 
-        if (type === 'hero')      game.heroImage = restoredPath;
-        else if (type === 'logo') game.logo      = restoredPath;
-        else                      game.image     = restoredPath;
-
-        game.artworkSource    = game.customArtworkLocked ? 'creator' : 'reset';
+        this._applyArtworkUpdatesToGame(game, { [type]: null }, { source: 'reset', mode: 'clear-explicit', updatedAt: now });
+        this._applyArtworkUpdatesToGame(game, { [type]: restoredPath }, { source: 'reset', mode: 'fallback', updatedAt: now });
+        game.artworkSource = game.customArtworkLocked ? game.artworkSource : 'reset';
         game.artworkUpdatedAt = now;
 
         this.saveDatabase();
@@ -502,11 +590,7 @@ class JsonGameRepository {
 
         if (index > -1) {
             const existing = this._dbCache[index];
-            const defImg  = existing.defaultImage  || existing.image     || game.image;
-            const defHero = existing.defaultHero   || existing.heroImage || game.heroImage;
-            const defLogo = existing.defaultLogo   || existing.logo      || game.logo;
-
-            this._dbCache[index] = {
+            const merged = {
                 ...existing,
                 command:          game.command          || existing.command,
                 path:             game.path             || existing.path,
@@ -539,28 +623,31 @@ class JsonGameRepository {
                 // not find art on this pass (e.g. Steam cover not yet cached).
                 // Clobbering a good existing value with null is what causes the
                 // Installed Games card to flip to hero+logo after a rescan.
-                image:        game.image        || existing.image        || null,
-                heroImage:    game.heroImage    || existing.heroImage    || null,
-                logo:         game.logo         || existing.logo         || null,
-                defaultImage: defImg            || existing.defaultImage || null,
-                defaultHero:  defHero           || existing.defaultHero  || null,
-                defaultLogo:  defLogo           || existing.defaultLogo  || null,
                 id:           existing.id,
             };
+            const fallbackUpdates = {};
+            const nextCover = cachedCover || game.image || game.cover || game.coverUrl || game.defaultImage || null;
+            const nextHero  = cachedHero  || game.heroImage || game.hero || game.heroUrl || game.defaultHero || null;
+            const nextLogo  = cachedLogo  || game.logo || game.logoUrl || game.defaultLogo || null;
+            if (nextCover) fallbackUpdates.cover = nextCover;
+            if (nextHero)  fallbackUpdates.hero = nextHero;
+            if (nextLogo)  fallbackUpdates.logo = nextLogo;
+            this._applyArtworkUpdatesToGame(merged, fallbackUpdates, { source: 'scanner', mode: 'fallback', updatedAt: Date.now() });
+            this._dbCache[index] = merged;
         } else {
             // ── Recover cached images from disk if the DB was wiped (e.g. after reinstall) ──
-            this._dbCache.push({
+            const inserted = {
                 addedAt:  new Date().toISOString(),
                 score:    100,
                 isHidden: false,
                 ...game,
-                image:        cachedCover || game.image     || null,
-                heroImage:    cachedHero  || game.heroImage || null,
-                logo:         cachedLogo  || game.logo      || null,
-                defaultImage: cachedCover || game.image     || null,
-                defaultHero:  cachedHero  || game.heroImage || null,
-                defaultLogo:  cachedLogo  || game.logo      || null,
-            });
+            };
+            this._applyArtworkUpdatesToGame(inserted, {
+                cover: cachedCover || game.image || game.cover || game.coverUrl || game.defaultImage || null,
+                hero:  cachedHero  || game.heroImage || game.hero || game.heroUrl || game.defaultHero || null,
+                logo:  cachedLogo  || game.logo || game.logoUrl || game.defaultLogo || null,
+            }, { source: 'scanner', mode: 'fallback', updatedAt: Date.now() });
+            this._dbCache.push(inserted);
         }
     }
 

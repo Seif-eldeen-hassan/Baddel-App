@@ -7,7 +7,7 @@
 //   { app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
 //     getSavedGames, getMainWindow,
 //     _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
-//     IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, resetGameImage }
+//     IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, setGameArtwork, resetGameImage }
 //
 //   fs            — require('fs').promises
 //   getMainWindow — () => mainWindow  (mainWindow is mutable, must be a getter)
@@ -17,7 +17,7 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
         app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
         getSavedGames, getMainWindow,
         _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
-        IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, resetGameImage,
+        IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, setGameArtwork, resetGameImage,
     } = deps;
 
     // ---- Synchronous IPC: cache dir URL (used before any renderer script runs) ----
@@ -232,6 +232,8 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
 
     ipcMain.handle('update-game-image', (_, id, imgPath, type, opts) =>
         updateGameImage(id, imgPath, type, opts));
+    ipcMain.handle('set-game-artwork', (_, id, updates, opts) =>
+        setGameArtwork(id, updates, opts));
     ipcMain.handle('reset-game-image', (_, id, type) =>
         resetGameImage(id, type));
 };

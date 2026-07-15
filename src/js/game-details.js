@@ -9201,6 +9201,49 @@ window.gdCreatorSave = async function() {
         }
 
         // ── Persist to localStorage (customGameDetails) ──────────────────────
+        const gameId = String(baseGame.installedId || baseGame.id || baseGame.appName || '');
+        const logoCleared = draft.logoMode === 'text';
+        const newCover = draft.posterImage || null;
+        const newHero  = draft.heroImage   || null;
+        const newLogo  = !logoCleared ? (draft.logoImage || null) : null;
+        const creatorArtworkUpdatedAt = Date.now();
+        const _creatorOriginal = _gdCreatorOriginalDraft || {};
+        const _creatorChanged = (next, prev) => String(next || '') !== String(prev || '');
+        const _creatorDirtyTypes = {
+            cover: _creatorChanged(newCover, _creatorOriginal.posterImage || baseGame.image || ''),
+            hero:  _creatorChanged(newHero, _creatorOriginal.heroImage || baseGame.heroImage || ''),
+            logo:  logoCleared || _creatorChanged(newLogo, _creatorOriginal.logoImage || baseGame.logo || ''),
+        };
+        let _gdCreatorDbResult = null;
+
+        if (!_gdCreatorDbResult && window.electronAPI?.saveMetadata && gameId) {
+            const ipcMeta = {
+                customArtworkLocked: true,
+                artworkSource: 'creator',
+                artworkUpdatedAt: creatorArtworkUpdatedAt,
+            };
+            if (draft.title) ipcMeta.name = draft.title;
+            if (_creatorDirtyTypes.cover && newCover) ipcMeta.cover = newCover;
+            if (_creatorDirtyTypes.hero && newHero) ipcMeta.hero = newHero;
+            if (_creatorDirtyTypes.logo && newLogo) ipcMeta.logo = newLogo;
+            try {
+                const res = await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
+                _gdCreatorDbResult = res;
+                if (!_gdCreatorDbResult || _gdCreatorDbResult.status !== 'success' || _gdCreatorDbResult.persisted !== true || !_gdCreatorDbResult.updatedGame) {
+                    throw new Error(_gdCreatorDbResult?.message || 'Creator artwork was not persisted.');
+                }
+                const refreshId = res?.canonicalGameId || gameId;
+                await _gdRefreshGameFromDbAfterMutation(refreshId, {
+                    reason: 'creator-save',
+                    rerenderDetails: true,
+                });
+            } catch (err) {
+                console.warn('[GD][Creator] saveMetadata IPC error:', err);
+                if (typeof showToast === 'function') showToast('Artwork save failed. Nothing was changed.', 'error');
+                return;
+            }
+        }
+
         _gdPersistCustomDetails(baseGame, draft);
         _gdCurrentCustomDetails = _gdLoadCustomDetails(baseGame);
 
@@ -9218,13 +9261,7 @@ window.gdCreatorSave = async function() {
         _gdCreatorSessionSavedCustom = _gdClonePlain(_gdCurrentCustomDetails);
         _gdCreatorSessionSavedGame   = _gdClonePlain(savedGame);
 
-        const gameId = String(baseGame.installedId || baseGame.id || baseGame.appName || '');
         const creatorKeys = new Set(_gdCreatorCandidateKeys(baseGame));
-        const logoCleared = draft.logoMode === 'text';
-        const newCover = draft.posterImage || null;
-        const newHero  = draft.heroImage   || null;
-        const newLogo  = !logoCleared ? (draft.logoImage || null) : null;
-        const creatorArtworkUpdatedAt = Date.now();
         const _creatorNorm  = (v) => String(v || '').trim().toLowerCase();
         const _creatorLoose = (v) => String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -9290,7 +9327,7 @@ window.gdCreatorSave = async function() {
                 g.title = draft.title;
                 g.creatorCustomName = draft.title;
             }
-            if (newCover) {
+            if (_creatorDirtyTypes.cover && newCover) {
                 g.image = newCover;
                 g.defaultImage = newCover;
                 g.coverUrl = newCover;
@@ -9299,9 +9336,9 @@ window.gdCreatorSave = async function() {
                 g._agRemoteFallbackReady = true;
                 g._agLocalRetryCount = 999;
             }
-            if (newHero) { g.heroImage = newHero; g.defaultHero = newHero; g.heroUrl = newHero; }
-            if (newLogo) { g.logo = newLogo; g.defaultLogo = newLogo; g.logoUrl = newLogo; }
-            if (logoCleared) { g.logo = null; g.defaultLogo = null; g.logoUrl = null; }
+            if (_creatorDirtyTypes.hero && newHero) { g.heroImage = newHero; g.defaultHero = newHero; g.heroUrl = newHero; }
+            if (_creatorDirtyTypes.logo && newLogo) { g.logo = newLogo; g.defaultLogo = newLogo; g.logoUrl = newLogo; }
+            if (_creatorDirtyTypes.logo && logoCleared) { g.logo = null; g.defaultLogo = null; g.logoUrl = null; }
             g.customArtworkLocked = true;
             g.artworkSource = 'creator';
             g.artworkUpdatedAt = creatorArtworkUpdatedAt;
@@ -9327,10 +9364,10 @@ window.gdCreatorSave = async function() {
         // Using _gdCollectCreatorOverrideTargets ensures installed+synced hybrid games are both updated.
         // skipSyncedRender=true because renderSyncedSuggestions() is called explicitly in the render block below.
         const _gdCreatorPatch = {
-            cover: newCover,
-            hero: newHero,
-            logo: newLogo,
-            logoCleared,
+            cover: _creatorDirtyTypes.cover ? newCover : null,
+            hero: _creatorDirtyTypes.hero ? newHero : null,
+            logo: _creatorDirtyTypes.logo ? newLogo : null,
+            logoCleared: _creatorDirtyTypes.logo && logoCleared,
             name: draft.title,
             artworkSource: 'creator',
             artworkUpdatedAt: creatorArtworkUpdatedAt,
@@ -9354,7 +9391,7 @@ window.gdCreatorSave = async function() {
         });
 
         // ── Persist to gameScanner DB ─────────────────────────────────────────
-        if (window.electronAPI?.saveMetadata && gameId) {
+        if (!_gdCreatorDbResult && window.electronAPI?.saveMetadata && gameId) {
             const ipcMeta = {
                 customArtworkLocked: true,
                 artworkSource: 'creator',

@@ -181,15 +181,16 @@ test('CanonicalArtworkProjection maps Settings-owned local art onto synced displ
     assert.equal(projected.artworkUpdatedAt, 999);
 });
 
-test('Renderer Settings save validates persisted backend result before localStorage or success toast', () => {
+test('Renderer Settings save validates persisted backend result before local artwork state mutation or success toast', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'addGameModal.js'), 'utf8');
     const start = src.indexOf('async function saveGameSettings');
-    const body = src.slice(start, start + 8500);
+    const body = src.slice(start, start + 14000);
     const failureIdx = body.indexOf("res.status !== 'success'");
-    const storageIdx = body.indexOf('localStorage.setItem');
+    const storageIdx = body.indexOf('localStorage.removeItem');
     const successIdx = body.indexOf("showToast('Settings saved successfully!'");
     assert.ok(body.includes('_gsBuildArtworkIdentity(g, selectedGameId)'));
     assert.ok(body.includes('res.persisted !== true'));
+    assert.ok(body.includes('setGameArtwork'));
     assert.ok(failureIdx !== -1 && storageIdx !== -1 && failureIdx < storageIdx);
     assert.ok(storageIdx !== -1 && successIdx !== -1 && storageIdx < successIdx);
 });

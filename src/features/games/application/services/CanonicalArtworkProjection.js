@@ -1,13 +1,20 @@
 'use strict';
 
 let _identityApi = null;
+let _artworkStateApi = null;
 if (typeof require === 'function') {
     try {
         _identityApi = require('./CanonicalGameIdentityResolver');
     } catch (_) {}
+    try {
+        _artworkStateApi = require('../../domain/services/GameArtworkState');
+    } catch (_) {}
 }
 if (!_identityApi && typeof window !== 'undefined') {
     _identityApi = window.BaddelCanonicalGameIdentityResolver;
+}
+if (!_artworkStateApi && typeof window !== 'undefined') {
+    _artworkStateApi = window.BaddelGameArtworkState;
 }
 
 const _COPY_FIELDS = [
@@ -32,6 +39,9 @@ function _copyDefined(target, source, fields) {
 
 function normalizeArtworkAliases(game) {
     if (!game || typeof game !== 'object') return game;
+    if (game.artworkState?.version === 2 && _artworkStateApi?.projectArtworkStateToLegacyAliases) {
+        return _artworkStateApi.projectArtworkStateToLegacyAliases(game);
+    }
     const out = { ...game };
     const cover = out.image ?? out.cover ?? out.coverUrl ?? out.defaultImage ?? null;
     const hero = out.hero ?? out.heroImage ?? out.heroUrl ?? out.defaultHero ?? null;
