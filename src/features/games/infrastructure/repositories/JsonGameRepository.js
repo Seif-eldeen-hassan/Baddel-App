@@ -216,10 +216,9 @@ class JsonGameRepository {
         const artLocked      = game.customArtworkLocked === true;
         const serverVerified = game.artworkSource === 'server-details' && !!game.artworkUpdatedAt;
 
-        const skipArt = !force && (
+        const skipArt =
             (artLocked && source !== 'creator') ||
-            (serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'))
-        );
+            (!force && serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'));
 
         if (skipArt) {
             this._log.log(`[updateGameMetadata] ${gameId}: skipping art overwrite (artLocked=${artLocked} serverVerified=${serverVerified}, source=${source})`);
@@ -312,7 +311,11 @@ class JsonGameRepository {
         return { status: 'success' };
     }
 
-    updateGameImage(gameId, newImagePath, type = 'cover') {
+    updateGameImage(gameId, newImagePath, type = 'cover', {
+        source = 'settings',
+        locked = true,
+        updatedAt = Date.now(),
+    } = {}) {
         const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
         if (index === -1) return { status: 'error', message: 'Game not found' };
 
@@ -325,23 +328,33 @@ class JsonGameRepository {
 
         if (type === 'hero') {
             game.heroImage = finalPath;
+            game.hero = finalPath;
+            game.heroUrl = finalPath;
+            game.defaultHero = finalPath;
+            if ('background' in game) game.background = finalPath;
+            if ('backgroundUrl' in game) game.backgroundUrl = finalPath;
         } else if (type === 'logo') {
             game.logo = finalPath;
+            game.logoUrl = finalPath;
+            game.defaultLogo = finalPath;
         } else {
             game.image = finalPath;
+            game.cover = finalPath;
+            game.coverUrl = finalPath;
+            game.defaultImage = finalPath;
         }
 
-        game.customArtworkLocked = true;
-        game.artworkSource = 'creator';
-        game.artworkUpdatedAt = Date.now();
+        game.customArtworkLocked = !!locked;
+        game.artworkSource = source;
+        game.artworkUpdatedAt = updatedAt;
 
         this.saveDatabase();
         return {
             status: 'success',
             path: finalPath,
             type,
-            customArtworkLocked: true,
-            artworkSource: 'creator',
+            customArtworkLocked: !!locked,
+            artworkSource: source,
             artworkUpdatedAt: game.artworkUpdatedAt,
         };
     }

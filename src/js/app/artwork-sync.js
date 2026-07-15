@@ -490,6 +490,38 @@ function _clearArtworkLocalState(gameId) {
 }
 window._clearArtworkLocalState = _clearArtworkLocalState;
 
+function _currentArtworkGame(game) {
+    if (!game || !game.id) return game;
+    const id = String(game.id);
+    if (Array.isArray(allGamesData)) {
+        const current = allGamesData.find(g => String(g.id) === id);
+        if (current) return current;
+    }
+    if (Array.isArray(window.allGamesData)) {
+        const current = window.allGamesData.find(g => String(g.id) === id);
+        if (current) return current;
+    }
+    return game;
+}
+
+function _explicitArtworkValue(game, type) {
+    if (!game || game.customArtworkLocked !== true) return null;
+    if (game.artworkSource !== 'settings' && game.artworkSource !== 'creator') return null;
+    if (type === 'hero') return game.heroImage || game.hero || game.heroUrl || game.defaultHero || null;
+    if (type === 'logo') return game.logo || game.logoUrl || game.defaultLogo || null;
+    return game.image || game.cover || game.coverUrl || game.defaultImage || game.posterImage || null;
+}
+
+function shouldApplyHydratedArtwork({ game, type, expectedUpdatedAt } = {}) {
+    const current = _currentArtworkGame(game);
+    if (!current) return true;
+    if (expectedUpdatedAt && current.artworkUpdatedAt && current.artworkUpdatedAt !== expectedUpdatedAt) {
+        return !_explicitArtworkValue(current, type);
+    }
+    return !_explicitArtworkValue(current, type);
+}
+window.shouldApplyHydratedArtwork = shouldApplyHydratedArtwork;
+
 async function hydrateManualGameArtworkNow(game) {
     if (!game || !game.id) return;
     console.log('[ManualAddArtwork] readd hydrate start', game.id, game.name);
@@ -538,9 +570,10 @@ async function hydrateManualGameArtworkNow(game) {
 
     const metaHero = meta.hero || meta.heroImage || null;
     const metaLogo = meta.logo || meta.defaultLogo || null;
+    const expectedUpdatedAt = game.artworkUpdatedAt || null;
 
-    if (metaHero) game.heroImage = metaHero;
-    if (metaLogo) game.logo      = metaLogo;
+    if (metaHero && shouldApplyHydratedArtwork({ game, type: 'hero', expectedUpdatedAt })) game.heroImage = metaHero;
+    if (metaLogo && shouldApplyHydratedArtwork({ game, type: 'logo', expectedUpdatedAt })) game.logo      = metaLogo;
 
     let finalCover =
         meta.cover ||
@@ -564,26 +597,34 @@ async function hydrateManualGameArtworkNow(game) {
         }
     }
 
-    if (finalCover) {
+    const canApplyCover = () => shouldApplyHydratedArtwork({ game, type: 'cover', expectedUpdatedAt });
+    const canApplyHero  = () => shouldApplyHydratedArtwork({ game, type: 'hero', expectedUpdatedAt });
+    const canApplyLogo  = () => shouldApplyHydratedArtwork({ game, type: 'logo', expectedUpdatedAt });
+
+    if (finalCover && canApplyCover()) {
         game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
         localStorage.setItem('cover_' + game.id, finalCover);
     }
-    if (finalHero) {
+    if (finalHero && canApplyHero()) {
         game.heroImage = finalHero;
         localStorage.setItem('hero_' + game.id, finalHero);
     }
-    if (finalLogo) {
+    if (finalLogo && canApplyLogo()) {
         game.logo = finalLogo;
         localStorage.setItem('logo_' + game.id, finalLogo);
     }
 
-    if (finalCover || finalHero || finalLogo) {
+    const saveCover = canApplyCover() ? finalCover : null;
+    const saveHero  = canApplyHero() ? finalHero : null;
+    const saveLogo  = canApplyLogo() ? finalLogo : null;
+
+    if (saveCover || saveHero || saveLogo) {
         await window.electronAPI.saveMetadata?.(game.id, {
-            cover:           finalCover,
-            hero:            finalHero,
-            logo:            finalLogo,
-            image:           finalCover,
-            heroImage:       finalHero,
+            cover:           saveCover,
+            hero:            saveHero,
+            logo:            saveLogo,
+            image:           saveCover,
+            heroImage:       saveHero,
             artworkSource:   'manual-add',
             artworkUpdatedAt: Date.now(),
         }, { source: 'server-details', force: true }).catch(err => {
@@ -600,6 +641,7 @@ window.hydrateManualGameArtworkNow = hydrateManualGameArtworkNow;
 
 async function hydrateRecentHeroArtwork(game, imgEl) {
     if (!game || !imgEl || !window.electronAPI?.getMetadata) return null;
+    const expectedUpdatedAt = game.artworkUpdatedAt || null;
 
     const meta = await window.electronAPI.getMetadata(game.name, {
         id:             game.id,
@@ -636,13 +678,11 @@ async function hydrateRecentHeroArtwork(game, imgEl) {
         }
     }
 
-    if (hero) {
+    if (hero && shouldApplyHydratedArtwork({ game, type: 'hero', expectedUpdatedAt })) {
         game.heroImage  = hero;
         game.defaultHero = hero;
         game.heroUrl    = hero;
         localStorage.setItem('hero_' + game.id, hero);
-
-        imgEl.src = safeImageUrl(hero);
 
         if (typeof _patchGameInMemory === 'function') _patchGameInMemory(game);
 
@@ -659,7 +699,7 @@ async function hydrateRecentHeroArtwork(game, imgEl) {
         return hero;
     }
 
-    if (cover && !imgEl.src) {
+    if (cover && !imgEl.src && shouldApplyHydratedArtwork({ game, type: 'cover', expectedUpdatedAt })) {
         imgEl.src = safeImageUrl(cover);
     }
 

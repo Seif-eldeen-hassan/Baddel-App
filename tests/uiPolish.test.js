@@ -911,7 +911,7 @@ test('artwork-sync.js: hydrateManualGameArtworkNow awaits cacheAllAssets (no fir
 
 test('artwork-sync.js: hydrateManualGameArtworkNow persists metadata with saveMetadata after caching', () => {
     const fnStart = ARTWORK_SYNC_JS.indexOf('async function hydrateManualGameArtworkNow');
-    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 4000);
+    const fn = ARTWORK_SYNC_JS.slice(fnStart, fnStart + 5200);
     assert.match(fn, /saveMetadata\??\.?\(game\.id/, 'must call saveMetadata');
     assert.match(fn, /artworkSource/, 'must include artworkSource in saved metadata');
 });
@@ -925,7 +925,7 @@ test('artwork-sync.js: hydrateManualGameArtworkNow always passes force:true to g
 
 test('app.js: fetchMetadata probes stale file:// game.image before using it', () => {
     const fnStart = APP_JS.indexOf('async function fetchMetadata');
-    const fn = APP_JS.slice(fnStart, fnStart + 800);
+    const fn = APP_JS.slice(fnStart, fnStart + 1100);
     assert.match(fn, /probeLocalImage\(game\.image\)/, 'must probe game.image');
     // Clear stale refs when probe fails
     assert.match(fn, /game\.image\s*=\s*null/, 'must null game.image when stale');
@@ -934,7 +934,7 @@ test('app.js: fetchMetadata probes stale file:// game.image before using it', ()
 
 test('app.js: fetchMetadata probes stale file:// storedCover before using it', () => {
     const fnStart = APP_JS.indexOf('async function fetchMetadata');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    const fn = APP_JS.slice(fnStart, fnStart + 1600);
     assert.match(fn, /probeLocalImage\(storedCover\)/, 'must probe storedCover');
 });
 

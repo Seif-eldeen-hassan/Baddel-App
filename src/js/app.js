@@ -915,18 +915,36 @@ if (window.electronAPI.onLibraryUpdated) {
             // for art — the pipeline cannot have overwritten it.  If only prev has the lock
             // (edge case: lock set in-memory but DB flush not yet on disk at scan time),
             // prefer prev's art so we don't momentarily revert.
-            const artLocked = g.customArtworkLocked === true || prev.customArtworkLocked === true;
-            return {
+            const authoritative = g.customArtworkLocked === true ? g : (prev.customArtworkLocked === true ? prev : null);
+            if (authoritative) {
+                return _normalizeArtworkAliases({
+                    ...g,
+                    image:        authoritative.image        ?? null,
+                    cover:        authoritative.cover        ?? null,
+                    coverUrl:     authoritative.coverUrl     ?? null,
+                    defaultImage: authoritative.defaultImage ?? null,
+                    hero:         authoritative.hero         ?? null,
+                    heroImage:    authoritative.heroImage    ?? null,
+                    heroUrl:      authoritative.heroUrl      ?? null,
+                    defaultHero:  authoritative.defaultHero  ?? null,
+                    logo:         authoritative.logo         ?? null,
+                    logoUrl:      authoritative.logoUrl      ?? null,
+                    defaultLogo:  authoritative.defaultLogo  ?? null,
+                    customArtworkLocked: true,
+                    artworkSource: authoritative.artworkSource || g.artworkSource || prev.artworkSource || null,
+                    artworkUpdatedAt: authoritative.artworkUpdatedAt || g.artworkUpdatedAt || prev.artworkUpdatedAt || null,
+                });
+            }
+            return _normalizeArtworkAliases({
                 ...g,
-                image:        artLocked ? (g.image        || prev.image        || null) : (g.image        || prev.image        || null),
-                defaultImage: artLocked ? (g.defaultImage || prev.defaultImage || null) : (g.defaultImage || prev.defaultImage || null),
-                coverUrl:     artLocked ? (g.coverUrl     || prev.coverUrl     || null) : (g.coverUrl     || prev.coverUrl     || null),
-                heroImage:    artLocked ? (g.heroImage    || prev.heroImage    || null) : (g.heroImage    || prev.heroImage    || null),
-                defaultHero:  artLocked ? (g.defaultHero  || prev.defaultHero  || null) : (g.defaultHero  || prev.defaultHero  || null),
-                logo:         artLocked ? (g.logo         || prev.logo         || null) : (g.logo         || prev.logo         || null),
-                defaultLogo:  artLocked ? (g.defaultLogo  || prev.defaultLogo  || null) : (g.defaultLogo  || prev.defaultLogo  || null),
-                customArtworkLocked: g.customArtworkLocked || prev.customArtworkLocked || false,
-            };
+                image:        g.image        || prev.image        || null,
+                defaultImage: g.defaultImage || prev.defaultImage || null,
+                coverUrl:     g.coverUrl     || prev.coverUrl     || null,
+                heroImage:    g.heroImage    || prev.heroImage    || null,
+                defaultHero:  g.defaultHero  || prev.defaultHero  || null,
+                logo:         g.logo         || prev.logo         || null,
+                defaultLogo:  g.defaultLogo  || prev.defaultLogo  || null,
+            });
         });
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
@@ -1421,6 +1439,9 @@ function _patchGameInMemory(updatedGame) {
 async function fetchMetadata(imgElement, game) {
     const cacheKey = 'cover_' + game.id;
     const storedCover = localStorage.getItem(cacheKey);
+    const hasExplicitArtwork =
+        game.customArtworkLocked === true &&
+        (game.artworkSource === 'settings' || game.artworkSource === 'creator');
 
     // 1. In-memory path is already a local file — probe it first (may be gone after Delete Forever)
     if (game.image && game.image.startsWith('file://')) {
@@ -1432,8 +1453,12 @@ async function fetchMetadata(imgElement, game) {
     }
 
     // 1b. Creator-locked with any URL — trust game.image, skip stale localStorage/server
-    if (game.customArtworkLocked === true && game.image) {
+    if (hasExplicitArtwork && game.image) {
         imgElement.src = game.image; checkBackgroundAssets(game); return;
+    }
+
+    if (hasExplicitArtwork && !game.image) {
+        localStorage.removeItem(cacheKey);
     }
 
     // 2. localStorage has a local file path — probe before trusting
@@ -1448,7 +1473,7 @@ async function fetchMetadata(imgElement, game) {
     if (window.electronAPI.getCachedImage) {
         try {
             const diskCover = await window.electronAPI.getCachedImage(game.id, 'cover');
-            if (diskCover) {
+            if (diskCover && !hasExplicitArtwork) {
                 imgElement.src = diskCover;
                 game.image = diskCover;
                 localStorage.setItem(cacheKey, diskCover);
@@ -1477,6 +1502,13 @@ async function processQueue() {
     if (activeRequests >= 3 || imageQueue.length === 0) return;
     activeRequests++;
     const { imgElement, game, _coverRetries = 0 } = imageQueue.shift();
+    const expectedUpdatedAt = game?.artworkUpdatedAt || null;
+    const canApplyHydrated = (type) => {
+        if (typeof shouldApplyHydratedArtwork === 'function') {
+            return shouldApplyHydratedArtwork({ game, type, expectedUpdatedAt });
+        }
+        return !(game?.customArtworkLocked === true && (game.artworkSource === 'settings' || game.artworkSource === 'creator'));
+    };
 
     try {
         const meta = await window.electronAPI.getMetadata(game.name, {
@@ -1526,9 +1558,9 @@ async function processQueue() {
                 console.log(`[Metadata][Pending] ${game.name} still has no usable assets/text — skip cache/save for now.`);
                 return;
             }
-            if (metaHero) game.heroImage = metaHero;
-            if (metaLogo) game.logo = metaLogo;
-            if (meta.cover) { game.image = meta.cover; imgElement.src = meta.cover; }
+            if (metaHero && canApplyHydrated('hero')) game.heroImage = metaHero;
+            if (metaLogo && canApplyHydrated('logo')) game.logo = metaLogo;
+            if (meta.cover && canApplyHydrated('cover')) { game.image = meta.cover; imgElement.src = meta.cover; }
 
             console.log(`[BaddelAPIEnrichAssets] ${game.name} (${game.id}): cover=${!!meta.cover} hero=${!!metaHero} logo=${!!metaLogo}`);
 
@@ -1539,7 +1571,7 @@ async function processQueue() {
                         const finalHero  = localAssets.hero  || metaHero  || null;
                         const finalLogo  = localAssets.logo  || metaLogo  || null;
 
-                        if (finalCover) {
+                        if (finalCover && canApplyHydrated('cover')) {
                             game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
                             localStorage.setItem('cover_' + game.id, finalCover);
                             if (imgElement) {
@@ -1550,11 +1582,11 @@ async function processQueue() {
                                 imgElement.style.display = 'block';
                             }
                         }
-                        if (finalHero) {
+                        if (finalHero && canApplyHydrated('hero')) {
                             game.heroImage = finalHero; game.defaultHero = finalHero; game.heroUrl = finalHero;
                             localStorage.setItem('hero_' + game.id, finalHero);
                         }
-                        if (finalLogo) {
+                        if (finalLogo && canApplyHydrated('logo')) {
                             game.logo = finalLogo; game.defaultLogo = finalLogo; game.logoUrl = finalLogo;
                             localStorage.setItem('logo_' + game.id, finalLogo);
                         }
@@ -1563,13 +1595,24 @@ async function processQueue() {
 
                         const patched = _patchGameInMemory({
                             ...game,
-                            image: finalCover || game.image, defaultImage: finalCover || game.defaultImage, coverUrl: finalCover || game.coverUrl,
-                            heroImage: finalHero || game.heroImage, defaultHero: finalHero || game.defaultHero, heroUrl: finalHero || game.heroUrl,
-                            logo: finalLogo || game.logo, defaultLogo: finalLogo || game.defaultLogo, logoUrl: finalLogo || game.logoUrl,
+                            image: canApplyHydrated('cover') ? (finalCover || game.image) : game.image,
+                            defaultImage: canApplyHydrated('cover') ? (finalCover || game.defaultImage) : game.defaultImage,
+                            coverUrl: canApplyHydrated('cover') ? (finalCover || game.coverUrl) : game.coverUrl,
+                            heroImage: canApplyHydrated('hero') ? (finalHero || game.heroImage) : game.heroImage,
+                            defaultHero: canApplyHydrated('hero') ? (finalHero || game.defaultHero) : game.defaultHero,
+                            heroUrl: canApplyHydrated('hero') ? (finalHero || game.heroUrl) : game.heroUrl,
+                            logo: canApplyHydrated('logo') ? (finalLogo || game.logo) : game.logo,
+                            defaultLogo: canApplyHydrated('logo') ? (finalLogo || game.defaultLogo) : game.defaultLogo,
+                            logoUrl: canApplyHydrated('logo') ? (finalLogo || game.logoUrl) : game.logoUrl,
                         });
                         _patchVisibleGameCard(patched);
 
-                        window.electronAPI.saveMetadata(game.id, { cover: finalCover, hero: finalHero, logo: finalLogo }).catch(() => {});
+                        const saveCover = canApplyHydrated('cover') ? finalCover : null;
+                        const saveHero  = canApplyHydrated('hero') ? finalHero : null;
+                        const saveLogo  = canApplyHydrated('logo') ? finalLogo : null;
+                        if (saveCover || saveHero || saveLogo) {
+                            window.electronAPI.saveMetadata(game.id, { cover: saveCover, hero: saveHero, logo: saveLogo }).catch(() => {});
+                        }
 
                         if (currentHeroGameId === String(game.id)) updateHeroSection(game.id);
 
@@ -1590,6 +1633,7 @@ async function processQueue() {
 }
 
 function checkBackgroundAssets(game) {
+    if (game?.customArtworkLocked === true && (game.artworkSource === 'settings' || game.artworkSource === 'creator')) return;
     const h = localStorage.getItem('hero_' + game.id);
     const l = localStorage.getItem('logo_' + game.id);
     if (h && h.startsWith('file://')) game.heroImage = h;

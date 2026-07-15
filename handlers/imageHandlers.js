@@ -230,8 +230,8 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
     }
 });
 
-    ipcMain.handle('update-game-image', (_, id, imgPath, type) =>
-        updateGameImage(id, imgPath, type));
+    ipcMain.handle('update-game-image', (_, id, imgPath, type, opts) =>
+        updateGameImage(id, imgPath, type, opts));
     ipcMain.handle('reset-game-image', (_, id, type) =>
         resetGameImage(id, type));
 };

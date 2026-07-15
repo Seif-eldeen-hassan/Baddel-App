@@ -472,10 +472,10 @@ test('JsonGameRepository: updateGameMetadata default server source allowed even 
     assert.equal(repo._dbCache[0].image, 'file://fresh.webp');
 });
 
-test('JsonGameRepository: updateGameMetadata force=true bypasses artLocked', async () => {
+test('JsonGameRepository: updateGameMetadata force=true does not bypass explicit artLocked for non-creator sources', async () => {
     const repo = makeRepo([game({ id: 'g1', image: 'file://locked.webp', customArtworkLocked: true })]);
     await repo.updateGameMetadata('g1', { cover: 'file://forced.webp' }, { source: 'pipeline', force: true });
-    assert.equal(repo._dbCache[0].image, 'file://forced.webp');
+    assert.equal(repo._dbCache[0].image, 'file://locked.webp');
 });
 
 test('JsonGameRepository: updateGameMetadata skipArt still applies provenance fields', async () => {
@@ -557,16 +557,43 @@ test('JsonGameRepository: updateGameImage sets image field for default type (cov
     assert.equal(repo._dbCache[0].image, 'file://cover.webp');
 });
 
+test('JsonGameRepository: updateGameImage synchronizes cover aliases', () => {
+    const repo = makeRepo([game({ id: 'g1', coverUrl: 'file://old.webp', defaultImage: 'file://old.webp' })]);
+    repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._dbCache[0].image, 'file://cover.webp');
+    assert.equal(repo._dbCache[0].cover, 'file://cover.webp');
+    assert.equal(repo._dbCache[0].coverUrl, 'file://cover.webp');
+    assert.equal(repo._dbCache[0].defaultImage, 'file://cover.webp');
+});
+
 test('JsonGameRepository: updateGameImage sets heroImage field when type is hero', () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     repo.updateGameImage('g1', 'file://hero.webp', 'hero');
     assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
 });
 
+test('JsonGameRepository: updateGameImage synchronizes hero aliases', () => {
+    const repo = makeRepo([game({ id: 'g1', heroUrl: 'file://old-hero.webp', background: 'file://old-bg.webp' })]);
+    repo.updateGameImage('g1', 'file://hero.webp', 'hero');
+    assert.equal(repo._dbCache[0].heroImage, 'file://hero.webp');
+    assert.equal(repo._dbCache[0].hero, 'file://hero.webp');
+    assert.equal(repo._dbCache[0].heroUrl, 'file://hero.webp');
+    assert.equal(repo._dbCache[0].defaultHero, 'file://hero.webp');
+    assert.equal(repo._dbCache[0].background, 'file://hero.webp');
+});
+
 test('JsonGameRepository: updateGameImage sets logo field when type is logo', () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     repo.updateGameImage('g1', 'file://logo.webp', 'logo');
     assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
+});
+
+test('JsonGameRepository: updateGameImage synchronizes logo aliases', () => {
+    const repo = makeRepo([game({ id: 'g1', logoUrl: 'file://old-logo.webp', defaultLogo: 'file://old-logo.webp' })]);
+    repo.updateGameImage('g1', 'file://logo.webp', 'logo');
+    assert.equal(repo._dbCache[0].logo, 'file://logo.webp');
+    assert.equal(repo._dbCache[0].logoUrl, 'file://logo.webp');
+    assert.equal(repo._dbCache[0].defaultLogo, 'file://logo.webp');
 });
 
 test('JsonGameRepository: updateGameImage prepends file:// when path has no protocol', () => {
@@ -594,10 +621,24 @@ test('JsonGameRepository: updateGameImage sets customArtworkLocked to true', () 
     assert.equal(repo._dbCache[0].customArtworkLocked, true);
 });
 
-test('JsonGameRepository: updateGameImage sets artworkSource to creator', () => {
+test('JsonGameRepository: updateGameImage sets artworkSource to settings by default', () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     repo.updateGameImage('g1', 'file://cover.webp');
+    assert.equal(repo._dbCache[0].artworkSource, 'settings');
+});
+
+test('JsonGameRepository: updateGameImage accepts explicit creator ownership options', () => {
+    const repo = makeRepo([game({ id: 'g1' })]);
+    const ts = Date.now() - 1000;
+    const result = repo.updateGameImage('g1', 'file://cover.webp', 'cover', {
+        source: 'creator',
+        locked: true,
+        updatedAt: ts,
+    });
     assert.equal(repo._dbCache[0].artworkSource, 'creator');
+    assert.equal(repo._dbCache[0].artworkUpdatedAt, ts);
+    assert.equal(result.artworkSource, 'creator');
+    assert.equal(result.artworkUpdatedAt, ts);
 });
 
 test('JsonGameRepository: updateGameImage sets artworkUpdatedAt to a recent timestamp', () => {
@@ -615,7 +656,7 @@ test('JsonGameRepository: updateGameImage returns exact success shape', () => {
     assert.equal(result.path, 'file://cover.webp');
     assert.equal(result.type, 'cover');
     assert.equal(result.customArtworkLocked, true);
-    assert.equal(result.artworkSource, 'creator');
+    assert.equal(result.artworkSource, 'settings');
     assert.ok(typeof result.artworkUpdatedAt === 'number' && result.artworkUpdatedAt >= before);
 });
 

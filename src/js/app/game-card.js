@@ -612,8 +612,8 @@ function _getRecentPosterFallback(game) {
 
 function _getRecentDisplayImage(game) {
     return (
-        _getRecentHeroCandidate(game) ||
         _getRecentPosterFallback(game) ||
+        _getRecentHeroCandidate(game) ||
         'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs='
     );
 }
@@ -685,14 +685,15 @@ function createRecentCard(game, isFeatured = false) {
     const recentHero   = _getRecentHeroCandidate(game);
     const recentPoster = _getRecentPosterFallback(game);
 
-    if (recentHero) {
-        imgEl.src = safeImageUrl(recentHero);
-        checkBackgroundAssets?.(game);
-    } else if (recentPoster) {
+    if (recentPoster) {
         imgEl.src = safeImageUrl(recentPoster);
+        checkBackgroundAssets?.(game);
         hydrateRecentHeroArtwork(game, imgEl).catch(err => {
             console.warn('[JumpBackIn] hero hydration failed:', err);
         });
+    } else if (recentHero) {
+        imgEl.src = safeImageUrl(recentHero);
+        checkBackgroundAssets?.(game);
     } else {
         hydrateRecentHeroArtwork(game, imgEl).catch(err => {
             console.warn('[JumpBackIn] hero hydration failed:', err);

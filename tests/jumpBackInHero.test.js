@@ -58,14 +58,14 @@ test('game-card.js: _getRecentDisplayImage function is defined', () => {
     assert.ok(GAME_CARD_JS.includes('function _getRecentDisplayImage(game)'));
 });
 
-test('game-card.js: _getRecentDisplayImage calls _getRecentHeroCandidate first', () => {
+test('game-card.js: _getRecentDisplayImage calls _getRecentPosterFallback first', () => {
     const idx = GAME_CARD_JS.indexOf('function _getRecentDisplayImage(game)');
     const block = GAME_CARD_JS.slice(idx, idx + 300);
     const heroIdx   = block.indexOf('_getRecentHeroCandidate');
     const posterIdx = block.indexOf('_getRecentPosterFallback');
     assert.ok(heroIdx !== -1, '_getRecentHeroCandidate not called');
     assert.ok(posterIdx !== -1, '_getRecentPosterFallback not called');
-    assert.ok(heroIdx < posterIdx, '_getRecentHeroCandidate must come before _getRecentPosterFallback');
+    assert.ok(posterIdx < heroIdx, '_getRecentPosterFallback must come before _getRecentHeroCandidate');
 });
 
 // ── hydrateRecentHeroArtwork ───────────────────────────────────────────────────
@@ -94,10 +94,11 @@ test('artwork-sync.js: hydrateRecentHeroArtwork sets game.heroImage on success',
     assert.ok(block.includes('game.heroUrl'), 'game.heroUrl not set');
 });
 
-test('artwork-sync.js: hydrateRecentHeroArtwork sets imgEl.src to hero when hero found', () => {
+test('artwork-sync.js: hydrateRecentHeroArtwork does not set imgEl.src to hero when hero found', () => {
     const idx = ARTWORK_SYNC_JS.indexOf('async function hydrateRecentHeroArtwork(game, imgEl)');
     const block = ARTWORK_SYNC_JS.slice(idx, idx + 2000);
-    assert.ok(block.includes('imgEl.src = safeImageUrl(hero)'), 'imgEl.src not set to hero');
+    assert.ok(!block.includes('imgEl.src = safeImageUrl(hero)'), 'hero hydration must not replace the Jump Back In card image');
+    assert.ok(block.includes('shouldApplyHydratedArtwork'), 'hero hydration must re-check ownership before applying');
 });
 
 test('artwork-sync.js: hydrateRecentHeroArtwork caches to localStorage', () => {
@@ -160,11 +161,12 @@ test('game-card.js: createRecentCard calls hydrateRecentHeroArtwork when no hero
     assert.ok(block.includes('hydrateRecentHeroArtwork'), 'hydrateRecentHeroArtwork not called in createRecentCard');
 });
 
-test('game-card.js: createRecentCard sets imgEl.src to safeImageUrl(recentHero) when hero present', () => {
+test('game-card.js: createRecentCard only uses recentHero after cover is absent', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
     assert.ok(block.includes('imgEl.src = safeImageUrl(recentHero)'), 'safeImageUrl(recentHero) not set on imgEl.src');
+    assert.ok(block.indexOf('safeImageUrl(recentPoster)') < block.indexOf('safeImageUrl(recentHero)'), 'recentPoster must be preferred over recentHero');
 });
 
 test('game-card.js: createRecentCard poster fallback sets imgEl.src to safeImageUrl(recentPoster)', () => {
@@ -181,7 +183,7 @@ test('game-card.js: createRecentCard hero branch calls checkBackgroundAssets', (
     assert.ok(block.includes('checkBackgroundAssets'), 'checkBackgroundAssets not called in hero branch');
 });
 
-test('game-card.js: createRecentCard hero branch comes before poster branch', () => {
+test('game-card.js: createRecentCard poster branch comes before hero branch', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
@@ -189,7 +191,7 @@ test('game-card.js: createRecentCard hero branch comes before poster branch', ()
     const posterIdx = block.indexOf('safeImageUrl(recentPoster)');
     assert.ok(heroIdx !== -1, 'recentHero branch not found');
     assert.ok(posterIdx !== -1, 'recentPoster branch not found');
-    assert.ok(heroIdx < posterIdx, 'hero branch must appear before poster branch');
+    assert.ok(posterIdx < heroIdx, 'poster branch must appear before hero branch');
 });
 
 // ── hydrateRecentHeroArtwork error handling ───────────────────────────────────

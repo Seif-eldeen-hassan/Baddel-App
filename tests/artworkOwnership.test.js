@@ -100,7 +100,7 @@ test('updateGameMetadata: creator source always writes art even when locked', as
     assert.equal(game.image, 'file://new.webp', 'creator source must overwrite locked cover');
 });
 
-test('updateGameMetadata: force=true bypasses lock regardless of source', async () => {
+test('updateGameMetadata: force=true does not bypass explicit user artwork for non-creator sources', async () => {
     const engine = makeEngine();
     const id = await addTestGame(engine, {
         image: 'file://old.webp',
@@ -110,7 +110,7 @@ test('updateGameMetadata: force=true bypasses lock regardless of source', async 
     await engine.updateGameMetadata(id, { cover: 'file://forced.webp' }, { source: 'pipeline', force: true });
 
     const game = engine.getGameById(id);
-    assert.equal(game.image, 'file://forced.webp', 'force=true must bypass lock');
+    assert.equal(game.image, 'file://old.webp', 'force=true metadata must not replace locked user artwork');
 });
 
 test('updateGameMetadata: default source (server) writes art when NOT locked', async () => {

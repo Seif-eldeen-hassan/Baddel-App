@@ -2271,7 +2271,7 @@ test('app.js: processQueue cacheAllAssets branch updates imgElement.src after lo
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
     const cacheStart = src.indexOf('window.electronAPI.cacheAllAssets({ cover: meta.cover');
     assert.ok(cacheStart > -1, 'cacheAllAssets call found in processQueue');
-    const block = src.slice(cacheStart, cacheStart + 3000);
+    const block = src.slice(cacheStart, cacheStart + 4200);
     assert.match(block, /imgElement\.src\s*=/, 'imgElement.src must be set after cacheAllAssets resolves');
     assert.match(block, /finalCover/, 'finalCover variable must be used');
     assert.match(block, /_patchGameInMemory/, '_patchGameInMemory called after caching');

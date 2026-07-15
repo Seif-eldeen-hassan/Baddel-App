@@ -802,7 +802,11 @@ async function saveGameSettings() {
         const change = pendingImageChanges[type];
 
         if (change.action === 'update') {
-            const res = await window.electronAPI.updateGameImage(selectedGameId, change.path, type);
+            const res = await window.electronAPI.updateGameImage(selectedGameId, change.path, type, {
+                source: 'settings',
+                locked: true,
+                updatedAt: _artworkTs,
+            });
             localStorage.setItem(`${type}_${selectedGameId}`, change.path);
 
             if (type === 'cover') {
