@@ -193,6 +193,9 @@ function safeExternalUrl(value) {
 if (typeof window !== 'undefined' && typeof window.__BADDEL_CACHE_URL__ === 'string') {
     setSafeImageCacheDir(window.__BADDEL_CACHE_URL__);
 }
+if (typeof window !== 'undefined' && typeof window.__BADDEL_USER_ARTWORK_URL__ === 'string') {
+    setSafeImageCacheDir(window.__BADDEL_USER_ARTWORK_URL__);
+}
 
 // ── Exports ──────────────────────────────────────────────────────────────────
 if (typeof module !== 'undefined' && module.exports) {

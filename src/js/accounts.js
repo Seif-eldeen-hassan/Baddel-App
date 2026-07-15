@@ -457,71 +457,10 @@ function _agBuildInstalledCreatorOverrideMap(installedGames = []) {
 function _agApplyInstalledCreatorOverride(syncGame, localGame) {
     if (!localGame) return syncGame;
 
-    const out = { ...syncGame };
-
-    const hasCreatorArtwork =
-        localGame.customArtworkLocked === true ||
-        localGame.artworkSource === 'creator';
-
-    const hasCustomTitle =
-        localGame.customTitleLocked === true ||
-        localGame.titleSource === 'creator' ||
-        !!localGame.customTitle;
-
-    if (hasCustomTitle) {
-        const customTitle = localGame.customTitle || localGame.name || localGame.title;
-        if (customTitle) {
-            out.title = customTitle;
-            out.name = customTitle;
-            out.customTitle = customTitle;
-            out.customTitleLocked = true;
-            out.titleSource = 'creator';
-            out.titleUpdatedAt = localGame.titleUpdatedAt || Date.now();
-        }
-    }
-
-    if (hasCreatorArtwork) {
-        if (localGame.image) {
-            out.coverUrl = localGame.image;
-            out.image = localGame.image;
-            out.defaultImage = localGame.image;
-
-            out._agCoverPipelineDone = true;
-            out._agCoverInFlight = false;
-            out._agRemoteFallbackReady = true;
-            out._agLocalRetryCount = 999;
-        }
-
-        if (localGame.heroImage) {
-            out.heroUrl = localGame.heroImage;
-            out.heroImage = localGame.heroImage;
-            out.defaultHero = localGame.heroImage;
-        }
-
-        if ('logo' in localGame) {
-            out.logoUrl = localGame.logo || null;
-            out.logo = localGame.logo || null;
-            out.defaultLogo = localGame.logo || null;
-        }
-
-        out.customArtworkLocked = true;
-        out.artworkSource = localGame.artworkSource || 'creator';
-    }
-
-    out.installedId = localGame.id;
-
-    out.allIds = {
-        ...(localGame.allIds || {}),
-        ...(out.allIds || {}),
-    };
-
-    return out;
-}
-
-function _agApplyInstalledCreatorOverride(syncGame, localGame) {
-    if (!localGame) return syncGame;
-
-    const out = { ...syncGame };
+    const projection = window.BaddelCanonicalArtworkProjection;
+    const out = projection?.projectCanonicalArtwork
+        ? projection.projectCanonicalArtwork(syncGame, localGame, { matchReason: 'accounts-installed-override' })
+        : { ...syncGame };
 
     const customTitle = localGame.name || localGame.title;
     if (customTitle) {
@@ -529,31 +468,12 @@ function _agApplyInstalledCreatorOverride(syncGame, localGame) {
         out.name = customTitle;
     }
 
-    if (localGame.image) {
-        out.coverUrl = localGame.image;
-        out.image = localGame.image;
-        out.defaultImage = localGame.image;
-
+    if (out.image) {
         out._agCoverPipelineDone = true;
         out._agCoverInFlight = false;
         out._agRemoteFallbackReady = true;
         out._agLocalRetryCount = 999;
     }
-
-    if (localGame.heroImage) {
-        out.heroUrl = localGame.heroImage;
-        out.heroImage = localGame.heroImage;
-        out.defaultHero = localGame.heroImage;
-    }
-
-    if ('logo' in localGame) {
-        out.logoUrl = localGame.logo || null;
-        out.logo = localGame.logo || null;
-        out.defaultLogo = localGame.logo || null;
-    }
-
-    out.customArtworkLocked = true;
-    out.artworkSource = localGame.artworkSource || 'creator';
     out.installedId = localGame.id;
 
     out.allIds = {
@@ -561,21 +481,29 @@ function _agApplyInstalledCreatorOverride(syncGame, localGame) {
         ...(out.allIds || {}),
     };
 
+    console.info('[ArtworkLinkProjection] syncedId=' + String(syncGame.id || '') +
+        ' canonicalId=' + String(localGame.id || '') +
+        ' source=' + String(out.artworkSource || localGame.artworkSource || 'unknown'));
     return out;
 }
 
 async function _agApplyInstalledCreatorOverrides(games = []) {
     let installedGames = [];
 
-    if (Array.isArray(window.allGamesData) && window.allGamesData.length > 0) {
-        installedGames = window.allGamesData;
+    if (window.__baddelRefreshCanonicalGamesRegistry) {
+        installedGames = await window.__baddelRefreshCanonicalGamesRegistry('accounts-sync-projection');
     } else if (window.electronAPI?.getGames) {
         try {
             installedGames = await window.electronAPI.getGames();
             window.allGamesData = installedGames;
+            window.__baddelSetCanonicalGamesRegistry?.(installedGames);
         } catch (_) {
             installedGames = [];
         }
+    } else if (Array.isArray(window.__baddelCanonicalGames) && window.__baddelCanonicalGames.length > 0) {
+        installedGames = window.__baddelCanonicalGames;
+    } else if (Array.isArray(window.allGamesData) && window.allGamesData.length > 0) {
+        installedGames = window.allGamesData;
     }
 
     const overrideMap = _agBuildInstalledCreatorOverrideMap(installedGames);

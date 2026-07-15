@@ -10,8 +10,10 @@ const { contextBridge, ipcRenderer, webUtils, shell } = require('electron');
 try {
     const cacheUrl = ipcRenderer.sendSync('get-image-cache-dir-url-sync');
     if (cacheUrl) contextBridge.exposeInMainWorld('__BADDEL_CACHE_URL__', cacheUrl);
+    const artworkUrl = ipcRenderer.sendSync('get-user-artwork-dir-url-sync');
+    if (artworkUrl) contextBridge.exposeInMainWorld('__BADDEL_USER_ARTWORK_URL__', artworkUrl);
 } catch (err) {
-    console.warn('[Preload] Could not resolve image cache URL:', err && err.message);
+    console.warn('[Preload] Could not resolve trusted artwork URLs:', err && err.message);
 }
 
 // Multi-subscriber fanout for library-updated — lets app.js and accounts.js
@@ -60,6 +62,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cacheAllAssets:         (assets, gameId)          => ipcRenderer.invoke('cache-all-assets', assets, gameId),
     pruneImageCache:        ()                        => ipcRenderer.invoke('prune-image-cache'),
     getImageCacheDirUrl:    ()                        => ipcRenderer.invoke('get-image-cache-dir-url'),
+    getUserArtworkDirUrl:   ()                        => ipcRenderer.invoke('get-user-artwork-dir-url'),
     getFilePath:            (file)                    => webUtils.getPathForFile(file),
 
     // ---- Metadata & Playtime ----

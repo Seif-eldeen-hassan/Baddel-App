@@ -1,6 +1,7 @@
 'use strict';
 
 const { resolveCanonicalGameIdentity } = require('../../application/services/CanonicalGameIdentityResolver');
+const { pathToFileURL } = require('url');
 const {
     ARTWORK_TYPES,
     migrateLegacyArtworkState,
@@ -45,7 +46,7 @@ class JsonGameRepository {
      *   logger?:      Console,
      * }} deps
      */
-    constructor({ fs, path, crypto, databasePath, logger = console, keyResolver = null }) {
+    constructor({ fs, path, crypto, databasePath, logger = console, keyResolver = null, artworkAssetStore = null }) {
         this._fs          = fs;
         this._path        = path;
         this._crypto      = crypto;
@@ -53,6 +54,7 @@ class JsonGameRepository {
         this._dbFolder    = path.dirname(databasePath);
         this._log         = logger;
         this._keyResolver = keyResolver; // makeInstalledGameKey injected by BaddelEngine
+        this._artworkAssetStore = artworkAssetStore;
         this._dbCache     = [];
         this._saveTimer   = null;
 
@@ -126,8 +128,9 @@ class JsonGameRepository {
             const game = this._dbCache[i];
             if (!game || typeof game !== 'object') continue;
             const wasV2 = game.artworkState?.version === 2;
+            const materialized = this._materializeStoredExplicitArtworkSync(game);
             this._dbCache[i] = projectArtworkStateToLegacyAliases(game);
-            if (!wasV2) changed = true;
+            if (!wasV2 || materialized) changed = true;
         }
         if (changed) {
             this._log.log('[DB] Migrated artwork records to Artwork State V2.');
@@ -221,8 +224,68 @@ class JsonGameRepository {
 
     _normalizeArtworkPath(value) {
         if (!value || typeof value !== 'string') return value || null;
-        if (value.startsWith('http') || value.startsWith('file://')) return value;
-        return `file://${value}`;
+        const trimmed = value.trim();
+        if (!trimmed) return null;
+        if (trimmed.startsWith('file://data:image/')) return trimmed.slice('file://'.length);
+        if (/^(?:https?|file):\/\//i.test(trimmed) || /^data:image\//i.test(trimmed)) return trimmed;
+        if (/^blob:/i.test(trimmed)) throw new Error('Blob artwork URLs are transient and cannot be persisted.');
+        if (this._path.isAbsolute(trimmed)) {
+            if (this._fs.existsSync(trimmed)) return pathToFileURL(trimmed).href;
+            return `file://${trimmed}`;
+        }
+        if (/^[a-z][a-z0-9+.-]*:/i.test(trimmed)) throw new Error('Unsupported artwork URL scheme.');
+        return trimmed;
+    }
+
+    _materializeStoredExplicitArtworkSync(game) {
+        if (!this._artworkAssetStore || !game) return false;
+        const state = migrateLegacyArtworkState(game);
+        let changed = false;
+        for (const type of ARTWORK_TYPES) {
+            const node = state[type];
+            if (!node?.locked || !node.overrideValue) continue;
+            const before = node.overrideValue;
+            if (this._artworkAssetStore.ownsUrl(before)) continue;
+            try {
+                const after = this._artworkAssetStore.materializeSync({
+                    canonicalGameId: game.id,
+                    type,
+                    value: before,
+                });
+                if (after && after !== before) {
+                    node.overrideValue = after;
+                    changed = true;
+                    this._log.log?.('[ArtworkAssetMigration] materialized explicit artwork', {
+                        canonicalGameId: String(game.id || ''),
+                        type,
+                    });
+                }
+            } catch (err) {
+                this._log.warn?.('[ArtworkAssetMigration] skipped explicit artwork', {
+                    canonicalGameId: String(game.id || ''),
+                    type,
+                    reason: err && err.message,
+                });
+            }
+        }
+        if (changed) game.artworkState = state;
+        return changed;
+    }
+
+    async _materializeExplicitArtworkUpdates(game, updates, { source, mode }) {
+        const normalized = normalizeArtworkWriteSource(source);
+        const writeMode = mode || normalized.mode;
+        if (writeMode !== 'explicit' || !this._artworkAssetStore) return updates;
+        const materialized = { ...updates };
+        for (const type of ARTWORK_TYPES) {
+            if (!(type in materialized) || materialized[type] == null) continue;
+            materialized[type] = await this._artworkAssetStore.materialize({
+                canonicalGameId: game.id,
+                type,
+                value: this._normalizeArtworkPath(materialized[type]),
+            });
+        }
+        return materialized;
     }
 
     _applyArtworkUpdatesToGame(game, updates = {}, {
@@ -301,13 +364,26 @@ class JsonGameRepository {
         }
 
         const game = resolved.game;
-        const perType = this._applyArtworkUpdatesToGame(game, updates, {
-            source,
-            updatedAt,
-            mode,
-            expectedRevision,
-            expectedRevisions,
-        });
+        let perType;
+        try {
+            const preparedUpdates = await this._materializeExplicitArtworkUpdates(game, updates, { source, mode });
+            perType = this._applyArtworkUpdatesToGame(game, preparedUpdates, {
+                source,
+                updatedAt,
+                mode,
+                expectedRevision,
+                expectedRevisions,
+            });
+        } catch (err) {
+            return {
+                status: 'error',
+                message: err && err.message ? err.message : 'Failed to materialize artwork',
+                requestedGameId,
+                canonicalGameId: game.id,
+                operationId,
+                persisted: false,
+            };
+        }
 
         try {
             await this.flushDatabase();
@@ -403,13 +479,24 @@ class JsonGameRepository {
                 if ('logo' in artUpdates && !game.creatorOriginalLogo) game.creatorOriginalLogo = game.defaultLogo || game.logo || null;
             }
             const mode = source === 'creator' || source === 'settings' ? 'explicit' : 'fallback';
-            perType = this._applyArtworkUpdatesToGame(game, artUpdates, {
-                source,
-                mode,
-                updatedAt: metadata.artworkUpdatedAt || Date.now(),
-                expectedRevision,
-                expectedRevisions,
-            });
+            try {
+                const preparedUpdates = await this._materializeExplicitArtworkUpdates(game, artUpdates, { source, mode });
+                perType = this._applyArtworkUpdatesToGame(game, preparedUpdates, {
+                    source,
+                    mode,
+                    updatedAt: metadata.artworkUpdatedAt || Date.now(),
+                    expectedRevision,
+                    expectedRevisions,
+                });
+            } catch (err) {
+                return {
+                    status: 'error',
+                    message: err && err.message ? err.message : 'Failed to materialize artwork',
+                    requestedGameId,
+                    canonicalGameId: game.id,
+                    persisted: false,
+                };
+            }
         }
         if (!skipArt && source === 'creator' && Object.prototype.hasOwnProperty.call(metadata, 'logo') && metadata.logo === null) {
             perType = {
@@ -503,7 +590,23 @@ class JsonGameRepository {
         }
 
         const game = resolved.game;
-        const finalPath = this._normalizeArtworkPath(newImagePath);
+        let finalPath;
+        try {
+            const normalizedPath = this._normalizeArtworkPath(newImagePath);
+            const updates = await this._materializeExplicitArtworkUpdates(game, { [type]: normalizedPath }, {
+                source,
+                mode: locked ? 'explicit' : 'fallback',
+            });
+            finalPath = updates[type];
+        } catch (err) {
+            return {
+                status: 'error',
+                message: err && err.message ? err.message : 'Failed to materialize game image',
+                requestedGameId,
+                canonicalGameId: game.id,
+                persisted: false,
+            };
+        }
         const mode = locked ? 'explicit' : 'fallback';
         this._applyArtworkUpdatesToGame(game, { [type]: finalPath }, { source, mode, updatedAt });
 

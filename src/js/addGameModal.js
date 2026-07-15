@@ -439,26 +439,12 @@ function openGameSettings(id) {
         g = window._allGamesCache.find(x => String(x.id || x.appName || x.title) === String(id));
     }
     if (g && window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
-        const records = [
-            ...(Array.isArray(window.allGamesData) ? window.allGamesData : []),
-            ...(Array.isArray(window._allGamesCache) ? window._allGamesCache : []),
-        ];
+        const records = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
         g = window.BaddelCanonicalArtworkProjection.projectFromRecords(g, records) || g;
     }
     if (!g) return;
 
     document.getElementById('editGameNameInput').value = g.name;
-
-    // Cover
-    const coverEl = document.getElementById('previewCover');
-    coverEl.src = g.image || '../assets/logo.png';
-
-    // Hero
-    const heroEl = document.getElementById('previewHero');
-    heroEl.src = g.heroImage || '../assets/default_hero.jpg';
-
-    // Logo
-    _gsUpdateLogoPreview(g.logo || null);
 
     // Init hero drag-to-pan
     // Init drag-to-pan for both Hero and Cover
@@ -466,16 +452,16 @@ function openGameSettings(id) {
     _gsInitImagePan('gs-cover-wrapper', 'previewCover');
 
     // update images
-    document.getElementById('previewHero').src = (g.heroImage && g.heroImage != 'assets/default_hero.jpg') ? g.heroImage : 'assets/default_hero.jpg';
-    document.getElementById('previewCover').src = (g.image && g.image != 'assets/logo.png') ? g.image : 'assets/logo.png';
+    _gsSetArtworkPreview(document.getElementById('previewHero'), [g.heroImage, g.defaultHero, g.image], '../assets/No_Image_Available.jpg');
+    _gsSetArtworkPreview(document.getElementById('previewCover'), [g.image, g.defaultImage, g.coverUrl], '../assets/No_Image_Available.jpg');
     _gsUpdateLogoPreview(g.logo);
     
     const btnCover = document.getElementById('btn-reset-cover');
     const btnHero = document.getElementById('btn-reset-hero');
     const btnLogo = document.getElementById('btn-reset-logo');
 
-    if (btnCover) btnCover.disabled = !g.image || g.image.includes('assets/logo.png');
-    if (btnHero) btnHero.disabled = !g.heroImage || g.heroImage.includes('assets/default_hero.jpg');
+    if (btnCover) btnCover.disabled = !g.image;
+    if (btnHero) btnHero.disabled = !g.heroImage;
     if (btnLogo) btnLogo.disabled = !g.logo;
     
     // open modal
@@ -487,11 +473,31 @@ function openGameSettings(id) {
     document.getElementById('gameSettingsModal').classList.add('active');
 }
 
+function _gsSetArtworkPreview(imgEl, candidates, placeholder) {
+    if (!imgEl) return;
+    const safe = (Array.isArray(candidates) ? candidates : [])
+        .map(src => safeImageUrl(src))
+        .find(Boolean) || placeholder;
+    imgEl.onerror = () => {
+        imgEl.onerror = null;
+        imgEl.src = placeholder;
+    };
+    imgEl.src = safe;
+    imgEl.style.display = 'block';
+}
+
 function _gsUpdateLogoPreview(src) {
     const logoEl  = document.getElementById('previewLogo');
     const emptyEl = document.getElementById('gs-logo-empty');
-    if (src) {
-        logoEl.src = src;
+    const safe = safeImageUrl(src);
+    if (safe) {
+        logoEl.onerror = () => {
+            logoEl.onerror = null;
+            logoEl.src = '';
+            logoEl.style.display = 'none';
+            if (emptyEl) emptyEl.style.display = 'flex';
+        };
+        logoEl.src = safe;
         logoEl.style.display = 'block';
         if (emptyEl) emptyEl.style.display = 'none';
     } else {
@@ -606,10 +612,10 @@ async function resetGameImage(type) {
     }
 
     if (type === 'cover') {
-        document.getElementById('previewCover').src = '/assets/logo.png';
+        document.getElementById('previewCover').src = '/assets/No_Image_Available.jpg';
     } else if (type === 'hero') {
         const heroImg = document.getElementById('previewHero');
-        heroImg.src = '/assets/default_hero.jpg';
+        heroImg.src = '/assets/No_Image_Available.jpg';
         heroImg.style.objectPosition = '50% 50%'; 
     } else if (type === 'logo') {
         _gsUpdateLogoPreview(null); 
@@ -648,10 +654,10 @@ async function resetGameImage(type, skipToast = false) {
     }
 
     if (type === 'cover') {
-        document.getElementById('previewCover').src = restoredPath || '../assets/logo.png';
+        _gsSetArtworkPreview(document.getElementById('previewCover'), [restoredPath], '../assets/No_Image_Available.jpg');
     } else if (type === 'hero') {
         const heroImg = document.getElementById('previewHero');
-        heroImg.src = restoredPath || '../assets/default_hero.jpg';
+        _gsSetArtworkPreview(heroImg, [restoredPath], '../assets/No_Image_Available.jpg');
         heroImg.style.objectPosition = '50% 50%'; 
     } else if (type === 'logo') {
         _gsUpdateLogoPreview(restoredPath || null);

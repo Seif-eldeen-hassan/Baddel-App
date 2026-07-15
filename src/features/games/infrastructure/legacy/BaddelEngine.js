@@ -37,6 +37,7 @@ const {
     withTimeout,
 } = require('../scanner/GameScannerCore');
 const { JsonGameRepository } = require('../repositories/JsonGameRepository');
+const { ArtworkAssetStore } = require('../services/ArtworkAssetStore');
 const { ImageCacheService } = require('../services/ImageCacheService');
 const { ScanDiagnosticsWriter } = require('../services/ScanDiagnosticsWriter');
 const { MetadataCacheStore } = require('../services/MetadataCacheStore');
@@ -73,12 +74,19 @@ class BaddelEngine {
         this._mrm = options.mrm || createFallbackMrm();
         this._metadataCacheStore = options.metadataCacheStore || new MetadataCacheStore(this.dbFolder);
         this.__core = null; // lazy - created on first scan
+        this._artworkAssetStore = options.artworkAssetStore || new ArtworkAssetStore({
+            fs: fsSync,
+            path,
+            crypto,
+            baseDir: path.join(this.dbFolder, 'user_artwork'),
+        });
         this._jsonGameRepository = new JsonGameRepository({
             fs: fsSync,
             path,
             crypto,
             databasePath: this.dbPath,
             keyResolver:  makeInstalledGameKey,
+            artworkAssetStore: this._artworkAssetStore,
         });
         this._imageCacheService = new ImageCacheService({
             fs: fsSync,

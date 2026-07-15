@@ -32,6 +32,16 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
         }
     });
 
+    ipcMain.on('get-user-artwork-dir-url-sync', (event) => {
+        try {
+            const dir = path.join(app.getPath('userData'), 'user_artwork');
+            event.returnValue = imageWebpCache.filePathToFileUrl(dir) + '/';
+        } catch (err) {
+            console.warn('[Main] get-user-artwork-dir-url-sync failed:', err && err.message);
+            event.returnValue = '';
+        }
+    });
+
     // ---- Image Caching ----
     ipcMain.handle('cache-image', async (_, url, gameId, type) => {
         try {
@@ -150,6 +160,11 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
 
     ipcMain.handle('get-image-cache-dir-url', () => {
         const dir = path.join(app.getPath('userData'), 'image_cache');
+        return imageWebpCache.filePathToFileUrl(dir) + '/';
+    });
+
+    ipcMain.handle('get-user-artwork-dir-url', () => {
+        const dir = path.join(app.getPath('userData'), 'user_artwork');
         return imageWebpCache.filePathToFileUrl(dir) + '/';
     });
 

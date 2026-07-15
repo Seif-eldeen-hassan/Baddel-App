@@ -49,8 +49,14 @@ function updateHeroSection(gameId) {
     if (isLaunching) return;
     clearInterval(currentHeroSlideshowInterval);
 
-    const game = allGamesData.find(g => String(g.id) === String(gameId));
+    let game = allGamesData.find(g => String(g.id) === String(gameId));
     if (!game) return;
+    if (window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
+        game = window.BaddelCanonicalArtworkProjection.projectFromRecords(
+            game,
+            Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : []
+        ) || game;
+    }
     currentHeroGameId = String(gameId);
 
     // Hydrate hero/logo from localStorage before reading the fields
@@ -68,8 +74,9 @@ function updateHeroSection(gameId) {
 
     const heroArtwork = _heroSurfaceArtwork(game, 'home-hero');
     const rawBg = heroArtwork.hero?.value || heroArtwork.cover?.value || null;
-    if (rawBg) {
-        const sanitized = rawBg.replace(/\\/g, '/').replace(/'/g, "\\'");
+    const safeBg = safeImageUrl(rawBg);
+    if (safeBg) {
+        const sanitized = safeBg.replace(/\\/g, '/').replace(/'/g, "\\'");
         const probe = new Image();
         probe.onload = () => {
             if (currentHeroGameId !== String(gameId)) return;
@@ -79,13 +86,19 @@ function updateHeroSection(gameId) {
             if (currentHeroGameId !== String(gameId)) return;
             bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
         };
-        probe.src = rawBg;
+        probe.src = safeBg;
     } else {
         bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
     }
 
-    if (heroArtwork.logo?.value) {
-        logoImg.src = heroArtwork.logo.value; logoImg.style.display = 'block'; titleTxt.style.display = 'none';
+    const safeLogo = safeImageUrl(heroArtwork.logo?.value);
+    if (safeLogo) {
+        logoImg.onerror = () => {
+            logoImg.style.display = 'none';
+            titleTxt.innerText = game.name;
+            titleTxt.style.display = 'block';
+        };
+        logoImg.src = safeLogo; logoImg.style.display = 'block'; titleTxt.style.display = 'none';
     } else {
         logoImg.style.display = 'none'; titleTxt.innerText = game.name; titleTxt.style.display = 'block';
     }

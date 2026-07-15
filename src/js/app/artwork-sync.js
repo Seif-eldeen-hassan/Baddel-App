@@ -120,6 +120,9 @@ function setHeroBgStable(el, newUrl, fallbackUrl) {
 
 function _normalizeArtworkAliases(g) {
     if (!g) return g;
+    if (window.BaddelCanonicalArtworkProjection?.normalizeArtworkAliases) {
+        return window.BaddelCanonicalArtworkProjection.normalizeArtworkAliases({ ...g });
+    }
     const cover = g.image || g.defaultImage || g.coverUrl || g.cover || null;
     const hero  = g.heroImage || g.defaultHero || g.heroUrl || g.hero || null;
     const logo  = g.logo || g.defaultLogo || g.logoUrl || null;
@@ -155,6 +158,41 @@ function _upsertCanonicalGameRegistry(game) {
 window.__baddelCanonicalGames = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
 window.__baddelSetCanonicalGamesRegistry = _setCanonicalGamesRegistry;
 window.__baddelUpsertCanonicalGameRegistry = _upsertCanonicalGameRegistry;
+window.__baddelRefreshCanonicalGamesRegistry = async function __baddelRefreshCanonicalGamesRegistry(reason = 'manual') {
+    if (!window.electronAPI?.getGames) return window.__baddelCanonicalGames || [];
+    try {
+        const records = await window.electronAPI.getGames();
+        const registry = _setCanonicalGamesRegistry(records || []);
+        console.log('[ArtworkRegistry] refreshed canonical games', { reason, count: registry.length });
+        return registry;
+    } catch (err) {
+        console.warn('[ArtworkRegistry] refresh failed', { reason, message: err && err.message });
+        return window.__baddelCanonicalGames || [];
+    }
+};
+window.__debugArtworkForGame = function __debugArtworkForGame(identity) {
+    const records = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
+    const display = records.find(g => String(g.id) === String(identity)) ||
+        (Array.isArray(window.allGamesData) ? window.allGamesData.find(g => String(g.id) === String(identity)) : null) ||
+        (identity && typeof identity === 'object' ? identity : null);
+    const projected = window.BaddelCanonicalArtworkProjection?.projectFromRecords
+        ? window.BaddelCanonicalArtworkProjection.projectFromRecords(display, records)
+        : _normalizeArtworkAliases(display);
+    const sanitize = (value) => {
+        if (!value) return null;
+        if (String(value).startsWith('data:image/')) return '[data:image redacted]';
+        return safeImageUrl(value) || '[blocked]';
+    };
+    return {
+        id: projected?.id || null,
+        localGameId: projected?.localGameId || null,
+        matchReason: projected?._artworkIdentityMatchReason || null,
+        cover: sanitize(projected?.image),
+        hero: sanitize(projected?.heroImage),
+        logo: sanitize(projected?.logo),
+        artworkState: projected?.artworkState || null,
+    };
+};
 
 // ── Visible card DOM patcher ──────────────────────────────────────────────────
 

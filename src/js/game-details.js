@@ -9310,6 +9310,17 @@ window.gdCreatorSave = async function() {
                     reason: 'creator-save',
                     rerenderDetails: true,
                 });
+                ['cover', 'hero', 'logo'].forEach(type => {
+                    if (!_creatorArtworkUpdates || !(type in _creatorArtworkUpdates)) return;
+                    if (type === 'cover') {
+                        draft.posterImage = null;
+                        draft.coverImage = null;
+                    } else if (type === 'hero') {
+                        draft.heroImage = null;
+                    } else if (type === 'logo') {
+                        draft.logoImage = null;
+                    }
+                });
             } catch (err) {
                 const res = err?.creatorSaveResult || err;
                 console.warn('[ArtworkStateV2][CreatorSaveFailure]', {
