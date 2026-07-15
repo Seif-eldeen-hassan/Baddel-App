@@ -102,7 +102,8 @@ test('composition direction remains unchanged after main.js migration to SyncCon
     const connectorFactorySource = read(CREATE_SYNC_CONNECTORS_PATH);
     const apiContractSource = read(SYNC_FEATURE_API_CONTRACT_PATH);
 
-    assert.match(syncContainerSource, /require\(platformSyncPath\)/);
+    assert.match(syncContainerSource, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(syncContainerSource, /platformSyncPath|\.join\(['"]\/['"]\)/);
     assert.match(apiContractSource, /SYNC_FEATURE_API_KEYS/);
     assert.match(mainSource, /SyncContainer/);
     assert.match(mainSource, /getSyncFeature\(\)/);

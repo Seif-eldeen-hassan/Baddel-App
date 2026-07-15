@@ -177,7 +177,8 @@ test('connector boundary source guards keep current production wiring stable', (
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(platformSyncSource, /createSyncConnectors/);
     assert.match(syncContainerSource, /loadDefaultPlatformSyncApi/);
-    assert.match(syncContainerSource, /require\(platformSyncPath\)/);
+    assert.match(syncContainerSource, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(syncContainerSource, /platformSyncPath|\.join\(['"]\/['"]\)/);
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true);
     assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile/);
 });

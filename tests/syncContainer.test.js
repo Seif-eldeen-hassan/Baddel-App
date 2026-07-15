@@ -74,7 +74,9 @@ test('SyncContainer is currently a compatibility wrapper around the platformSync
     const source = fs.readFileSync(SYNC_CONTAINER_PATH, 'utf8');
 
     assert.match(source, /loadDefaultPlatformSyncApi/);
-    assert.match(source, /require\(platformSyncPath\)/);
+    assert.match(source, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(source, /platformSyncPath/);
+    assert.doesNotMatch(source, /\.join\(['"]\/['"]\)/);
     assert.match(source, /options\.platformSyncApi/);
     assert.match(source, /options\.loadPlatformSync/);
 });

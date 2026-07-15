@@ -75,7 +75,8 @@ test('Games sync adapter and connector factory extractions are in place without 
     assert.equal(fs.existsSync(GAMES_SYNC_ADAPTER_PATH), true, 'GamesSyncAdapter should exist after extraction');
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors should exist after connector extraction');
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
-    assert.match(syncContainerSource, /require\(platformSyncPath\)/);
+    assert.match(syncContainerSource, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(syncContainerSource, /platformSyncPath|\.join\(['"]\/['"]\)/);
     assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
     assert.match(mainSource, /getSyncFeature\(\)/);
 });

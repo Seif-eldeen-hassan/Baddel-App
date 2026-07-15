@@ -319,7 +319,8 @@ test('SyncContainer remains a compatibility wrapper and does not own real connec
     const rendererSource = readSource(RENDERER_PATH);
 
     assert.match(syncContainerSource, /function\s+loadDefaultPlatformSyncApi/);
-    assert.match(syncContainerSource, /require\(platformSyncPath\)/);
+    assert.match(syncContainerSource, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(syncContainerSource, /platformSyncPath|\.join\(['"]\/['"]\)/);
     assert.doesNotMatch(syncContainerSource, /const\s+steamConnector\s*=\s*\{/);
     assert.doesNotMatch(syncContainerSource, /const\s+epicConnector\s*=\s*\{/);
     assert.doesNotMatch(syncContainerSource, /createSyncConnectors/);

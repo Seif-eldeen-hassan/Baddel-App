@@ -67,7 +67,8 @@ test('connector method implementations stay in platformSync while factory owns a
 
     assert.doesNotMatch(platformSyncSource, /SyncContainer/);
     assert.match(syncContainerSource, /function\s+loadDefaultPlatformSyncApi/);
-    assert.match(syncContainerSource, /require\(platformSyncPath\)/);
+    assert.match(syncContainerSource, /require\(['"]\.\.\/\.\.\/\.\.\/\.\.\/\.\.\/platformSync['"]\)/);
+    assert.doesNotMatch(syncContainerSource, /platformSyncPath|\.join\(['"]\/['"]\)/);
     assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
     assert.match(mainSource, /getSyncFeature\(\)/);
 });

@@ -5,8 +5,7 @@ const {
 } = require('./SyncFeatureApiContract');
 
 function loadDefaultPlatformSyncApi() {
-    const platformSyncPath = ['..', '..', '..', '..', '..', 'platformSync'].join('/');
-    return require(platformSyncPath);
+    return require('../../../../../platformSync');
 }
 
 function resolvePlatformSyncApi(options) {

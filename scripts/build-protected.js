@@ -161,6 +161,38 @@ function patchMainBundle(content) {
     return content;
 }
 
+function _normalizeMetafilePath(inputPath) {
+    return String(inputPath || '').replace(/\\/g, '/');
+}
+
+function _metafileHasInput(metafile, suffix) {
+    const normalizedSuffix = suffix.replace(/\\/g, '/');
+    return Object.keys(metafile?.inputs || {}).some((inputPath) =>
+        _normalizeMetafilePath(inputPath).endsWith(normalizedSuffix)
+    );
+}
+
+function assertMainBundlePlatformSyncResolution(buildResult, bundleContent) {
+    const requiredInputs = [
+        'src/features/sync/infrastructure/composition/SyncContainer.js',
+        'platformSync.js',
+    ];
+
+    for (const input of requiredInputs) {
+        if (!_metafileHasInput(buildResult?.metafile, input)) {
+            console.error(`\n[Fatal] Protected main bundle is missing ${input} from the esbuild dependency graph.`);
+            console.error('        SyncContainer must use a static literal require so platformSync.js is bundled.');
+            process.exit(1);
+        }
+    }
+
+    if (/require\(["'][^"']*platformSync(?:\.js)?["']\)/.test(bundleContent)) {
+        console.error('\n[Fatal] Protected main bundle still contains an unresolved platformSync require.');
+        console.error('        SyncContainer must use require("../../../../../platformSync") inside loadDefaultPlatformSyncApi().');
+        process.exit(1);
+    }
+}
+
 // ── CSS bundling ──────────────────────────────────────────────────────────────
 //
 // fonts.css uses url('../../assets/fonts/...') relative to src/css/.
@@ -314,13 +346,14 @@ async function main() {
 
     // 3 – Main-process bundle
     console.log('3. Bundling main process (esbuild) ...');
-    await esbuild.build({
+    const mainBuildResult = await esbuild.build({
         entryPoints: [path.join(ROOT, 'main.js')],
         bundle:      true,
         platform:    'node',
         format:      'cjs',
         packages:    'external',      // keep everything in node_modules as require()
         sourcemap:   false,
+        metafile:    true,
         supported:   { 'dynamic-import': true },  // preserve await import('ps-list') in CJS
         outfile:     path.join(DEST, 'main.bundle.cjs'),
         logLevel:    'warning',
@@ -334,6 +367,7 @@ async function main() {
         console.warn('  [WARN] patchMainBundle made no replacements — bundle may not load correctly.');
     }
     writeText(path.join(DEST, 'main.bundle.cjs'), mainPatched);
+    assertMainBundlePlatformSyncResolution(mainBuildResult, mainPatched);
 
     // 5 – Preload bundle
     console.log('5. Bundling preload (esbuild) ...');
