@@ -151,10 +151,13 @@ test('stale localStorage cover cannot be the Last Played winner over persisted S
     assert.equal(resolved.cover.value, 'file://settings-cover.webp');
 });
 
-test('changing Settings cover refresh paths remain wired for Last Played and Home surfaces', () => {
+test('changing Settings artwork commits through coordinator without forcing surface rerenders', () => {
     const settings = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
-    assert.match(settings, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/);
-    assert.match(settings, /renderRecentlyPlayed\(\)/);
-    assert.match(settings, /updateHeroSection\(currentHeroGameId\)/);
+    const start = settings.indexOf('async function saveGameSettings');
+    const body = settings.slice(start, start + 14000);
+    assert.match(body, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/);
+    assert.doesNotMatch(body, /renderRecentlyPlayed\(\)/);
+    assert.doesNotMatch(body, /updateHeroSection\(currentHeroGameId\)/);
+    assert.doesNotMatch(body, /applyFilters\(\)/);
     assert.match(ARTWORK_SYNC_JS, /if \(window\._vs\?\.cardCache instanceof Map\)\s+window\._vs\.cardCache\.clear\(\)/);
 });

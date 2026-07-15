@@ -24,6 +24,48 @@ const METADATA_FIELDS = Object.freeze({
     logo: Object.freeze(['logo', 'logoUrl', 'defaultLogo']),
 });
 
+function _addUnique(out, value) {
+    if (!_hasValue(value)) return;
+    const text = String(value).trim();
+    if (!out.includes(text)) out.push(text);
+}
+
+function _strongSteamIds(game) {
+    const platform = String(game?.platform || '').toLowerCase();
+    const ids = [];
+    _addUnique(ids, game?.allIds?.steam);
+    _addUnique(ids, game?.steamAppId);
+    _addUnique(ids, game?.steam_appid);
+    if (platform === 'steam') {
+        _addUnique(ids, game?.appId);
+        _addUnique(ids, game?.appid);
+    }
+    return ids;
+}
+
+function _strongEpicIds(game) {
+    const ids = [];
+    _addUnique(ids, game?.allIds?.epic);
+    _addUnique(ids, game?.appName);
+    _addUnique(ids, game?.launcherGameId);
+    _addUnique(ids, game?.catalogItemId);
+    return ids;
+}
+
+function resolveArtworkCacheKeys(displayGame = null, canonicalGame = null) {
+    const keys = [];
+    _addUnique(keys, canonicalGame?.id);
+    _addUnique(keys, displayGame?.localGameId);
+    _addUnique(keys, displayGame?.installedId);
+    _addUnique(keys, displayGame?.id);
+    _addUnique(keys, canonicalGame?.installedGameKey);
+    for (const game of [displayGame, canonicalGame]) {
+        _strongSteamIds(game).forEach(id => _addUnique(keys, id));
+        _strongEpicIds(game).forEach(id => _addUnique(keys, id));
+    }
+    return keys;
+}
+
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;
 }
@@ -190,6 +232,7 @@ const GameArtworkReadModelApi = {
     buildGameArtworkReadModel,
     applyReadModelAliases,
     selectPresentationCandidates,
+    resolveArtworkCacheKeys,
 };
 
 if (typeof module !== 'undefined' && module.exports) {

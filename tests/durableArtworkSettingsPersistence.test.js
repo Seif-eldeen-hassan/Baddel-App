@@ -205,9 +205,9 @@ test('Jump Back In canonicalizes recent games before resolving display image', (
 test('Game Settings preview projects canonical artwork before reading image fields', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'addGameModal.js'), 'utf8');
     const start = src.indexOf('function openGameSettings');
-    const body = src.slice(start, start + 1800);
+    const body = src.slice(start, start + 3600);
     assert.match(body, /BaddelCanonicalArtworkProjection/);
-    assert.match(body, /projectFromRecords\(g,\s*records\)/);
+    assert.match(body, /projectFromRecords\(displayGame,\s*records\)/);
     assert.match(body, /window\._allGamesCache/);
 });
 

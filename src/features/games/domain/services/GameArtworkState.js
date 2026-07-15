@@ -8,7 +8,7 @@ const TYPE_ALIASES = Object.freeze({
     logo: Object.freeze(['logo', 'logoUrl', 'defaultLogo']),
 });
 
-const FALLBACK_SOURCES = new Set(['scanner', 'platform', 'pipeline', 'server', 'server-details', 'addManual', 'jump-back-in', 'manual', 'metadata', 'sync', 'reset']);
+const FALLBACK_SOURCES = new Set(['scanner', 'platform', 'pipeline', 'server', 'server-details', 'addManual', 'jump-back-in', 'manual', 'metadata', 'sync', 'reset', 'cache-recovery']);
 const EXPLICIT_USER_SOURCES = new Set(['settings', 'creator']);
 
 function _hasValue(value) {

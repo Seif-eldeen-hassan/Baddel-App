@@ -7,6 +7,7 @@ let _agSelectedGames = []; // [{ path, fileName, name, source }]
 let _agCurrentTab    = 'browse';
 let _agDropZoneInit  = false;
 let pendingImageChanges = {};
+let _gsArtworkOpenRequestId = 0;
 
 // ── Helpers ──────────────────────────────────────────────────
 function _agIsSupportedGameFile(p) {
@@ -432,32 +433,54 @@ async function agFinalizeAddGame() {
 // ============================================================
 
 async function openGameSettings(id) {
+    if (typeof hideContextMenu === 'function') hideContextMenu();
     pendingImageChanges = {};
     selectedGameId = id;
+    const requestId = ++_gsArtworkOpenRequestId;
     const modal = document.getElementById('gameSettingsModal');
     if (modal) modal.classList.add('is-loading-artwork');
-    let g = allGamesData.find(x => String(x.id) === String(id));
-    if (!g && Array.isArray(window._allGamesCache)) {
-        g = window._allGamesCache.find(x => String(x.id || x.appName || x.title) === String(id));
+    let displayGame = allGamesData.find(x => String(x.id) === String(id));
+    if (!displayGame && Array.isArray(window._allGamesCache)) {
+        displayGame = window._allGamesCache.find(x => String(x.id || x.appName || x.title) === String(id));
     }
-    if (!g) {
+    if (!displayGame) {
         if (modal) modal.classList.remove('is-loading-artwork');
         return;
     }
+    let g = displayGame;
     const recordsBeforeRefresh = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
     const resolvedBeforeRefresh = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity
-        ? window.BaddelCanonicalGameIdentityResolver.resolveCanonicalGameIdentity(g, recordsBeforeRefresh)
+        ? window.BaddelCanonicalGameIdentityResolver.resolveCanonicalGameIdentity(displayGame, recordsBeforeRefresh)
         : null;
+    const matchedBeforeRefresh = resolvedBeforeRefresh?.status === 'success' ? resolvedBeforeRefresh.game : null;
+    const readBeforeRefresh = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel && matchedBeforeRefresh
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame, canonicalGame: matchedBeforeRefresh })
+        : null;
+    const matchedMissingTypes = matchedBeforeRefresh && readBeforeRefresh
+        ? ['cover', 'hero', 'logo'].some(type => !readBeforeRefresh[type]?.effectiveValue && !_gsDisplayHasArtworkType(displayGame, type))
+        : false;
     const needsCanonicalRefresh = recordsBeforeRefresh.length === 0 ||
         window.__baddelCanonicalRegistryRefreshInFlight ||
-        (resolvedBeforeRefresh && resolvedBeforeRefresh.status !== 'success');
+        (resolvedBeforeRefresh && resolvedBeforeRefresh.status !== 'success') ||
+        matchedMissingTypes;
     if (window.__baddelRefreshCanonicalGamesRegistry && needsCanonicalRefresh) {
         await window.__baddelRefreshCanonicalGamesRegistry('game-settings-open');
+        if (requestId !== _gsArtworkOpenRequestId || String(selectedGameId) !== String(id)) return;
     }
+    const records = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
+    const resolvedAfterRefresh = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity
+        ? window.BaddelCanonicalGameIdentityResolver.resolveCanonicalGameIdentity(displayGame, records)
+        : null;
+    const canonicalGame = resolvedAfterRefresh?.status === 'success' ? resolvedAfterRefresh.game : null;
     if (g && window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
-        const records = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
-        g = window.BaddelCanonicalArtworkProjection.projectFromRecords(g, records) || g;
+        g = window.BaddelCanonicalArtworkProjection.projectFromRecords(displayGame, records) || displayGame;
     }
+    const cacheArtwork = window.__baddelLoadCachedArtworkForGame
+        ? await window.__baddelLoadCachedArtworkForGame(displayGame, canonicalGame || g)
+        : null;
+    if (requestId !== _gsArtworkOpenRequestId || String(selectedGameId) !== String(id)) return;
+    await _gsPromoteCacheFallbacks(displayGame, canonicalGame || g, cacheArtwork);
+    if (requestId !== _gsArtworkOpenRequestId || String(selectedGameId) !== String(id)) return;
 
     document.getElementById('editGameNameInput').value = g.name;
 
@@ -468,19 +491,24 @@ async function openGameSettings(id) {
 
     // update images
     const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
-        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame: g, canonicalGame: g })
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({
+            displayGame,
+            canonicalGame: canonicalGame || g,
+            platformArtwork: displayGame,
+            cacheArtwork,
+        })
         : null;
-    _gsSetArtworkPreview(document.getElementById('previewHero'), [readModel?.hero?.effectiveValue, g.heroImage, g.defaultHero], 'assets/No_Image_Available.jpg');
-    _gsSetArtworkPreview(document.getElementById('previewCover'), [readModel?.cover?.effectiveValue, g.image, g.defaultImage, g.coverUrl], 'assets/No_Image_Available.jpg');
-    _gsUpdateLogoPreview(readModel?.logo?.effectiveValue || g.logo);
+    _gsSetArtworkPreview(document.getElementById('previewHero'), [readModel?.hero?.effectiveValue, g.heroImage, displayGame.heroImage, cacheArtwork?.hero, g.defaultHero], 'assets/No_Image_Available.jpg', requestId);
+    _gsSetArtworkPreview(document.getElementById('previewCover'), [readModel?.cover?.effectiveValue, g.image, displayGame.image, cacheArtwork?.cover, g.defaultImage, g.coverUrl], 'assets/No_Image_Available.jpg', requestId);
+    _gsUpdateLogoPreview([readModel?.logo?.effectiveValue, g.logo, displayGame.logo, cacheArtwork?.logo], requestId);
     
     const btnCover = document.getElementById('btn-reset-cover');
     const btnHero = document.getElementById('btn-reset-hero');
     const btnLogo = document.getElementById('btn-reset-logo');
 
-    if (btnCover) btnCover.disabled = !g.image;
-    if (btnHero) btnHero.disabled = !g.heroImage;
-    if (btnLogo) btnLogo.disabled = !g.logo;
+    if (btnCover) btnCover.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'cover');
+    if (btnHero) btnHero.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'hero');
+    if (btnLogo) btnLogo.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'logo');
     
     // open modal
     document.getElementById('gameSettingsModal').classList.add('active');
@@ -492,37 +520,104 @@ async function openGameSettings(id) {
     document.getElementById('gameSettingsModal').classList.add('active');
 }
 
-function _gsSetArtworkPreview(imgEl, candidates, placeholder) {
-    if (!imgEl) return;
-    const safe = (Array.isArray(candidates) ? candidates : [])
+function _gsNormalizeCandidates(candidates) {
+    const seen = new Set();
+    return (Array.isArray(candidates) ? candidates : [candidates])
         .map(src => safeImageUrl(src))
-        .find(Boolean) || placeholder;
+        .filter(Boolean)
+        .filter(src => {
+            if (seen.has(src)) return false;
+            seen.add(src);
+            return true;
+        });
+}
+
+function _gsDisplayHasArtworkType(game, type) {
+    if (!game) return false;
+    if (type === 'cover') return Boolean(game.image || game.cover || game.coverUrl || game.defaultImage);
+    if (type === 'hero') return Boolean(game.heroImage || game.hero || game.heroUrl || game.defaultHero);
+    if (type === 'logo') return Boolean(game.logo || game.logoUrl || game.defaultLogo);
+    return false;
+}
+
+function _gsSetArtworkPreview(imgEl, candidates, placeholder, requestId = _gsArtworkOpenRequestId) {
+    if (!imgEl) return;
+    const queue = _gsNormalizeCandidates(candidates);
+    let index = 0;
+    const applyNext = () => {
+        if (requestId !== _gsArtworkOpenRequestId) return;
+        const next = queue[index++] || placeholder;
+        imgEl.src = next;
+        imgEl.style.display = 'block';
+    };
     imgEl.onerror = () => {
+        if (requestId !== _gsArtworkOpenRequestId) return;
+        if (index < queue.length) {
+            applyNext();
+            return;
+        }
         imgEl.onerror = null;
         imgEl.src = placeholder;
     };
-    imgEl.src = safe;
-    imgEl.style.display = 'block';
+    applyNext();
 }
 
-function _gsUpdateLogoPreview(src) {
+function _gsUpdateLogoPreview(candidates, requestId = _gsArtworkOpenRequestId) {
     const logoEl  = document.getElementById('previewLogo');
     const emptyEl = document.getElementById('gs-logo-empty');
-    const safe = safeImageUrl(src);
-    if (safe) {
-        logoEl.onerror = () => {
-            logoEl.onerror = null;
-            logoEl.src = '';
-            logoEl.style.display = 'none';
-            if (emptyEl) emptyEl.style.display = 'flex';
-        };
-        logoEl.src = safe;
-        logoEl.style.display = 'block';
-        if (emptyEl) emptyEl.style.display = 'none';
-    } else {
+    const queue = _gsNormalizeCandidates(candidates);
+    let index = 0;
+    const showEmpty = () => {
         logoEl.src = '';
         logoEl.style.display = 'none';
         if (emptyEl) emptyEl.style.display = 'flex';
+    };
+    const applyNext = () => {
+        if (requestId !== _gsArtworkOpenRequestId) return;
+        const next = queue[index++];
+        if (!next) {
+            logoEl.onerror = null;
+            showEmpty();
+            return;
+        }
+        logoEl.src = next;
+        logoEl.style.display = 'block';
+        if (emptyEl) emptyEl.style.display = 'none';
+    };
+    logoEl.onerror = () => {
+        if (requestId !== _gsArtworkOpenRequestId) return;
+        if (index < queue.length) applyNext();
+        else showEmpty();
+    };
+    applyNext();
+}
+
+function _gsHasExplicitOverride(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    return Boolean(item?.locked === true && item?.overrideValue);
+}
+
+function _gsHasAnyCanonicalValue(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    return Boolean(item?.overrideValue || item?.fallbackValue);
+}
+
+async function _gsPromoteCacheFallbacks(displayGame, canonicalGame, cacheArtwork) {
+    if (!cacheArtwork || !canonicalGame || !window.electronAPI?.setGameArtwork) return;
+    const updates = {};
+    for (const type of ['cover', 'hero', 'logo']) {
+        if (cacheArtwork[type] && !_gsHasAnyCanonicalValue(canonicalGame, type)) {
+            updates[type] = cacheArtwork[type];
+        }
+    }
+    if (!Object.keys(updates).length) return;
+    const identity = _gsBuildArtworkIdentity(canonicalGame || displayGame, selectedGameId);
+    const res = await window.electronAPI.setGameArtwork(identity, updates, {
+        source: 'cache-recovery',
+        mode: 'fallback',
+    }).catch(() => null);
+    if (res?.persisted && res.updatedGame) {
+        window.__baddelUpsertCanonicalGameRegistry?.(res.updatedGame);
     }
 }
 
@@ -1035,11 +1130,7 @@ async function saveGameSettings() {
     pendingImageChanges = {};
 
     showToast('Settings saved successfully!', 'success');
-    if (_changedTypes.length) {
-        if (typeof applyFilters === 'function') applyFilters();
-        if (typeof renderRecentlyPlayed === 'function') renderRecentlyPlayed();
-        if (currentHeroGameId && allGamesData.find(game => String(game.id) === currentHeroGameId)) updateHeroSection(currentHeroGameId);
-    } else {
+    if (!_changedTypes.length) {
         refreshAllViews();
     }
     closeGameSettings();

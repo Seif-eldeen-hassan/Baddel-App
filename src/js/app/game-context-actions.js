@@ -53,7 +53,7 @@ function showContextMenu(x, y, id, name) {
         </div>
         ${removeFromCollAction}
         ${trackingItem}
-        <div class="menu-item" onclick="openGameSettings('${id}')">Game Settings</div>
+        <div class="menu-item" onclick="hideContextMenu(); openGameSettings('${id}')">Game Settings</div>
         <div class="menu-item delete" onclick="triggerRemove('${id}')">Remove from Library</div>
     `;
 

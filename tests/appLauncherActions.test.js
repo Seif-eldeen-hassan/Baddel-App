@@ -273,8 +273,8 @@ describe('Phase 2.14B: launcher actions — cross-file callers', () => {
         const fn = getFunctionBody(ROULETTE_JS, 'playRouletteResult');
         assert.match(fn, /triggerLaunchSequence\(/);
     });
-    it('context menu HTML in game-context-actions.js uses openGameSettings onclick', () => {
-        assert.match(GAME_CONTEXT_JS, /onclick="openGameSettings\('/);
+    it('context menu HTML in game-context-actions.js closes menu before opening Game Settings', () => {
+        assert.match(GAME_CONTEXT_JS, /onclick="hideContextMenu\(\);\s*openGameSettings\('/);
     });
     it('hero.js triggerPlayFromHero delegates to triggerLaunchSequence via currentHeroGameId', () => {
         const HERO_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/hero.js'), 'utf8');
