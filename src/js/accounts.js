@@ -2843,8 +2843,8 @@ async function _agHydrateCachedCoversIntoAllGames() {
                 g.allIds?.epic,
                 String(g.title || g.name || g.appName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
             ].filter(Boolean).map(String);
-            // Creator Mode wins over platform-sync cached covers
-if (_agIsCreatorArtworkGame(g)) {
+            // Settings/Creator artwork wins over platform-sync cached covers
+if (g.customArtworkLocked === true && (g.artworkSource === 'settings' || g.artworkSource === 'creator')) {
     const creatorCover = g.coverUrl || g.image || g.defaultImage;
 
     if (_agIsUsableCardCover(creatorCover, g)) {

@@ -559,14 +559,28 @@ function _gdApplyCustomToGame(game, custom) {
     if (!custom) return game;
     // logoMode controls visibility — don't let a stored logoImage override text mode
     const effectiveLogo = custom.logoMode === 'text' ? null : (custom.logoImage || game.logo || null);
+    const effectiveCover = custom.posterImage || custom.coverImage || game.image || null;
+    const effectiveHero = custom.heroImage || game.heroImage || null;
+    const hasCreatorArtwork = !!(custom.posterImage || custom.coverImage || custom.heroImage || custom.logoImage || custom.logoMode === 'text');
     return {
         ...game,
         creatorOriginalName: custom.originalName || game.creatorOriginalName || game.originalName || game.name,
         originalName: custom.originalName || game.originalName || game.name,
         name: custom.title || game.name,
-        image: custom.posterImage || custom.coverImage || game.image,
+        image: effectiveCover,
+        cover: effectiveCover,
+        coverUrl: effectiveCover,
+        defaultImage: effectiveCover || game.defaultImage,
         logo: effectiveLogo,
-        heroImage: custom.heroImage || game.heroImage,
+        logoUrl: effectiveLogo,
+        defaultLogo: effectiveLogo,
+        heroImage: effectiveHero,
+        hero: effectiveHero,
+        heroUrl: effectiveHero,
+        defaultHero: effectiveHero || game.defaultHero,
+        customArtworkLocked: hasCreatorArtwork ? true : game.customArtworkLocked,
+        artworkSource: hasCreatorArtwork ? 'creator' : game.artworkSource,
+        artworkUpdatedAt: hasCreatorArtwork ? (custom.artworkUpdatedAt || game.artworkUpdatedAt || Date.now()) : game.artworkUpdatedAt,
         developer: custom.developer || game.developer,
         publisher: custom.publisher || game.publisher,
         short_description: custom.shortDescription || game.short_description,
@@ -9210,6 +9224,7 @@ window.gdCreatorSave = async function() {
         const newCover = draft.posterImage || null;
         const newHero  = draft.heroImage   || null;
         const newLogo  = !logoCleared ? (draft.logoImage || null) : null;
+        const creatorArtworkUpdatedAt = Date.now();
         const _creatorNorm  = (v) => String(v || '').trim().toLowerCase();
         const _creatorLoose = (v) => String(v || '').trim().toLowerCase().replace(/[^a-z0-9]/g, '');
 
@@ -9289,7 +9304,7 @@ window.gdCreatorSave = async function() {
             if (logoCleared) { g.logo = null; g.defaultLogo = null; g.logoUrl = null; }
             g.customArtworkLocked = true;
             g.artworkSource = 'creator';
-            g.artworkUpdatedAt = Date.now();
+            g.artworkUpdatedAt = creatorArtworkUpdatedAt;
             if (gameId && !g.installedId) g.installedId = gameId;
         };
 
@@ -9311,7 +9326,15 @@ window.gdCreatorSave = async function() {
         // Propagate patch to all known targets: installed record, session snapshots, and matched synced games.
         // Using _gdCollectCreatorOverrideTargets ensures installed+synced hybrid games are both updated.
         // skipSyncedRender=true because renderSyncedSuggestions() is called explicitly in the render block below.
-        const _gdCreatorPatch = { cover: newCover, hero: newHero, logo: newLogo, logoCleared, name: draft.title };
+        const _gdCreatorPatch = {
+            cover: newCover,
+            hero: newHero,
+            logo: newLogo,
+            logoCleared,
+            name: draft.title,
+            artworkSource: 'creator',
+            artworkUpdatedAt: creatorArtworkUpdatedAt,
+        };
         const _gdOverrideTargets = _gdCollectCreatorOverrideTargets(baseGame, savedGame);
         if (typeof window.__baddelApplyGameCustomOverride === 'function') {
             _gdOverrideTargets.forEach(target => {
@@ -9335,15 +9358,16 @@ window.gdCreatorSave = async function() {
             const ipcMeta = {
                 customArtworkLocked: true,
                 artworkSource: 'creator',
-                artworkUpdatedAt: Date.now(),
+                artworkUpdatedAt: creatorArtworkUpdatedAt,
             };
             if (draft.title) ipcMeta.name = draft.title;
             if (newCover) ipcMeta.cover = newCover;
             if (newHero)  ipcMeta.hero  = newHero;
             ipcMeta.logo = newLogo;
             try {
-                await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
-                await _gdRefreshGameFromDbAfterMutation(gameId, {
+                const res = await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
+                const refreshId = res?.canonicalGameId || gameId;
+                await _gdRefreshGameFromDbAfterMutation(refreshId, {
                     reason: 'creator-save',
                     rerenderDetails: true,
                 });

@@ -200,3 +200,44 @@ test('Jump Back In canonicalizes recent games before resolving display image', (
     assert.match(src, /function createRecentCard\(game, isFeatured = false\)[\s\S]*_canonicalizeRecentGame\(game\)/);
     assert.match(src, /function createRecentCard\(game, isFeatured = false\)[\s\S]*_getRecentDisplayImage\(game\)/);
 });
+
+test('Game Settings preview projects canonical artwork before reading image fields', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'addGameModal.js'), 'utf8');
+    const start = src.indexOf('function openGameSettings');
+    const body = src.slice(start, start + 1800);
+    assert.match(body, /BaddelCanonicalArtworkProjection/);
+    assert.match(body, /projectFromRecords\(g,\s*records\)/);
+    assert.match(body, /window\._allGamesCache/);
+});
+
+test('Creator Mode saved game carries cover, hero, logo aliases and creator ownership', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
+    const start = src.indexOf('function _gdApplyCustomToGame');
+    const body = src.slice(start, start + 1800);
+    assert.match(body, /coverUrl:\s*effectiveCover/);
+    assert.match(body, /defaultImage:\s*effectiveCover/);
+    assert.match(body, /heroUrl:\s*effectiveHero/);
+    assert.match(body, /defaultHero:\s*effectiveHero/);
+    assert.match(body, /customArtworkLocked:\s*hasCreatorArtwork \? true/);
+    assert.match(body, /artworkSource:\s*hasCreatorArtwork \? 'creator'/);
+});
+
+test('Creator save patch propagates artworkSource and canonical refresh id', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
+    const start = src.indexOf('window.gdCreatorSave = async function');
+    const body = src.slice(start, start + 12000);
+    assert.match(body, /creatorArtworkUpdatedAt/);
+    assert.match(body, /artworkSource:\s*'creator'/);
+    assert.match(body, /artworkUpdatedAt:\s*creatorArtworkUpdatedAt/);
+    assert.match(body, /const res = await window\.electronAPI\.saveMetadata/);
+    assert.match(body, /res\?\.canonicalGameId \|\| gameId/);
+});
+
+test('All Games cached cover hydration skips Settings and Creator locked artwork', () => {
+    const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'accounts.js'), 'utf8');
+    const start = src.indexOf('async function _agHydrateCachedCoversIntoAllGames');
+    const body = src.slice(start, start + 3800);
+    assert.match(body, /customArtworkLocked === true/);
+    assert.match(body, /artworkSource === 'settings'/);
+    assert.match(body, /artworkSource === 'creator'/);
+});

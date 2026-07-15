@@ -2294,7 +2294,7 @@ test('main.js: save-game-metadata handler emits game-image-updated on success', 
     const src = fs.readFileSync(path.join(ROOT, 'handlers/localMetadataHandlers.js'), 'utf8');
     const handlerIdx = src.indexOf("ipcMain.handle('save-game-metadata'");
     assert.ok(handlerIdx > -1, 'save-game-metadata handler found');
-    const block = src.slice(handlerIdx, handlerIdx + 600);
+    const block = src.slice(handlerIdx, handlerIdx + 900);
     assert.match(block, /game-image-updated/, 'game-image-updated event emitted after save');
     assert.match(block, /result\?\.status === 'success'/, 'emit guarded by success check');
     assert.match(block, /getSavedGames/, 'getSavedGames used to find updated game record');

@@ -211,9 +211,20 @@ class JsonGameRepository {
     // ─── Image mutations ──────────────────────────────────────────────────────
 
     async updateGameMetadata(gameId, metadata, { source = 'server', force = false } = {}) {
-        const index = this._dbCache.findIndex(g => String(g.id) === String(gameId));
-        if (index === -1) return { status: 'error', message: 'Game not found' };
-        const game = this._dbCache[index];
+        const requestedGameId = gameId && typeof gameId === 'object'
+            ? (gameId.gameId || gameId.id || gameId.localGameId || gameId.installedId || null)
+            : gameId;
+        const resolved = resolveCanonicalGameIdentity(gameId, this._dbCache);
+        if (resolved.status !== 'success') {
+            return {
+                status: 'error',
+                message: 'Game not found',
+                requestedGameId,
+                canonicalGameId: null,
+                persisted: false,
+            };
+        }
+        const game = resolved.game;
 
         const artLocked      = game.customArtworkLocked === true;
         const serverVerified = game.artworkSource === 'server-details' && !!game.artworkUpdatedAt;
@@ -309,8 +320,26 @@ class JsonGameRepository {
             }
         }
 
-        this.saveDatabase();
-        return { status: 'success' };
+        try {
+            await this.flushDatabase();
+            return {
+                status: 'success',
+                requestedGameId,
+                canonicalGameId: game.id,
+                matchReason: resolved.reason,
+                updatedGame: JSON.parse(JSON.stringify(game)),
+                persisted: true,
+            };
+        } catch (err) {
+            this._log.error('[DB] updateGameMetadata flush failed:', err);
+            return {
+                status: 'error',
+                message: 'Failed to persist game metadata',
+                requestedGameId,
+                canonicalGameId: game.id,
+                persisted: false,
+            };
+        }
     }
 
     async updateGameImage(gameId, newImagePath, type = 'cover', {

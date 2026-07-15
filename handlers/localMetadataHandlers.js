@@ -34,7 +34,8 @@ module.exports.register = function registerLocalMetadataHandlers(ipcMain, deps) 
         const result = await updateGameMetadata(id, meta, opts || {});
         if (result?.status === 'success') {
             try {
-                const game = getSavedGames().find(g => String(g.id) === String(id));
+                const canonicalId = result.canonicalGameId || id;
+                const game = result.updatedGame || getSavedGames().find(g => String(g.id) === String(canonicalId));
                 const mainWindow = getMainWindow();
                 if (game && mainWindow && !mainWindow.isDestroyed()) {
                     mainWindow.webContents.send('game-image-updated', game);

@@ -375,7 +375,11 @@ test('JsonGameRepository: updateGameMetadata uses String() coercion on gameId', 
 test('JsonGameRepository: updateGameMetadata returns { status: success } on success', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     const result = await repo.updateGameMetadata('g1', {});
-    assert.deepEqual(result, { status: 'success' });
+    assert.equal(result.status, 'success');
+    assert.equal(result.requestedGameId, 'g1');
+    assert.equal(result.canonicalGameId, 'g1');
+    assert.equal(result.persisted, true);
+    assert.ok(result.updatedGame);
 });
 
 test('JsonGameRepository: updateGameMetadata does not call saveDatabase on missing game', async () => {
@@ -386,12 +390,37 @@ test('JsonGameRepository: updateGameMetadata does not call saveDatabase on missi
     assert.equal(saved, false);
 });
 
-test('JsonGameRepository: updateGameMetadata schedules saveDatabase when game found', async () => {
+test('JsonGameRepository: updateGameMetadata flushes database when game found', async () => {
     const repo = makeRepo([game({ id: 'g1' })]);
     await repo.updateGameMetadata('g1', {});
-    assert.ok(repo._saveTimer !== null, 'saveDatabase timer must be set');
-    clearTimeout(repo._saveTimer);
-    repo._saveTimer = null;
+    assert.equal(repo._saveTimer, null, 'metadata updates must flush immediately without a debounce timer');
+});
+
+test('JsonGameRepository: updateGameMetadata resolves synced identity to canonical local game', async () => {
+    const repo = makeRepo([game({
+        id: 'local-cs2',
+        installedGameKey: 'steam:730:C:/cs2.exe',
+        allIds: { steam: '730' },
+        image: 'file://old.webp',
+    })]);
+    const result = await repo.updateGameMetadata({
+        id: 'steam-730',
+        installedId: 'local-cs2',
+        allIds: { steam: '730' },
+    }, {
+        cover: 'file://creator-cover.webp',
+        hero: 'file://creator-hero.webp',
+        customArtworkLocked: true,
+        artworkSource: 'creator',
+        artworkUpdatedAt: 1234,
+    }, { source: 'creator' });
+    assert.equal(result.status, 'success');
+    assert.equal(result.requestedGameId, 'steam-730');
+    assert.equal(result.canonicalGameId, 'local-cs2');
+    assert.equal(result.persisted, true);
+    assert.equal(repo.getGameById('local-cs2').image, 'file://creator-cover.webp');
+    assert.equal(repo.getGameById('local-cs2').heroImage, 'file://creator-hero.webp');
+    assert.equal(repo.getGameById('local-cs2').artworkSource, 'creator');
 });
 
 test('JsonGameRepository: updateGameMetadata sets cover image when not art-locked', async () => {

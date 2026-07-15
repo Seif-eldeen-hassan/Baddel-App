@@ -434,7 +434,17 @@ async function agFinalizeAddGame() {
 function openGameSettings(id) {
     pendingImageChanges = {};
     selectedGameId = id;
-    const g = allGamesData.find(x => String(x.id) === String(id));
+    let g = allGamesData.find(x => String(x.id) === String(id));
+    if (!g && Array.isArray(window._allGamesCache)) {
+        g = window._allGamesCache.find(x => String(x.id || x.appName || x.title) === String(id));
+    }
+    if (g && window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
+        const records = [
+            ...(Array.isArray(window.allGamesData) ? window.allGamesData : []),
+            ...(Array.isArray(window._allGamesCache) ? window._allGamesCache : []),
+        ];
+        g = window.BaddelCanonicalArtworkProjection.projectFromRecords(g, records) || g;
+    }
     if (!g) return;
 
     document.getElementById('editGameNameInput').value = g.name;
