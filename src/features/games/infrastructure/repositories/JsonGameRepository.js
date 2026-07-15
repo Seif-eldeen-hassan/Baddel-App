@@ -230,6 +230,7 @@ class JsonGameRepository {
         mode = null,
         updatedAt = Date.now(),
         expectedRevision = null,
+        expectedRevisions = null,
     } = {}) {
         const normalized = normalizeArtworkWriteSource(source);
         const writeMode = mode || normalized.mode;
@@ -240,10 +241,18 @@ class JsonGameRepository {
             if (!(type in updates)) continue;
             const value = this._normalizeArtworkPath(updates[type]);
             let result;
-            if (writeMode === 'clear-explicit') {
+            if (writeMode === 'clear-explicit' || (writeMode === 'explicit' && value == null)) {
                 result = clearExplicitOverride(state, type, { updatedAt });
             } else if (writeMode === 'explicit') {
-                result = applyExplicitOverride(state, type, value, { source: normalized.source, updatedAt, expectedRevision });
+                const perTypeExpectedRevision =
+                    expectedRevisions && Object.prototype.hasOwnProperty.call(expectedRevisions, type)
+                        ? expectedRevisions[type]
+                        : expectedRevision;
+                result = applyExplicitOverride(state, type, value, {
+                    source: normalized.source,
+                    updatedAt,
+                    expectedRevision: perTypeExpectedRevision,
+                });
             } else {
                 result = applyFallback(state, type, value, { source: normalized.source, updatedAt });
             }
@@ -274,6 +283,7 @@ class JsonGameRepository {
         mode = null,
         operationId = null,
         expectedRevision = null,
+        expectedRevisions = null,
     } = {}) {
         const requestedGameId = identity && typeof identity === 'object'
             ? (identity.gameId || identity.id || identity.localGameId || identity.installedId || null)
@@ -291,7 +301,13 @@ class JsonGameRepository {
         }
 
         const game = resolved.game;
-        const perType = this._applyArtworkUpdatesToGame(game, updates, { source, updatedAt, mode, expectedRevision });
+        const perType = this._applyArtworkUpdatesToGame(game, updates, {
+            source,
+            updatedAt,
+            mode,
+            expectedRevision,
+            expectedRevisions,
+        });
 
         try {
             await this.flushDatabase();
@@ -339,7 +355,13 @@ class JsonGameRepository {
 
     // ─── Image mutations ──────────────────────────────────────────────────────
 
-    async updateGameMetadata(gameId, metadata, { source = 'server', force = false, expectedRevision = null, operationId = null } = {}) {
+    async updateGameMetadata(gameId, metadata, {
+        source = 'server',
+        force = false,
+        expectedRevision = null,
+        expectedRevisions = null,
+        operationId = null,
+    } = {}) {
         const requestedGameId = gameId && typeof gameId === 'object'
             ? (gameId.gameId || gameId.id || gameId.localGameId || gameId.installedId || null)
             : gameId;
@@ -386,6 +408,7 @@ class JsonGameRepository {
                 mode,
                 updatedAt: metadata.artworkUpdatedAt || Date.now(),
                 expectedRevision,
+                expectedRevisions,
             });
         }
         if (!skipArt && source === 'creator' && Object.prototype.hasOwnProperty.call(metadata, 'logo') && metadata.logo === null) {
@@ -424,17 +447,6 @@ class JsonGameRepository {
                 game.name  = nextName;
                 game.title = nextName;
             }
-        }
-        if (metadata.customArtworkLocked === true && (metadata.artworkSource === 'settings' || metadata.artworkSource === 'creator')) {
-            const currentUpdates = {};
-            if (game.image) currentUpdates.cover = game.image;
-            if (game.heroImage) currentUpdates.hero = game.heroImage;
-            if (game.logo) currentUpdates.logo = game.logo;
-            this._applyArtworkUpdatesToGame(game, currentUpdates, {
-                source: metadata.artworkSource,
-                mode: 'explicit',
-                updatedAt: metadata.artworkUpdatedAt || Date.now(),
-            });
         }
         Object.assign(game, projectArtworkStateToLegacyAliases(game));
         if (metadata.customArtworkLocked !== undefined) {

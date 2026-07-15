@@ -276,9 +276,10 @@ test('createRecentCard: sets data-playtime attribute', () => {
     assert.match(body, /['"]data-playtime['"]/);
 });
 
-test('createRecentCard: uses _getRecentDisplayImage for cover image', () => {
+test('createRecentCard: uses the JBI artwork selection pipeline for cover image', () => {
     const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
-    assert.match(body, /_getRecentDisplayImage\s*\(\s*game\s*\)/);
+    assert.match(body, /_jbiResolveArtworkSelection\s*\(\s*displayGame\s*\)/);
+    assert.match(body, /const displayImg = selection\.selectedValue/);
 });
 
 test('createRecentCard: renders jbi-cover-img element', () => {

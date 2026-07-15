@@ -108,6 +108,57 @@ test('Artwork State V2: stale explicit operation cannot replace newer revision',
     assert.equal(repo.getGameById('g1').image, 'file://creator-cover.webp');
 });
 
+test('Artwork State V2: per-type expectedRevisions reject stale cover without blocking hero', async () => {
+    const repo = makeRepo([game()]);
+
+    await repo.setGameArtwork('g1', { cover: 'file://settings-cover.webp' }, { source: 'settings' });
+    const staleCoverRevision = repo.getGameById('g1').artworkState.cover.revision;
+    await repo.setGameArtwork('g1', { cover: 'file://creator-cover.webp' }, { source: 'creator' });
+
+    const res = await repo.setGameArtwork('g1', {
+        cover: 'file://stale-cover.webp',
+        hero: 'file://creator-hero.webp',
+    }, {
+        source: 'creator',
+        expectedRevisions: {
+            cover: staleCoverRevision,
+            hero: 0,
+        },
+    });
+
+    assert.equal(res.status, 'partial');
+    assert.equal(res.perType.cover.applied, false);
+    assert.equal(res.perType.cover.reason, 'stale-revision');
+    assert.equal(res.perType.hero.applied, true);
+    const saved = repo.getGameById('g1');
+    assert.equal(saved.image, 'file://creator-cover.webp');
+    assert.equal(saved.heroImage, 'file://creator-hero.webp');
+});
+
+test('Artwork State V2: updateGameMetadata custom lock does not reapply unrelated current types', async () => {
+    const repo = makeRepo([game()]);
+
+    await repo.setGameArtwork('g1', {
+        cover: 'file://settings-cover.webp',
+        hero: 'file://creator-hero.webp',
+    }, { source: 'creator' });
+    const before = repo.getGameById('g1');
+    const coverRevision = before.artworkState.cover.revision;
+    const heroRevision = before.artworkState.hero.revision;
+
+    const res = await repo.updateGameMetadata('g1', {
+        name: 'Renamed',
+        customArtworkLocked: true,
+        artworkSource: 'creator',
+    }, { source: 'creator-content' });
+
+    assert.equal(res.status, 'success');
+    assert.deepEqual(res.perType, {});
+    const saved = repo.getGameById('g1');
+    assert.equal(saved.artworkState.cover.revision, coverRevision);
+    assert.equal(saved.artworkState.hero.revision, heroRevision);
+});
+
 test('Artwork State V2: metadata force cannot replace explicit user artwork', async () => {
     const repo = makeRepo([game()]);
 

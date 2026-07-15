@@ -254,11 +254,23 @@ test('gdCreatorSave: sets customArtworkLocked and artworkSource in IPC payload',
     assert.match(fnBody, /artworkUpdatedAt/, 'must set artworkUpdatedAt');
 });
 
-test('gdCreatorSave: passes source=creator to saveMetadata IPC', () => {
+test('gdCreatorSave: routes artwork through setGameArtwork with source=creator', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'game-details.js'), 'utf8');
     const fnStart = src.indexOf('window.gdCreatorSave = async function');
     const fnBody = src.slice(fnStart, fnStart + 25000);
-    assert.match(fnBody, /saveMetadata\(gameId.*source.*creator|source.*creator.*saveMetadata/s, 'must call saveMetadata with source=creator');
+    assert.match(fnBody, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/);
+    assert.match(fnBody, /source:\s*'creator'/);
+    assert.match(fnBody, /expectedRevisions:\s*_creatorExpectedRevisions/);
+});
+
+test('gdCreatorSave: saveMetadata path is content-only and carries no artwork fields', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'game-details.js'), 'utf8');
+    const fnStart = src.indexOf('window.gdCreatorSave = async function');
+    const fnBody = src.slice(fnStart, fnStart + 25000);
+    const callIdx = fnBody.indexOf('saveMetadata(contentGameId');
+    assert.notEqual(callIdx, -1, 'content saveMetadata call must remain available');
+    const contentBlock = fnBody.slice(Math.max(0, callIdx - 300), callIdx + 300);
+    assert.doesNotMatch(contentBlock, /cover|hero|logo|customArtworkLocked|artworkSource/);
 });
 
 test('gdCreatorSave: updates localStorage cover/hero/logo keys', () => {

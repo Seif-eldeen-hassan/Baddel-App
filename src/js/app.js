@@ -528,6 +528,7 @@ async function initSystem() {
 
         allGamesData = games;
         window.allGamesData = allGamesData; // keep accounts.js in sync
+        window.__baddelSetCanonicalGamesRegistry?.(games);
         allCollections = collections;
 
         buildPlaytimeCache(games);
@@ -910,6 +911,7 @@ function _mergeCanonicalArtworkAcrossLibrary(updatedGames, previousGames = []) {
         (g.artworkSource === 'settings' || g.artworkSource === 'creator')
     );
     const records = [...explicitPrevious, ...updatedGames];
+    window.__baddelSetCanonicalGamesRegistry?.(records);
 
     return updatedGames.map(g => {
         const prev = previousGames.find(p => String(p.id) === String(g.id));
@@ -947,6 +949,7 @@ if (window.electronAPI.onLibraryUpdated) {
         const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
+        window.__baddelSetCanonicalGamesRegistry?.(updatedGames);
         window._readyToInstallRenderedGames = null; // invalidate stale RTI page count
 
         // Sidebar is always safe — it lives outside the main scroll container.
@@ -1322,6 +1325,7 @@ async function reloadLibrary() {
 
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
+        window.__baddelSetCanonicalGamesRegistry?.(updatedGames);
         allCollections = await window.electronAPI.getCollections();
         buildPlaytimeCache(updatedGames);
         
@@ -1366,6 +1370,7 @@ async function reloadLibrary() {
 function _patchGameInMemory(updatedGame) {
     if (!updatedGame || !updatedGame.id) return null;
     const normalized = _normalizeArtworkAliases({ ...updatedGame });
+    window.__baddelUpsertCanonicalGameRegistry?.(normalized);
     const id = String(normalized.id);
 
     const idx = allGamesData.findIndex(g => String(g.id) === id);

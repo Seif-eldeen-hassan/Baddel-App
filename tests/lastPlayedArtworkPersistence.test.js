@@ -69,14 +69,54 @@ test('Last Played canonical V2 projection supplies hero when legacy aliases are 
 
 test('createRecentCard hydrates hero in the background without replacing an existing cover', () => {
     const block = fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass');
-    const posterBranch = block.indexOf('if (recentPoster)');
-    const heroBranch = block.indexOf('} else if (recentHero)');
-    assert.ok(posterBranch !== -1);
-    assert.ok(heroBranch !== -1);
-    assert.ok(posterBranch < heroBranch);
+    assert.match(block, /_jbiResolveArtworkSelection\(displayGame\)/);
+    assert.match(block, /selection\.selectedType !== 'placeholder'/);
     assert.match(block, /hydrateRecentHeroArtwork\(game,\s*imgEl\)/);
     assert.match(block, /imgEl\.onerror/);
-    assert.match(block, /jbiFallbackTried/);
+    assert.match(block, /jbiCandidateIndex/);
+});
+
+test('Last Played canonicalization uses the canonical registry, not allGamesData', () => {
+    const block = fnBlock(GAME_CARD_JS, '_canonicalizeRecentGame', '_getRecentDisplayImage');
+    assert.match(block, /window\.__baddelCanonicalGames/);
+    assert.doesNotMatch(block, /window\.allGamesData/);
+});
+
+test('Last Played projection selects local V2 record when synced display id differs', () => {
+    const runtime = {
+        id: 'epic:FallGuys',
+        installedId: 'local-fall-guys',
+        appName: 'FallGuys',
+        image: null,
+        heroImage: null,
+    };
+    const canonical = {
+        id: 'local-fall-guys',
+        appName: 'FallGuys',
+        image: null,
+        heroImage: null,
+        artworkState: {
+            version: 2,
+            cover: { locked: false, overrideValue: null, fallbackValue: null, revision: 0 },
+            hero: { locked: true, overrideValue: 'file://fall-guys-hero.webp', overrideSource: 'creator', revision: 4 },
+            logo: { locked: false, overrideValue: null, fallbackValue: null, revision: 0 },
+        },
+    };
+
+    const projected = projectCanonicalArtwork(runtime, canonical, { matchReason: 'installedId' });
+    const resolved = resolveGameSurfaceArtwork({ surface: 'jump-back-in', game: projected });
+    assert.equal(projected.id, 'epic:FallGuys');
+    assert.equal(projected.localGameId, 'local-fall-guys');
+    assert.equal(resolved.cover.value, null);
+    assert.equal(resolved.hero.value, 'file://fall-guys-hero.webp');
+});
+
+test('Last Played source has a single candidate pipeline and advances cover to hero to placeholder', () => {
+    assert.match(GAME_CARD_JS, /function _jbiUniqueUsableCandidates/);
+    assert.match(GAME_CARD_JS, /const candidates = _jbiUniqueUsableCandidates\(\[cover, hero\]\)/);
+    assert.match(GAME_CARD_JS, /candidates\.push\(placeholder\)/);
+    assert.match(GAME_CARD_JS, /jbiCandidateIndex \+= 1/);
+    assert.doesNotMatch(fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass'), /const recentHero|const recentPoster/);
 });
 
 test('hydrateRecentHeroArtwork updates hero cache but does not assign hero over imgEl.src', () => {

@@ -398,6 +398,7 @@ async function main() {
         S('src/js/app/help-feedback.js'),
         S('src/js/app/account-shortcuts.js'),
         S('src/features/games/domain/services/ArtworkOwnershipPolicy.js'),
+        S('src/features/games/domain/services/GameArtworkState.js'),
         S('src/features/games/application/services/GameArtworkResolver.js'),
         S('src/features/games/application/services/AllGamesArtworkAdapter.js'),
         S('src/features/games/application/services/GameDetailsArtworkAdapter.js'),

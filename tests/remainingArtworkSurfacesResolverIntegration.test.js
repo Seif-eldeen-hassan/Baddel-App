@@ -67,6 +67,47 @@ test('GameSurfaceArtworkAdapter supports surface aliases used by renderer-only d
     assert.equal(hero.value, 'file://roulette-hero.webp');
 });
 
+test('GameSurfaceArtworkAdapter resolves mixed Artwork State V2 ownership per type', () => {
+    const result = adapter.resolveGameSurfaceArtwork({
+        surface: 'home-card',
+        game: {
+            id: 'mixed',
+            artworkSource: 'mixed',
+            customArtworkLocked: true,
+            artworkState: {
+                version: 2,
+                cover: {
+                    locked: true,
+                    overrideValue: 'file://settings-cover.webp',
+                    overrideSource: 'settings',
+                    updatedAt: 10,
+                    revision: 2,
+                },
+                hero: {
+                    locked: true,
+                    overrideValue: 'file://creator-hero.webp',
+                    overrideSource: 'creator',
+                    updatedAt: 20,
+                    revision: 3,
+                },
+                logo: {
+                    locked: false,
+                    fallbackValue: 'file://metadata-logo.webp',
+                    fallbackSource: 'metadata',
+                    revision: 1,
+                },
+            },
+        },
+        metadataArtwork: { logo: 'file://metadata-logo.webp' },
+    });
+
+    assert.equal(result.cover.value, 'file://settings-cover.webp');
+    assert.equal(result.cover.source, 'settings');
+    assert.equal(result.hero.value, 'file://creator-hero.webp');
+    assert.equal(result.hero.source, 'creator');
+    assert.equal(result.logo.value, 'file://metadata-logo.webp');
+});
+
 test('GameSurfaceArtworkAdapter boundary stays pure', () => {
     const src = read('src/features/games/application/services/GameSurfaceArtworkAdapter.js');
     assert.match(src, /require\('\.\/GameArtworkResolver'\)/);
@@ -78,6 +119,7 @@ test('dashboard and protected build load GameSurfaceArtworkAdapter before render
     const protectedBuild = read('scripts/build-protected.js');
 
     assert.ok(html.indexOf('GameArtworkResolver.js') < html.indexOf('GameSurfaceArtworkAdapter.js'));
+    assert.ok(html.indexOf('GameArtworkState.js') < html.indexOf('GameSurfaceArtworkAdapter.js'));
     assert.ok(html.indexOf('GameSurfaceArtworkAdapter.js') < html.indexOf('js/app/artwork-sync.js'));
     assert.ok(html.indexOf('GameSurfaceArtworkAdapter.js') < html.indexOf('js/app/game-card.js'));
     assert.ok(html.indexOf('GameSurfaceArtworkAdapter.js') < html.indexOf('js/app/hero.js'));
@@ -86,6 +128,7 @@ test('dashboard and protected build load GameSurfaceArtworkAdapter before render
     assert.ok(html.indexOf('GameSurfaceArtworkAdapter.js') < html.indexOf('js/accounts.js'));
 
     assert.ok(protectedBuild.indexOf('GameArtworkResolver.js') < protectedBuild.indexOf('GameSurfaceArtworkAdapter.js'));
+    assert.ok(protectedBuild.indexOf('GameArtworkState.js') < protectedBuild.indexOf('GameSurfaceArtworkAdapter.js'));
     assert.ok(protectedBuild.indexOf('GameSurfaceArtworkAdapter.js') < protectedBuild.indexOf("S('src/js/app/artwork-sync.js')"));
     assert.ok(protectedBuild.indexOf('GameSurfaceArtworkAdapter.js') < protectedBuild.indexOf("S('src/js/app/game-card.js')"));
     assert.ok(protectedBuild.indexOf('GameSurfaceArtworkAdapter.js') < protectedBuild.indexOf("S('src/js/app/hero.js')"));

@@ -126,10 +126,11 @@ test('artwork-sync.js: hydrateRecentHeroArtwork only uses cover as last fallback
 
 // ── createRecentCard integration ──────────────────────────────────────────────
 
-test('game-card.js: createRecentCard uses _getRecentDisplayImage for initial displayImg', () => {
+test('game-card.js: createRecentCard uses JBI artwork selection for initial displayImg', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const block = GAME_CARD_JS.slice(idx, idx + 600);
-    assert.ok(block.includes('_getRecentDisplayImage(game)'), '_getRecentDisplayImage not called for displayImg');
+    assert.ok(block.includes('_jbiResolveArtworkSelection(displayGame)'), '_jbiResolveArtworkSelection not called for displayImg');
+    assert.ok(block.includes('selection.selectedValue'), 'selection.selectedValue not used for displayImg');
 });
 
 test('game-card.js: createRecentCard does NOT call fetchMetadata directly', () => {
@@ -140,18 +141,18 @@ test('game-card.js: createRecentCard does NOT call fetchMetadata directly', () =
     assert.ok(!block.includes('fetchMetadata('), 'fetchMetadata must not be called from createRecentCard');
 });
 
-test('game-card.js: createRecentCard uses _getRecentHeroCandidate for hero check', () => {
+test('game-card.js: JBI selection uses _getRecentHeroCandidate for hero check', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
-    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('_getRecentHeroCandidate'), '_getRecentHeroCandidate not used in createRecentCard');
+    const block = GAME_CARD_JS.slice(GAME_CARD_JS.indexOf('function _jbiResolveArtworkSelection'), nextFnIdx > idx ? nextFnIdx : idx + 2000);
+    assert.ok(block.includes('_getRecentHeroCandidate'), '_getRecentHeroCandidate not used in JBI selection');
 });
 
-test('game-card.js: createRecentCard uses _getRecentPosterFallback for poster fallback', () => {
+test('game-card.js: JBI selection uses _getRecentPosterFallback for poster fallback', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
-    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('_getRecentPosterFallback'), '_getRecentPosterFallback not used in createRecentCard');
+    const block = GAME_CARD_JS.slice(GAME_CARD_JS.indexOf('function _jbiResolveArtworkSelection'), nextFnIdx > idx ? nextFnIdx : idx + 2000);
+    assert.ok(block.includes('_getRecentPosterFallback'), '_getRecentPosterFallback not used in JBI selection');
 });
 
 test('game-card.js: createRecentCard calls hydrateRecentHeroArtwork when no hero', () => {
@@ -161,19 +162,19 @@ test('game-card.js: createRecentCard calls hydrateRecentHeroArtwork when no hero
     assert.ok(block.includes('hydrateRecentHeroArtwork'), 'hydrateRecentHeroArtwork not called in createRecentCard');
 });
 
-test('game-card.js: createRecentCard only uses recentHero after cover is absent', () => {
+test('game-card.js: JBI candidate list orders cover before hero before placeholder', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
-    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('imgEl.src = safeImageUrl(recentHero)'), 'safeImageUrl(recentHero) not set on imgEl.src');
-    assert.ok(block.indexOf('safeImageUrl(recentPoster)') < block.indexOf('safeImageUrl(recentHero)'), 'recentPoster must be preferred over recentHero');
+    const block = GAME_CARD_JS.slice(GAME_CARD_JS.indexOf('function _jbiResolveArtworkSelection'), nextFnIdx > idx ? nextFnIdx : idx + 2000);
+    assert.ok(block.includes('_jbiUniqueUsableCandidates([cover, hero])'), 'cover/hero candidate list not found');
+    assert.ok(block.includes('candidates.push(placeholder)'), 'placeholder fallback not found');
 });
 
-test('game-card.js: createRecentCard poster fallback sets imgEl.src to safeImageUrl(recentPoster)', () => {
+test('game-card.js: createRecentCard applies selected JBI candidate to imgEl.src', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('imgEl.src = safeImageUrl(recentPoster)'), 'safeImageUrl(recentPoster) not set as fallback');
+    assert.ok(block.includes('imgEl.src = displayImg'), 'selected display image not applied');
 });
 
 test('game-card.js: createRecentCard hero branch calls checkBackgroundAssets', () => {
@@ -183,15 +184,12 @@ test('game-card.js: createRecentCard hero branch calls checkBackgroundAssets', (
     assert.ok(block.includes('checkBackgroundAssets'), 'checkBackgroundAssets not called in hero branch');
 });
 
-test('game-card.js: createRecentCard poster branch comes before hero branch', () => {
+test('game-card.js: createRecentCard advances failed image to the next JBI candidate', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    const heroIdx   = block.indexOf('safeImageUrl(recentHero)');
-    const posterIdx = block.indexOf('safeImageUrl(recentPoster)');
-    assert.ok(heroIdx !== -1, 'recentHero branch not found');
-    assert.ok(posterIdx !== -1, 'recentPoster branch not found');
-    assert.ok(posterIdx < heroIdx, 'poster branch must appear before hero branch');
+    assert.ok(block.includes('jbiCandidateIndex += 1'), 'candidate advance not found');
+    assert.ok(block.includes('selection.candidates[jbiCandidateIndex]'), 'next candidate lookup not found');
 });
 
 // ── hydrateRecentHeroArtwork error handling ───────────────────────────────────

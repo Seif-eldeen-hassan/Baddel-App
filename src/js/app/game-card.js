@@ -618,10 +618,32 @@ function isUsableArtworkValue(value) {
     return true;
 }
 
+function _jbiSafeArtworkValue(value) {
+    return isUsableArtworkValue(value) ? safeImageUrl(String(value).trim()) : null;
+}
+
+function _jbiUniqueUsableCandidates(values = []) {
+    const seen = new Set();
+    const out = [];
+    for (const value of values) {
+        const safe = _jbiSafeArtworkValue(value);
+        if (!safe || seen.has(safe)) continue;
+        seen.add(safe);
+        out.push(safe);
+    }
+    return out;
+}
+
+function _jbiRedactArtworkValue(value) {
+    const text = String(value || '');
+    if (!text) return null;
+    return text.replace(/file:\/\/\/?([^/]+\/)*([^/]+)$/i, 'file://.../$2');
+}
+
 function _canonicalizeRecentGame(game) {
     const projection = window.BaddelCanonicalArtworkProjection;
     if (!projection || typeof projection.projectFromRecords !== 'function') return game;
-    const projected = projection.projectFromRecords(game, window.allGamesData || []);
+    const projected = projection.projectFromRecords(game, window.__baddelCanonicalGames || []);
     if (projected && projected._artworkIdentityMatchReason && projected.customArtworkLocked === true) {
         console.info('[ArtworkIdentity] uiId=' + String(game?.id || '') +
             ' canonicalId=' + String(projected.localGameId || projected.id || '') +
@@ -644,11 +666,40 @@ function _getRecentDisplayImage(game) {
     return 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
 }
 
+function _jbiResolveArtworkSelection(displayGame) {
+    const canonicalGame = _canonicalizeRecentGame(displayGame);
+    const cover = _getRecentPosterFallback(canonicalGame);
+    const hero = _getRecentHeroCandidate(canonicalGame);
+    const safeCover = _jbiSafeArtworkValue(cover);
+    const safeHero = _jbiSafeArtworkValue(hero);
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+    const candidates = _jbiUniqueUsableCandidates([cover, hero]);
+    candidates.push(placeholder);
+    const selectedType = safeCover ? 'cover' : (safeHero ? 'hero' : 'placeholder');
+    const selectedValue = candidates[0] || placeholder;
+
+    console.info('[ArtworkStateV2][JBI]', {
+        displayId: String(displayGame?.id || ''),
+        canonicalGameId: String(canonicalGame?.localGameId || canonicalGame?.id || ''),
+        matchReason: canonicalGame?._artworkIdentityMatchReason || null,
+        coverEffective: _jbiRedactArtworkValue(cover),
+        heroEffective: _jbiRedactArtworkValue(hero),
+        selectedType,
+        selectedValue: _jbiRedactArtworkValue(selectedValue),
+        safeCover: _jbiRedactArtworkValue(safeCover),
+        safeHero: _jbiRedactArtworkValue(safeHero),
+    });
+
+    return { game: canonicalGame, cover, hero, candidates, selectedType, selectedValue };
+}
+
 // hydrateRecentHeroArtwork lives in src/js/app/artwork-sync.js
 
 function createRecentCard(game, isFeatured = false) {
-    game = _canonicalizeRecentGame(game);
-    const displayImg = _getRecentDisplayImage(game);
+    const displayGame = game;
+    const selection = _jbiResolveArtworkSelection(displayGame);
+    game = selection.game;
+    const displayImg = selection.selectedValue;
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
     card.setAttribute('data-id', game.id);
@@ -707,37 +758,28 @@ function createRecentCard(game, isFeatured = false) {
     imgEl.addEventListener('load', () => imgEl.classList.add('img-loaded'), { once: true });
     if (imgEl.complete && imgEl.naturalWidth > 0) imgEl.classList.add('img-loaded');
 
-    // Hero-first hydration: use cached hero if available, otherwise hydrate in background
-    const recentHero   = _getRecentHeroCandidate(game);
-    const recentPoster = _getRecentPosterFallback(game);
-
-    if (recentPoster) {
-        if (isUsableArtworkValue(recentPoster)) {
-            imgEl.src = safeImageUrl(recentPoster);
-            checkBackgroundAssets?.(game);
-            hydrateRecentHeroArtwork(game, imgEl).catch(err => {
-                console.warn('[JumpBackIn] hero hydration failed:', err);
-            });
-        } else if (recentHero && isUsableArtworkValue(recentHero)) {
-            imgEl.src = safeImageUrl(recentHero);
-            checkBackgroundAssets?.(game);
-        }
-    } else if (recentHero) {
-        if (isUsableArtworkValue(recentHero)) {
-            imgEl.src = safeImageUrl(recentHero);
-            checkBackgroundAssets?.(game);
-        }
+    imgEl.src = displayImg;
+    if (selection.selectedType !== 'placeholder') {
+        checkBackgroundAssets?.(game);
     } else {
         hydrateRecentHeroArtwork(game, imgEl).catch(err => {
             console.warn('[JumpBackIn] hero hydration failed:', err);
+        }).then(() => {
+            const refreshed = _jbiResolveArtworkSelection(displayGame);
+            const refreshedValue = refreshed.selectedValue;
+            if (refreshedValue && refreshedValue !== imgEl.src) {
+                imgEl.src = refreshedValue;
+                imgEl.style.opacity = '';
+            }
         });
     }
 
-    let jbiFallbackTried = false;
+    let jbiCandidateIndex = 0;
     imgEl.onerror = () => {
-        if (!jbiFallbackTried && isUsableArtworkValue(recentHero) && imgEl.src !== safeImageUrl(recentHero)) {
-            jbiFallbackTried = true;
-            imgEl.src = safeImageUrl(recentHero);
+        jbiCandidateIndex += 1;
+        if (selection.candidates[jbiCandidateIndex]) {
+            imgEl.src = selection.candidates[jbiCandidateIndex];
+            imgEl.style.opacity = '';
             return;
         }
         imgEl.onerror = null;

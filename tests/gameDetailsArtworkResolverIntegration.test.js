@@ -288,7 +288,9 @@ test('Settings and Creator write paths remain unchanged at ownership fields', ()
     const src = fs.readFileSync(gameDetailsPath, 'utf8');
     const creatorStart = src.indexOf('window.gdCreatorSave = async function');
     const creatorBody = src.slice(creatorStart, src.indexOf('window.gdCreatorCancel', creatorStart));
-    assert.match(creatorBody, /artworkSource:\s*'creator'/);
+    assert.match(creatorBody, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/);
+    assert.match(creatorBody, /source:\s*'creator'/);
+    assert.match(creatorBody, /artworkSource:\s*_creatorHasArtworkUpdates \? 'creator' : null/);
     const ownershipTests = fs.readFileSync(path.join(ROOT, 'tests/artworkOwnership.test.js'), 'utf8');
     assert.match(ownershipTests, /saveGameSettings: writes artworkSource settings not creator/);
 });

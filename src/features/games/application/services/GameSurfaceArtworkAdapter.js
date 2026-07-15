@@ -5,6 +5,9 @@ const _surfaceArtworkRoot = typeof window !== 'undefined' ? window : globalThis;
 const _gameArtworkResolver = (typeof require === 'function')
     ? require('./GameArtworkResolver')
     : _surfaceArtworkRoot.BaddelGameArtworkResolver;
+const _gameArtworkState = (typeof require === 'function')
+    ? require('../../domain/services/GameArtworkState')
+    : _surfaceArtworkRoot.BaddelGameArtworkState;
 
 const { resolveGameArtwork } = _gameArtworkResolver;
 
@@ -50,6 +53,8 @@ function _candidate(type, value, extra = {}) {
             confidence: extra.confidence ?? null,
             identity: extra.identity || null,
             representsSource: extra.representsSource || null,
+            revision: extra.revision ?? null,
+            fallbackSource: extra.fallbackSource || null,
         },
         updatedAt: extra.updatedAt || null,
         locked: extra.locked === true,
@@ -57,10 +62,33 @@ function _candidate(type, value, extra = {}) {
         confidence: extra.confidence ?? null,
         identity: extra.identity || null,
         representsSource: extra.representsSource || null,
+        revision: extra.revision ?? null,
+        fallbackSource: extra.fallbackSource || null,
     };
 }
 
+function _v2ArtworkFromGameForSource(game = {}, source) {
+    if (game?.artworkState?.version !== 2) return null;
+    const state = _gameArtworkState?.createArtworkState
+        ? _gameArtworkState.createArtworkState(game.artworkState)
+        : game.artworkState;
+    const out = {};
+    for (const type of ['cover', 'hero', 'logo']) {
+        const item = state?.[type];
+        if (!item || item.overrideSource !== source || !_hasValue(item.overrideValue)) continue;
+        Object.assign(out, _candidate(type, item.overrideValue, {
+            updatedAt: item.updatedAt || null,
+            locked: item.locked === true,
+            revision: item.revision || 0,
+            fallbackSource: item.fallbackSource || null,
+        }) || {});
+    }
+    return Object.keys(out).length ? out : null;
+}
+
 function explicitSettingsArtworkFromGame(game = {}) {
+    const v2 = _v2ArtworkFromGameForSource(game, 'settings');
+    if (v2) return v2;
     if (!(game.customArtworkLocked === true && game.artworkSource === 'settings')) return null;
     const updatedAt = game.artworkUpdatedAt || null;
     return {
@@ -71,6 +99,8 @@ function explicitSettingsArtworkFromGame(game = {}) {
 }
 
 function creatorArtworkFromGame(game = {}) {
+    const v2 = _v2ArtworkFromGameForSource(game, 'creator');
+    if (v2) return v2;
     if (!(game.customArtworkLocked === true && game.artworkSource === 'creator')) return null;
     const updatedAt = game.artworkUpdatedAt || null;
     return {

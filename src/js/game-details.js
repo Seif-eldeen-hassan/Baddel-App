@@ -8820,6 +8820,8 @@ async function _gdRefreshGameFromDbAfterMutation(gameId, opts = {}) {
         return null;
     }
 
+    window.__baddelUpsertCanonicalGameRegistry?.(freshGame);
+
     const freshId = String(freshGame.id || id);
     const freshIds = new Set(
         [freshId, id, freshGame.installedId, freshGame.launcherGameId,
@@ -9202,11 +9204,35 @@ window.gdCreatorSave = async function() {
 
         // ── Persist to localStorage (customGameDetails) ──────────────────────
         const gameId = String(baseGame.installedId || baseGame.id || baseGame.appName || '');
+        const creatorIdentity = {
+            gameId: baseGame.id,
+            id: baseGame.id,
+            localGameId: baseGame.localGameId,
+            installedId: baseGame.installedId,
+            installedGameKey: baseGame.installedGameKey,
+            command: baseGame.command,
+            executablePath: baseGame.executablePath,
+            platform: baseGame.platform,
+            allIds: baseGame.allIds,
+            steamAppId: baseGame.steamAppId || baseGame.steam_appid,
+            appId: baseGame.appId || baseGame.appid,
+            appName: baseGame.appName,
+            launcherGameId: baseGame.launcherGameId,
+            namespace: baseGame.namespace || baseGame.catalogNamespace,
+            catalogItemId: baseGame.catalogItemId,
+        };
+        const _creatorRedactPath = (value) => String(value || '').replace(/([^\\/:]+[\\\/])*([^\\\/:]+)$/g, '.../$2');
+        const _creatorSafeIdentity = (identity = {}) => ({
+            ...identity,
+            command: identity.command ? _creatorRedactPath(identity.command) : identity.command,
+            executablePath: identity.executablePath ? _creatorRedactPath(identity.executablePath) : identity.executablePath,
+        });
         const logoCleared = draft.logoMode === 'text';
         const newCover = draft.posterImage || null;
         const newHero  = draft.heroImage   || null;
         const newLogo  = !logoCleared ? (draft.logoImage || null) : null;
         const creatorArtworkUpdatedAt = Date.now();
+        const creatorOperationId = `creator-${creatorArtworkUpdatedAt}-${Math.random().toString(36).slice(2, 8)}`;
         const _creatorOriginal = _gdCreatorOriginalDraft || {};
         const _creatorChanged = (next, prev) => String(next || '') !== String(prev || '');
         const _creatorDirtyTypes = {
@@ -9218,28 +9244,56 @@ window.gdCreatorSave = async function() {
         const _creatorRequestedTypes = Object.keys(_creatorDirtyTypes).filter(type => _creatorDirtyTypes[type] && (
             type !== 'logo' ? (type === 'cover' ? newCover : newHero) : (newLogo || logoCleared)
         ));
+        const _creatorArtworkUpdates = {};
+        if (_creatorDirtyTypes.cover && newCover) _creatorArtworkUpdates.cover = newCover;
+        if (_creatorDirtyTypes.hero && newHero) _creatorArtworkUpdates.hero = newHero;
+        if (_creatorDirtyTypes.logo) _creatorArtworkUpdates.logo = logoCleared ? null : newLogo;
+        const _creatorHasArtworkUpdates = Object.keys(_creatorArtworkUpdates).length > 0;
+        const _creatorExpectedRevisions = {};
+        ['cover', 'hero', 'logo'].forEach(type => {
+            const rev = baseGame?.artworkState?.[type]?.revision;
+            if (Number.isFinite(Number(rev))) _creatorExpectedRevisions[type] = Number(rev);
+        });
         const _creatorFailureMessage = (res) => {
+            const code = res?.code || res?.error?.code;
+            const message = String(res?.message || res?.error || '');
+            if (code === 'IPC_INVALID_ARG' || message.includes('IPC_INVALID_ARG')) return "Could not resolve this game's installed record.";
             if (res?.message === 'Game not found' || res?.canonicalGameId === null) return 'Could not find the installed game record.';
+            if (res?.persisted === false) return 'Artwork could not be written to disk.';
             const rejected = Object.entries(res?.perType || {}).filter(([, r]) => r?.applied === false);
             if (rejected.some(([, r]) => r?.reason === 'stale-revision')) return 'Artwork changed elsewhere. Reload and try again.';
-            if (rejected.length) return 'Some artwork could not be saved: ' + rejected.map(([type]) => type).join(', ');
+            if (res?.status === 'partial' || rejected.length) return 'Some artwork could not be saved: ' + rejected.map(([type]) => type).join(', ');
+            if (message) return message;
             return 'Artwork could not be saved.';
         };
 
-        if (!_gdCreatorDbResult && window.electronAPI?.saveMetadata && gameId) {
-            const ipcMeta = {
-                customArtworkLocked: true,
-                artworkSource: 'creator',
-                artworkUpdatedAt: creatorArtworkUpdatedAt,
-            };
-            if (draft.title) ipcMeta.name = draft.title;
-            if (_creatorDirtyTypes.cover && newCover) ipcMeta.cover = newCover;
-            if (_creatorDirtyTypes.hero && newHero) ipcMeta.hero = newHero;
-            if (_creatorDirtyTypes.logo && newLogo) ipcMeta.logo = newLogo;
+        if (_creatorHasArtworkUpdates && !window.electronAPI?.setGameArtwork) {
+            const err = new Error('Artwork save service is unavailable.');
+            console.warn('[ArtworkStateV2][CreatorSaveFailure]', {
+                requestedIdentity: _creatorSafeIdentity(creatorIdentity),
+                requestedTypes: _creatorRequestedTypes,
+                status: 'error',
+                code: 'SET_GAME_ARTWORK_UNAVAILABLE',
+                message: err.message,
+                canonicalGameId: null,
+                persisted: false,
+                perType: {},
+            });
+            if (typeof showToast === 'function') showToast(err.message, 'error');
+            return;
+        }
+
+        if (_creatorHasArtworkUpdates && window.electronAPI?.setGameArtwork) {
             try {
-                const res = await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
+                const res = await window.electronAPI.setGameArtwork(creatorIdentity, _creatorArtworkUpdates, {
+                    source: 'creator',
+                    updatedAt: creatorArtworkUpdatedAt,
+                    operationId: creatorOperationId,
+                    expectedRevisions: _creatorExpectedRevisions,
+                });
                 _gdCreatorDbResult = res;
                 console.info('[ArtworkStateV2][CreatorSave]', {
+                    requestedIdentity: _creatorSafeIdentity(creatorIdentity),
                     canonicalGameId: res?.canonicalGameId || null,
                     requestedTypes: _creatorRequestedTypes,
                     perType: res?.perType || {},
@@ -9250,13 +9304,24 @@ window.gdCreatorSave = async function() {
                     err.creatorSaveResult = _gdCreatorDbResult;
                     throw err;
                 }
+                window.__baddelUpsertCanonicalGameRegistry?.(res.updatedGame);
                 const refreshId = res?.canonicalGameId || gameId;
                 await _gdRefreshGameFromDbAfterMutation(refreshId, {
                     reason: 'creator-save',
                     rerenderDetails: true,
                 });
             } catch (err) {
-                console.warn('[GD][Creator] saveMetadata IPC error:', err);
+                const res = err?.creatorSaveResult || err;
+                console.warn('[ArtworkStateV2][CreatorSaveFailure]', {
+                    requestedIdentity: _creatorSafeIdentity(creatorIdentity),
+                    requestedTypes: _creatorRequestedTypes,
+                    status: res?.status || null,
+                    code: res?.code || null,
+                    message: res?.message || err?.message || String(err || ''),
+                    canonicalGameId: res?.canonicalGameId || null,
+                    persisted: res?.persisted ?? null,
+                    perType: res?.perType || {},
+                });
                 if (typeof showToast === 'function') showToast(err?.message || 'Artwork could not be saved.', 'error');
                 return;
             }
@@ -9357,9 +9422,11 @@ window.gdCreatorSave = async function() {
             if (_creatorDirtyTypes.hero && newHero) { g.heroImage = newHero; g.defaultHero = newHero; g.heroUrl = newHero; }
             if (_creatorDirtyTypes.logo && newLogo) { g.logo = newLogo; g.defaultLogo = newLogo; g.logoUrl = newLogo; }
             if (_creatorDirtyTypes.logo && logoCleared) { g.logo = null; g.defaultLogo = null; g.logoUrl = null; }
-            g.customArtworkLocked = true;
-            g.artworkSource = 'creator';
-            g.artworkUpdatedAt = creatorArtworkUpdatedAt;
+            if (_creatorHasArtworkUpdates) {
+                g.customArtworkLocked = true;
+                g.artworkSource = 'creator';
+                g.artworkUpdatedAt = creatorArtworkUpdatedAt;
+            }
             if (gameId && !g.installedId) g.installedId = gameId;
         };
 
@@ -9387,8 +9454,8 @@ window.gdCreatorSave = async function() {
             logo: _creatorDirtyTypes.logo ? newLogo : null,
             logoCleared: _creatorDirtyTypes.logo && logoCleared,
             name: draft.title,
-            artworkSource: 'creator',
-            artworkUpdatedAt: creatorArtworkUpdatedAt,
+            artworkSource: _creatorHasArtworkUpdates ? 'creator' : null,
+            artworkUpdatedAt: _creatorHasArtworkUpdates ? creatorArtworkUpdatedAt : null,
         };
         const _gdOverrideTargets = _gdCollectCreatorOverrideTargets(baseGame, savedGame);
         if (typeof window.__baddelApplyGameCustomOverride === 'function') {
@@ -9402,37 +9469,36 @@ window.gdCreatorSave = async function() {
         if (window._vs?._coverQueued instanceof Set) window._vs._coverQueued.clear();
 
         // ── Update localStorage artwork keys ──────────────────────────────────
-        creatorKeys.forEach(key => {
-            localStorage.removeItem('cover_' + key);
-            localStorage.removeItem('hero_' + key);
-            localStorage.removeItem('logo_' + key);
-        });
+        if (_creatorHasArtworkUpdates) {
+            creatorKeys.forEach(key => {
+                localStorage.removeItem('cover_' + key);
+                localStorage.removeItem('hero_' + key);
+                localStorage.removeItem('logo_' + key);
+            });
+        }
 
         // ── Persist to gameScanner DB ─────────────────────────────────────────
-        if (!_gdCreatorDbResult && window.electronAPI?.saveMetadata && gameId) {
-            const ipcMeta = {
-                customArtworkLocked: true,
-                artworkSource: 'creator',
-                artworkUpdatedAt: creatorArtworkUpdatedAt,
-            };
+        if (window.electronAPI?.saveMetadata && gameId) {
+            const contentGameId = _gdCreatorDbResult?.canonicalGameId || baseGame.localGameId || baseGame.id || gameId;
+            const ipcMeta = {};
             if (draft.title) ipcMeta.name = draft.title;
-            if (newCover) ipcMeta.cover = newCover;
-            if (newHero)  ipcMeta.hero  = newHero;
-            ipcMeta.logo = newLogo;
             try {
-                const res = await window.electronAPI.saveMetadata(gameId, ipcMeta, { source: 'creator' });
+                if (Object.keys(ipcMeta).length === 0) throw new Error('NO_CONTENT_METADATA');
+                const res = await window.electronAPI.saveMetadata(contentGameId, ipcMeta, { source: 'creator-content' });
                 const refreshId = res?.canonicalGameId || gameId;
                 await _gdRefreshGameFromDbAfterMutation(refreshId, {
-                    reason: 'creator-save',
+                    reason: 'creator-content-save',
                     rerenderDetails: true,
                 });
             } catch (err) {
                 const msg = String(err?.message || err || '');
-                if (msg.includes('Game not found') || err?.code === 'GAME_NOT_FOUND') {
+                if (msg === 'NO_CONTENT_METADATA') {
+                    // Custom page details are already persisted in customGameDetails.
+                } else if (msg.includes('Game not found') || err?.code === 'GAME_NOT_FOUND') {
                     // Synced-only games are not in the local DB — skip the DB refresh
-                    console.log('[GD][Creator] saveMetadata: game not in local DB (synced-only), skipping DB refresh');
+                    console.log('[GD][Creator] content saveMetadata: game not in local DB, skipping DB refresh');
                 } else {
-                    console.warn('[GD][Creator] saveMetadata IPC error:', err);
+                    console.warn('[GD][Creator] content saveMetadata IPC error:', err);
                 }
             }
         }

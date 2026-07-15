@@ -235,7 +235,8 @@ test('Cross-surface equivalent inputs resolve to the same decisions', () => {
 test('Settings and Creator write paths remain unchanged', () => {
     const src = fs.readFileSync(gameDetailsPath, 'utf8');
     assert.match(src, /window\.gdCreatorSave = async function/);
-    assert.match(src, /artworkSource:\s*'creator'/);
+    assert.match(src, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/);
+    assert.match(src, /source:\s*'creator'/);
     assert.match(read('tests/artworkOwnership.test.js'), /saveGameSettings: writes artworkSource settings not creator/);
 });
 

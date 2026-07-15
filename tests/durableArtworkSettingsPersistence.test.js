@@ -198,8 +198,8 @@ test('Renderer Settings save validates persisted backend result before local art
 test('Jump Back In canonicalizes recent games before resolving display image', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app', 'game-card.js'), 'utf8');
     assert.match(src, /function _canonicalizeRecentGame/);
-    assert.match(src, /function createRecentCard\(game, isFeatured = false\)[\s\S]*_canonicalizeRecentGame\(game\)/);
-    assert.match(src, /function createRecentCard\(game, isFeatured = false\)[\s\S]*_getRecentDisplayImage\(game\)/);
+    assert.match(src, /function _jbiResolveArtworkSelection\(displayGame\)[\s\S]*_canonicalizeRecentGame\(displayGame\)/);
+    assert.match(src, /function createRecentCard\(game, isFeatured = false\)[\s\S]*_jbiResolveArtworkSelection\(displayGame\)/);
 });
 
 test('Game Settings preview projects canonical artwork before reading image fields', () => {
@@ -228,9 +228,9 @@ test('Creator save patch propagates artworkSource and canonical refresh id', () 
     const start = src.indexOf('window.gdCreatorSave = async function');
     const body = src.slice(start, start + 12000);
     assert.match(body, /creatorArtworkUpdatedAt/);
-    assert.match(body, /artworkSource:\s*'creator'/);
-    assert.match(body, /artworkUpdatedAt:\s*creatorArtworkUpdatedAt/);
-    assert.match(body, /const res = await window\.electronAPI\.saveMetadata/);
+    assert.match(body, /setGameArtwork\(creatorIdentity,\s*_creatorArtworkUpdates/);
+    assert.match(body, /source:\s*'creator'/);
+    assert.match(body, /updatedAt:\s*creatorArtworkUpdatedAt/);
     assert.match(body, /res\?\.canonicalGameId \|\| gameId/);
 });
 

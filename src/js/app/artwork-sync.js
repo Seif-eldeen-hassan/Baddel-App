@@ -129,6 +129,33 @@ function _normalizeArtworkAliases(g) {
     return g;
 }
 
+function _canonicalRegistryNormalize(records) {
+    return (Array.isArray(records) ? records : [])
+        .filter(g => g && typeof g === 'object' && g.id)
+        .map(g => _normalizeArtworkAliases({ ...g }));
+}
+
+function _setCanonicalGamesRegistry(records) {
+    window.__baddelCanonicalGames = _canonicalRegistryNormalize(records);
+    return window.__baddelCanonicalGames;
+}
+
+function _upsertCanonicalGameRegistry(game) {
+    if (!game || !game.id) return window.__baddelCanonicalGames || [];
+    const normalized = _normalizeArtworkAliases({ ...game });
+    const id = String(normalized.id);
+    const registry = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames.slice() : [];
+    const idx = registry.findIndex(g => String(g.id) === id);
+    if (idx >= 0) registry[idx] = { ...registry[idx], ...normalized };
+    else registry.push(normalized);
+    window.__baddelCanonicalGames = registry;
+    return registry;
+}
+
+window.__baddelCanonicalGames = Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : [];
+window.__baddelSetCanonicalGamesRegistry = _setCanonicalGamesRegistry;
+window.__baddelUpsertCanonicalGameRegistry = _upsertCanonicalGameRegistry;
+
 // ── Visible card DOM patcher ──────────────────────────────────────────────────
 
 function _patchVisibleGameCard(updatedGame) {
@@ -268,9 +295,11 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
             g.customTitle       = patch.name;
             g.creatorCustomName = patch.name;
         }
-        g.customArtworkLocked = true;
-        g.artworkSource       = patch.artworkSource || 'creator';
-        g.artworkUpdatedAt    = patch.artworkUpdatedAt || now;
+        if (patch.cover || patch.hero || patch.logo || patch.logoCleared) {
+            g.customArtworkLocked = true;
+            g.artworkSource       = patch.artworkSource || 'creator';
+            g.artworkUpdatedAt    = patch.artworkUpdatedAt || now;
+        }
     };
 
     const _patchArr = (arr) => {
