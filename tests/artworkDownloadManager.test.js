@@ -32,6 +32,16 @@ const BANDWIDTH_POLICY_PATH = path.join(
     'services',
     'ArtworkBandwidthPolicy.js'
 );
+const SOURCE_URL_POLICY_PATH = path.join(
+    __dirname,
+    '..',
+    'src',
+    'features',
+    'games',
+    'infrastructure',
+    'services',
+    'ArtworkSourceUrlPolicy.js'
+);
 const MAIN_PATH = path.join(__dirname, '..', 'main.js');
 const IMAGE_HANDLERS_PATH = path.join(__dirname, '..', 'handlers', 'imageHandlers.js');
 const PRELOAD_PATH = path.join(__dirname, '..', 'preload.js');
@@ -389,13 +399,51 @@ test('ArtworkDownloadManager Game Details requests bypass Data Saver and automat
     assert.equal(httpCalls, 1);
 });
 
+test('ArtworkDownloadManager fetches efficient IGDB source sizes while preserving original URL cache alias', async () => {
+    const requestedUrls = [];
+    const sourceUrl = 'https://images.igdb.com/igdb/image/upload/t_original/co1abc.jpg';
+    const { manager, cache } = createManager({
+        httpClient: {
+            async fetchImage({ url }) {
+                requestedUrls.push(url);
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    const first = await manager.downloadAsset({
+        sourceUrl,
+        canonicalGameId: 'game-igdb',
+        type: 'cover',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.VISIBLE,
+    });
+    const second = await manager.downloadAsset({
+        sourceUrl,
+        canonicalGameId: 'game-igdb-copy',
+        type: 'cover',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.VISIBLE,
+    });
+
+    assert.deepEqual(requestedUrls, ['https://images.igdb.com/igdb/image/upload/t_cover_big/co1abc.jpg']);
+    assert.equal(first, second);
+    assert.equal(cache.lookupUrl(sourceUrl).assetHash, cache.lookupAlias({ canonicalGameId: 'game-igdb-copy', type: 'cover' }).assetHash);
+});
+
 test('ArtworkDownloadManager stays independent of renderer, Electron, and legacy imageWebpCache downloads', () => {
     const source = fs.readFileSync(MANAGER_PATH, 'utf8');
     const policy = fs.readFileSync(BANDWIDTH_POLICY_PATH, 'utf8');
+    const sourceUrlPolicy = fs.readFileSync(SOURCE_URL_POLICY_PATH, 'utf8');
 
     assert.doesNotMatch(source, /electron|ipcMain|BrowserWindow|window\.|document\./);
     assert.doesNotMatch(source, /imageWebpCache|downloadToCacheAsWebp|platformSync|main\.js|preload\.js/);
     assert.doesNotMatch(policy, /electron|ipcMain|BrowserWindow|window\.|document\./);
+    assert.doesNotMatch(sourceUrlPolicy, /electron|ipcMain|BrowserWindow|window\.|document\./);
 });
 
 test('production artwork download routes delegate through ArtworkDownloadManager', () => {

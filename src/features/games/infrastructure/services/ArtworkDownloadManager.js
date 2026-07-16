@@ -4,6 +4,7 @@ const { artworkNetworkTelemetry: defaultTelemetry } = require('./ArtworkNetworkT
 const {
     ARTWORK_DOWNLOAD_PRIORITIES,
 } = require('./ArtworkDownloadScheduler');
+const { optimizeArtworkSourceUrl } = require('./ArtworkSourceUrlPolicy');
 
 class ArtworkDownloadManager {
     constructor({
@@ -76,14 +77,16 @@ class ArtworkDownloadManager {
 
         try {
             const urlHash = this._cache.hashUrl(sourceUrl);
+            const requestUrl = optimizeArtworkSourceUrl(sourceUrl, { type, priority });
             const result = await this._scheduler.enqueue({
                 key: `url:${urlHash}`,
                 priority,
                 sourceUrl,
+                requestUrl,
                 canonicalGameId,
                 type,
                 run: async () => {
-                    const http = await this._httpClient.fetchImage({ url: sourceUrl });
+                    const http = await this._httpClient.fetchImage({ url: requestUrl });
                     if (http.notModified) {
                         throw new Error('Artwork returned HTTP 304 without an existing cached asset.');
                     }
