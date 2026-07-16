@@ -23,6 +23,7 @@ const path     = require('path');
 const https    = require('https');
 const dns      = require('dns').promises;
 const { URL }  = require('url');
+const { artworkNetworkTelemetry } = require('../src/features/games/infrastructure/services/ArtworkNetworkTelemetry');
 
 // ── Optional sharp dependency ────────────────────────────────────────────────
 let sharp = null;
@@ -144,7 +145,11 @@ async function _fetchBuffer(rawUrl, redirectDepth = 0) {
                 }
                 chunks.push(c);
             });
-            res.on('end',   ()  => resolve(Buffer.concat(chunks)));
+            res.on('end',   ()  => resolve({
+                buffer: Buffer.concat(chunks),
+                statusCode: res.statusCode,
+                contentLength: Number(res.headers['content-length'] || 0) || null,
+            }));
             res.on('error', reject);
         });
 
@@ -163,6 +168,27 @@ function _localFileName(baseName, useWebp) {
     return `${safe}.${useWebp ? 'webp' : 'jpg'}`;
 }
 
+function _telemetryContext(baseName, url, overrides = {}) {
+    const match = /^(cover|hero|logo)_(.+)$/.exec(String(baseName || ''));
+    return {
+        url,
+        sourceSubsystem: overrides.sourceSubsystem || 'imageWebpCache',
+        reason: overrides.reason || 'legacy-image-cache',
+        canonicalGameId: overrides.canonicalGameId || (match ? match[2] : null),
+        assetType: overrides.assetType || (match ? match[1] : 'unknown'),
+        retryCount: Number(overrides.retryCount || 0),
+        inFlightDeduplication: overrides.inFlightDeduplication === true,
+        rendererDirectRemote: overrides.rendererDirectRemote === true,
+    };
+}
+
+function _recordTelemetry(baseName, url, patch, overrides = {}) {
+    artworkNetworkTelemetry.recordRequest({
+        ..._telemetryContext(baseName, url, overrides),
+        ...patch,
+    });
+}
+
 // ── Public API ───────────────────────────────────────────────────────────────
 
 /**
@@ -175,10 +201,11 @@ function _localFileName(baseName, useWebp) {
  * @param {string} url        - Remote image URL to download.
  * @returns {Promise<string|null>}
  */
-async function downloadToCacheAsWebp(cacheDir, baseName, url) {
+async function downloadToCacheAsWebp(cacheDir, baseName, url, telemetry = {}) {
     if (!url || !baseName || !cacheDir) return null;
     // Skip local / data URIs — nothing to download
     if (url.startsWith('file://') || url.startsWith('data:')) return null;
+    const startedAt = Date.now();
 
     // Ensure cache directory exists
     try {
@@ -196,22 +223,48 @@ async function downloadToCacheAsWebp(cacheDir, baseName, url) {
     // Return early if already cached (webp or original-format fallback)
     try {
         const stat = fs.statSync(localPath);
-        if (stat.size >= MIN_VALID_SIZE_BYTES) return localPath;
+        if (stat.size >= MIN_VALID_SIZE_BYTES) {
+            _recordTelemetry(baseName, url, {
+                downloadedBytes: 0,
+                cacheHit: true,
+                cacheMiss: false,
+                elapsedMs: Date.now() - startedAt,
+            }, telemetry);
+            return localPath;
+        }
     } catch { /* not cached yet */ }
     for (const ext of ['jpg', 'png', 'gif']) {
         if (ext === (useWebp ? 'webp' : 'jpg')) continue; // already checked above
         const fallbackPath = path.join(cacheDir, `${safeName}.${ext}`);
         try {
             const stat = fs.statSync(fallbackPath);
-            if (stat.size >= MIN_VALID_SIZE_BYTES) return fallbackPath;
+            if (stat.size >= MIN_VALID_SIZE_BYTES) {
+                _recordTelemetry(baseName, url, {
+                    downloadedBytes: 0,
+                    cacheHit: true,
+                    cacheMiss: false,
+                    elapsedMs: Date.now() - startedAt,
+                }, telemetry);
+                return fallbackPath;
+            }
         } catch { /* not there */ }
     }
 
     try {
-        const buf = await _fetchBuffer(url);
+        const fetched = await _fetchBuffer(url);
+        const buf = fetched.buffer;
 
         if (!buf || buf.length < MIN_VALID_SIZE_BYTES) {
             console.warn(`[imageWebpCache] Downloaded file too small (${buf?.length ?? 0}B) — skipping "${baseName}"`);
+            _recordTelemetry(baseName, url, {
+                httpStatus: fetched.statusCode,
+                responseContentLength: fetched.contentLength,
+                downloadedBytes: buf?.length || 0,
+                cacheHit: false,
+                cacheMiss: true,
+                failed: true,
+                elapsedMs: Date.now() - startedAt,
+            }, telemetry);
             return null;
         }
 
@@ -219,6 +272,14 @@ async function downloadToCacheAsWebp(cacheDir, baseName, url) {
             try {
                 await sharp(buf).webp({ quality: 85 }).toFile(localPath);
                 console.log(`[imageWebpCache] ✓ Cached "${fileName}" (${(buf.length / 1024).toFixed(1)} KB → ${localPath})`);
+                _recordTelemetry(baseName, url, {
+                    httpStatus: fetched.statusCode,
+                    responseContentLength: fetched.contentLength,
+                    downloadedBytes: buf.length,
+                    cacheHit: false,
+                    cacheMiss: true,
+                    elapsedMs: Date.now() - startedAt,
+                }, telemetry);
                 return localPath;
             } catch (sharpErr) {
                 // WebP conversion failed (mux error, unsupported format, etc.) — save original
@@ -228,16 +289,39 @@ async function downloadToCacheAsWebp(cacheDir, baseName, url) {
                 const origPath = path.join(cacheDir, origName);
                 await fsP.writeFile(origPath, buf);
                 console.warn(`[ImageCacheFallback] webp failed (${sharpErr.message.slice(0, 80)}) -> saved original as ${origName}`);
+                _recordTelemetry(baseName, url, {
+                    httpStatus: fetched.statusCode,
+                    responseContentLength: fetched.contentLength,
+                    downloadedBytes: buf.length,
+                    cacheHit: false,
+                    cacheMiss: true,
+                    elapsedMs: Date.now() - startedAt,
+                }, telemetry);
                 return origPath;
             }
         } else {
             await fsP.writeFile(localPath, buf);
             console.log(`[imageWebpCache] ✓ Cached "${fileName}" (${(buf.length / 1024).toFixed(1)} KB → ${localPath})`);
+            _recordTelemetry(baseName, url, {
+                httpStatus: fetched.statusCode,
+                responseContentLength: fetched.contentLength,
+                downloadedBytes: buf.length,
+                cacheHit: false,
+                cacheMiss: true,
+                elapsedMs: Date.now() - startedAt,
+            }, telemetry);
             return localPath;
         }
 
     } catch (err) {
         console.warn(`[imageWebpCache] ✗ Failed to cache "${baseName}" from "${url}":`, err.message);
+        _recordTelemetry(baseName, url, {
+            downloadedBytes: 0,
+            cacheHit: false,
+            cacheMiss: true,
+            failed: true,
+            elapsedMs: Date.now() - startedAt,
+        }, telemetry);
         try { fs.unlinkSync(localPath); } catch { /* ignore */ }
         return null;
     }

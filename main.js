@@ -20,6 +20,7 @@ const {
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
+const { artworkNetworkTelemetry } = require('./src/features/games/infrastructure/services/ArtworkNetworkTelemetry');
 const { generateMetadataCandidates } = require('./services/candidateGenerator');
 const { registerAccountHandlers, switchAccountByPlatform } = require('./accountsHandler');
 const accountShortcuts = require('./services/accountShortcuts');
@@ -1539,6 +1540,9 @@ ipcMain.handle('log-runtime-error', (_event, message) => {
     try { require('fs').appendFileSync(logPath, line); } catch (_) {}
 });
 
+ipcMain.handle('get-artwork-network-diagnostics', () =>
+    artworkNetworkTelemetry.getSummary());
+
 // ============================================================
 // IMAGE CACHE
 // ============================================================
@@ -1588,6 +1592,9 @@ app.whenReady().then(async () => {
 
     CACHE_DIR = path.join(app.getPath('userData'), 'image_cache');
     require('fs').mkdirSync(CACHE_DIR, { recursive: true });
+    artworkNetworkTelemetry.configure({
+        summaryFile: path.join(app.getPath('userData'), 'artwork-network-diagnostics.json'),
+    });
 
     // -- Games feature IPC — primary registration via games adapter (Phase 3.3) --
     // All four legacy handler groups (installedGames, gameLibrary, image, localMetadata)
@@ -2031,7 +2038,12 @@ const allAchievements = allSchemaAchievements.length
             if (!url) return;
             try {
                 const baseName = imageWebpCache.cacheBaseName(type, gameId);
-                const localPath = await imageWebpCache.downloadToCacheAsWebp(CACHE_DIR, baseName, url);
+                const localPath = await imageWebpCache.downloadToCacheAsWebp(CACHE_DIR, baseName, url, {
+                    sourceSubsystem: 'main-shared-asset-downloader',
+                    reason: 'platform-sync-or-background-metadata',
+                    canonicalGameId: gameId,
+                    assetType: type,
+                });
                 results[type] = localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
             } catch (e) {
                 results[type] = url;

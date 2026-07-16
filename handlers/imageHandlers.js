@@ -61,7 +61,13 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
         try {
             const cacheDir = path.join(app.getPath('userData'), 'image_cache');
             const baseName = imageWebpCache.cacheBaseName(type, gameId);
-            const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url);
+            const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url, {
+                sourceSubsystem: 'renderer-cache-image-ipc',
+                reason: 'cache-image',
+                canonicalGameId: gameId,
+                assetType: type,
+                rendererDirectRemote: true,
+            });
             return localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
         } catch (err) {
             console.error(`[Cache] Failed for ${gameId} (${type}):`, err.message);
@@ -76,7 +82,13 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
             if (!url) return;
             try {
                 const baseName = imageWebpCache.cacheBaseName(type, gameId);
-                const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url);
+                const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url, {
+                    sourceSubsystem: 'renderer-cache-all-assets-ipc',
+                    reason: 'cache-all-assets',
+                    canonicalGameId: gameId,
+                    assetType: type,
+                    rendererDirectRemote: true,
+                });
                 results[type] = localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
             } catch (e) {
                 console.warn(`[cache-all-assets] ${type} for ${gameId}:`, e.message);

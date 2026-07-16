@@ -64,6 +64,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     pruneImageCache:        ()                        => ipcRenderer.invoke('prune-image-cache'),
     getImageCacheDirUrl:    ()                        => ipcRenderer.invoke('get-image-cache-dir-url'),
     getUserArtworkDirUrl:   ()                        => ipcRenderer.invoke('get-user-artwork-dir-url'),
+    getArtworkNetworkDiagnostics: ()                  => ipcRenderer.invoke('get-artwork-network-diagnostics'),
     getFilePath:            (file)                    => webUtils.getPathForFile(file),
 
     // ---- Metadata & Playtime ----

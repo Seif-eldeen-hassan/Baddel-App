@@ -1,0 +1,357 @@
+{
+  "phase": "25.2A",
+  "scope": "Phase 0 - baseline and download inventory",
+  "generatedAt": "2026-07-16",
+  "baselineHead": "8ea8537 before editing the download metadata system",
+  "runtimeBehaviorChanged": false,
+  "notes": [
+    "This inventory records current artwork byte-transfer paths before production behavior changes.",
+    "The runtime automatic artwork cache is still userData/image_cache with type_gameId filename stems.",
+    "ArtworkAssetStore exists today for explicit Settings/Creator artwork under user_artwork, but it is not the unified automatic artwork delivery/cache manager.",
+    "Renderer surfaces can still receive http/https artwork values and assign them to img src or CSS background-image before or after cache IPCs complete."
+  ],
+  "auditTable": [
+    {
+      "caller": "platform sync cover-first write-back",
+      "file": "platformSync.js",
+      "function": "cacheLibraryCoversFirst",
+      "networkOwner": "Injected downloader registered from main.js as _downloadAssetsToCache",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "PlatformSyncAssetWriteBackService._getGameKey(entry), usually id/appid/appId/appName/namespace/title/name, then imageWebpCache.cacheBaseName(type, gameId)",
+      "retryBehavior": "No internal network retry; cover failures are swallowed per entry; secondary failures are swallowed; stale file:// paths are cleared before fallback to remote source.",
+      "concurrency": "coverConcurrency default 10; secondaryConcurrency default 2; batchSize default 20; secondary phase is fire-and-forget after cover phase write flush.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Keep the cover-first semantic contract, but replace the injected downloader with the unified ArtworkDeliveryManager scheduler. Covers should be high priority and awaited; hero/logo should be scheduled without duplicate body downloads."
+    },
+    {
+      "caller": "platform sync server enrichment write-back",
+      "file": "platformSync.js",
+      "function": "syncSteamLibrary/syncEpicLibrary enrichment handling",
+      "networkOwner": "Baddel metadata API for metadata; injected _downloadAssetsToCache for returned artwork URLs",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "Synced library identity passed to _downloadAssetsToCache; legacy filename stem type_gameId",
+      "retryBehavior": "Baddel API has batch/per-item retry; artwork downloader itself has no retry beyond cache hit short-circuit and failure fallback to remote URL.",
+      "concurrency": "Depends on enrichment flow; cacheLibraryCoversFirst uses 10/2 for cover/secondary; direct import write-back uses Promise.all over asset object.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Separate sync metadata import from artwork transfer. Sync should persist remote candidates and enqueue artwork jobs instead of downloading during account sync completion."
+    },
+    {
+      "caller": "main process shared asset downloader",
+      "file": "main.js",
+      "function": "_downloadAssetsToCache",
+      "networkOwner": "services/imageWebpCache.downloadToCacheAsWebp",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "imageWebpCache.cacheBaseName(type, gameId)",
+      "retryBehavior": "No retry; returns original URL on failure; skips falsy URLs; downloads all requested asset types with Promise.all.",
+      "concurrency": "Unbounded per call by Object.entries(assets).map(Promise.all); upstream callers provide broader queueing.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Turn this function into a compatibility adapter over ArtworkDeliveryManager.requestMany while preserving return shape { cover, hero, logo }."
+    },
+    {
+      "caller": "legacy HTTPS image cache downloader",
+      "file": "services/imageWebpCache.js",
+      "function": "downloadToCacheAsWebp",
+      "networkOwner": "https.get in _fetchBuffer",
+      "assetTypes": ["cover", "hero", "logo", "generic image"],
+      "cacheKey": "Caller-provided baseName, normally imageWebpCache.cacheBaseName(type, gameId)",
+      "retryBehavior": "Follows up to 5 redirects; no retry after timeout, HTTP failure, content-type failure, private-host block, oversize response, or tiny file rejection; returns null on failure.",
+      "concurrency": "No internal queue or dedupe; every caller invocation may perform a body transfer if the named file is absent.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Retire as the direct downloader after ArtworkDeliveryManager owns fetch, telemetry, content addressing, validation, retry policy, and bandwidth budgets."
+    },
+    {
+      "caller": "renderer IPC cache single image",
+      "file": "handlers/imageHandlers.js",
+      "function": "ipcMain.handle('cache-image')",
+      "networkOwner": "services/imageWebpCache.downloadToCacheAsWebp",
+      "assetTypes": ["dynamic type argument, normally cover/hero/logo"],
+      "cacheKey": "imageWebpCache.cacheBaseName(type, gameId)",
+      "retryBehavior": "Validates file:// existence; otherwise one download attempt; returns original URL on failure.",
+      "concurrency": "One transfer per IPC invocation; no IPC-level dedupe.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Keep IPC compatibility but route to ArtworkDeliveryManager; return cached local file URL when available, otherwise a controlled pending/fallback result instead of causing duplicate renderer requests."
+    },
+    {
+      "caller": "renderer IPC cache all assets",
+      "file": "handlers/imageHandlers.js",
+      "function": "ipcMain.handle('cache-all-assets')",
+      "networkOwner": "services/imageWebpCache.downloadToCacheAsWebp",
+      "assetTypes": ["cover", "hero", "logo", "any object key supplied by renderer"],
+      "cacheKey": "imageWebpCache.cacheBaseName(type, gameId)",
+      "retryBehavior": "One attempt per asset; per-asset failure is swallowed and original URL is returned.",
+      "concurrency": "Promise.all across every supplied asset key; no global budget or dedupe.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Route through ArtworkDeliveryManager.requestMany with per-type priorities and coalescing by source URL/content hash."
+    },
+    {
+      "caller": "renderer IPC cached image lookup",
+      "file": "handlers/imageHandlers.js",
+      "function": "ipcMain.handle('get-cached-image')",
+      "networkOwner": "none",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "imageWebpCache.cacheBaseName(type, gameId), matched by filename prefix",
+      "retryBehavior": "No network; returns null for missing cache dir, missing match, stat error, or files smaller than 512 bytes.",
+      "concurrency": "Synchronous filesystem lookup per IPC invocation.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Teach lookup to query the unified manifest/content-addressed cache first, then legacy image_cache during migration."
+    },
+    {
+      "caller": "image cache pruning",
+      "file": "handlers/imageHandlers.js",
+      "function": "ipcMain.handle('prune-image-cache')",
+      "networkOwner": "none",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "Legacy image_cache filenames matching /^(cover|hero|logo)_(.+?)\\.(webp|jpg|png|gif)$/",
+      "retryBehavior": "No network; unlink failures are skipped.",
+      "concurrency": "Synchronous directory scan and unlink loop.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Replace with automatic cache GC for the manager cache only; never prune user_artwork."
+    },
+    {
+      "caller": "BackgroundMetadataPipeline full resolve and backfill",
+      "file": "src/features/games/infrastructure/services/BackgroundMetadataPipeline.js",
+      "function": "runBackgroundMetadataPipeline",
+      "networkOwner": "metadataResolutionManager/baddelApi for metadata; injected imageDownloadFn for artwork bytes",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "game.id passed to injected imageDownloadFn, currently legacy type_gameId files",
+      "retryBehavior": "MRM status/cooldown controls metadata retries; asset caching errors are non-fatal and remote URLs are persisted as fallback.",
+      "concurrency": "Serial game loop with 300 ms throttle; imageDownloadFn may download cover/hero/logo concurrently.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Keep metadata resolution in the pipeline, but enqueue artwork work through the manager with background priority and persist only final local or managed fallback state."
+    },
+    {
+      "caller": "BackgroundMetadataPipeline hero/logo backfill",
+      "file": "src/features/games/infrastructure/services/BackgroundMetadataPipeline.js",
+      "function": "runBackgroundMetadataPipeline hero and logo backfill branches",
+      "networkOwner": "Injected imageDownloadFn when cached metadata has remote hero/logo URLs",
+      "assetTypes": ["hero", "logo"],
+      "cacheKey": "game.id passed to injected imageDownloadFn",
+      "retryBehavior": "Per-game try/catch; failed hero download falls back to remote URL; logo errors are swallowed and loop continues.",
+      "concurrency": "Serial pipeline path; imageDownloadFn owns per-asset concurrency.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Manager should classify this as background repair with stale-cache awareness and bounded retry windows."
+    },
+    {
+      "caller": "RefetchImagesService missing cover repair",
+      "file": "src/features/games/infrastructure/services/RefetchImagesService.js",
+      "function": "refetchMissingImages",
+      "networkOwner": "baddelApi.lookupGame for metadata; engine.backgroundDownload for artwork persistence",
+      "assetTypes": ["cover"],
+      "cacheKey": "game.id through engine.backgroundDownload/updateGameMetadata; current BackgroundDownloadService does not download bytes itself",
+      "retryBehavior": "Per-game metadata lookup errors are swallowed; non-file CDN URLs are treated as not missing and are not re-fetched.",
+      "concurrency": "Serial loop over stored games.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Replace backgroundDownload no-op URL pass-through with manager-backed cover repair or retire this path after cache-first startup owns repair."
+    },
+    {
+      "caller": "BaddelEngine backgroundDownload",
+      "file": "src/features/games/infrastructure/services/BackgroundDownloadService.js",
+      "function": "backgroundDownload",
+      "networkOwner": "none currently; resolveCachedUrl is a no-op returning the remote URL",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "none for bytes; writes final URLs into JsonGameRepository by gameId",
+      "retryBehavior": "No network retry; outer errors are caught and logged.",
+      "concurrency": "Promise.all over cover/hero/logo URL resolution, but no byte transfer today.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Either wire to ArtworkDeliveryManager or narrow this service to metadata DB write-back after manager resolves assets."
+    },
+    {
+      "caller": "manual game add metadata hydration",
+      "file": "src/features/games/application/useCases/AddManualGameUseCase.js",
+      "function": "addManualGame",
+      "networkOwner": "metadataResolutionManager for metadata; injected backgroundDownload for artwork write-back",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "temporary/stable manual game id passed to backgroundDownload",
+      "retryBehavior": "Depends on metadata resolver and backgroundDownload; add manual awaits backgroundDownload before returning hydrated game.",
+      "concurrency": "Single add flow.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Keep await semantics, but let backgroundDownload/manager produce local artwork before the returned game is rendered where practical."
+    },
+    {
+      "caller": "Home installed card metadata queue",
+      "file": "src/js/app.js",
+      "function": "fetchMetadata/processQueue",
+      "networkOwner": "renderer calls window.electronAPI.getMetadata, then cacheAllAssets IPC",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "game.id for getCachedImage/cacheAllAssets and localStorage cover_/hero_/logo_ keys",
+      "retryBehavior": "Server-pending metadata retries up to 3 times with 4 second delay; cacheAllAssets failure falls back to remote URLs.",
+      "concurrency": "imageQueue activeRequests capped at 3; cacheAllAssets downloads all assets concurrently in main.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Make first render cache-first and replace renderer metadata-triggered artwork fetches with manager requests for visible cards only."
+    },
+    {
+      "caller": "Ready-to-install asset hydrator",
+      "file": "src/js/app/artwork-sync.js",
+      "function": "_rtia_hydrateAll/_rtia_warmOne",
+      "networkOwner": "Disk phase has none; network phase delegates to _suggHydrateArt in suggestions.js",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "g.id and suggestion art localStorage key baddelSuggestionArtCache",
+      "retryBehavior": "Disk lookup only in warm phase; stale file URLs are removed.",
+      "concurrency": "_RTIA_DISK_CONCURRENCY = 4; network follow-up is fire-and-forget.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Keep disk warm as first paint path, but route network hydration through the manager with visible-item priority and in-flight dedupe."
+    },
+    {
+      "caller": "Ready-to-install suggestion hydration",
+      "file": "src/js/app/suggestions.js",
+      "function": "_suggHydrateArt",
+      "networkOwner": "renderer calls window.electronAPI.getMetadata, then cacheAllAssets IPC",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "_suggKey(g), g.id, baddelSuggestionArtCache, and legacy image_cache type_gameId files",
+      "retryBehavior": "Pending metadata retries twice after 3500 ms; cacheAllAssets errors are swallowed.",
+      "concurrency": "_SUGG_HYDRATE_CONCURRENCY controls metadata hydration; cacheAllAssets uses Promise.all in main.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Use manager prewarm for visible RTIA rows and stop snapshotting remote URLs as long-lived art cache when local cache is pending."
+    },
+    {
+      "caller": "Jump Back In hero hydration",
+      "file": "src/js/app/artwork-sync.js",
+      "function": "hydrateRecentHeroArtwork",
+      "networkOwner": "renderer calls window.electronAPI.getMetadata, then cacheAllAssets IPC",
+      "assetTypes": ["hero", "logo", "cover"],
+      "cacheKey": "game.id and localStorage cover_/hero_/logo_ keys",
+      "retryBehavior": "No explicit retry; cacheAllAssets failure falls back to remote metadata URL.",
+      "concurrency": "Per-card async call; no shared queue beyond downstream IPC downloader.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Treat Jump Back In hero as high-priority visible artwork in ArtworkDeliveryManager and ignore stale responses after card/game changes."
+    },
+    {
+      "caller": "Game Details metadata fallback and cache recovery",
+      "file": "src/js/game-details.js",
+      "function": "_gdLoadMetadata fallback branches and _gdCacheResetAssets",
+      "networkOwner": "renderer calls getMetadata and cacheAllAssets IPC",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "game.id for cacheAllAssets/getCachedImage and canonical V2 fallback write-back",
+      "retryBehavior": "getMetadata is bounded with timeout in fallback; cacheAllAssets failure persists remote fallback URLs.",
+      "concurrency": "Per open details page; no central artwork queue.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Give Game Details top priority, cache-first hydration, stale navigation guards, and a single manager request per asset URL/game identity."
+    },
+    {
+      "caller": "Game Settings and Creator explicit artwork",
+      "file": "src/js/game-details.js",
+      "function": "gdCreatorSave/saveGameSettings/reset artwork flows",
+      "networkOwner": "JsonGameRepository ArtworkAssetStore for explicit setGameArtwork values; cacheAllAssets only for reset/server fallback recovery",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "canonical game identity in user_artwork for explicit artwork; game.id for legacy reset cache fallback",
+      "retryBehavior": "Explicit data/file/remote materialization errors surface through setGameArtwork; reset fallback cacheAllAssets errors fall back to remote metadata values.",
+      "concurrency": "User-driven single mutation.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Keep explicit user artwork separate from automatic artwork cache. Manager must never prune or overwrite user_artwork and must not take ownership of Settings/Creator choices."
+    },
+    {
+      "caller": "All Games platform account cover side-effect",
+      "file": "src/js/accounts.js",
+      "function": "_cacheAssetSideEffect/_agWarmCover",
+      "networkOwner": "renderer calls cacheImage/getCachedImage/getMetadata IPC",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "game ids and alternate allIds through _agGetCachedImageAnyKey; localStorage cover_/hero_/logo_ keys",
+      "retryBehavior": "Disk cache checked before getMetadata; cacheImage failure leaves remote fallback; localStorage http URL can be used as immediate fallback.",
+      "concurrency": "Per visible card/pipeline events; no global artwork byte budget.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Replace renderer side-effect download calls with manager requests and remove long-lived http localStorage fallbacks after managed cache is authoritative."
+    },
+    {
+      "caller": "All Games cover cached event patch",
+      "file": "src/js/accounts.js",
+      "function": "window.electronAPI.onAllGamesCoverCached listener",
+      "networkOwner": "none in listener; receives file URLs emitted by platform sync cover-first service",
+      "assetTypes": ["cover"],
+      "cacheKey": "payload id/appid/title/namespace matched to card records",
+      "retryBehavior": "No network; skips creator-owned artwork and stale/unusable cover patches.",
+      "concurrency": "Event-driven DOM patching.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Keep as a compatibility event or replace with manager asset-ready events that include canonical identity and asset type."
+    },
+    {
+      "caller": "Play launcher overlay artwork lookup",
+      "file": "src/js/play-launcher.js",
+      "function": "getCachedImage calls in launch overlay artwork resolver",
+      "networkOwner": "none",
+      "assetTypes": ["cover", "hero", "logo"],
+      "cacheKey": "gameId and type passed to getCachedImage",
+      "retryBehavior": "No network; logs and returns empty string on lookup error.",
+      "concurrency": "Per overlay render.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Query manager cache manifest/read model instead of legacy image_cache while preserving no-network overlay behavior."
+    },
+    {
+      "caller": "Install roulette hero fallback",
+      "file": "src/js/app/roulette.js",
+      "function": "prepareHero/_rouletteHeroUrl paths",
+      "networkOwner": "none for direct lookup; may depend on suggestion hydration elsewhere",
+      "assetTypes": ["hero"],
+      "cacheKey": "id and type hero passed to getCachedImage; _suggArtCache",
+      "retryBehavior": "No network in cache fallback; errors are swallowed.",
+      "concurrency": "Per roulette candidate.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Use manager manifest for hero availability and avoid direct remote hero display when managed local asset is pending and visible priority can fetch it."
+    },
+    {
+      "caller": "renderer direct image assignment surfaces",
+      "file": "src/js/app/game-card.js, src/js/app/hero.js, src/js/app/suggestions.js, src/js/accounts.js, src/js/game-details.js",
+      "function": "img.src and style.backgroundImage assignments",
+      "networkOwner": "Chromium renderer when assigned http/https URLs directly",
+      "assetTypes": ["cover", "hero", "logo", "screenshots", "trailers"],
+      "cacheKey": "none for direct remote; renderer uses current URL string",
+      "retryBehavior": "DOM onerror fallbacks and failedImageIds in some helpers; no shared retry policy or byte budget.",
+      "concurrency": "Browser-controlled per visible image/background; can bypass main-process downloader.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Add a renderer guard/read-model rule so game artwork surfaces prefer file:// manager URLs and request missing remote assets through IPC instead of assigning remote artwork directly. Exclude intentional non-artwork URLs such as YouTube embeds and feedback form fetch."
+    },
+    {
+      "caller": "Steam account avatar copy",
+      "file": "accountsHandler.js",
+      "function": "getLocalSteamAvatar",
+      "networkOwner": "none; copies existing Steam avatarcache file into image_cache",
+      "assetTypes": ["account avatar"],
+      "cacheKey": "Steam account id/avatar filename, not game artwork type_gameId",
+      "retryBehavior": "No network; copy failures are swallowed or logged.",
+      "concurrency": "Per account lookup.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Keep separate from game artwork delivery or explicitly classify as avatar cache so automatic game artwork GC/scheduler does not manage it."
+    },
+    {
+      "caller": "Baddel metadata API",
+      "file": "services/baddelApi.js",
+      "function": "lookupGame/resolve metadata/importGames",
+      "networkOwner": "fetch to Baddel Metadata Server",
+      "assetTypes": ["metadata containing cover/hero/logo URLs, not image bodies"],
+      "cacheKey": "metadata request keys and platform ids; no image byte cache key",
+      "retryBehavior": "API client has rate limiting, retry/batch behavior in selected flows; it does not transfer image bodies.",
+      "concurrency": "API-client controlled; callers add their own queueing.",
+      "rendererDirectRemote": false,
+      "migrationPlan": "Leave metadata ownership intact. Manager should consume normalized asset URL candidates emitted by metadata flows and own all image body transfer."
+    },
+    {
+      "caller": "preload artwork IPC surface",
+      "file": "preload.js",
+      "function": "electronAPI cacheImage/cacheAllAssets/getCachedImage/probeLocalImage/getImageCacheDirUrl/setGameArtwork/resetGameArtwork/updateGameImage/getMetadata/saveMetadata",
+      "networkOwner": "none directly; exposes renderer access to main network/cache paths",
+      "assetTypes": ["cover", "hero", "logo", "explicit user artwork"],
+      "cacheKey": "IPC argument gameId/type or canonical identity depending on API",
+      "retryBehavior": "Delegated to main handlers/services.",
+      "concurrency": "Renderer-call driven.",
+      "rendererDirectRemote": true,
+      "migrationPlan": "Preserve compatibility while adding manager-backed IPC names or routing existing names to manager. Keep explicit user artwork APIs separate from automatic cache APIs."
+    }
+  ],
+  "validation": {
+    "focused": {
+      "command": "node --test tests\\artworkOwnership.test.js tests\\artworkRuntimeQuiescence.test.js tests\\artworkResetOneSave.test.js tests\\artworkCommitIsolation.test.js tests\\artworkAssetStore.test.js tests\\gameArtworkStateV2.test.js tests\\gameArtworkReadModel.test.js tests\\gameArtworkResolver.test.js tests\\gameArtworkDisplayConsistency.test.js tests\\appArtworkSync.test.js tests\\allGamesAssets.test.js tests\\readyToInstallAssets.test.js tests\\gameDetailsArtworkResolverIntegration.test.js tests\\gameSettingsArtworkHydration.test.js tests\\remainingArtworkSurfacesResolverIntegration.test.js tests\\backgroundMetadataPipeline.test.js tests\\backgroundDownloadService.test.js tests\\imageCacheService.test.js tests\\refetchImagesService.test.js tests\\platformSyncAssetWriteBackService.test.js tests\\platformSyncEnrichmentAssets.test.js tests\\syncEventPayloads.test.js tests\\buildProtected.test.js tests\\syncProtectedBundleResolution.test.js",
+      "result": "559 passed, 0 failed"
+    },
+    "fullTest": {
+      "command": "npm.cmd test",
+      "result": "6167 passed, 0 failed"
+    },
+    "smoke": {
+      "command": "npm.cmd run smoke",
+      "result": "35 passed, 0 failed"
+    },
+    "lint": {
+      "command": "npm.cmd run lint",
+      "result": "passed with existing eslint-plugin-boundaries deprecation/legacy selector warnings"
+    }
+  }
+}
