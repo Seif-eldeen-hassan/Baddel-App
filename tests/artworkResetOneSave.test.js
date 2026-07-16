@@ -130,8 +130,18 @@ function makeSettingsSandbox(updatedGame, resetImpl) {
             };
         },
     };
-    sandbox.window.__baddelCommitCanonicalGameUpdate = (game, opts) => {
-        commitCalls.push({ game, opts });
+    sandbox.window.__baddelCommitCanonicalGameUpdate = (gameOrTransaction, opts = {}) => {
+        const transaction = gameOrTransaction?.canonicalGame ? gameOrTransaction : null;
+        commitCalls.push({
+            game: transaction?.canonicalGame || gameOrTransaction,
+            transaction,
+            opts: {
+                ...opts,
+                changedTypes: transaction?.changedTypes || opts.changedTypes,
+                operationId: transaction?.operationId || opts.operationId,
+                expectedRevisions: transaction?.expectedRevisions || opts.expectedRevisions,
+            },
+        });
     };
 
     vm.createContext(sandbox);
@@ -234,7 +244,9 @@ test('Game Settings Reset Cover stages only, Save once commits returned updatedG
     assert.deepEqual(Array.from(resetCalls[0].opts.types), ['cover']);
     assert.equal(commitCalls.length, 1);
     assert.strictEqual(commitCalls[0].game, updatedGame);
+    assert.equal(commitCalls[0].transaction.canonicalGame, updatedGame);
     assert.deepEqual(Array.from(commitCalls[0].opts.changedTypes), ['cover']);
+    assert.match(commitCalls[0].opts.operationId, /^settings-commit-/);
     assert.equal(commitCalls[0].opts.reason, 'settings-reset');
     assert.equal(sandbox.allGamesData[0].image, 'file://platform-cover.webp');
     assert.equal(element('btn-reset-cover').disabled, true);

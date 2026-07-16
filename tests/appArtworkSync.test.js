@@ -242,10 +242,10 @@ describe('Phase 2.12B: artwork-sync — image queue pipeline in app.js', () => {
         const fn = getFunctionBody(APP_JS, 'processQueue');
         assert.match(fn, /saveMetadata/);
     });
-    it('processQueue calls _patchGameInMemory and _patchVisibleGameCard', () => {
+    it('processQueue routes cached artwork through canonical coordinator instead of direct card patching', () => {
         const fn = getFunctionBody(APP_JS, 'processQueue');
-        assert.match(fn, /_patchGameInMemory/);
-        assert.match(fn, /_patchVisibleGameCard/);
+        assert.match(fn, /__baddelCommitCanonicalGameUpdate/);
+        assert.doesNotMatch(fn, /_patchVisibleGameCard\(patched\)/);
     });
     it('processQueue caps activeRequests to 3', () => {
         const fn = getFunctionBody(APP_JS, 'processQueue');

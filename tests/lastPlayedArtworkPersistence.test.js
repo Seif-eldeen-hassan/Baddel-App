@@ -156,7 +156,8 @@ test('changing Settings artwork commits through coordinator without forcing surf
     const settings = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'addGameModal.js'), 'utf8');
     const start = settings.indexOf('async function saveGameSettings');
     const body = settings.slice(start, start + 14000);
-    assert.match(body, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/);
+    assert.match(body, /__baddelCommitCanonicalGameUpdate\(\{\s*canonicalGame:\s*canonicalSavedGame,/);
+    assert.match(body, /changedTypes:\s*_changedTypes/);
     assert.doesNotMatch(body, /renderRecentlyPlayed\(\)/);
     assert.doesNotMatch(body, /updateHeroSection\(currentHeroGameId\)/);
     assert.doesNotMatch(body, /applyFilters\(\)/);

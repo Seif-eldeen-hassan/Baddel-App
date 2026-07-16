@@ -296,6 +296,9 @@ function _projectCanonicalOntoGame(game, canonicalGame) {
 
 const _ARTWORK_TYPES = ['cover', 'hero', 'logo'];
 const _latestArtworkRevisions = new Map();
+const _artworkDomPatchState = new WeakMap();
+const _latestArtworkOperations = new Map();
+let _artworkDomRequestSeq = 0;
 
 function _artworkTypeRevision(game, type) {
     const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
@@ -316,6 +319,45 @@ function _canonicalRevisionKey(canonicalGameId, type) {
     return `${canonicalGameId}:${type}`;
 }
 
+function _logArtworkIdentityDecision(payload) {
+    try {
+        console.info('[ArtworkIdentityDecision]', {
+            displayId: payload?.displayId || null,
+            canonicalGameId: payload?.canonicalGameId || null,
+            reason: payload?.reason || null,
+            accepted: payload?.accepted === true,
+            rejectedGenericPath: payload?.reason === 'generic-path' || payload?.reason === 'incomplete-aumid',
+            ambiguous: String(payload?.reason || '').startsWith('ambiguous'),
+        });
+    } catch (_) {}
+}
+
+function _logArtworkDomCommit(payload) {
+    try {
+        console.info('[ArtworkDomCommit]', {
+            displayId: payload?.displayId || null,
+            canonicalGameId: payload?.canonicalGameId || null,
+            type: payload?.type || 'cover',
+            revision: payload?.revision ?? null,
+            operationId: payload?.operationId || null,
+            requestToken: payload?.requestToken ?? null,
+            applied: payload?.applied === true,
+            ignoredReason: payload?.ignoredReason || null,
+        });
+    } catch (_) {}
+}
+
+function _logArtworkWriter(payload) {
+    try {
+        console.info('[ArtworkWriter]', {
+            event: payload?.event || null,
+            writer: payload?.writer || null,
+            canonicalGameId: payload?.canonicalGameId || null,
+            type: payload?.type || null,
+        });
+    } catch (_) {}
+}
+
 function _markArtworkRevision(canonicalGameId, type, revision) {
     if (!canonicalGameId || revision == null) return;
     const key = _canonicalRevisionKey(canonicalGameId, type);
@@ -323,6 +365,34 @@ function _markArtworkRevision(canonicalGameId, type, revision) {
     if (current == null || Number(revision) > Number(current)) {
         _latestArtworkRevisions.set(key, Number(revision));
     }
+}
+
+function _restoreUnchangedArtworkType(target, original, type) {
+    if (!target || !original) return;
+    const fields = {
+        cover: ['image', 'defaultImage', 'coverUrl', 'cover'],
+        hero: ['heroImage', 'defaultHero', 'heroUrl', 'hero'],
+        logo: ['logo', 'logoUrl', 'defaultLogo'],
+    }[type] || [];
+    for (const field of fields) {
+        if (original[field] === undefined) delete target[field];
+        else target[field] = original[field];
+    }
+    if (target.artworkState?.version === 2 && original.artworkState?.version === 2) {
+        target.artworkState = {
+            ...target.artworkState,
+            [type]: original.artworkState[type],
+        };
+    }
+}
+
+function _projectOnlyChangedArtworkTypes(original, projected, changedTypes) {
+    if (!projected || !Array.isArray(changedTypes) || changedTypes.length === 0) return projected;
+    const out = { ...projected };
+    for (const type of _ARTWORK_TYPES) {
+        if (!changedTypes.includes(type)) _restoreUnchangedArtworkType(out, original, type);
+    }
+    return out;
 }
 
 function _classifyIncomingArtworkTypes(updatedGame, requestedTypes = []) {
@@ -335,13 +405,25 @@ function _classifyIncomingArtworkTypes(updatedGame, requestedTypes = []) {
 
 window.__baddelArtworkEventRuntime = window.__baddelArtworkEventRuntime || {};
 window.__baddelArtworkEventRuntime.latestRevisions = _latestArtworkRevisions;
+window.__baddelArtworkEventRuntime.latestOperations = _latestArtworkOperations;
 window.__baddelDetectArtworkChangedTypes = _classifyIncomingArtworkTypes;
 
-window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameUpdate(updatedGame, {
+window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameUpdate(updatedGameOrTransaction, {
     reason = 'canonical-update',
     changedTypes = [],
+    operationId = null,
+    expectedRevisions = null,
     suppressDuplicateRevision = false,
 } = {}) {
+    const transaction = updatedGameOrTransaction?.canonicalGame
+        ? updatedGameOrTransaction
+        : null;
+    const updatedGame = transaction?.canonicalGame || updatedGameOrTransaction;
+    if (transaction) {
+        changedTypes = transaction.changedTypes || changedTypes;
+        operationId = transaction.operationId || operationId;
+        expectedRevisions = transaction.expectedRevisions || expectedRevisions;
+    }
     if (!updatedGame || !updatedGame.id) return null;
     const canonicalGame = _normalizeArtworkAliases({ ...updatedGame });
     _upsertCanonicalGameRegistry(canonicalGame);
@@ -365,8 +447,22 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
         });
         if (duplicate) ignoredTypes.push(type);
         else {
+            _logArtworkWriter({
+                event: reason,
+                writer: 'canonical-coordinator',
+                canonicalGameId: canonicalGame.id,
+                type,
+            });
+            const expected = expectedRevisions && expectedRevisions[type] != null
+                ? Number(expectedRevisions[type])
+                : null;
+            if (expected != null && incomingRevision != null && Number(incomingRevision) < expected) {
+                ignoredTypes.push(type);
+                continue;
+            }
             appliedTypes.push(type);
             _markArtworkRevision(canonicalGame.id, type, incomingRevision);
+            if (operationId) _latestArtworkOperations.set(_canonicalRevisionKey(canonicalGame.id, type), operationId);
         }
     }
     if (!appliedTypes.length) {
@@ -387,10 +483,28 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
         if (!Array.isArray(arr)) return arr;
         return arr.map(game => {
             scannedCount += 1;
-            const projected = _projectCanonicalOntoGame(game, canonicalGame);
+            const resolver = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity;
+            const identity = typeof resolver === 'function' ? resolver(game, [canonicalGame]) : null;
+            if (identity && identity.status !== 'success') {
+                _logArtworkIdentityDecision({
+                    displayId: game?.id,
+                    canonicalGameId: canonicalGame.id,
+                    reason: identity?.reason || 'not-found',
+                    accepted: false,
+                });
+                return game;
+            }
+            let projected = _projectCanonicalOntoGame(game, canonicalGame);
             if (!projected?._artworkIdentityMatchReason) return game;
+            projected = _projectOnlyChangedArtworkTypes(game, projected, appliedTypes);
             const displayId = String(game?.id || projected.id || '');
             if (displayId) matchedDisplayIds.add(displayId);
+            _logArtworkIdentityDecision({
+                displayId,
+                canonicalGameId: canonicalGame.id,
+                reason: projected._artworkIdentityMatchReason,
+                accepted: true,
+            });
             console.info('[ArtworkCommitMatch]', {
                 canonicalGameId: canonicalGame.id,
                 displayId,
@@ -406,7 +520,15 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
     if (Array.isArray(window.allGamesData) && typeof allGamesData !== 'undefined') allGamesData = window.allGamesData;
 
     if (appliedTypes.includes('cover')) {
-        _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds]);
+        _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds], {
+            canonicalGameId: canonicalGame.id,
+            operationId,
+            cover: {
+                changed: true,
+                value: _artworkTypeValue(canonicalGame, 'cover'),
+                revision: _artworkTypeRevision(canonicalGame, 'cover'),
+            },
+        });
     }
     try {
         window._gdApplyExternalPatch?.(canonicalGame, {
@@ -455,12 +577,19 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
 
 // ── Visible card DOM patcher ──────────────────────────────────────────────────
 
-function _patchVisibleGameCard(updatedGame, displayIds = null) {
+function _patchVisibleGameCard(updatedGame, displayIds = null, patch = null) {
     const g = _normalizeArtworkAliases(updatedGame);
     if (!g || !g.id) return;
-    const cover = g.image || g.defaultImage || g.coverUrl || null;
-    if (!cover) return;
-    const safeCover = (() => {
+    const coverChanged = patch?.cover?.changed === true || !patch;
+    if (!coverChanged) return;
+    const canonicalGameId = patch?.canonicalGameId || g.localGameId || g.id;
+    const operationId = patch?.operationId || null;
+    const revision = patch?.cover?.revision ?? _artworkTypeRevision(g, 'cover');
+    const cover = patch?.cover?.changed === true
+        ? patch.cover.value
+        : (g.image || g.defaultImage || g.coverUrl || null);
+    const explicitClear = patch?.cover?.changed === true && !cover;
+    const safeCover = explicitClear ? null : (() => {
         const cacheBacked = typeof isCacheBackedArtworkUrl === 'function'
             ? isCacheBackedArtworkUrl(cover)
             : null;
@@ -468,7 +597,7 @@ function _patchVisibleGameCard(updatedGame, displayIds = null) {
         const safe = typeof safeImageUrl === 'function' ? safeImageUrl(cover) : cover;
         return /^https?:\/\//i.test(String(safe || '').trim()) ? null : safe;
     })();
-    if (!safeCover) return;
+    if (!safeCover && !explicitClear) return;
     const ids = Array.isArray(displayIds) && displayIds.length ? displayIds : [g.id];
     ids.forEach(id => {
         const selector = `[data-id="${CSS.escape(String(id))}"]`;
@@ -478,7 +607,58 @@ function _patchVisibleGameCard(updatedGame, displayIds = null) {
         cards.forEach(card => {
             const img  = card?.querySelector?.('.actual-img');
             if (!img) return;
+            const previous = _artworkDomPatchState.get(card) || {};
+            const requestToken = (previous.requestToken || 0) + 1;
+            const state = {
+                gameId: String(id),
+                canonicalGameId: String(canonicalGameId || ''),
+                coverRevision: revision == null ? previous.coverRevision ?? null : Number(revision),
+                operationId,
+                requestToken,
+                committedUrl: previous.committedUrl || null,
+            };
+            _artworkDomPatchState.set(card, state);
+            const isCurrent = () => {
+                const current = _artworkDomPatchState.get(card);
+                if (!current || current.requestToken !== requestToken) return 'stale-request';
+                if (card.isConnected === false) return 'disconnected-card';
+                if (card.dataset && String(card.dataset.id || '') !== String(id)) return 'reused-card';
+                const latestRevision = _latestArtworkRevisions.get(_canonicalRevisionKey(canonicalGameId, 'cover'));
+                if (latestRevision != null && revision != null && Number(revision) < Number(latestRevision)) return 'stale-revision';
+                const latestOperation = _latestArtworkOperations.get(_canonicalRevisionKey(canonicalGameId, 'cover'));
+                if (operationId && latestOperation && latestOperation !== operationId) return 'stale-operation';
+                return null;
+            };
+            if (explicitClear) {
+                const ignoredReason = isCurrent();
+                if (ignoredReason) {
+                    _logArtworkDomCommit({ displayId: id, canonicalGameId, type: 'cover', revision, operationId, requestToken, applied: false, ignoredReason });
+                    return;
+                }
+                img.removeAttribute?.('src');
+                img.src = '';
+                if (img.dataset) {
+                    delete img.dataset.lastGoodCover;
+                    delete img.dataset.lastGoodImage;
+                }
+                img.classList?.remove?.('img-loaded');
+                img.style.opacity = '';
+                img.style.display = '';
+                if (card.dataset) {
+                    card.dataset.artworkGameId = String(id);
+                    delete card.dataset.artworkAssetHash;
+                }
+                state.committedUrl = null;
+                _artworkDomPatchState.set(card, state);
+                _logArtworkDomCommit({ displayId: id, canonicalGameId, type: 'cover', revision, operationId, requestToken, applied: true });
+                return;
+            }
             const apply = () => {
+                const ignoredReason = isCurrent();
+                if (ignoredReason) {
+                    _logArtworkDomCommit({ displayId: id, canonicalGameId, type: 'cover', revision, operationId, requestToken, applied: false, ignoredReason });
+                    return;
+                }
                 img.src = safeCover;
                 if (img.dataset) img.dataset.lastGoodCover = safeCover;
                 if (card.dataset) {
@@ -488,10 +668,23 @@ function _patchVisibleGameCard(updatedGame, displayIds = null) {
                 img.classList?.add?.('img-loaded');
                 img.style.opacity  = '';
                 img.style.display  = 'block';
+                state.committedUrl = safeCover;
+                _artworkDomPatchState.set(card, state);
+                _logArtworkDomCommit({ displayId: id, canonicalGameId, type: 'cover', revision, operationId, requestToken, applied: true });
             };
             if (typeof Image === 'function' && img.src && img.src !== safeCover) {
                 const preloader = new Image();
                 preloader.onload = apply;
+                preloader.onerror = () => _logArtworkDomCommit({
+                    displayId: id,
+                    canonicalGameId,
+                    type: 'cover',
+                    revision,
+                    operationId,
+                    requestToken,
+                    applied: false,
+                    ignoredReason: 'replacement-load-failed',
+                });
                 preloader.src = safeCover;
             } else {
                 apply();
@@ -503,6 +696,8 @@ function _patchVisibleGameCard(updatedGame, displayIds = null) {
         window._vs.cardCache.delete(String(g.id));
     }
 }
+window._patchVisibleGameCard = _patchVisibleGameCard;
+window.__baddelArtworkDomPatchState = _artworkDomPatchState;
 
 // ── Ready-to-Install artwork cache ────────────────────────────────────────────
 // Keyed by _suggKey(g) = "${platform}:${id}". Stores { poster, hero, logo }.

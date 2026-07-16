@@ -2272,11 +2272,11 @@ test('app.js: processQueue cacheAllAssets branch applies local cover through car
     const cacheStart = src.indexOf('window.electronAPI.cacheAllAssets({ cover: meta.cover');
     assert.ok(cacheStart > -1, 'cacheAllAssets call found in processQueue');
     const block = src.slice(cacheStart, cacheStart + 4200);
-    assert.match(block, /_applyCardCoverResult\(requestContext,\s*finalCover/, 'local cover must be applied through the stale-card guard');
+    assert.match(block, /__baddelCommitCanonicalGameUpdate/, 'authoritative updatedGame must route through canonical coordinator first');
     assert.doesNotMatch(block, /imgElement\.src\s*=\s*meta\.cover/, 'remote metadata cover must not be assigned directly');
     assert.match(block, /finalCover/, 'finalCover variable must be used');
-    assert.match(block, /_patchGameInMemory/, '_patchGameInMemory called after caching');
-    assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called after caching');
+    assert.doesNotMatch(block, /_applyCardCoverResult\(requestContext,\s*finalCover/, 'cache completion must not be a second artwork writer');
+    assert.doesNotMatch(block, /_patchVisibleGameCard\(patched\)/, 'canonical coordinator owns card patching after cache save');
 });
 
 test('app.js: onGameImageUpdated routes through canonical artwork coordinator without structural rerender', () => {

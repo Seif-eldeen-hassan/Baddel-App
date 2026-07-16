@@ -511,8 +511,10 @@ test('saveGameSettings: canonical artwork save uses updatedGame instead of direc
     const fnBody = src.slice(fnStart, fnStart + 12000);
     assert.match(fnBody, /canonicalSavedGame\s*=\s*canonicalGame/,
         'Settings save must capture canonical updatedGame');
-    assert.match(fnBody, /Object\.assign\(g,\s*canonicalGame\)/,
-        'Settings save must patch the runtime record from canonical updatedGame');
+    assert.match(fnBody, /projectCanonicalResultOntoDisplay\(g,\s*canonicalGame\)/,
+        'Settings save must project canonical updatedGame onto the display record');
+    assert.doesNotMatch(fnBody, /Object\.assign\(g,\s*canonicalGame\)/,
+        'Settings save must not overwrite the display id with the canonical id');
     assert.doesNotMatch(fnBody, /g\.coverUrl\s*=\s*change\.path/,
         'Settings save must not patch committed Cover from the draft path after canonical save');
     assert.doesNotMatch(fnBody, /g\.heroUrl\s*=\s*change\.path/,
@@ -675,8 +677,12 @@ test('saveGameSettings: sends settings ownership through setGameArtwork instead 
     const fnBody = src.slice(fnStart, fnStart + 12000);
     assert.match(fnBody, /setGameArtwork\(identity,\s*_artworkUpdates/, 'Settings artwork must persist through canonical V2 IPC');
     assert.match(fnBody, /source:\s*['"]settings['"]/, 'Settings artwork must be tagged as settings in the canonical save');
-    assert.match(fnBody, /__baddelCommitCanonicalGameUpdate\(canonicalSavedGame/,
-        'Settings must route canonical artwork through the commit coordinator');
+    assert.match(fnBody, /__baddelCommitCanonicalGameUpdate\(\{\s*canonicalGame:\s*canonicalSavedGame,/,
+        'Settings must route canonical artwork through the transaction commit coordinator');
+    assert.match(fnBody, /changedTypes:\s*_changedTypes/,
+        'Settings coordinator transaction must carry changed artwork types');
+    assert.match(fnBody, /operationId:\s*_gsArtworkOperationId\('settings-commit'\)/,
+        'Settings coordinator transaction must carry an operation id');
 });
 
 test('saveGameSettings: calls _gdClearCustomDetailArtwork after image update', () => {

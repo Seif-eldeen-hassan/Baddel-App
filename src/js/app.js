@@ -1816,54 +1816,54 @@ async function processQueue() {
             console.log(`[BaddelAPIEnrichAssets] ${game.name} (${game.id}): cover=${!!meta.cover} hero=${!!metaHero} logo=${!!metaLogo}`);
 
             if (window.electronAPI.cacheAllAssets) {
-                window.electronAPI.cacheAllAssets({ cover: meta.cover, hero: metaHero, logo: metaLogo }, game.id, {
+                const canonicalArtworkId = game.localGameId || game.installedId || game.id;
+                window.electronAPI.cacheAllAssets({ cover: meta.cover, hero: metaHero, logo: metaLogo }, canonicalArtworkId, {
                     priority: 'visible',
                     reason: 'explore-visible-cover',
                 })
-                    .then(localAssets => {
+                    .then(async localAssets => {
                         const finalCover = _isCacheBackedNormalArtworkUrl(localAssets?.cover);
                         const finalHero  = _isCacheBackedNormalArtworkUrl(localAssets?.hero);
                         const finalLogo  = _isCacheBackedNormalArtworkUrl(localAssets?.logo);
 
-                        if (finalCover && canApplyHydrated('cover')) {
-                            if (!_applyCardCoverResult(requestContext, finalCover, { source: 'downloaded' })) return;
-                            game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
-                            localStorage.setItem('cover_' + game.id, finalCover);
-                        } else {
-                            _logExploreArtworkRequest({ gameId: game.id, requestId: requestContext.requestId, source: 'blocked', trusted: false, applied: false, ignoredReason: 'no-local-cover' });
-                        }
-                        if (finalHero && canApplyHydrated('hero')) {
-                            game.heroImage = finalHero; game.defaultHero = finalHero; game.heroUrl = finalHero;
-                            localStorage.setItem('hero_' + game.id, finalHero);
-                        }
-                        if (finalLogo && canApplyHydrated('logo')) {
-                            game.logo = finalLogo; game.defaultLogo = finalLogo; game.logoUrl = finalLogo;
-                            localStorage.setItem('logo_' + game.id, finalLogo);
-                        }
-
                         console.log(`[BaddelAPIEnrichAssets] ${game.name} cached: cover=${finalCover || 'none'} hero=${finalHero || 'none'}`);
-
-                        const patched = _patchGameInMemory({
-                            ...game,
-                            image: canApplyHydrated('cover') ? (finalCover || game.image) : game.image,
-                            defaultImage: canApplyHydrated('cover') ? (finalCover || game.defaultImage) : game.defaultImage,
-                            coverUrl: canApplyHydrated('cover') ? (finalCover || game.coverUrl) : game.coverUrl,
-                            heroImage: canApplyHydrated('hero') ? (finalHero || game.heroImage) : game.heroImage,
-                            defaultHero: canApplyHydrated('hero') ? (finalHero || game.defaultHero) : game.defaultHero,
-                            heroUrl: canApplyHydrated('hero') ? (finalHero || game.heroUrl) : game.heroUrl,
-                            logo: canApplyHydrated('logo') ? (finalLogo || game.logo) : game.logo,
-                            defaultLogo: canApplyHydrated('logo') ? (finalLogo || game.defaultLogo) : game.defaultLogo,
-                            logoUrl: canApplyHydrated('logo') ? (finalLogo || game.logoUrl) : game.logoUrl,
-                        });
-                        _patchVisibleGameCard(patched);
 
                         const saveCover = canApplyHydrated('cover') ? finalCover : null;
                         const saveHero  = canApplyHydrated('hero') ? finalHero : null;
                         const saveLogo  = canApplyHydrated('logo') ? finalLogo : null;
                         if (saveCover || saveHero || saveLogo) {
-                            window.electronAPI.saveMetadata(game.id, { cover: saveCover, hero: saveHero, logo: saveLogo }).catch(() => {});
+                            const saved = await window.electronAPI.saveMetadata(canonicalArtworkId, { cover: saveCover, hero: saveHero, logo: saveLogo }, {
+                                source: 'explore-visible-cover',
+                                displayId: game.id,
+                            }).catch(() => null);
+                            if (saved?.updatedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+                                window.__baddelCommitCanonicalGameUpdate({
+                                    canonicalGame: saved.updatedGame,
+                                    changedTypes: [
+                                        saveCover ? 'cover' : null,
+                                        saveHero ? 'hero' : null,
+                                        saveLogo ? 'logo' : null,
+                                    ].filter(Boolean),
+                                    operationId: saved.operationId || `explore-${canonicalArtworkId}-${Date.now()}`,
+                                }, { reason: 'explore-visible-cover' });
+                                return;
+                            }
+                            _logExploreArtworkRequest({
+                                gameId: game.id,
+                                requestId: requestContext.requestId,
+                                source: 'canonical-save-missing-updated-game',
+                                trusted: false,
+                                applied: false,
+                                ignoredReason: 'no-authoritative-updated-game',
+                            });
+                            return;
                         }
 
+                        if (finalCover && canApplyHydrated('cover')) {
+                            _logExploreArtworkRequest({ gameId: game.id, requestId: requestContext.requestId, source: 'blocked', trusted: false, applied: false, ignoredReason: 'awaiting-authoritative-save' });
+                        } else {
+                            _logExploreArtworkRequest({ gameId: game.id, requestId: requestContext.requestId, source: 'blocked', trusted: false, applied: false, ignoredReason: 'no-local-cover' });
+                        }
                         if (currentHeroGameId === String(game.id)) updateHeroSection(game.id);
 
                         if (window.electronAPI.saveFullMetadata && meta) {

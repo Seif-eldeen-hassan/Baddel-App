@@ -17,6 +17,24 @@ function _pathKey(value) {
         .toLowerCase();
 }
 
+function _basename(value) {
+    const key = _pathKey(value);
+    if (!key) return '';
+    const parts = key.split('/').filter(Boolean);
+    return parts[parts.length - 1] || '';
+}
+
+function _platformKey(obj) {
+    return _key(obj?.platform || obj?.source || obj?.scannerPlatform);
+}
+
+function _platformCompatible(a, b) {
+    const left = _platformKey(a);
+    const right = _platformKey(b);
+    if (!left || !right) return true;
+    return left === right;
+}
+
 function _first(obj, fields) {
     if (!obj || typeof obj !== 'object') return '';
     for (const field of fields) {
@@ -41,11 +59,90 @@ function _findByExact(records, value, fields) {
     return records.find(record => fields.some(field => _key(record?.[field]) === wanted)) || null;
 }
 
-function _findByPath(records, value) {
+function _findUniqueByExact(records, value, fields, identity = null) {
+    const wanted = _key(value);
+    if (!wanted) return null;
+    const matches = records.filter(record =>
+        (!identity || _platformCompatible(identity, record)) &&
+        fields.some(field => _key(record?.[field]) === wanted)
+    );
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return { __identityError: true, reason: 'ambiguous-' + fields[0] };
+    return null;
+}
+
+function _isCompleteAumid(value) {
+    const raw = _str(value);
+    return /^shell:AppsFolder\\[^\\!]+![^\\!]+$/i.test(raw) || /^[^\\!]+![^\\!]+$/.test(raw);
+}
+
+function _aumid(value) {
+    const raw = _str(value);
+    const match = raw.match(/^shell:AppsFolder\\(.+![^\\!]+)$/i);
+    return match ? match[1] : (_isCompleteAumid(raw) ? raw : '');
+}
+
+function _packageFamily(value) {
+    const raw = _str(value);
+    if (!raw) return '';
+    if (/^shell:AppsFolder\\/i.test(raw)) return '';
+    if (raw.includes('!')) return raw.split('!')[0];
+    return raw;
+}
+
+function _launchProduct(value) {
+    const raw = _str(value);
+    const match = raw.match(/--launch-product[=\s]+["']?([a-z0-9_.-]+)/i);
+    return match ? match[1] : '';
+}
+
+const _GENERIC_PATH_BASENAMES = new Set([
+    'explorer.exe',
+    'steam.exe',
+    'epicgameslauncher.exe',
+    'riotclientservices.exe',
+    'eadesktop.exe',
+    'ubisoftconnect.exe',
+    'upc.exe',
+    'rockstarservice.exe',
+    'rockstarlauncher.exe',
+    'launcher.exe',
+    'client.exe',
+    'game.exe',
+]);
+
+const _GENERIC_PATH_SUFFIXES = [
+    '/program files/windowsapps',
+    '/program files (x86)/windowsapps',
+    '/epic games/launcher',
+    '/riot games/riot client',
+    '/electronic arts/ea desktop',
+    '/ubisoft/ubisoft game launcher',
+    '/steam',
+];
+
+function _pathRejectionReason(value) {
+    const key = _pathKey(value);
+    if (!key) return 'empty-path';
+    if (/^shell:appsfolder/i.test(key) && !_isCompleteAumid(value)) return 'incomplete-aumid';
+    if (_GENERIC_PATH_BASENAMES.has(_basename(value))) return 'generic-path';
+    if (_GENERIC_PATH_SUFFIXES.some(suffix => key.endsWith(suffix))) return 'generic-path';
+    return null;
+}
+
+function _findByPath(records, value, field, identity = null) {
     const wanted = _pathKey(value);
     if (!wanted) return null;
-    const pathFields = ['command', 'executablePath', 'path', 'launchCommand', 'shortcutPath'];
-    return records.find(record => pathFields.some(field => _pathKey(record?.[field]) === wanted)) || null;
+    const rejected = _pathRejectionReason(value);
+    if (rejected) return { __identityError: true, reason: rejected };
+    const matches = records.filter(record => {
+        if (identity && !_platformCompatible(identity, record)) return false;
+        if (_pathRejectionReason(record?.[field])) return false;
+        return _pathKey(record?.[field]) === wanted;
+    });
+    if (matches.length === 1) return matches[0];
+    if (matches.length > 1) return { __identityError: true, reason: 'ambiguous-path' };
+    return null;
 }
 
 function _resolveSteam(identity, records) {
@@ -93,6 +190,69 @@ function _resolveEpic(identity, records) {
     }) || null;
 }
 
+function _resolveXbox(identity, records) {
+    const candidates = [
+        [_allId(identity, 'xbox'), ['allIds.xbox']],
+        [_packageFamily(identity.packageFamilyName), ['packageFamilyName']],
+        [_aumid(identity.appUserModelId), ['appUserModelId']],
+        [_packageFamily(identity.launcherGameId), ['packageFamilyName']],
+        [_aumid(identity.launcherGameId), ['appUserModelId']],
+        [_aumid(identity.command), ['appUserModelId']],
+    ];
+    for (const [value, fields] of candidates) {
+        if (!value) continue;
+        const wanted = _key(value);
+        const matches = records.filter(record => {
+            if (!_platformCompatible(identity, record)) return false;
+            const values = fields.flatMap(field => {
+                if (field === 'allIds.xbox') return [_allId(record, 'xbox')];
+                return [_str(record?.[field])];
+            });
+            return values.some(item => _key(item) === wanted);
+        });
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) return { __identityError: true, reason: 'ambiguous-xbox' };
+    }
+    return null;
+}
+
+function _resolveRiot(identity, records) {
+    const values = [
+        _allId(identity, 'riot'),
+        identity.riotProduct,
+        _launchProduct(identity.command),
+        _launchProduct(identity.launchCommand),
+        identity.launcherGameId,
+    ].map(_str).filter(Boolean);
+    for (const value of values) {
+        const match = _findUniqueByExact(records, value, ['riotProduct', 'launcherGameId'], identity);
+        if (match) return match;
+        const allIdMatch = records.filter(record =>
+            _platformCompatible(identity, record) && _key(_allId(record, 'riot')) === _key(value)
+        );
+        if (allIdMatch.length === 1) return allIdMatch[0];
+        if (allIdMatch.length > 1) return { __identityError: true, reason: 'ambiguous-riot' };
+    }
+    return null;
+}
+
+function _resolveLauncherSpecific(identity, records) {
+    const fieldsByPlatform = {
+        ea: ['launcherGameId', 'appId', 'installedGameKey'],
+        ubisoft: ['launcherGameId', 'appId', 'installedGameKey'],
+    };
+    const fields = fieldsByPlatform[_platformKey(identity)] || [];
+    for (const field of fields) {
+        const match = _findUniqueByExact(records, identity?.[field], [field], identity);
+        if (match) return match;
+    }
+    return null;
+}
+
+function _identityError(reason) {
+    return { status: 'error', game: null, id: null, reason };
+}
+
 function resolveCanonicalGameIdentity(identity, records = []) {
     const source = identity && typeof identity === 'object' ? identity : { id: identity };
     const games = Array.isArray(records) ? records : [];
@@ -102,13 +262,21 @@ function resolveCanonicalGameIdentity(identity, records = []) {
         ['installedId', () => _findByExact(games, source.installedId, ['id'])],
         ['id', () => _findByExact(games, _first(source, ['gameId', 'id']), ['id'])],
         ['installedGameKey', () => _findByExact(games, source.installedGameKey, ['installedGameKey'])],
-        ['command', () => _findByPath(games, _first(source, ['command', 'executablePath', 'path', 'launchCommand', 'shortcutPath']))],
         ['steam', () => _resolveSteam(source, games)],
         ['epic', () => _resolveEpic(source, games)],
+        ['xbox', () => _resolveXbox(source, games)],
+        ['riot', () => _resolveRiot(source, games)],
+        ['launcherSpecific', () => _resolveLauncherSpecific(source, games)],
+        ['executablePath', () => _findByPath(games, source.executablePath, 'executablePath', source)],
+        ['command', () => _findByPath(games, source.command, 'command', source)],
+        ['launchCommand', () => _findByPath(games, source.launchCommand, 'launchCommand', source)],
+        ['shortcutPath', () => _findByPath(games, source.shortcutPath, 'shortcutPath', source)],
+        ['path', () => _findByPath(games, source.path, 'path', source)],
     ];
 
     for (const [reason, finder] of checks) {
         const game = finder();
+        if (game?.__identityError) return _identityError(game.reason);
         if (game) return { status: 'success', game, id: game.id, reason };
     }
 

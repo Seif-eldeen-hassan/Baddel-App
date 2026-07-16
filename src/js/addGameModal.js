@@ -938,6 +938,38 @@ function _gsExpectedArtworkRevisions(game, types) {
     return revisions;
 }
 
+function projectCanonicalResultOntoDisplay(displayGame, canonicalGame) {
+    if (!displayGame || !canonicalGame) return displayGame;
+    const displayId = displayGame.id;
+    const projected = window.BaddelCanonicalArtworkProjection?.projectCanonicalArtwork
+        ? window.BaddelCanonicalArtworkProjection.projectCanonicalArtwork(displayGame, canonicalGame, { matchReason: 'settings-result' })
+        : { ...displayGame };
+    projected.id = displayId;
+    projected.localGameId = canonicalGame.id || displayGame.localGameId;
+    projected.installedId = displayGame.installedId || canonicalGame.id || displayGame.localGameId;
+    if (canonicalGame.image !== undefined || canonicalGame.cover !== undefined || canonicalGame.coverUrl !== undefined || canonicalGame.defaultImage !== undefined) {
+        const cover = canonicalGame.image ?? canonicalGame.cover ?? canonicalGame.coverUrl ?? canonicalGame.defaultImage ?? null;
+        projected.image = cover;
+        projected.cover = cover;
+        projected.coverUrl = cover;
+        projected.defaultImage = cover;
+    }
+    if (canonicalGame.heroImage !== undefined || canonicalGame.hero !== undefined || canonicalGame.heroUrl !== undefined || canonicalGame.defaultHero !== undefined) {
+        const hero = canonicalGame.heroImage ?? canonicalGame.hero ?? canonicalGame.heroUrl ?? canonicalGame.defaultHero ?? null;
+        projected.heroImage = hero;
+        projected.hero = hero;
+        projected.heroUrl = hero;
+        projected.defaultHero = hero;
+    }
+    if (canonicalGame.logo !== undefined || canonicalGame.logoUrl !== undefined || canonicalGame.defaultLogo !== undefined) {
+        const logo = canonicalGame.logo ?? canonicalGame.logoUrl ?? canonicalGame.defaultLogo ?? null;
+        projected.logo = logo;
+        projected.logoUrl = logo;
+        projected.defaultLogo = logo;
+    }
+    return projected;
+}
+
 async function _gsRefreshOpenModalArtwork(displayGame, canonicalSavedGame, changedTypes) {
     if (!canonicalSavedGame || !Array.isArray(changedTypes) || changedTypes.length === 0) return;
     const cacheArtwork = window.__baddelLoadCachedArtworkForGame
@@ -1030,8 +1062,12 @@ async function saveGameSettings() {
         const canonicalGame = res.updatedGame || {};
         canonicalSavedGame = canonicalGame;
         _gsCurrentSettingsCanonicalGame = canonicalSavedGame;
-        Object.assign(g, canonicalGame);
-        g.localGameId = res.canonicalGameId || g.localGameId;
+        const displayProjection = projectCanonicalResultOntoDisplay(g, canonicalGame);
+        Object.keys(displayProjection || {}).forEach(key => {
+            if (key !== 'id') g[key] = displayProjection[key];
+        });
+        g.id = selectedGameId;
+        g.localGameId = res.canonicalGameId || canonicalGame.id || g.localGameId;
         g.installedId = g.installedId || res.canonicalGameId || canonicalGame.id;
 
         for (const type of Object.keys(_artworkUpdates)) {
@@ -1080,8 +1116,12 @@ async function saveGameSettings() {
 
         canonicalSavedGame = res.updatedGame;
         _gsCurrentSettingsCanonicalGame = canonicalSavedGame;
-        Object.assign(g, canonicalSavedGame);
-        g.localGameId = res.canonicalGameId || g.localGameId;
+        const displayProjection = projectCanonicalResultOntoDisplay(g, canonicalSavedGame);
+        Object.keys(displayProjection || {}).forEach(key => {
+            if (key !== 'id') g[key] = displayProjection[key];
+        });
+        g.id = selectedGameId;
+        g.localGameId = res.canonicalGameId || canonicalSavedGame.id || g.localGameId;
         g.installedId = g.installedId || res.canonicalGameId || canonicalSavedGame.id;
 
         for (const type of successfulResetTypes) {
@@ -1105,9 +1145,13 @@ async function saveGameSettings() {
         if (failedResetTypes.length) {
             for (const type of successfulResetTypes) delete pendingImageChanges[type];
             if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
-                window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
-                    reason: 'settings-reset',
+                window.__baddelCommitCanonicalGameUpdate({
+                    canonicalGame: canonicalSavedGame,
                     changedTypes: successfulResetTypes,
+                    operationId,
+                    expectedRevisions: _gsExpectedArtworkRevisions(canonicalSavedGame, successfulResetTypes),
+                }, {
+                    reason: 'settings-reset',
                 });
             }
             await _gsRefreshOpenModalArtwork(g, canonicalSavedGame, successfulResetTypes);
@@ -1197,9 +1241,13 @@ async function saveGameSettings() {
         }
     }
     if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
-        window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
-            reason: artworkPlan.resets.length && !Object.keys(artworkPlan.updates).length ? 'settings-reset' : 'settings-save',
+        window.__baddelCommitCanonicalGameUpdate({
+            canonicalGame: canonicalSavedGame,
             changedTypes: _changedTypes,
+            operationId: _gsArtworkOperationId('settings-commit'),
+            expectedRevisions: _gsExpectedArtworkRevisions(canonicalSavedGame, _changedTypes),
+        }, {
+            reason: artworkPlan.resets.length && !Object.keys(artworkPlan.updates).length ? 'settings-reset' : 'settings-save',
         });
     }
     await _gsRefreshOpenModalArtwork(g, canonicalSavedGame, _changedTypes);
