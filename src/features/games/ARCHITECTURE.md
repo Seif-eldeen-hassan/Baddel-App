@@ -104,11 +104,133 @@ Use cases should not import infrastructure directly. Infrastructure dependencies
 - `JsonGameRepository`: JSON-backed low-level game storage.
 - `GamesRepositoryImpl`: concrete Games repository adapter.
 - `ImageCacheService`: image cache and local artwork handling.
+- `ContentAddressedArtworkCache`: automatic managed artwork cache under `artwork-cache-v2`.
+- `ArtworkDownloadManager`: the single production entry point for automatic artwork downloads.
+- `ArtworkDownloadScheduler`: priority queue and in-flight URL deduplication for artwork downloads.
+- `ArtworkHttpClient`: HTTP fetch, revalidation, retry, MIME, and size handling for managed artwork.
+- `ArtworkBandwidthPolicy`: automatic artwork budget and Data Saver policy.
+- `ArtworkNetworkTelemetry`: sanitized artwork network diagnostics and measurement counters.
 - `MetadataCacheStore`: full metadata cache persistence.
 - `BackgroundMetadataPipeline`: background metadata resolution and image update flow.
 - `BackgroundDownloadService`: background asset download support.
 - `RefetchImagesService`: missing-image refetch orchestration.
 - `ScanDiagnosticsWriter`: scan diagnostics output.
+
+## Artwork Delivery Architecture
+
+Managed artwork delivery is cache-first and content-addressed. The automatic cache lives under:
+
+```text
+<userData>/artwork-cache-v2/
+  assets/
+    <contentHash>.<ext>
+  manifest.json
+  manifest.backup.json
+  temp/
+```
+
+The cache records two kinds of references:
+
+- URL aliases: original remote URL hash to a physical content hash.
+- Game aliases: `canonicalGameId + artwork type` to the same physical content hash.
+
+Physical files are deduplicated by image bytes, so repeated URLs and different URLs that return identical content share one asset. Different local, Steam, Epic, installed, and display identities may point at the same cached file through aliases without copying the file.
+
+`ContentAddressedArtworkCache` owns only automatic managed artwork. It must not use, write, migrate into, or delete `user_artwork`; explicit Settings and Creator artwork remains owned by Artwork State V2 and `ArtworkAssetStore`. Legacy `image_cache` remains compatible and can be migrated into `artwork-cache-v2` without network access or deleting legacy files.
+
+### Request Flow
+
+All normal automatic artwork downloads must route through `ArtworkDownloadManager`.
+
+```text
+renderer / sync / metadata
+  -> IPC or registered asset downloader
+  -> ArtworkDownloadManager
+  -> ContentAddressedArtworkCache lookup
+  -> ArtworkBandwidthPolicy decision
+  -> ArtworkDownloadScheduler
+  -> ArtworkHttpClient
+  -> ContentAddressedArtworkCache commit
+```
+
+Rules:
+
+- Cache hits return trusted `file://` URLs without HTTP body downloads.
+- The same in-flight URL is downloaded once; joined callers are recorded as deduplicated and spend no extra bandwidth budget.
+- Game Details requests use `game-details` priority and outrank visible, prewarm, and background work.
+- Visible covers use `visible` priority.
+- Ready-to-install prewarm uses `prewarm` priority and must not mass-download hero/logo for the full library.
+- Background artwork uses `background` priority and is subject to automatic bandwidth limits.
+- Data Saver allows automatic cover prewarm but skips automatic hero/logo; interactive Game Details requests still proceed.
+- IGDB source URLs are reduced to officially supported display sizes where possible while preserving the original URL alias.
+
+### Startup, Sync, And Offline Behavior
+
+Startup is cache-first:
+
+- Installed and visible synced covers are read from `artwork-cache-v2` or legacy `image_cache` before network hydration.
+- Cached cover display must not wait for account sync.
+- Cached artwork response bodies must not be downloaded again.
+
+Account sync is metadata-first:
+
+- Library metadata and merged cache writes complete before background artwork fetches finish.
+- Cover-first write-back can emit visible cover updates independently.
+- Full-library hero/logo downloads are not part of the sync critical path.
+
+Offline behavior:
+
+- Cache-only lookup paths must not call HTTP.
+- Missing cached artwork returns `null` or the original remote URL depending on the caller contract, without crashing.
+- Corrupt, non-image, oversized, or interrupted downloads are rejected and temp files are cleaned.
+
+### Renderer Boundary
+
+Renderer surfaces must not assign direct remote URLs to normal cover, hero, logo, Home, Installed, or Last Played artwork elements. They should request cached assets through preload/IPC and render only cache-backed or embedded/local values for normal artwork paths.
+
+Current renderer guards:
+
+- `isCacheBackedArtworkUrl` rejects `http://` and `https://` values for stable card and hero setters.
+- Jump Back In uses `_jbiCacheBackedArtworkValue` before assigning initial, refreshed, or fallback image candidates.
+- `cache-image` and `cache-all-assets` IPC delegate to `ArtworkDownloadManager`.
+
+### Diagnostics And Measurements
+
+`ArtworkNetworkTelemetry` is the measurement layer for Phase 25.2A and later artwork delivery work. It stores sanitized counters only; raw URLs and secrets must not be persisted.
+
+Required counters include:
+
+- total downloaded bytes
+- response-body bytes
+- cache hits
+- cache misses
+- HTTP 304 count
+- failed requests
+- in-flight deduplicated requests
+- renderer direct remote request count
+- per-subsystem and per-asset-type buckets
+- repeated URL hashes
+
+`ArtworkDownloadManager.getStats()` exposes cache, scheduler, and bandwidth policy stats, including duplicate content files avoided and scheduler deduplication counts.
+
+### Preservation Rules
+
+Do:
+
+- Keep Artwork State V2 as the explicit artwork authority.
+- Keep `user_artwork` separate from automatic cache eviction.
+- Preserve cache aliases across canonical identities.
+- Preserve preload, IPC, and public sync API compatibility.
+- Add executable tests before changing delivery policy.
+
+Do not:
+
+- Introduce Artwork State V3 for automatic cache work.
+- Use game title as a cache identity.
+- Delete user-selected artwork during automatic cache pruning.
+- Let renderer cover/hero/logo paths bypass the manager with direct remote URLs.
+- Make account sync wait for all artwork.
+- Mass-download hero/logo for every synced game.
 
 ## IPC Boundary
 
