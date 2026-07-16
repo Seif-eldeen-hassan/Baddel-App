@@ -516,8 +516,16 @@ test('suggestions.js: _suggHydrateArt respects _SUGG_HYDRATE_CONCURRENCY limit',
 });
 
 test('suggestions.js: _suggHydrateArt calls _suggReRenderOne after fetching art', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 5280);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 6000);
     assert.match(fn, /_suggReRenderOne\s*\(/);
+});
+
+test('suggestions.js: visible hydration prewarms artwork through the unified queue', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 6000);
+    assert.match(fn, /cacheAllAssets\(\s*\{\s*cover:\s*meta\.cover \|\| null,\s*hero:\s*incomingHero \|\| null,\s*logo:\s*incomingLogo \|\| null\s*\},\s*g\.id,\s*\{/s);
+    assert.match(fn, /priority:\s*'prewarm'/);
+    assert.match(fn, /sourceSubsystem:\s*'synced-suggestions-prewarm-ipc'/);
+    assert.match(fn, /reason:\s*'visible-synced-suggestions-prewarm'/);
 });
 
 // ── 18. _suggCarouselSlides behaviour ────────────────────────────────────────

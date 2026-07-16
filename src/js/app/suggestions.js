@@ -801,7 +801,12 @@ async function _suggHydrateArt(g, domId, isFeature) {
         if (artChanged && window.electronAPI.cacheAllAssets) {
             window.electronAPI.cacheAllAssets(
                 { cover: meta.cover || null, hero: incomingHero || null, logo: incomingLogo || null },
-                g.id
+                g.id,
+                {
+                    priority: 'prewarm',
+                    sourceSubsystem: 'synced-suggestions-prewarm-ipc',
+                    reason: 'visible-synced-suggestions-prewarm',
+                }
             ).then(local => {
                 if (local?.cover) g.image     = local.cover;
                 if (local?.hero)  g.heroImage = local.hero;
