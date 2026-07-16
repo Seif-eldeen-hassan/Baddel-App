@@ -93,6 +93,56 @@ test('ArtworkDownloadManager returns cached content without calling HTTP', async
     assert.equal(events[0].downloadedBytes, 0);
 });
 
+test('ArtworkDownloadManager exposes cache-only alias lookup for warm startup', async () => {
+    let httpCalls = 0;
+    const { cache, manager } = createManager({
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                throw new Error('startup lookup must not fetch');
+            },
+        },
+    });
+    const stored = cache.storeBuffer({
+        sourceUrl: 'https://cdn.example/startup-cover.png',
+        canonicalGameId: 'game-startup',
+        type: 'cover',
+        buffer: PNG_1X1,
+        mime: 'image/png',
+    });
+
+    const cached = manager.getCachedAsset({
+        canonicalGameId: 'game-startup',
+        type: 'cover',
+    });
+
+    assert.equal(cached.fileUrl, stored.fileUrl);
+    assert.equal(httpCalls, 0);
+});
+
+test('Content-addressed alias lookup ignores stale missing files', () => {
+    const { cache, manager } = createManager({
+        httpClient: {
+            async fetchImage() {
+                throw new Error('not used');
+            },
+        },
+    });
+    const stored = cache.storeBuffer({
+        sourceUrl: 'https://cdn.example/stale-cover.png',
+        canonicalGameId: 'game-stale',
+        type: 'cover',
+        buffer: PNG_1X1,
+        mime: 'image/png',
+    });
+    fs.unlinkSync(stored.path);
+
+    assert.equal(manager.getCachedAsset({
+        canonicalGameId: 'game-stale',
+        type: 'cover',
+    }), null);
+});
+
 test('ArtworkDownloadManager deduplicates concurrent same-URL downloads and links every alias', async () => {
     let httpCalls = 0;
     let release;
@@ -203,5 +253,6 @@ test('production artwork download routes delegate through ArtworkDownloadManager
 
     assert.match(imageHandlers, /artworkDownloadManager\.downloadAsset\(/);
     assert.match(imageHandlers, /artworkDownloadManager\.downloadAssets\(/);
+    assert.match(imageHandlers, /artworkDownloadManager\?\.getCachedAsset\?\.\(/);
     assert.doesNotMatch(imageHandlers, /downloadToCacheAsWebp\(/);
 });

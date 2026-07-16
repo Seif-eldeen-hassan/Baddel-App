@@ -171,6 +171,19 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
     ipcMain.handle('get-cached-image', (_, gameId, type = 'cover') => {
     try {
         const fsSync = require('fs');
+        const v2Cached = artworkDownloadManager?.getCachedAsset?.({
+            canonicalGameId: gameId,
+            type,
+        });
+        if (v2Cached?.fileUrl) {
+            console.log('[CoverDebug:Main] get-cached-image HIT artwork-cache-v2', {
+                gameId: String(gameId),
+                type,
+                fileUrl: v2Cached.fileUrl,
+            });
+            return v2Cached.fileUrl;
+        }
+
         const cacheDir = path.join(app.getPath('userData'), 'image_cache');
 
         if (!fsSync.existsSync(cacheDir)) {

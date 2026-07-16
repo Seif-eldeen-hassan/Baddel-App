@@ -129,6 +129,11 @@ class ArtworkDownloadManager {
         return results;
     }
 
+    getCachedAsset({ canonicalGameId, type } = {}) {
+        if (!canonicalGameId || !type) return null;
+        return this._cache.lookupAlias({ canonicalGameId, type });
+    }
+
     getStats() {
         return {
             cache: this._cache.getManifest().stats,

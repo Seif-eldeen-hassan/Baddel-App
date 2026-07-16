@@ -227,6 +227,9 @@ class ContentAddressedArtworkCache {
         const key = this.aliasKey(canonicalGameId, type);
         const entry = this._manifest.aliases[key];
         if (!entry) return null;
+        if (!this._assetExists(entry.assetHash)) return null;
+        const asset = this._manifest.assets[entry.assetHash];
+        if (asset) asset.lastAccessedAt = this._nowIso();
         return this._materializedResult(entry.assetHash);
     }
 
