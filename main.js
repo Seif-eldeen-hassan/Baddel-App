@@ -31,6 +31,7 @@ const { ContentAddressedArtworkCache } = require('./src/features/games/infrastru
 const { ArtworkDownloadScheduler, ARTWORK_DOWNLOAD_PRIORITIES } = require('./src/features/games/infrastructure/services/ArtworkDownloadScheduler');
 const { ArtworkHttpClient } = require('./src/features/games/infrastructure/services/ArtworkHttpClient');
 const { ArtworkDownloadManager } = require('./src/features/games/infrastructure/services/ArtworkDownloadManager');
+const { ArtworkBandwidthPolicy } = require('./src/features/games/infrastructure/services/ArtworkBandwidthPolicy');
 const {
     getSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/SyncContainer');
@@ -1613,6 +1614,11 @@ app.whenReady().then(async () => {
             worker: task => task.run(),
         }),
         httpClient: new ArtworkHttpClient(),
+        bandwidthPolicy: new ArtworkBandwidthPolicy({
+            dataSaver: process.env.BADDEL_ARTWORK_DATA_SAVER === '1',
+            maxAutomaticBytes: process.env.BADDEL_ARTWORK_AUTOMATIC_BUDGET_BYTES,
+            dataSaverMaxAutomaticBytes: process.env.BADDEL_ARTWORK_DATA_SAVER_BUDGET_BYTES,
+        }),
         telemetry: artworkNetworkTelemetry,
     });
 

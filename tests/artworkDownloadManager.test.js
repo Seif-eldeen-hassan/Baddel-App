@@ -10,6 +10,7 @@ const crypto = require('crypto');
 const { ArtworkDownloadManager, ARTWORK_DOWNLOAD_PRIORITIES } = require('../src/features/games/infrastructure/services/ArtworkDownloadManager');
 const { ArtworkDownloadScheduler } = require('../src/features/games/infrastructure/services/ArtworkDownloadScheduler');
 const { ContentAddressedArtworkCache } = require('../src/features/games/infrastructure/services/ContentAddressedArtworkCache');
+const { ArtworkBandwidthPolicy } = require('../src/features/games/infrastructure/services/ArtworkBandwidthPolicy');
 
 const MANAGER_PATH = path.join(
     __dirname,
@@ -20,6 +21,16 @@ const MANAGER_PATH = path.join(
     'infrastructure',
     'services',
     'ArtworkDownloadManager.js'
+);
+const BANDWIDTH_POLICY_PATH = path.join(
+    __dirname,
+    '..',
+    'src',
+    'features',
+    'games',
+    'infrastructure',
+    'services',
+    'ArtworkBandwidthPolicy.js'
 );
 const MAIN_PATH = path.join(__dirname, '..', 'main.js');
 const IMAGE_HANDLERS_PATH = path.join(__dirname, '..', 'handlers', 'imageHandlers.js');
@@ -39,7 +50,7 @@ function silentLogger() {
     return { log() {}, warn() {}, error() {} };
 }
 
-function createManager({ httpClient, telemetry = null } = {}) {
+function createManager({ httpClient, telemetry = null, bandwidthPolicy = null } = {}) {
     const root = tempDir();
     const cache = new ContentAddressedArtworkCache({
         fs,
@@ -57,6 +68,7 @@ function createManager({ httpClient, telemetry = null } = {}) {
         cache,
         scheduler,
         httpClient,
+        bandwidthPolicy,
         telemetry: telemetry || { recordRequest(event) { events.push(event); } },
         logger: silentLogger(),
     });
@@ -236,11 +248,154 @@ test('ArtworkDownloadManager downloadAssets preserves current asset map shape', 
     assert.equal(Object.prototype.hasOwnProperty.call(result, 'hero'), false);
 });
 
+test('ArtworkDownloadManager cache hits bypass automatic bandwidth policy', async () => {
+    let httpCalls = 0;
+    const policy = new ArtworkBandwidthPolicy({
+        dataSaver: true,
+        dataSaverMaxAutomaticBytes: 0,
+    });
+    const { cache, manager, events } = createManager({
+        bandwidthPolicy: policy,
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                throw new Error('cache hit should not download');
+            },
+        },
+    });
+    const stored = cache.storeBuffer({
+        sourceUrl: 'https://cdn.example/cached-hero.png',
+        canonicalGameId: 'game-a',
+        type: 'hero',
+        buffer: PNG_1X1,
+        mime: 'image/png',
+    });
+
+    const url = await manager.downloadAsset({
+        sourceUrl: 'https://cdn.example/cached-hero.png',
+        canonicalGameId: 'game-a',
+        type: 'hero',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+    });
+
+    assert.equal(url, stored.fileUrl);
+    assert.equal(httpCalls, 0);
+    assert.equal(events[0].cacheHit, true);
+});
+
+test('ArtworkDownloadManager Data Saver skips automatic hero/logo but keeps cover prewarm', async () => {
+    let httpCalls = 0;
+    const { manager, events } = createManager({
+        bandwidthPolicy: new ArtworkBandwidthPolicy({ dataSaver: true }),
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    const result = await manager.downloadAssets({
+        cover: 'https://cdn.example/cover.png',
+        hero: 'https://cdn.example/hero.png',
+        logo: 'https://cdn.example/logo.png',
+    }, 'game-ds', {
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.PREWARM,
+    });
+
+    assert.match(result.cover, /^file:\/\//);
+    assert.equal(result.hero, 'https://cdn.example/hero.png');
+    assert.equal(result.logo, 'https://cdn.example/logo.png');
+    assert.equal(httpCalls, 1);
+    assert.equal(events.filter(event => event.skipped).length, 2);
+    assert.ok(events.every(event => event.downloadedBytes === 0 || event.assetType === 'cover'));
+});
+
+test('ArtworkDownloadManager automatic bandwidth budget skips future background downloads', async () => {
+    let httpCalls = 0;
+    const { manager, events } = createManager({
+        bandwidthPolicy: new ArtworkBandwidthPolicy({
+            maxAutomaticBytes: PNG_1X1.length,
+        }),
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    const first = await manager.downloadAsset({
+        sourceUrl: 'https://cdn.example/first.png',
+        canonicalGameId: 'game-budget',
+        type: 'cover',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+    });
+    const second = await manager.downloadAsset({
+        sourceUrl: 'https://cdn.example/second.png',
+        canonicalGameId: 'game-budget',
+        type: 'cover',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+    });
+
+    assert.match(first, /^file:\/\//);
+    assert.equal(second, 'https://cdn.example/second.png');
+    assert.equal(httpCalls, 1);
+    assert.equal(events.at(-1).skipped, true);
+    assert.equal(events.at(-1).skipReason, 'automatic-artwork-bandwidth-budget-exhausted');
+});
+
+test('ArtworkDownloadManager Game Details requests bypass Data Saver and automatic budget', async () => {
+    let httpCalls = 0;
+    const { manager } = createManager({
+        bandwidthPolicy: new ArtworkBandwidthPolicy({
+            dataSaver: true,
+            dataSaverMaxAutomaticBytes: 0,
+        }),
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    const result = await manager.downloadAsset({
+        sourceUrl: 'https://cdn.example/details-hero.png',
+        canonicalGameId: 'game-details',
+        type: 'hero',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.GAME_DETAILS,
+    });
+
+    assert.match(result, /^file:\/\//);
+    assert.equal(httpCalls, 1);
+});
+
 test('ArtworkDownloadManager stays independent of renderer, Electron, and legacy imageWebpCache downloads', () => {
     const source = fs.readFileSync(MANAGER_PATH, 'utf8');
+    const policy = fs.readFileSync(BANDWIDTH_POLICY_PATH, 'utf8');
 
     assert.doesNotMatch(source, /electron|ipcMain|BrowserWindow|window\.|document\./);
     assert.doesNotMatch(source, /imageWebpCache|downloadToCacheAsWebp|platformSync|main\.js|preload\.js/);
+    assert.doesNotMatch(policy, /electron|ipcMain|BrowserWindow|window\.|document\./);
 });
 
 test('production artwork download routes delegate through ArtworkDownloadManager', () => {
@@ -251,6 +406,8 @@ test('production artwork download routes delegate through ArtworkDownloadManager
     assert.match(main, /registerPlatformSyncAssetDownloader\(_downloadAssetsToCache\)/);
     assert.match(main, /gamesApi\.registerImageDownloader\(_downloadAssetsToCache\)/);
     assert.match(main, /artworkDownloadManager\.downloadAssets\(assets,\s*gameId/);
+    assert.match(main, /new ArtworkBandwidthPolicy\(/);
+    assert.match(main, /BADDEL_ARTWORK_DATA_SAVER/);
     assert.doesNotMatch(main, /downloadToCacheAsWebp\(CACHE_DIR/);
 
     assert.match(imageHandlers, /artworkDownloadManager\.downloadAsset\(/);

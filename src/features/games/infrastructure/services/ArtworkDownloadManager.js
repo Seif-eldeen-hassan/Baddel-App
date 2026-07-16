@@ -10,6 +10,7 @@ class ArtworkDownloadManager {
         cache,
         scheduler,
         httpClient,
+        bandwidthPolicy = null,
         telemetry = defaultTelemetry,
         logger = console,
     } = {}) {
@@ -19,6 +20,7 @@ class ArtworkDownloadManager {
         this._cache = cache;
         this._scheduler = scheduler;
         this._httpClient = httpClient;
+        this._bandwidthPolicy = bandwidthPolicy;
         this._telemetry = telemetry;
         this._logger = logger;
     }
@@ -51,6 +53,25 @@ class ArtworkDownloadManager {
                 elapsedMs: Date.now() - startedAt,
             });
             return cached.fileUrl;
+        }
+
+        const policyDecision = this._bandwidthPolicy?.evaluate?.({ priority, type, sourceUrl });
+        if (policyDecision && policyDecision.allowed === false) {
+            this._record({
+                sourceUrl,
+                canonicalGameId,
+                type,
+                reason,
+                sourceSubsystem,
+                rendererDirectRemote,
+                cacheHit: false,
+                cacheMiss: true,
+                skipped: true,
+                skipReason: policyDecision.reason,
+                downloadedBytes: 0,
+                elapsedMs: Date.now() - startedAt,
+            });
+            return sourceUrl;
         }
 
         try {
@@ -95,6 +116,11 @@ class ArtworkDownloadManager {
                 httpStatus: result.http?.status || null,
                 elapsedMs: Date.now() - startedAt,
             });
+            this._bandwidthPolicy?.recordDownload?.({
+                priority,
+                type,
+                bytes: result.http?.bytes || result.bytes || 0,
+            });
             return linked.fileUrl;
         } catch (err) {
             this._record({
@@ -138,6 +164,7 @@ class ArtworkDownloadManager {
         return {
             cache: this._cache.getManifest().stats,
             scheduler: this._scheduler.getStats(),
+            bandwidthPolicy: this._bandwidthPolicy?.getStats?.() || null,
         };
     }
 
