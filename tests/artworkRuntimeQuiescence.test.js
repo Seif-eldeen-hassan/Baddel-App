@@ -179,7 +179,7 @@ test('library-updated handler coalesces events and delegates snapshot diff proce
 
 test('Explore rendering uses keyed reconciliation instead of clearing unchanged DOM', () => {
     const start = APP_JS.indexOf('function renderExploreCarousel');
-    const body = APP_JS.slice(start, start + 2500);
+    const body = APP_JS.slice(start, start + 3600);
     assert.doesNotMatch(body, /grid\.innerHTML\s*=\s*''/);
     assert.match(body, /window\._exploreRenderedIds/);
     assert.match(body, /window\._exploreRenderedNodes/);

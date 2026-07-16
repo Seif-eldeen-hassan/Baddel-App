@@ -529,6 +529,13 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
                 revision: _artworkTypeRevision(canonicalGame, 'cover'),
             },
         });
+        try {
+            window.__baddelExploreCoverHydrationController?.onCanonicalCoverCommit?.({
+                canonicalGame,
+                matchedDisplayIds: [...matchedDisplayIds],
+                operationId,
+            });
+        } catch (_) {}
     }
     try {
         window._gdApplyExternalPatch?.(canonicalGame, {

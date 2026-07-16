@@ -545,6 +545,9 @@ function createGameCard(game, isRecent = false) {
     });
 
     const imgEl = card.querySelector('.actual-img');
+    const exploreHydrationOwned =
+        typeof window !== 'undefined' &&
+        window.__baddelExploreCoverHydrationController?.ownsDisplayId?.(game.id) === true;
 
     // Show image via class once loaded (prevents black flash)
     imgEl.addEventListener('load', () => {
@@ -564,7 +567,8 @@ function createGameCard(game, isRecent = false) {
             console.log('Broken local cache detected, re-fetching:', game.name);
             game.image = null;
             localStorage.removeItem('cover_' + game.id);
-            fetchMetadata(imgEl, game);
+            if (!exploreHydrationOwned) fetchMetadata(imgEl, game);
+            else window.__baddelExploreCoverHydrationController?.reconcile?.('broken-local-cover');
         }
     };
 
@@ -572,10 +576,12 @@ function createGameCard(game, isRecent = false) {
         // Local cached file — load instantly
         imgEl.src = game.image;
         checkBackgroundAssets(game);
-    } else {
+    } else if (!exploreHydrationOwned) {
         // No image, or image is a remote http:// URL that may be blocked/expired
         // — go through fetchMetadata which handles disk cache + API fallback
         fetchMetadata(imgEl, game);
+    } else {
+        window.__baddelExploreCoverHydrationController?.reconcile?.('card-created');
     }
 
     // Favorite heart — stop propagation so it doesn't open Game Details
