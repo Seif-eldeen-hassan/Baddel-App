@@ -179,6 +179,8 @@ class BaddelEngine {
 
     async setGameArtwork(identity, updates = {}, opts = {}) { return this._jsonGameRepository.setGameArtwork(identity, updates, opts); }
 
+    async resetGameArtwork(identity, opts = {}) { return this._jsonGameRepository.resetGameArtwork(identity, opts); }
+
     async resetGameImage(gameId, type = 'cover', opts = {}) {
         return _resetGameImageUseCase({
             gameId,

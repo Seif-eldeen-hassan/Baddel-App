@@ -8,6 +8,7 @@ let _agCurrentTab    = 'browse';
 let _agDropZoneInit  = false;
 let pendingImageChanges = {};
 let _gsArtworkOpenRequestId = 0;
+let _gsCurrentSettingsCanonicalGame = null;
 
 // ── Helpers ──────────────────────────────────────────────────
 function _agIsSupportedGameFile(p) {
@@ -472,6 +473,7 @@ async function openGameSettings(id) {
         ? window.BaddelCanonicalGameIdentityResolver.resolveCanonicalGameIdentity(displayGame, records)
         : null;
     const canonicalGame = resolvedAfterRefresh?.status === 'success' ? resolvedAfterRefresh.game : null;
+    _gsCurrentSettingsCanonicalGame = canonicalGame || g;
     if (g && window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
         g = window.BaddelCanonicalArtworkProjection.projectFromRecords(displayGame, records) || displayGame;
     }
@@ -502,13 +504,9 @@ async function openGameSettings(id) {
     _gsSetArtworkPreview(document.getElementById('previewCover'), [readModel?.cover?.effectiveValue, g.image, displayGame.image, cacheArtwork?.cover, g.defaultImage, g.coverUrl], 'assets/No_Image_Available.jpg', requestId);
     _gsUpdateLogoPreview([readModel?.logo?.effectiveValue, g.logo, displayGame.logo, cacheArtwork?.logo], requestId);
     
-    const btnCover = document.getElementById('btn-reset-cover');
-    const btnHero = document.getElementById('btn-reset-hero');
-    const btnLogo = document.getElementById('btn-reset-logo');
-
-    if (btnCover) btnCover.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'cover');
-    if (btnHero) btnHero.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'hero');
-    if (btnLogo) btnLogo.disabled = !_gsHasExplicitOverride(canonicalGame || g, 'logo');
+    _gsSetResetButtonState('cover', canonicalGame || g);
+    _gsSetResetButtonState('hero', canonicalGame || g);
+    _gsSetResetButtonState('logo', canonicalGame || g);
     
     // open modal
     document.getElementById('gameSettingsModal').classList.add('active');
@@ -595,6 +593,29 @@ function _gsUpdateLogoPreview(candidates, requestId = _gsArtworkOpenRequestId) {
 function _gsHasExplicitOverride(game, type) {
     const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
     return Boolean(item?.locked === true && item?.overrideValue);
+}
+
+function _gsArtworkItem(game, type) {
+    return game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+}
+
+function _gsSetResetButtonState(type, game, { pendingReset = false } = {}) {
+    const btn = document.getElementById(`btn-reset-${type}`);
+    if (!btn) return;
+    const item = _gsArtworkItem(game, type);
+    btn.disabled = pendingReset ? true : !(item?.locked === true && item?.overrideValue);
+}
+
+function checkResetAllButtonState() {
+    const btn = document.getElementById('btn-reset-all');
+    if (!btn) return;
+    const g = _gsCurrentSettingsCanonicalGame ||
+        allGamesData.find(x => String(x.id) === String(selectedGameId));
+    const hasResettableType = ['cover', 'hero', 'logo'].some(type => {
+        if (pendingImageChanges[type]?.action === 'reset') return false;
+        return _gsHasExplicitOverride(g, type);
+    });
+    btn.disabled = !hasResettableType;
 }
 
 function _gsHasAnyCanonicalValue(game, type) {
@@ -705,58 +726,21 @@ async function changeGameImage(type) {
     if (typeof checkResetAllButtonState === 'function') checkResetAllButtonState();
 }
 
-async function resetGameImage(type) {
-    if(!selectedGameId) return;
-
-    localStorage.removeItem(`${type}_${selectedGameId}`);
-
-    const g = allGamesData.find(x => x.id == selectedGameId);
-    if(g) {
-        if(type == 'cover') g.image = null;
-        if(type == 'hero') g.heroImage = null;
-        if(type == 'logo') g.logo = null;
-    }
-
-    try {
-        if(window.electronAPI && window.electronAPI.resetGameImage) {
-            await window.electronAPI.resetGameImage(selectedGameId, type);
-        }
-    } catch(err) {
-        console.error("Failed to reset in backend:", err);
-    }
-
-    if (type === 'cover') {
-        document.getElementById('previewCover').src = 'assets/No_Image_Available.jpg';
-    } else if (type === 'hero') {
-        const heroImg = document.getElementById('previewHero');
-        heroImg.src = 'assets/No_Image_Available.jpg';
-        heroImg.style.objectPosition = '50% 50%'; 
-    } else if (type === 'logo') {
-        _gsUpdateLogoPreview(null); 
-    }
-
-    const btn = document.getElementById(`btn-reset-${type}`);
-    if (btn) {
-        btn.disabled = true;
-    }
-
-    showToast(`${type} reset to default`, 'success');
-    refreshAllViews(); 
-}
-
-
 async function resetGameImage(type, skipToast = false) {
     if (!selectedGameId) return;
+    if (!['cover', 'hero', 'logo'].includes(type)) return;
 
     pendingImageChanges[type] = { action: 'reset' };
 
     let restoredPath = null;
     const g = allGamesData.find(x => String(x.id) === String(selectedGameId));
+    const canonicalGame = _gsCurrentSettingsCanonicalGame || g;
     
-    if (g) {
-        if (type === 'cover') restoredPath = g.defaultImage;
-        else if (type === 'hero') restoredPath = g.defaultHero;
-        else if (type === 'logo') restoredPath = g.defaultLogo;
+    if (canonicalGame || g) {
+        restoredPath = _gsArtworkItem(canonicalGame, type)?.fallbackValue || null;
+        if (!restoredPath && type === 'cover') restoredPath = canonicalGame?.defaultImage || g?.defaultImage;
+        else if (!restoredPath && type === 'hero') restoredPath = canonicalGame?.defaultHero || g?.defaultHero;
+        else if (!restoredPath && type === 'logo') restoredPath = canonicalGame?.defaultLogo || g?.defaultLogo;
     }
 
     if (!restoredPath && window.electronAPI && window.electronAPI.getCachedImage) {
@@ -777,8 +761,7 @@ async function resetGameImage(type, skipToast = false) {
         _gsUpdateLogoPreview(restoredPath || null);
     }
 
-    const btn = document.getElementById(`btn-reset-${type}`);
-    if (btn) btn.disabled = true;
+    _gsSetResetButtonState(type, null, { pendingReset: true });
     
     if (typeof checkResetAllButtonState === 'function') {
         checkResetAllButtonState();
@@ -786,6 +769,14 @@ async function resetGameImage(type, skipToast = false) {
 
     if (!skipToast) showToast(`${type} set to default (Click Save to apply)`, 'info');
 
+}
+
+async function resetAllGameImages() {
+    if (!selectedGameId) return;
+    for (const type of ['cover', 'hero', 'logo']) {
+        await resetGameImage(type, true);
+    }
+    showToast('All artwork set to default (Click Save to apply)', 'info');
 }
 
 function _gsLooseKey(value) {
@@ -933,6 +924,49 @@ function _gsLogArtworkIdentityFailure(uiId, game, res) {
     });
 }
 
+function _gsArtworkOperationId(prefix = 'settings-artwork') {
+    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+}
+
+function _gsExpectedArtworkRevisions(game, types) {
+    const revisions = {};
+    for (const type of types) {
+        const item = _gsArtworkItem(game, type);
+        if (item && item.revision != null) revisions[type] = item.revision;
+    }
+    return revisions;
+}
+
+async function _gsRefreshOpenModalArtwork(displayGame, canonicalSavedGame, changedTypes) {
+    if (!canonicalSavedGame || !Array.isArray(changedTypes) || changedTypes.length === 0) return;
+    const cacheArtwork = window.__baddelLoadCachedArtworkForGame
+        ? await window.__baddelLoadCachedArtworkForGame(displayGame, canonicalSavedGame).catch(() => null)
+        : null;
+    const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({
+            displayGame,
+            canonicalGame: canonicalSavedGame,
+            platformArtwork: displayGame,
+            cacheArtwork,
+        })
+        : null;
+
+    if (changedTypes.includes('cover')) {
+        _gsSetArtworkPreview(document.getElementById('previewCover'), [readModel?.cover?.effectiveValue], 'assets/No_Image_Available.jpg');
+        _gsSetResetButtonState('cover', canonicalSavedGame);
+    }
+    if (changedTypes.includes('hero')) {
+        const heroImg = document.getElementById('previewHero');
+        _gsSetArtworkPreview(heroImg, [readModel?.hero?.effectiveValue], 'assets/No_Image_Available.jpg');
+        if (heroImg) heroImg.style.objectPosition = '50% 50%';
+        _gsSetResetButtonState('hero', canonicalSavedGame);
+    }
+    if (changedTypes.includes('logo')) {
+        _gsUpdateLogoPreview(readModel?.logo?.effectiveValue || null);
+        _gsSetResetButtonState('logo', canonicalSavedGame);
+    }
+}
+
 async function saveGameSettings() {
     if (!selectedGameId) return;
 
@@ -944,6 +978,15 @@ async function saveGameSettings() {
     const _changedTypes = [];          // tracks which art types were updated (cover/hero/logo)
     const _atomicArtworkUpdatedTypes = new Set();
     let canonicalSavedGame = null;
+    const artworkPlan = {
+        updates: {},
+        resets: [],
+    };
+    for (const type of ['cover', 'hero', 'logo']) {
+        const change = pendingImageChanges[type];
+        if (change?.action === 'update') artworkPlan.updates[type] = change.path;
+        if (change?.action === 'reset') artworkPlan.resets.push(type);
+    }
 
     const nameInput = document.getElementById('editGameNameInput');
     if (nameInput) {
@@ -970,11 +1013,7 @@ async function saveGameSettings() {
         }
     }
 
-    const _artworkUpdates = {};
-    for (const type in pendingImageChanges) {
-        const change = pendingImageChanges[type];
-        if (change?.action === 'update') _artworkUpdates[type] = change.path;
-    }
+    const _artworkUpdates = artworkPlan.updates;
     if (Object.keys(_artworkUpdates).length && typeof window.electronAPI.setGameArtwork === 'function') {
         const identity = _gsBuildArtworkIdentity(g, selectedGameId);
         const res = await window.electronAPI.setGameArtwork(identity, _artworkUpdates, {
@@ -989,6 +1028,7 @@ async function saveGameSettings() {
 
         const canonicalGame = res.updatedGame || {};
         canonicalSavedGame = canonicalGame;
+        _gsCurrentSettingsCanonicalGame = canonicalSavedGame;
         Object.assign(g, canonicalGame);
         g.localGameId = res.canonicalGameId || g.localGameId;
         g.installedId = g.installedId || res.canonicalGameId || canonicalGame.id;
@@ -1015,6 +1055,67 @@ async function saveGameSettings() {
             types: Object.keys(_artworkUpdates),
             perType: res.perType || {},
         });
+    }
+
+    if (artworkPlan.resets.length && typeof window.electronAPI.resetGameArtwork === 'function') {
+        const identity = _gsBuildArtworkIdentity(canonicalSavedGame || g, selectedGameId);
+        const operationId = _gsArtworkOperationId('settings-reset');
+        const res = await window.electronAPI.resetGameArtwork(identity, {
+            types: artworkPlan.resets,
+            operationId,
+            expectedRevisions: _gsExpectedArtworkRevisions(canonicalSavedGame || g, artworkPlan.resets),
+            updatedAt: _artworkTs,
+        });
+        if (!res || (res.status !== 'success' && res.status !== 'partial') || res.persisted !== true || !res.updatedGame) {
+            _gsLogArtworkIdentityFailure(selectedGameId, g, res);
+            showToast(res?.message || 'Artwork reset failed', 'error');
+            return;
+        }
+
+        const failedResetTypes = Object.entries(res.results || {})
+            .filter(([, result]) => result?.applied === false)
+            .map(([type]) => type);
+        const successfulResetTypes = artworkPlan.resets.filter(type => !failedResetTypes.includes(type));
+
+        canonicalSavedGame = res.updatedGame;
+        _gsCurrentSettingsCanonicalGame = canonicalSavedGame;
+        Object.assign(g, canonicalSavedGame);
+        g.localGameId = res.canonicalGameId || g.localGameId;
+        g.installedId = g.installedId || res.canonicalGameId || canonicalSavedGame.id;
+
+        for (const type of successfulResetTypes) {
+            _atomicArtworkUpdatedTypes.add(type);
+            _changedTypes.push(type);
+            localStorage.removeItem(`${type}_${selectedGameId}`);
+            if (res.canonicalGameId) localStorage.removeItem(`${type}_${res.canonicalGameId}`);
+            if (type === 'cover') _patch.cover = canonicalSavedGame.image || null;
+            if (type === 'hero')  _patch.hero  = canonicalSavedGame.heroImage || null;
+            if (type === 'logo') {
+                _patch.logo = canonicalSavedGame.logo || null;
+                _patch.logoCleared = !canonicalSavedGame.logo;
+            }
+        }
+
+        _patch.artworkState = canonicalSavedGame.artworkState;
+        _patch.customArtworkLocked = canonicalSavedGame.customArtworkLocked;
+        _patch.artworkSource = canonicalSavedGame.artworkSource;
+        _patch.artworkUpdatedAt = canonicalSavedGame.artworkUpdatedAt || _artworkTs;
+
+        if (failedResetTypes.length) {
+            for (const type of successfulResetTypes) delete pendingImageChanges[type];
+            if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+                window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
+                    reason: 'settings-reset',
+                    changedTypes: successfulResetTypes,
+                });
+            }
+            await _gsRefreshOpenModalArtwork(g, canonicalSavedGame, successfulResetTypes);
+            showToast(`Artwork reset failed for: ${failedResetTypes.join(', ')}`, 'error');
+            return;
+        }
+    } else if (artworkPlan.resets.length) {
+        showToast('Artwork reset failed: reset service unavailable', 'error');
+        return;
     }
 
     for (const type in pendingImageChanges) {
@@ -1075,32 +1176,6 @@ async function saveGameSettings() {
                 ' canonicalId=' + String(res.canonicalGameId || '') +
                 ' matchReason=' + String(res.matchReason || '') +
                 ' source=settings');
-        } else if (change.action === 'reset') {
-            localStorage.removeItem(`${type}_${selectedGameId}`);
-            let restoredPath = null;
-            try {
-                const res = await window.electronAPI.resetGameImage(selectedGameId, type);
-                if (res && res.status === 'success') restoredPath = res.path;
-            } catch (err) {
-                console.error('Failed to reset in backend:', err);
-            }
-
-            if (type === 'cover') {
-                g.image        = restoredPath;
-                g.coverUrl     = restoredPath;
-                g.defaultImage = restoredPath;
-            }
-            if (type === 'hero') {
-                g.heroImage   = restoredPath;
-                g.heroUrl     = restoredPath;
-                g.defaultHero = restoredPath;
-            }
-            if (type === 'logo') {
-                g.logo        = restoredPath;
-                g.logoUrl     = restoredPath;
-                g.defaultLogo = restoredPath;
-                _patch.logoCleared = true;
-            }
         }
     }
 
@@ -1122,10 +1197,11 @@ async function saveGameSettings() {
     }
     if (canonicalSavedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
         window.__baddelCommitCanonicalGameUpdate(canonicalSavedGame, {
-            reason: 'settings-save',
+            reason: artworkPlan.resets.length && !Object.keys(artworkPlan.updates).length ? 'settings-reset' : 'settings-save',
             changedTypes: _changedTypes,
         });
     }
+    await _gsRefreshOpenModalArtwork(g, canonicalSavedGame, _changedTypes);
 
     pendingImageChanges = {};
 

@@ -410,6 +410,107 @@ class JsonGameRepository {
         }
     }
 
+    async resetGameArtwork(identity, {
+        types = ['cover'],
+        operationId = null,
+        expectedRevisions = null,
+        updatedAt = Date.now(),
+    } = {}) {
+        const requestedGameId = identity && typeof identity === 'object'
+            ? (identity.gameId || identity.id || identity.localGameId || identity.installedId || null)
+            : identity;
+        const resolved = resolveCanonicalGameIdentity(identity, this._dbCache);
+        if (resolved.status !== 'success') {
+            return {
+                status: 'error',
+                message: 'Game not found',
+                requestedGameId,
+                canonicalGameId: null,
+                persisted: false,
+                operationId,
+                results: {},
+            };
+        }
+
+        const requestedTypes = (Array.isArray(types) ? types : [types])
+            .filter(type => ARTWORK_TYPES.includes(type));
+        if (!requestedTypes.length) {
+            return {
+                status: 'error',
+                message: 'No valid artwork types requested',
+                requestedGameId,
+                canonicalGameId: resolved.game.id,
+                persisted: false,
+                operationId,
+                results: {},
+            };
+        }
+
+        const game = resolved.game;
+        let state = migrateLegacyArtworkState(game);
+        const results = {};
+
+        for (const type of requestedTypes) {
+            const previous = { ...(state[type] || {}) };
+            const expectedRevision = expectedRevisions &&
+                Object.prototype.hasOwnProperty.call(expectedRevisions, type)
+                ? expectedRevisions[type]
+                : null;
+            if (expectedRevision != null && Number(expectedRevision) < Number(previous.revision || 0)) {
+                results[type] = {
+                    applied: false,
+                    reason: 'stale-revision',
+                    previousSource: previous.overrideSource || null,
+                    revision: previous.revision || 0,
+                    effectiveValue: previous.locked ? previous.overrideValue : (previous.fallbackValue || null),
+                    fallbackSource: previous.fallbackSource || null,
+                };
+                continue;
+            }
+
+            const result = clearExplicitOverride(state, type, { updatedAt });
+            state = result.state;
+            const item = state[type] || {};
+            results[type] = {
+                applied: result.applied === true,
+                reason: previous.locked && previous.overrideValue ? 'override-cleared' : 'no-explicit-override',
+                previousSource: previous.overrideSource || null,
+                revision: item.revision || 0,
+                effectiveValue: item.locked ? item.overrideValue : (item.fallbackValue || null),
+                fallbackSource: item.fallbackSource || null,
+            };
+        }
+
+        game.artworkState = state;
+        Object.assign(game, projectArtworkStateToLegacyAliases(game));
+        game.artworkUpdatedAt = updatedAt;
+
+        try {
+            await this.flushDatabase();
+            return {
+                status: Object.values(results).some(r => r.applied === false) ? 'partial' : 'success',
+                persisted: true,
+                requestedGameId,
+                canonicalGameId: game.id,
+                matchReason: resolved.reason,
+                operationId,
+                results,
+                updatedGame: JSON.parse(JSON.stringify(game)),
+            };
+        } catch (err) {
+            this._log.error('[DB] resetGameArtwork flush failed:', err);
+            return {
+                status: 'error',
+                message: 'Failed to persist game artwork reset',
+                requestedGameId,
+                canonicalGameId: game.id,
+                operationId,
+                persisted: false,
+                results,
+            };
+        }
+    }
+
     /**
      * Finds an existing game whose stored command or executablePath matches the
      * supplied paths after normalisation.

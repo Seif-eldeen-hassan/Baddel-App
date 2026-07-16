@@ -23,6 +23,16 @@ async function resetGameImage({
         resolvedPaths.logo = game.defaultLogo || imageCacheService.findInCache(gameId, 'logo') || null;
     }
 
+    if (typeof gamesRepository.resetGameArtwork === 'function') {
+        const types = resetAll ? ['cover', 'hero', 'logo'] : [type];
+        return gamesRepository.resetGameArtwork(gameId, {
+            types,
+            operationId: opts.operationId || null,
+            expectedRevisions: opts.expectedRevisions || null,
+            updatedAt: opts.updatedAt || Date.now(),
+        });
+    }
+
     return gamesRepository.applyImageReset(gameId, resolvedPaths, { type, resetAll });
 }
 

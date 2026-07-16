@@ -121,6 +121,7 @@ function createGamesFeature(options = {}) {
         restoreSpecificGames:  (ids) => engine.restoreSpecificGames(ids),
         deleteGamePermanently: (id) => engine.deleteGamePermanently(id),
         updateGameImage:       (id, imgPath, type, opts) => engine.updateGameImage(id, imgPath, type, opts),
+        resetGameArtwork:      (id, opts) => engine.resetGameArtwork(id, opts),
         resetGameImage:        (id, type) => engine.resetGameImage(id, type),
         updateGameMetadata:    (id, meta, opts) => engine.updateGameMetadata(id, meta, opts),
         reorderLibrary:        (ids) => engine.reorderLibrary(ids),

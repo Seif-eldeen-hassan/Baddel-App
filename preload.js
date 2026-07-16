@@ -55,6 +55,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     selectImage:            ()                        => ipcRenderer.invoke('select-game-image'),
     updateGameImage:        (id, imgPath, type, opts) => ipcRenderer.invoke('update-game-image', id, imgPath, type, opts),
     setGameArtwork:         (id, updates, opts)       => ipcRenderer.invoke('set-game-artwork', id, updates, opts),
+    resetGameArtwork:       (id, opts)                => ipcRenderer.invoke('reset-game-artwork', id, opts),
     resetGameImage:         (id, type)                => ipcRenderer.invoke('reset-game-image', id, type),
     cacheImage:             (url, gameId, type)       => ipcRenderer.invoke('cache-image', url, gameId, type),
     getCachedImage:         (gameId, type)             => ipcRenderer.invoke('get-cached-image', gameId, type),
