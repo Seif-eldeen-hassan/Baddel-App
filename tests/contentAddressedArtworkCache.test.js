@@ -139,6 +139,81 @@ test('ContentAddressedArtworkCache keeps shared content when one alias is remove
     assert.equal(cache.lookupAlias({ canonicalGameId: 'game-b', type: 'cover' }).assetHash, stored.assetHash);
 });
 
+test('ContentAddressedArtworkCache evicts least-recently-used automatic assets above size limit', () => {
+    const root = tempDir();
+    let tick = 0;
+    const cache = makeCache(root, {
+        maxCacheBytes: PNG_1X1_ALT.length,
+        now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)),
+    });
+
+    const first = cache.storeBuffer({
+        sourceUrl: 'https://cdn.example/old.png',
+        canonicalGameId: 'old-game',
+        type: 'cover',
+        buffer: PNG_1X1,
+        mime: 'image/png',
+    });
+    const second = cache.storeBuffer({
+        sourceUrl: 'https://cdn.example/new.png',
+        canonicalGameId: 'new-game',
+        type: 'cover',
+        buffer: PNG_1X1_ALT,
+        mime: 'image/png',
+    });
+    const manifest = cache.getManifest();
+
+    assert.equal(fs.existsSync(first.path), false);
+    assert.equal(fs.existsSync(second.path), true);
+    assert.equal(cache.lookupAlias({ canonicalGameId: 'old-game', type: 'cover' }), null);
+    assert.equal(cache.lookupUrl('https://cdn.example/old.png'), null);
+    assert.equal(cache.lookupAlias({ canonicalGameId: 'new-game', type: 'cover' }).assetHash, second.assetHash);
+    assert.equal(manifest.stats.evictedAssets, 1);
+    assert.ok(manifest.stats.evictedBytes > 0);
+});
+
+test('ContentAddressedArtworkCache LRU eviction preserves recently accessed assets', () => {
+    const root = tempDir();
+    let tick = 0;
+    const cache = makeCache(root, {
+        maxCacheBytes: Infinity,
+        now: () => new Date(Date.UTC(2026, 0, 1, 0, 0, tick++)),
+    });
+
+    const first = cache.storeBuffer({ canonicalGameId: 'game-a', type: 'cover', buffer: PNG_1X1, mime: 'image/png' });
+    const second = cache.storeBuffer({ canonicalGameId: 'game-b', type: 'cover', buffer: PNG_1X1_ALT, mime: 'image/png' });
+    cache.lookupAlias({ canonicalGameId: 'game-a', type: 'cover' });
+
+    const summary = cache.enforceMaxCacheBytes({ maxBytes: Math.max(PNG_1X1.length, PNG_1X1_ALT.length) });
+
+    assert.equal(summary.evictedAssets, 1);
+    assert.equal(fs.existsSync(first.path), true);
+    assert.equal(fs.existsSync(second.path), false);
+    assert.equal(cache.lookupAlias({ canonicalGameId: 'game-a', type: 'cover' }).assetHash, first.assetHash);
+    assert.equal(cache.lookupAlias({ canonicalGameId: 'game-b', type: 'cover' }), null);
+});
+
+test('ContentAddressedArtworkCache eviction never touches user_artwork or legacy image_cache', () => {
+    const root = tempDir();
+    const userArtworkDir = path.join(root, 'user_artwork');
+    const legacyCacheDir = path.join(root, 'image_cache');
+    const userPath = path.join(userArtworkDir, 'explicit-cover.png');
+    const legacyPath = path.join(legacyCacheDir, 'cover_game-a.png');
+    fs.mkdirSync(userArtworkDir, { recursive: true });
+    fs.mkdirSync(legacyCacheDir, { recursive: true });
+    fs.writeFileSync(userPath, PNG_1X1);
+    fs.writeFileSync(legacyPath, PNG_1X1);
+    const cache = makeCache(root, { maxCacheBytes: 0 });
+
+    const stored = cache.storeBuffer({ canonicalGameId: 'game-a', type: 'cover', buffer: PNG_1X1_ALT, mime: 'image/png' });
+
+    assert.equal(fs.existsSync(stored.path), false);
+    assert.equal(fs.existsSync(userPath), true);
+    assert.equal(fs.existsSync(legacyPath), true);
+    assert.deepEqual(fs.readdirSync(userArtworkDir), ['explicit-cover.png']);
+    assert.deepEqual(fs.readdirSync(legacyCacheDir), ['cover_game-a.png']);
+});
+
 test('ContentAddressedArtworkCache recovers a completed temp manifest after an interrupted write', () => {
     const root = tempDir();
     const cache = makeCache(root);

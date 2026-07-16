@@ -1608,6 +1608,7 @@ app.whenReady().then(async () => {
             path,
             crypto,
             baseDir: path.join(app.getPath('userData'), 'artwork-cache-v2'),
+            maxCacheBytes: process.env.BADDEL_ARTWORK_CACHE_MAX_BYTES,
         }),
         scheduler: new ArtworkDownloadScheduler({
             concurrency: 3,

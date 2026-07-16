@@ -3,6 +3,7 @@
 const { pathToFileURL } = require('url');
 
 const DEFAULT_MAX_BYTES = 15 * 1024 * 1024;
+const DEFAULT_MAX_CACHE_BYTES = 512 * 1024 * 1024;
 const MANIFEST_VERSION = 1;
 
 const MIME_EXTENSIONS = {
@@ -23,6 +24,8 @@ function emptyManifest(nowIso) {
         aliases: {},
         stats: {
             duplicateContentFilesAvoided: 0,
+            evictedAssets: 0,
+            evictedBytes: 0,
         },
     };
 }
@@ -72,6 +75,7 @@ class ContentAddressedArtworkCache {
         fetchImpl = null,
         logger = console,
         maxBytes = DEFAULT_MAX_BYTES,
+        maxCacheBytes = DEFAULT_MAX_CACHE_BYTES,
         now = () => new Date(),
     }) {
         this._fs = fs;
@@ -81,6 +85,7 @@ class ContentAddressedArtworkCache {
         this._fetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
         this._logger = logger;
         this._maxBytes = maxBytes;
+        this._maxCacheBytes = this._normalizeLimit(maxCacheBytes, DEFAULT_MAX_CACHE_BYTES);
         this._now = now;
         this._inFlightByUrlHash = new Map();
 
@@ -197,10 +202,12 @@ class ContentAddressedArtworkCache {
         }
 
         this._attachAlias(assetHash, canonicalGameId, type);
+        const materialized = this._materializedResult(assetHash);
         this._saveManifest();
+        this._enforceMaxCacheBytes();
 
         return {
-            ...this._materializedResult(assetHash),
+            ...materialized,
             cacheHit: existed,
             duplicateContent: existed,
             urlHash: sourceUrl ? this.hashUrl(sourceUrl) : null,
@@ -252,6 +259,17 @@ class ContentAddressedArtworkCache {
 
     cleanupTemp() {
         this._cleanupTemp();
+    }
+
+    getCacheSizeBytes() {
+        return Object.values(this._manifest.assets || {}).reduce((total, asset) => {
+            if (!asset || !this._assetExists(asset.assetHash)) return total;
+            return total + (Number(asset.bytes) || 0);
+        }, 0);
+    }
+
+    enforceMaxCacheBytes({ maxBytes = this._maxCacheBytes } = {}) {
+        return this._enforceMaxCacheBytes(maxBytes);
     }
 
     migrateLegacyImageCache({ legacyCacheDir, entries = null } = {}) {
@@ -432,7 +450,7 @@ class ContentAddressedArtworkCache {
                 assets: parsed.assets || {},
                 urls: parsed.urls || {},
                 aliases: parsed.aliases || {},
-                stats: { duplicateContentFilesAvoided: 0, ...(parsed.stats || {}) },
+                stats: { duplicateContentFilesAvoided: 0, evictedAssets: 0, evictedBytes: 0, ...(parsed.stats || {}) },
             };
         } catch {
             return null;
@@ -499,6 +517,75 @@ class ContentAddressedArtworkCache {
         try { this._fs.unlinkSync(filePath); } catch {}
     }
 
+    _enforceMaxCacheBytes(maxBytes = this._maxCacheBytes) {
+        const limit = this._normalizeLimit(maxBytes, this._maxCacheBytes);
+        const summary = {
+            maxBytes: limit,
+            beforeBytes: this.getCacheSizeBytes(),
+            afterBytes: 0,
+            evictedAssets: 0,
+            evictedBytes: 0,
+        };
+        if (!Number.isFinite(limit)) {
+            summary.afterBytes = summary.beforeBytes;
+            return summary;
+        }
+
+        let currentBytes = summary.beforeBytes;
+        if (currentBytes <= limit) {
+            summary.afterBytes = currentBytes;
+            return summary;
+        }
+
+        const candidates = Object.values(this._manifest.assets || {})
+            .filter(asset => asset && this._assetExists(asset.assetHash))
+            .sort((a, b) => {
+                const aTime = Date.parse(a.lastAccessedAt || a.createdAt || 0) || 0;
+                const bTime = Date.parse(b.lastAccessedAt || b.createdAt || 0) || 0;
+                return (aTime - bTime) || String(a.assetHash).localeCompare(String(b.assetHash));
+            });
+
+        for (const asset of candidates) {
+            if (currentBytes <= limit) break;
+            const evicted = this._evictAsset(asset.assetHash);
+            if (!evicted.evicted) continue;
+            currentBytes -= evicted.bytes;
+            summary.evictedAssets += 1;
+            summary.evictedBytes += evicted.bytes;
+        }
+
+        summary.afterBytes = Math.max(0, currentBytes);
+        if (summary.evictedAssets > 0) {
+            this._manifest.stats.evictedAssets += summary.evictedAssets;
+            this._manifest.stats.evictedBytes += summary.evictedBytes;
+            this._saveManifest();
+        }
+        return summary;
+    }
+
+    _evictAsset(assetHash) {
+        const asset = this._manifest.assets[assetHash];
+        if (!asset) return { evicted: false, bytes: 0 };
+        const bytes = Number(asset.bytes) || 0;
+        this._safeUnlink(this._path.join(this._assetsDir, asset.fileName));
+
+        for (const [urlHash, entry] of Object.entries(this._manifest.urls || {})) {
+            if (entry?.assetHash === assetHash) delete this._manifest.urls[urlHash];
+        }
+        for (const [alias, entry] of Object.entries(this._manifest.aliases || {})) {
+            if (entry?.assetHash === assetHash) delete this._manifest.aliases[alias];
+        }
+        delete this._manifest.assets[assetHash];
+        return { evicted: true, bytes };
+    }
+
+    _normalizeLimit(value, fallback) {
+        if (value === Infinity || value === 'Infinity') return Infinity;
+        const n = Number(value);
+        if (!Number.isFinite(n) || n < 0) return fallback;
+        return n;
+    }
+
     _nowIso() {
         return this._now().toISOString();
     }
@@ -507,6 +594,7 @@ class ContentAddressedArtworkCache {
 module.exports = {
     ContentAddressedArtworkCache,
     DEFAULT_MAX_BYTES,
+    DEFAULT_MAX_CACHE_BYTES,
     MANIFEST_VERSION,
     MIME_EXTENSIONS,
     sniffImage,
