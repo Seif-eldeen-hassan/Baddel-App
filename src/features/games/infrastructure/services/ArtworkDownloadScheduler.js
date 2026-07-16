@@ -118,12 +118,21 @@ class ArtworkDownloadScheduler {
     getSnapshot() {
         return {
             active: this._active,
+            inFlight: Array.from(this._inFlightByKey.values()).map(task => ({
+                key: task.key,
+                priority: task.priority,
+            })),
             pending: this._pending.map(task => ({
                 key: task.key,
                 priority: task.priority,
             })),
             stats: this.getStats(),
         };
+    }
+
+    hasTask(key) {
+        const safeKey = String(key || '').trim();
+        return !!safeKey && (this._pendingByKey.has(safeKey) || this._inFlightByKey.has(safeKey));
     }
 
     _schedulePump() {

@@ -116,7 +116,8 @@ test('Last Played source has a single candidate pipeline and advances hero to co
     assert.match(GAME_CARD_JS, /function _jbiUniqueUsableCandidates/);
     assert.match(GAME_CARD_JS, /const candidates = _jbiUniqueUsableCandidates\(\[hero, cover\]\)/);
     assert.match(GAME_CARD_JS, /candidates\.push\(placeholder\)/);
-    assert.match(GAME_CARD_JS, /jbiCandidateIndex \+= 1/);
+    assert.match(GAME_CARD_JS, /\+\+jbiCandidateIndex/);
+    assert.match(GAME_CARD_JS, /_jbiCacheBackedArtworkValue\(selection\.candidates\[jbiCandidateIndex\]\)/);
     assert.doesNotMatch(fnBlock(GAME_CARD_JS, 'createRecentCard', 'getPlatformClass'), /const recentHero|const recentPoster/);
 });
 

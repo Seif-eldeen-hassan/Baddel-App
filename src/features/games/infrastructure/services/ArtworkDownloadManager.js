@@ -77,9 +77,11 @@ class ArtworkDownloadManager {
 
         try {
             const urlHash = this._cache.hashUrl(sourceUrl);
+            const schedulerKey = `url:${urlHash}`;
+            const inFlightDeduplication = this._scheduler.hasTask?.(schedulerKey) === true;
             const requestUrl = optimizeArtworkSourceUrl(sourceUrl, { type, priority });
             const result = await this._scheduler.enqueue({
-                key: `url:${urlHash}`,
+                key: schedulerKey,
                 priority,
                 sourceUrl,
                 requestUrl,
@@ -105,6 +107,7 @@ class ArtworkDownloadManager {
                 canonicalGameId,
                 type,
             }) || result;
+            const downloadedBytes = inFlightDeduplication ? 0 : (result.http?.bytes || result.bytes || 0);
             this._record({
                 sourceUrl,
                 canonicalGameId,
@@ -114,16 +117,19 @@ class ArtworkDownloadManager {
                 rendererDirectRemote,
                 cacheHit: false,
                 cacheMiss: true,
-                downloadedBytes: result.http?.bytes || result.bytes || 0,
-                responseContentLength: result.http?.bytes || result.bytes || 0,
+                inFlightDeduplication,
+                downloadedBytes,
+                responseContentLength: downloadedBytes,
                 httpStatus: result.http?.status || null,
                 elapsedMs: Date.now() - startedAt,
             });
-            this._bandwidthPolicy?.recordDownload?.({
-                priority,
-                type,
-                bytes: result.http?.bytes || result.bytes || 0,
-            });
+            if (!inFlightDeduplication) {
+                this._bandwidthPolicy?.recordDownload?.({
+                    priority,
+                    type,
+                    bytes: result.http?.bytes || result.bytes || 0,
+                });
+            }
             return linked.fileUrl;
         } catch (err) {
             this._record({
