@@ -154,6 +154,7 @@ async function confirmDeleteAction(gameId = selectedGameId) {
         }
 
         allCollections = await window.electronAPI.getCollections();
+        window.hydrateSidebarAllGamesCount?.('game-removed').catch?.(() => {});
     } catch (err) {
         console.error('[GameContext] confirmDeleteAction error:', err);
         showToast('Could not move game to recycle bin', 'error');

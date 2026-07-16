@@ -10,6 +10,9 @@
 // ── Sidebar top-level rendering ───────────────────────────────────────────────
 
 function renderSidebar() {
+    _sbApplyAllSectionStates();
+    _sbApplyStartupAllGamesCount();
+
     // Populate the COLLECTIONS section (up to SB_COLL_MAX inline, then "View all")
     try { renderSidebarCollectionsList(); } catch (_) {}
 
@@ -19,6 +22,98 @@ function renderSidebar() {
 
     updateSidebarActiveState();
     updateSidebarCards();
+}
+
+const SB_SECTION_PREF_KEY = 'baddel.sidebar.sections.v1';
+const SB_ALL_GAMES_COUNT_KEY = 'baddel.sidebar.allGamesCount.v1';
+
+function _sbDefaultSectionPreferences() {
+    return { library: true, collections: true, accounts: true };
+}
+
+function _sbNormalizeSectionPreferences(value) {
+    const defaults = _sbDefaultSectionPreferences();
+    const out = { ...defaults };
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return out;
+    for (const key of Object.keys(defaults)) {
+        if (typeof value[key] === 'boolean') out[key] = value[key];
+    }
+    return out;
+}
+
+function _sbLoadSectionPreferences() {
+    try {
+        const raw = localStorage.getItem(SB_SECTION_PREF_KEY);
+        if (!raw) return _sbDefaultSectionPreferences();
+        return _sbNormalizeSectionPreferences(JSON.parse(raw));
+    } catch (_) {
+        return _sbDefaultSectionPreferences();
+    }
+}
+
+function _sbSaveSectionPreferences() {
+    try {
+        localStorage.setItem(SB_SECTION_PREF_KEY, JSON.stringify(_sbNormalizeSectionPreferences(window._sbSec)));
+    } catch (_) {}
+}
+
+function _sbApplyAllSectionStates() {
+    ['library', 'collections', 'accounts'].forEach(sec => {
+        try { _sbApplySectionState(sec); } catch (_) {}
+    });
+}
+
+function _sbReadPersistedAllGamesCount() {
+    try {
+        const raw = localStorage.getItem(SB_ALL_GAMES_COUNT_KEY);
+        if (raw === null) return null;
+        const value = Number(raw);
+        return Number.isInteger(value) && value >= 0 ? value : null;
+    } catch (_) {
+        return null;
+    }
+}
+
+function setSidebarAllGamesCount(count, options = {}) {
+    const ready = options.ready === true;
+    const hasCountValue = count !== null && count !== undefined && count !== '';
+    const numeric = Number(count);
+    const hasNumeric = hasCountValue && Number.isInteger(numeric) && numeric >= 0;
+    const el = document.getElementById('allGamesCount');
+
+    if (el) {
+        if (hasNumeric) {
+            el.textContent = String(numeric);
+        } else if (options.loading === true || ready !== true) {
+            el.textContent = '...';
+        } else {
+            el.textContent = '0';
+        }
+    }
+
+    if (hasNumeric && ready) {
+        window.__sidebarAllGamesCountReady = true;
+        try { localStorage.setItem(SB_ALL_GAMES_COUNT_KEY, String(numeric)); } catch (_) {}
+        try {
+            window.dispatchEvent(new CustomEvent('baddel:all-games-count-updated', {
+                detail: {
+                    count: numeric,
+                    source: options.source || 'library-updated',
+                    ready: true,
+                },
+            }));
+        } catch (_) {}
+    }
+}
+
+function _sbApplyStartupAllGamesCount() {
+    if (window.__sidebarAllGamesCountReady === true) return;
+    const persisted = _sbReadPersistedAllGamesCount();
+    if (persisted !== null) {
+        setSidebarAllGamesCount(persisted, { source: 'startup-persisted', ready: true });
+        return;
+    }
+    setSidebarAllGamesCount(null, { source: 'startup-loading', ready: false, loading: true });
 }
 
 // ── Sidebar card helpers ──────────────────────────────────────────────────────
@@ -368,17 +463,20 @@ function updateSidebarCards() {
 
 // ── Sidebar section toggle ────────────────────────────────────────────────────
 
-window._sbSec = { library: true, collections: true, accounts: false };
+window._sbSec = _sbLoadSectionPreferences();
 
 function sbToggleSection(sec) {
+    if (!Object.prototype.hasOwnProperty.call(window._sbSec, sec)) return;
     window._sbSec[sec] = !window._sbSec[sec];
     _sbApplySectionState(sec);
+    _sbSaveSectionPreferences();
     // Section expand/collapse does NOT change the active page or button context.
     // updateSbContextBtn reads DOM state (which view is visible), not _sbSec.
     updateSbContextBtn();
 }
 
 function sbExpandSection(sec) {
+    if (!Object.prototype.hasOwnProperty.call(window._sbSec, sec)) return;
     if (window._sbSec[sec]) return;
     window._sbSec[sec] = true;
     _sbApplySectionState(sec);
@@ -521,6 +619,9 @@ function toggleSidebar() {
 
 // Explicit window exports so inline onclick handlers and cross-file calls resolve correctly
 window.renderSidebar               = renderSidebar;
+window.setSidebarAllGamesCount     = setSidebarAllGamesCount;
+window._sbReadPersistedAllGamesCount = _sbReadPersistedAllGamesCount;
+window._sbApplyStartupAllGamesCount = _sbApplyStartupAllGamesCount;
 window.renderSidebarJumpBackIn     = renderSidebarJumpBackIn;
 window.renderSidebarAccountSummary = renderSidebarAccountSummary;
 window.renderSidebarLibraryPulse   = renderSidebarLibraryPulse;

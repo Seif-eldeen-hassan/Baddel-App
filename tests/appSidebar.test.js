@@ -120,16 +120,15 @@ test('sidebar.js: SB_COLL_MAX is defined as a const', () => {
 test('sidebar.js: window._sbSec initialized with library/collections/accounts keys', () => {
     const idx = SIDEBAR_JS.indexOf('window._sbSec');
     assert.ok(idx !== -1, 'window._sbSec must be initialized');
-    const ctx = SIDEBAR_JS.slice(idx, idx + 100);
-    assert.match(ctx, /library/);
-    assert.match(ctx, /collections/);
-    assert.match(ctx, /accounts/);
+    assert.match(SIDEBAR_JS, /function _sbDefaultSectionPreferences\s*\(/);
+    assert.match(SIDEBAR_JS, /library:\s*true/);
+    assert.match(SIDEBAR_JS, /collections:\s*true/);
+    assert.match(SIDEBAR_JS, /accounts:\s*true/);
 });
 
-test('sidebar.js: window._sbSec accounts defaults to false (collapsed)', () => {
-    const idx = SIDEBAR_JS.indexOf('window._sbSec');
-    const ctx = SIDEBAR_JS.slice(idx, idx + 100);
-    assert.match(ctx, /accounts:\s*false/);
+test('sidebar.js: window._sbSec accounts defaults to true (fresh install expanded)', () => {
+    assert.match(SIDEBAR_JS, /accounts:\s*true/);
+    assert.match(SIDEBAR_JS, /baddel\.sidebar\.sections\.v1/);
 });
 
 // ─── 3. Window exports ────────────────────────────────────────────────────────

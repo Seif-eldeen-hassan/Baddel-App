@@ -2143,6 +2143,7 @@ async function unlinkPlatformAccount(accountId) {
                 await updatePlatformsOverview();
                 await renderPlatformAccounts(activePlatformView);
                 await _agSafeRenderAllGamesView();
+                window.hydrateSidebarAllGamesCount?.('account-sync').catch?.(() => {});
                 if (activePlatformView === 'epic' && typeof _renderEpicLibraryPanel === 'function') await _renderEpicLibraryPanel();
             } catch (err) {
                 console.error('Unlink Error:', err);

@@ -542,6 +542,9 @@ async function initSystem() {
         await migratePlaytimeFromLocalStorage();
 
         await traceStartupStep('renderSidebar',    () => renderSidebar());
+        if (typeof window.hydrateSidebarAllGamesCount === 'function') {
+            await traceStartupStep('hydrateSidebarAllGamesCount', () => window.hydrateSidebarAllGamesCount('startup-cache'));
+        }
         await traceStartupStep('navigateToHome',   () => navigateToHome());
         await traceStartupStep('initSortable',     () => initSortable());
 
@@ -1131,6 +1134,9 @@ async function _processLibraryUpdatedPayload(updatedGames) {
     window.allGamesData = allGamesData;
     window._readyToInstallRenderedGames = null;
     _lastLibraryRenderSnapshot = nextSnapshot;
+    if (decision.structuralRender && typeof window.hydrateSidebarAllGamesCount === 'function') {
+        window.hydrateSidebarAllGamesCount('library-updated').catch(() => {});
+    }
 
     if (decision.structuralRender) {
         _logRenderDecision('library-updated', decision, ['structural']);
@@ -1504,6 +1510,7 @@ async function reloadLibrary() {
         await window.__baddelRefreshCanonicalGamesRegistry?.('scan-all-games');
         allCollections = await window.electronAPI.getCollections();
         buildPlaytimeCache(allGamesData);
+        window.hydrateSidebarAllGamesCount?.('library-updated').catch?.(() => {});
         
         renderSidebar();
         

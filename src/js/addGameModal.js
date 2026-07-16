@@ -415,6 +415,7 @@ async function agFinalizeAddGame() {
         }
 
         allGamesData = await window.electronAPI.getGames();
+        window.hydrateSidebarAllGamesCount?.('game-added').catch?.(() => {});
 
         for (const g of hydratedGames) {
             if (typeof _patchGameInMemory === 'function') _patchGameInMemory(g);

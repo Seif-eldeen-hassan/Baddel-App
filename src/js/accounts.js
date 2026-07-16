@@ -307,9 +307,7 @@ async function _syncEpicAndRefresh() {
     if (panel && panel.style.display !== 'none') await window._renderEpicLibraryPanel?.();
 
     _agSafeRenderAllGamesView();
-
-    const countEl = document.getElementById('allGamesCount');
-    if (countEl) countEl.textContent = count > 0 ? count : '—';
+    hydrateSidebarAllGamesCount('account-sync').catch(() => {});
 }
 
 window.unlinkEpicLibrary = async function() {
@@ -323,6 +321,7 @@ window.unlinkEpicLibrary = async function() {
                 showToast('Epic library disconnected.', 'success');
                 await window._renderEpicLibraryPanel?.();
                 _agSafeRenderAllGamesView();
+                hydrateSidebarAllGamesCount('account-sync').catch(() => {});
             } catch (err) {
                 showToast(`Error: ${err.message}`, 'error');
             }
@@ -654,6 +653,128 @@ function _agRenderAccountFilterOptions(games) {
         window._agState.account = resolvedAccount;
     }
 }
+
+function _agBuildAccountNameByKey(accountMetadata = {}) {
+    const accountNameByKey = new Map();
+    const addAccounts = (platform, accounts) => {
+        (Array.isArray(accounts) ? accounts : []).forEach((acc) => {
+            accountNameByKey.set(
+                _agComposeAccountKey(platform, acc.id),
+                _agNormalizeAccountLabel(acc.displayName || acc.name, acc.id)
+            );
+        });
+    };
+
+    if (accountMetadata instanceof Map) return accountMetadata;
+    addAccounts('epic', accountMetadata.epic || accountMetadata.epicAccounts);
+    addAccounts('steam', accountMetadata.steam || accountMetadata.steamAccounts);
+    return accountNameByKey;
+}
+
+function _agMergeSyncedLibraryRecords(rawGames = [], accountNameByKey = new Map()) {
+    const mergedGamesMap = new Map();
+
+    (Array.isArray(rawGames) ? rawGames : []).forEach(game => {
+        const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        if (mergedGamesMap.has(cleanTitle)) {
+            const existingGame = mergedGamesMap.get(cleanTitle);
+            if (!existingGame.platforms.includes(game.platform)) {
+                existingGame.platforms.push(game.platform);
+            }
+            existingGame.allIds[game.platform] = game.id;
+            existingGame._agSource     = 'platform-sync';
+            existingGame.librarySource = 'synced-account';
+            _agMergeAccountMeta(existingGame, game, accountNameByKey);
+            return;
+        }
+
+        const newGame = { ...game };
+        newGame.platforms     = [game.platform];
+        newGame.allIds        = { [game.platform]: game.id };
+        newGame._agSource     = 'platform-sync';
+        newGame.librarySource = 'synced-account';
+        _agMergeAccountMeta(newGame, game, accountNameByKey);
+        mergedGamesMap.set(cleanTitle, newGame);
+    });
+
+    return Array.from(mergedGamesMap.values());
+}
+
+async function buildAllGamesLibraryProjection({
+    cachedPlatformGames = [],
+    accountMetadata = {},
+} = {}) {
+    const accountNameByKey = _agBuildAccountNameByKey(accountMetadata);
+    let _rawResolved = await _agApplyInstalledCreatorOverrides(
+        _agMergeSyncedLibraryRecords(cachedPlatformGames, accountNameByKey)
+    );
+    _rawResolved = _agDedupeDelegatedLaunchProducts(_rawResolved);
+    const libraryGames = _agGetUserLibraryGames(_rawResolved);
+    return {
+        rawResolved: _rawResolved,
+        libraryGames,
+        count: libraryGames.length,
+    };
+}
+
+async function _agReadCachedAllGamesProjection() {
+    const status = typeof window.electronAPI?.platformSyncStatus === 'function'
+        ? await window.electronAPI.platformSyncStatus().catch(() => ({}))
+        : {};
+    const cachedPlatformGames = [];
+    const accountMetadata = { epic: [], steam: [] };
+
+    if (status?.epic === true) {
+        const epicAccountsRes = typeof window.electronAPI?.platformSyncGetAccounts === 'function'
+            ? await window.electronAPI.platformSyncGetAccounts('epic').catch(() => ({}))
+            : {};
+        accountMetadata.epic = epicAccountsRes?.accounts || [];
+        const epicRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
+            ? await window.electronAPI.platformSyncGetCached('epic').catch(() => ({}))
+            : {};
+        if (epicRes?.games) cachedPlatformGames.push(...epicRes.games);
+    }
+    if (status?.steam === true) {
+        const steamAccountsRes = typeof window.electronAPI?.platformSyncGetAccounts === 'function'
+            ? await window.electronAPI.platformSyncGetAccounts('steam').catch(() => ({}))
+            : {};
+        accountMetadata.steam = steamAccountsRes?.accounts || [];
+        const steamRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
+            ? await window.electronAPI.platformSyncGetCached('steam').catch(() => ({}))
+            : {};
+        if (steamRes?.games) cachedPlatformGames.push(...steamRes.games);
+    }
+
+    return buildAllGamesLibraryProjection({ cachedPlatformGames, accountMetadata });
+}
+
+function _agPublishAllGamesCount(count, source) {
+    window.__sidebarAllGamesCountReady = true;
+    if (typeof window.setSidebarAllGamesCount === 'function') {
+        window.setSidebarAllGamesCount(count, { source, ready: true });
+        return;
+    }
+    const el = document.getElementById('allGamesCount');
+    if (el) el.textContent = String(Number.isInteger(Number(count)) && Number(count) >= 0 ? Number(count) : 0);
+}
+
+async function hydrateSidebarAllGamesCount(source = 'startup-cache') {
+    if (typeof window._sbApplyStartupAllGamesCount === 'function') {
+        window._sbApplyStartupAllGamesCount();
+    } else if (typeof window.setSidebarAllGamesCount === 'function') {
+        window.setSidebarAllGamesCount(null, { source: 'startup-loading', ready: false, loading: true });
+    }
+
+    const projection = await _agReadCachedAllGamesProjection();
+    window._allGamesRawCache = projection.rawResolved;
+    window._allGamesCache = projection.libraryGames;
+    _agPublishAllGamesCount(projection.count, source);
+    return projection;
+}
+
+window.buildAllGamesLibraryProjection = buildAllGamesLibraryProjection;
+window.hydrateSidebarAllGamesCount = hydrateSidebarAllGamesCount;
 
 // ── Strict 3-tier cover queue ─────────────────────────────────────────────────
 //
@@ -1795,7 +1916,6 @@ window.renderAllGamesView = async function(options = {}) {
     window._allGamesRendering = true;
 
     const grid = document.getElementById('allGamesGrid');
-    const allGamesCount = document.getElementById('allGamesCount');
     if (!grid) { window._allGamesRendering = false; return; }
 
     try {
@@ -1807,6 +1927,7 @@ window.renderAllGamesView = async function(options = {}) {
     // 2. No accounts linked — show onboarding panel.
     if (!isEpicLinked && !isSteamLinked) {
         window._allGamesRendering = false;
+        _agPublishAllGamesCount(0, 'account-sync');
         _agSetToolbarVisible(false);
         _agHideEpicBanner();
         _agSetEmptyPageMode(true);
@@ -1832,77 +1953,20 @@ window.renderAllGamesView = async function(options = {}) {
     }
 
     try {
-        let rawGames = [];
-        const accountNameByKey = new Map();
-
-        // 1. Fetch cached games from each linked platform.
-        if (isEpicLinked) {
-            const epicAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('epic');
-            const epicAccounts = epicAccountsRes?.accounts || [];
-            epicAccounts.forEach((acc) => {
-                accountNameByKey.set(_agComposeAccountKey('epic', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-            });
-            const epicRes = await window.electronAPI.platformSyncGetCached?.('epic');
-            if (epicRes?.games) rawGames.push(...epicRes.games);
-        }
-        if (isSteamLinked) {
-            const steamAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('steam');
-            const steamAccounts = steamAccountsRes?.accounts || [];
-            steamAccounts.forEach((acc) => {
-                accountNameByKey.set(_agComposeAccountKey('steam', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-            });
-            const steamRes = await window.electronAPI.platformSyncGetCached?.('steam');
-            if (steamRes?.games) rawGames.push(...steamRes.games);
-        }
-
-        // 2. Deduplicate by normalized title and merge platform metadata.
-        const mergedGamesMap = new Map();
-
-        rawGames.forEach(game => {
-            // Normalize title for dedup comparison (lowercase, alphanumeric only).
-            const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-
-            if (mergedGamesMap.has(cleanTitle)) {
-                // Merge additional platform/ID into the existing entry.
-                const existingGame = mergedGamesMap.get(cleanTitle);
-
-                // Add new platform if not already tracked.
-                if (!existingGame.platforms.includes(game.platform)) {
-                    existingGame.platforms.push(game.platform);
-                }
-
-                // Preserve per-platform ID for targeted launching.
-                existingGame.allIds[game.platform] = game.id;
-                existingGame._agSource     = 'platform-sync';
-                existingGame.librarySource = 'synced-account';
-                _agMergeAccountMeta(existingGame, game, accountNameByKey);
-
-            } else {
-                // First occurrence — initialize platform arrays.
-                const newGame = { ...game };
-                newGame.platforms      = [game.platform];
-                newGame.allIds         = { [game.platform]: game.id };
-                newGame._agSource      = 'platform-sync';
-                newGame.librarySource  = 'synced-account';
-                _agMergeAccountMeta(newGame, game, accountNameByKey);
-                mergedGamesMap.set(cleanTitle, newGame);
+        const projection = await _agReadCachedAllGamesProjection();
+        const _rawResolved = projection.rawResolved;
+        _rawResolved.forEach(g => {
+            if (g?.librarySource === 'synced-account') {
+                g._agSource     = 'platform-sync';
+                g.librarySource = 'synced-account';
             }
         });
-
-        // Convert merged Map to array and apply installed-creator overrides.
-        let _rawResolved = await _agApplyInstalledCreatorOverrides(
-            Array.from(mergedGamesMap.values())
-        );
-        _rawResolved = _agDedupeDelegatedLaunchProducts(_rawResolved);
         window._allGamesRawCache = _rawResolved;
         window._allGamesCache    = _agGetUserLibraryGames(_rawResolved);
 
         if (window._vs?.cardCache) window._vs.cardCache.clear();
 
-        // Update sidebar All Games count badge.
-        if (allGamesCount) {
-            allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
-        }
+        _agPublishAllGamesCount(window._allGamesCache.length, 'render-all-games');
         // Snapshot filters before account option rebuild may reset _agState.account.
         const _ravFilterSnap = options.preserveFilters ? _agSnapshotFilterState() : null;
         _agRenderAccountFilterOptions(window._allGamesCache);
@@ -2075,53 +2139,21 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
 
                 if (!isEpicLinked && !isSteamLinked) {
                     _agMarkReadyToInstallNotReady('no-linked-accounts');
+                    _agPublishAllGamesCount(0, 'account-sync');
                     return;
                 }
 
                 console.log('[AllGames] Library updated — refreshing cache' + (viewVisible ? ' and view' : ' (background)'));
 
-                let rawGames = [];
-                const accountNameByKey = new Map();
-
-                if (isEpicLinked) {
-                    const epicAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('epic');
-                    (epicAccountsRes?.accounts || []).forEach(acc => {
-                        accountNameByKey.set(_agComposeAccountKey('epic', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-                    });
-                    const epicRes = await window.electronAPI.platformSyncGetCached?.('epic');
-                    if (epicRes?.games) rawGames.push(...epicRes.games);
-                }
-                if (isSteamLinked) {
-                    const steamAccountsRes = await window.electronAPI.platformSyncGetAccounts?.('steam');
-                    (steamAccountsRes?.accounts || []).forEach(acc => {
-                        accountNameByKey.set(_agComposeAccountKey('steam', acc.id), _agNormalizeAccountLabel(acc.displayName, acc.id));
-                    });
-                    const steamRes = await window.electronAPI.platformSyncGetCached?.('steam');
-                    if (steamRes?.games) rawGames.push(...steamRes.games);
-                }
-
-                const mergedGamesMap = new Map();
-                rawGames.forEach(game => {
-                    const cleanTitle = (game.title || '').toLowerCase().replace(/[^a-z0-9]/g, '');
-                    if (mergedGamesMap.has(cleanTitle)) {
-                        const existingGame = mergedGamesMap.get(cleanTitle);
-                        if (!existingGame.platforms.includes(game.platform)) existingGame.platforms.push(game.platform);
-                        existingGame.allIds[game.platform] = game.id;
-                        existingGame._agSource     = 'platform-sync';
-                        existingGame.librarySource = 'synced-account';
-                        _agMergeAccountMeta(existingGame, game, accountNameByKey);
-                    } else {
-                        const newGame = { ...game };
-                        newGame.platforms     = [game.platform];
-                        newGame.allIds        = { [game.platform]: game.id };
-                        newGame._agSource     = 'platform-sync';
-                        newGame.librarySource = 'synced-account';
-                        _agMergeAccountMeta(newGame, game, accountNameByKey);
-                        mergedGamesMap.set(cleanTitle, newGame);
+                const projection = await _agReadCachedAllGamesProjection();
+                let newCache = projection.rawResolved;
+                newCache = _agDedupeDelegatedLaunchProducts(await _agApplyInstalledCreatorOverrides(newCache));
+                newCache.forEach(g => {
+                    if (g?.librarySource === 'synced-account') {
+                        g._agSource     = 'platform-sync';
+                        g.librarySource = 'synced-account';
                     }
                 });
-
-                let newCache = Array.from(mergedGamesMap.values());
                 const oldById = new Map((window._allGamesCache || []).map(g => [String(g.id ?? g.appName ?? g.title), g]));
                 newCache.forEach(g => {
                     const key = String(g.id ?? g.appName ?? g.title);
@@ -2132,10 +2164,10 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     if (old?._agCoverPipelineDone) g._agCoverPipelineDone = old._agCoverPipelineDone;
                     if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
                 });
-                newCache = _agDedupeDelegatedLaunchProducts(await _agApplyInstalledCreatorOverrides(newCache));
 
                 window._allGamesRawCache = newCache;
                 window._allGamesCache    = _agGetUserLibraryGames(newCache);
+                _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
 
                 // Publish canonical ready state — this is the single authoritative update.
                 const _rtiGames = _agComputeReadyToInstallGamesFromCache();
@@ -2176,8 +2208,7 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     // Visible pool is identical — skip all DOM resets. Only patch
                     // covers and update non-layout UI so row wrappers stay anchored.
                     await _agHydrateCachedCoversIntoAllGames();
-                    const _countEl = document.getElementById('allGamesCount');
-                    if (_countEl) _countEl.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
+                    _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
                     _agRenderAccountFilterOptions(window._allGamesCache);
                     // Restore filter state — _agRenderAccountFilterOptions may have
                     // silently reset _agState.account if account keys changed during sync.
@@ -2196,8 +2227,7 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
 
                 await _agHydrateCachedCoversIntoAllGames();
 
-                const allGamesCount = document.getElementById('allGamesCount');
-                if (allGamesCount) allGamesCount.textContent = window._allGamesCache.length > 0 ? window._allGamesCache.length : '—';
+                _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
 
                 _agRenderAccountFilterOptions(window._allGamesCache);
 
