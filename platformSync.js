@@ -212,6 +212,24 @@ async function cacheLibraryCoversFirst(entries, downloader, cacheFile, matchFn, 
     });
 }
 
+function _scheduleLibraryArtworkWarmup({
+    platform,
+    entries,
+    cacheFile,
+    matchFn,
+    coverCachedEmitter,
+}) {
+    if (!_platformSyncAssetDownloader) return;
+    cacheLibraryCoversFirst(
+        entries,
+        _platformSyncAssetDownloader,
+        cacheFile,
+        matchFn,
+        null,
+        { coverCachedEmitter }
+    ).catch(e => syncWarn(`[CoverFirst] ${platform} error:`, e.message));
+}
+
 // ─── Helpers ─────────────────────────────────────────────────
 
 async function ensureDirs() {
@@ -1605,18 +1623,17 @@ const steamConnectorMethods = {
             // ── Cover-first image caching (fire-and-forget) ───────────────────
             if (_platformSyncAssetDownloader) {
                 const _cfWin = _platformSyncWindowGetter?.();
-                cacheLibraryCoversFirst(
-                    finalGames, _platformSyncAssetDownloader, STEAM_MERGED_CACHE,
-                    (lib, e) => lib.findIndex(lg => String(lg.appName) === String(e.appName)),
-                    null,
-                    {
-                        coverCachedEmitter: (payload) => {
-                            if (_cfWin && !_cfWin.isDestroyed()) {
-                                _cfWin.webContents.send('all-games-cover-cached', payload);
-                            }
-                        },
-                    }
-                ).catch(e => syncWarn('[CoverFirst] steam error:', e.message));
+                _scheduleLibraryArtworkWarmup({
+                    platform: 'steam',
+                    entries: finalGames,
+                    cacheFile: STEAM_MERGED_CACHE,
+                    matchFn: (lib, e) => lib.findIndex(lg => String(lg.appName) === String(e.appName)),
+                    coverCachedEmitter: (payload) => {
+                        if (_cfWin && !_cfWin.isDestroyed()) {
+                            _cfWin.webContents.send('all-games-cover-cached', payload);
+                        }
+                    },
+                });
             }
 
             // ── Send to Baddel server in background ──────────────────────────
@@ -2355,18 +2372,17 @@ const epicConnectorMethods = {
             // ── Cover-first image caching (fire-and-forget) ───────────────────
             if (_platformSyncAssetDownloader) {
                 const _cfWin = _platformSyncWindowGetter?.();
-                cacheLibraryCoversFirst(
-                    finalGames, _platformSyncAssetDownloader, EPIC_MERGED_CACHE,
-                    (lib, e) => lib.findIndex(lg => lg.namespace === e.namespace || lg.appName === e.appName),
-                    null,
-                    {
-                        coverCachedEmitter: (payload) => {
-                            if (_cfWin && !_cfWin.isDestroyed()) {
-                                _cfWin.webContents.send('all-games-cover-cached', payload);
-                            }
-                        },
-                    }
-                ).catch(e => syncWarn('[CoverFirst] epic error:', e.message));
+                _scheduleLibraryArtworkWarmup({
+                    platform: 'epic',
+                    entries: finalGames,
+                    cacheFile: EPIC_MERGED_CACHE,
+                    matchFn: (lib, e) => lib.findIndex(lg => lg.namespace === e.namespace || lg.appName === e.appName),
+                    coverCachedEmitter: (payload) => {
+                        if (_cfWin && !_cfWin.isDestroyed()) {
+                            _cfWin.webContents.send('all-games-cover-cached', payload);
+                        }
+                    },
+                });
             }
 
             // ── Write classification report (non-blocking) ────────────────────

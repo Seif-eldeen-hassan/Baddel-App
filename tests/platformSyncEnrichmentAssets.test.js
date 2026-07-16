@@ -622,6 +622,67 @@ test('steam sync applies already_exists lookup metadata, downloads assets, write
     }
 });
 
+test('steam sync completes before background artwork download resolves', async () => {
+    const userData = makeTempUserData();
+    try {
+        mkdirp(platformSyncDir(userData));
+        writeJson(steamAccountsFile(userData), [{ id: 's1', displayName: 'Steam One' }]);
+        const baddelApi = makeBaddelApi({
+            requestResponses: [makeBatchResult('already_exists', '10')],
+            lookupGame: async (params) => ({ id: params.id, found: true }),
+            normalizeServerData: () => ({
+                cover: 'https://cdn.example/portal-cover.jpg',
+                heroImage: null,
+                logo: null,
+            }),
+        });
+        const steamBridge = makeFakeSteamBridge({
+            lastSessionSteamId: 's1',
+            ownedResponses: [
+                { status: 'success', games: [{ id: 'steam_10', appid: 10, title: 'Portal' }] },
+            ],
+        });
+        const { sync } = loadPlatformSync(userData, { baddelApi, steamBridge });
+        const downloaderCalls = [];
+        let releaseDownloader;
+        const downloaderGate = new Promise(resolve => { releaseDownloader = resolve; });
+        sync.registerPlatformSyncAssetDownloader(async (assets, gameId) => {
+            downloaderCalls.push({ assets, gameId });
+            await downloaderGate;
+            return { cover: 'file:///image-cache/steam_10-cover.webp' };
+        });
+
+        const result = await Promise.race([
+            sync.steamConnector.syncLibrary(),
+            new Promise((_, reject) => setTimeout(() => reject(new Error('sync waited for artwork download')), 500)),
+        ]);
+
+        assert.equal(result.length, 1);
+
+        try {
+            await waitFor(() => {
+                assert.deepEqual(downloaderCalls, [{
+                    assets: {
+                        cover: 'https://cdn.example/portal-cover.jpg',
+                        hero: null,
+                        logo: null,
+                    },
+                    gameId: 'steam_10',
+                }]);
+            });
+            assert.notEqual(readJson(steamCacheFile(userData))[0].coverUrl, 'file:///image-cache/steam_10-cover.webp');
+        } finally {
+            releaseDownloader();
+        }
+
+        await waitFor(() => {
+            assert.equal(readJson(steamCacheFile(userData))[0].coverUrl, 'file:///image-cache/steam_10-cover.webp');
+        });
+    } finally {
+        rmDir(userData);
+    }
+});
+
 test('steam sync retries per-item error results and applies normalized metadata from retry success', async () => {
     const userData = makeTempUserData();
     try {
