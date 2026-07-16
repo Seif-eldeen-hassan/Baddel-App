@@ -653,12 +653,24 @@ function navigateToInstalled() {
 // ============================================================
 // EXPLORE CAROUSEL (For Home - Epic Style)
 // ============================================================
+function _explorePatchCardArtwork(card, game) {
+    if (!card || !game) return;
+    const img = card.querySelector?.('.actual-img');
+    const cover = typeof getPosterUrl === 'function'
+        ? getPosterUrl(game)
+        : (game.image || game.defaultImage || game.coverUrl || null);
+    const safe = safeImageUrl(cover);
+    if (img && safe && img.src !== safe) {
+        img.src = safe;
+        img.style.display = 'block';
+    }
+}
+
 function renderExploreCarousel() {
     const grid = document.getElementById('exploreGrid');
     if (!grid) return;
     const previousScrollLeft = grid.scrollLeft || 0;
     const activeId = document.activeElement?.closest?.('[data-id]')?.dataset?.id || null;
-    grid.innerHTML = '';
 
     // نجيب مثلاً 15 لعبة عشوائية نعرضهم في الـ Carousel (أو ممكن تعرضهم كلهم)
     if (!window._exploreSelectionState && window.BaddelExploreSelection?.createExploreSelectionState) {
@@ -674,12 +686,37 @@ function renderExploreCarousel() {
 
     if (shuffled.length === 0) {
         grid.innerHTML = '<div class="empty-state" style="width:100%"><div class="empty-title">No games yet.</div></div>';
+        window._exploreRenderedIds = [];
+        window._exploreRenderedNodes = new Map();
         return;
     }
 
-    shuffled.forEach(game => grid.appendChild(createGameCard(game)));
+    const ids = shuffled.map(game => String(game.id));
+    const previousIds = Array.isArray(window._exploreRenderedIds) ? window._exploreRenderedIds : [];
+    const previousNodes = window._exploreRenderedNodes instanceof Map ? window._exploreRenderedNodes : new Map();
+    const sameMembership = ids.length === previousIds.length && ids.every((id, index) => id === previousIds[index]);
+
+    if (sameMembership && ids.every(id => previousNodes.get(id)?.isConnected)) {
+        shuffled.forEach(game => _explorePatchCardArtwork(previousNodes.get(String(game.id)), game));
+    } else {
+        const nextNodes = new Map();
+        const fragment = document.createDocumentFragment();
+        shuffled.forEach(game => {
+            const id = String(game.id);
+            const node = previousNodes.get(id) || createGameCard(game);
+            _explorePatchCardArtwork(node, game);
+            nextNodes.set(id, node);
+            fragment.appendChild(node);
+        });
+        grid.replaceChildren(fragment);
+        window._exploreRenderedNodes = nextNodes;
+        window._exploreRenderedIds = ids;
+    }
     grid.scrollLeft = previousScrollLeft;
     if (activeId) grid.querySelector(`[data-id="${CSS.escape(activeId)}"]`)?.focus?.();
+    if (typeof window.__baddelPrewarmExploreHeroArtwork === 'function') {
+        window.__baddelPrewarmExploreHeroArtwork(shuffled);
+    }
 }
 
 function exploreCarouselPrev() {
@@ -957,36 +994,169 @@ function _mergeCanonicalArtworkAcrossLibrary(updatedGames, previousGames = []) {
 }
 
 // Full library refresh (background scan completed)
+let _libraryUpdateQueuedPayload = null;
+let _libraryUpdateTimer = null;
+let _lastLibraryRenderSnapshot = null;
+
+function _artValue(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    const value = item?.overrideValue || item?.fallbackValue || null;
+    if (value) return value;
+    if (type === 'cover') return game?.image || game?.defaultImage || game?.coverUrl || null;
+    if (type === 'hero') return game?.heroImage || game?.defaultHero || game?.heroUrl || null;
+    return game?.logo || game?.defaultLogo || game?.logoUrl || null;
+}
+
+function _artRevision(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    return Number.isFinite(Number(item?.revision)) ? Number(item.revision) : 0;
+}
+
+function _librarySnapshot(games) {
+    const entries = (Array.isArray(games) ? games : []).map((game, index) => {
+        const id = String(game?.id || '');
+        return {
+            id,
+            index,
+            installed: Boolean(game?.path || game?.command || game?.isInstalled),
+            platform: String(game?.platform || game?._platform || ''),
+            ownership: JSON.stringify(game?.ownedByAccountIds || game?.steamLicensedAccountIds || game?.sources || []),
+            cover: `${_artRevision(game, 'cover')}:${_artValue(game, 'cover') || ''}`,
+            hero: `${_artRevision(game, 'hero')}:${_artValue(game, 'hero') || ''}`,
+            logo: `${_artRevision(game, 'logo')}:${_artValue(game, 'logo') || ''}`,
+        };
+    });
+    return {
+        entries,
+        byId: new Map(entries.map(entry => [entry.id, entry])),
+        order: entries.map(entry => entry.id).join('|'),
+    };
+}
+
+function _classifyLibrarySnapshot(prev, next) {
+    if (!prev) return { classification: 'STRUCTURAL', structuralRender: true, changedTypes: [], changedIds: [] };
+    if (prev.order !== next.order) return { classification: 'STRUCTURAL', structuralRender: true, changedTypes: [], changedIds: [] };
+    const changedTypes = new Set();
+    const changedIds = new Set();
+    for (const entry of next.entries) {
+        const before = prev.byId.get(entry.id);
+        if (!before) return { classification: 'STRUCTURAL', structuralRender: true, changedTypes: [], changedIds: [] };
+        if (before.installed !== entry.installed || before.platform !== entry.platform || before.ownership !== entry.ownership) {
+            return { classification: 'STRUCTURAL', structuralRender: true, changedTypes: [], changedIds: [] };
+        }
+        for (const type of ['cover', 'hero', 'logo']) {
+            if (before[type] !== entry[type]) {
+                changedTypes.add(type);
+                changedIds.add(entry.id);
+            }
+        }
+    }
+    if (!changedTypes.size) return { classification: 'NO_VISIBLE_CHANGE', structuralRender: false, changedTypes: [], changedIds: [] };
+    if (changedTypes.size === 1 && changedTypes.has('cover')) {
+        return { classification: 'CARD_COVER', structuralRender: false, changedTypes: ['cover'], changedIds: [...changedIds] };
+    }
+    if (![...changedTypes].includes('cover')) {
+        return { classification: 'SURFACE_ART', structuralRender: false, changedTypes: [...changedTypes], changedIds: [...changedIds] };
+    }
+    return { classification: 'CARD_COVER', structuralRender: false, changedTypes: [...changedTypes], changedIds: [...changedIds] };
+}
+
+function _logRenderDecision(event, decision, surfacesPatched = []) {
+    console.info('[RenderDecision]', {
+        event,
+        classification: decision.classification,
+        structuralRender: Boolean(decision.structuralRender),
+        matchedDisplayIds: decision.changedIds || [],
+        surfacesPatched,
+    });
+}
+
+function _patchLibraryArtworkSurfaces(decision) {
+    const changedIds = new Set(decision.changedIds || []);
+    const surfacesPatched = [];
+    if (decision.changedTypes.includes('cover')) {
+        changedIds.forEach(id => {
+            const game = allGamesData.find(g => String(g.id) === String(id));
+            if (game) {
+                _patchVisibleGameCard(game, [id]);
+                surfacesPatched.push(`card:${id}`);
+            }
+        });
+    }
+    if ((decision.changedTypes.includes('hero') || decision.changedTypes.includes('logo')) && currentHeroGameId && changedIds.has(String(currentHeroGameId))) {
+        window.__baddelRequestHomeHeroTransition?.(currentHeroGameId, { immediate: true, reason: 'library-updated-artwork' });
+        surfacesPatched.push(`hero:${currentHeroGameId}`);
+    }
+    _logRenderDecision('library-updated', decision, surfacesPatched);
+}
+
+function _renderStructuralLibraryUpdate() {
+    renderSidebar();
+    if (currentView === 'home') {
+        if (_homeIsUserScrolled()) {
+            _markHomeRefreshPending('library-updated-home-scrolled');
+        } else {
+            renderRecentlyPlayed();
+            renderExploreCarousel();
+            applyHeroForHome();
+            renderSyncedSuggestions();
+        }
+    } else if (currentView === 'all-games') {
+        if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
+    } else {
+        _preserveActiveScrollDuring('library-updated', () => {
+            applyFilters();
+            if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
+        });
+    }
+}
+
+async function _processLibraryUpdatedPayload(updatedGames) {
+    await window.__baddelRefreshCanonicalGamesRegistry?.('library' + '-updated');
+    const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
+    const nextSnapshot = _librarySnapshot(mergedGames);
+    const decision = _classifyLibrarySnapshot(_lastLibraryRenderSnapshot, nextSnapshot);
+    allGamesData = mergedGames;
+    window.allGamesData = allGamesData;
+    window._readyToInstallRenderedGames = null;
+    _lastLibraryRenderSnapshot = nextSnapshot;
+
+    if (decision.structuralRender) {
+        _logRenderDecision('library-updated', decision, ['structural']);
+        _renderStructuralLibraryUpdate();
+        return;
+    }
+    if (decision.classification === 'NO_VISIBLE_CHANGE') {
+        _logRenderDecision('library-updated', decision, []);
+        return;
+    }
+    _patchLibraryArtworkSurfaces(decision);
+}
+
 if (window.electronAPI.onLibraryUpdated) {
     window.electronAPI.onLibraryUpdated(async (updatedGames) => {
-        await window.__baddelRefreshCanonicalGamesRegistry?.('library' + '-updated');
-        const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
-        allGamesData = mergedGames;
-        window.allGamesData = allGamesData; // keep accounts.js in sync
-        window._readyToInstallRenderedGames = null; // invalidate stale RTI page count
+        _libraryUpdateQueuedPayload = updatedGames;
+        clearTimeout(_libraryUpdateTimer);
+        _libraryUpdateTimer = setTimeout(() => {
+            const payload = _libraryUpdateQueuedPayload;
+            _libraryUpdateQueuedPayload = null;
+            _processLibraryUpdatedPayload(payload);
+        }, 75);
+        return;
 
         // Sidebar is always safe — it lives outside the main scroll container.
-        renderSidebar();
-
         if (currentView === 'home') {
             if (_homeIsUserScrolled()) {
                 // User has scrolled down — skip all Home DOM mutations to prevent
                 // innerHTML clears from clamping scrollTop to 0. Flush when safe.
                 _markHomeRefreshPending('library-updated-home-scrolled');
             } else {
-                renderRecentlyPlayed();
-                renderExploreCarousel();
-                applyHeroForHome();
-                renderSyncedSuggestions();
             }
         } else if (currentView === 'all-games') {
             // All Games background updates are owned by accounts.js onLibraryUpdated.
             // Do not run the Installed Games applyFilters() while All Games is active.
-            if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
         } else {
             _preserveActiveScrollDuring('library-updated', () => {
-                applyFilters();
-                if (typeof window._onSyncLibraryUpdated === 'function') window._onSyncLibraryUpdated();
             });
         }
     });
@@ -1001,51 +1171,33 @@ if (window.electronAPI.onGameDeletedPermanently) {
 
 if (window.electronAPI.onGameImageUpdated) {
     window.electronAPI.onGameImageUpdated((updatedGame) => {
-        const patched = _patchGameInMemory(updatedGame);
-
-        const belongsInAllGames =
-            typeof window._agIsUserLibraryGame === 'function'
-                ? window._agIsUserLibraryGame(patched || updatedGame)
-                : false;
-
-        if (belongsInAllGames) {
-            _patchVisibleGameCard(patched);
-        } else {
-            const _eid = String(updatedGame.id);
-            window._allGamesCache = Array.isArray(window._allGamesCache)
-                ? window._allGamesCache.filter(g => String(g.id) !== _eid) : [];
-            window._allGamesRawCache = Array.isArray(window._allGamesRawCache)
-                ? window._allGamesRawCache.filter(g => String(g.id) !== _eid) : [];
-            document.querySelector(`#allGamesView [data-id="${CSS.escape(_eid)}"]`)?.remove();
-            // Fire-and-forget: show onboarding if no accounts are linked
-            ;(async () => {
-                try {
-                    const _st = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
-                    if (_st?.steam !== true && _st?.epic !== true) {
-                        if (typeof _agSetEmptyPageMode === 'function')    _agSetEmptyPageMode(true);
-                        if (typeof _agSetToolbarVisible === 'function')   _agSetToolbarVisible(false);
-                        if (typeof _agRenderEmptyOnboarding === 'function') _agRenderEmptyOnboarding();
-                    }
-                } catch (_) {}
-            })();
+        const changedTypes = window.__baddelDetectArtworkChangedTypes
+            ? window.__baddelDetectArtworkChangedTypes(updatedGame)
+            : ['cover', 'hero', 'logo'];
+        const summary = window.__baddelCommitCanonicalGameUpdate?.(updatedGame, {
+            reason: 'game-image-updated',
+            changedTypes,
+            suppressDuplicateRevision: true,
+        });
+        const matchedDisplayIds = summary?.matchedDisplayIds || [];
+        const surfacesPatched = [];
+        if (summary?.changedTypes?.includes('cover')) surfacesPatched.push(...matchedDisplayIds.map(id => `card:${id}`));
+        if ((summary?.changedTypes?.includes('hero') || summary?.changedTypes?.includes('logo')) &&
+            currentHeroGameId &&
+            (matchedDisplayIds.includes(String(currentHeroGameId)) || String(summary.canonicalGameId) === String(currentHeroGameId))) {
+            window.__baddelRequestHomeHeroTransition?.(currentHeroGameId, { immediate: true, reason: 'game-image-updated' });
+            surfacesPatched.push(`hero:${currentHeroGameId}`);
         }
-
-        // If card not yet rendered, trigger a full re-render of the current view
-        if (!document.querySelector(`[data-id="${CSS.escape(String(updatedGame.id))}"]`)) {
-            if (currentView === 'home') {
-                renderRecentlyPlayed();
-                renderExploreCarousel();
-                renderSyncedSuggestions();
-                applyHeroForHome();
-            } else {
-                applyFilters();
-            }
-        }
-
-        if (currentHeroGameId === String(updatedGame.id)) updateHeroSection(updatedGame.id);
+        console.info('[RenderDecision]', {
+            event: 'game-image-updated',
+            classification: summary?.duplicate ? 'NO_VISIBLE_CHANGE' : (summary?.changedTypes?.includes('cover') ? 'CARD_COVER' : 'SURFACE_ART'),
+            structuralRender: false,
+            matchedDisplayIds,
+            surfacesPatched,
+        });
 
         // If this game's settings modal is open, refresh it
-        if (selectedGameId === String(updatedGame.id)) {
+        if (selectedGameId === String(updatedGame.id) || matchedDisplayIds.includes(String(selectedGameId))) {
             const settingsModal = document.getElementById('gameSettingsModal');
             if (settingsModal && settingsModal.classList.contains('active')) {
                 if (typeof openGameSettings === 'function') openGameSettings(selectedGameId);

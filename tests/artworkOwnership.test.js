@@ -226,8 +226,8 @@ test('RefetchImagesService: refetchMissingImages skips customArtworkLocked games
 
 test('app.js: library-updated merge propagates customArtworkLocked', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'app.js'), 'utf8');
-    const mergeStart = src.indexOf('onLibraryUpdated');
-    assert.ok(mergeStart !== -1, 'onLibraryUpdated must exist');
+    const mergeStart = src.indexOf('async function _processLibraryUpdatedPayload');
+    assert.ok(mergeStart !== -1, 'library-updated processor must exist');
     const mergeBody = src.slice(mergeStart, mergeStart + 1200);
     assert.match(mergeBody, /_mergeCanonicalArtworkAcrossLibrary/, 'library-updated merge must delegate to the canonical artwork merge helper');
     assert.match(src, /customArtworkLocked/, 'canonical artwork merge helper must handle customArtworkLocked');

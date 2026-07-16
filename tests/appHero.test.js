@@ -88,7 +88,7 @@ describe('Phase 2.13B: hero — applyHeroForHome behaviour', () => {
 
 describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
     it('updateHeroSection reads game from allGamesData', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroPickGame');
         assert.match(fn, /allGamesData\.find/);
     });
     it('updateHeroSection sets currentHeroGameId', () => {
@@ -104,56 +104,56 @@ describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
         assert.match(fn, /checkBackgroundAssets\(/);
     });
     it('updateHeroSection gets heroBg, heroLogo, heroTitle, heroStats elements', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /getElementById\('heroBg'\)/);
         assert.match(fn, /getElementById\('heroLogo'\)/);
         assert.match(fn, /getElementById\('heroTitle'\)/);
         assert.match(fn, /getElementById\('heroStats'\)/);
     });
     it('updateHeroSection gets heroPlayBtn and heroSettingsBtn elements', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /getElementById\('heroPlayBtn'\)/);
         assert.match(fn, /getElementById\('heroSettingsBtn'\)/);
     });
     it('updateHeroSection queries .hero-actions container', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /querySelector\('\.hero-actions'\)/);
     });
     it('updateHeroSection resolves hero/cover artwork for background', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroArtworkFor');
         assert.match(fn, /_heroSurfaceArtwork\(game,\s*'home-hero'\)/);
         assert.match(fn, /heroArtwork\.hero\?\.value/);
         assert.match(fn, /heroArtwork\.cover\?\.value/);
     });
     it('updateHeroSection uses resolved logo to show logo or falls back to game.name as title', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroArtworkFor') + getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /heroArtwork\.logo\?\.value/);
         assert.match(fn, /game\.name/);
     });
     it('updateHeroSection reads playtimeData for the game', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /playtimeData\[game\.id\]/);
     });
     it('updateHeroSection calls formatPlaytime to display playtime', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /formatPlaytime\(/);
     });
     it('updateHeroSection calls formatLastPlayed to display last-played date', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /formatLastPlayed\(/);
     });
     it('updateHeroSection sets heroPlaytime and heroLastPlayed span IDs', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /heroPlaytime/);
         assert.match(fn, /heroLastPlayed/);
     });
     it('updateHeroSection wires settingsBtn.onclick to openGameSettings', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /openGameSettings\(/);
         assert.match(fn, /settingsBtn\.onclick/);
     });
     it('updateHeroSection wires playBtn.onclick to triggerLaunchSequence', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /triggerLaunchSequence\(/);
         assert.match(fn, /playBtn\.onclick/);
     });
@@ -162,12 +162,12 @@ describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
         assert.match(fn, /isLaunching/);
     });
     it('updateHeroSection guards background update against stale gameId via currentHeroGameId check', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
-        const occurrences = (fn.match(/currentHeroGameId !== String\(gameId\)/g) || []).length;
-        assert.ok(occurrences >= 2, 'stale-guard must appear in both onload and onerror callbacks');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
+        assert.match(fn, /token !== _homeHeroRequestToken/);
+        assert.match(fn, /currentHeroGameId !== String\(gameId\)/);
     });
     it('updateHeroSection falls back to a gradient when backgroundImage probe fails', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /linear-gradient/);
     });
 });
@@ -313,11 +313,11 @@ describe('Phase 2.13B: hero — DOM IDs in dashboard.html', () => {
 
 describe('Phase 2.13B: hero — intentional dependencies', () => {
     it('updateHeroSection depends on allGamesData', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroPickGame');
         assert.match(fn, /\ballGamesData\b/);
     });
     it('updateHeroSection depends on playtimeData', () => {
-        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /\bplaytimeData\b/);
     });
     it('applyHeroForHome depends on allGamesData', () => {

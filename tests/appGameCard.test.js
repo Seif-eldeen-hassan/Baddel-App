@@ -241,9 +241,9 @@ test('createGameCard: clears game.image and calls fetchMetadata on broken local 
     assert.match(body, /localStorage\.removeItem/);
 });
 
-test('createGameCard: triggers updateHeroSection on card mouseenter', () => {
+test('createGameCard: requests debounced Home Hero transition on card mouseenter', () => {
     const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
-    assert.match(body, /updateHeroSection\s*\(\s*game\.id\s*\)/);
+    assert.match(body, /__baddelRequestHomeHeroTransition\?\.\(\s*game\.id/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -318,9 +318,9 @@ test('createRecentCard: wires contextmenu to showContextMenu', () => {
     assert.match(body, /showContextMenu\s*\(\s*e\.pageX,\s*e\.pageY,\s*game\.id,\s*game\.name\s*\)/);
 });
 
-test('createRecentCard: triggers updateHeroSection on mouseenter', () => {
+test('createRecentCard: requests debounced Home Hero transition on mouseenter', () => {
     const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
-    assert.match(body, /updateHeroSection\s*\(\s*game\.id\s*\)/);
+    assert.match(body, /__baddelRequestHomeHeroTransition\?\.\(\s*game\.id/);
 });
 
 test('createRecentCard: uses escapeHtml for game.name', () => {
@@ -1304,12 +1304,12 @@ test('createRecentCard: uses _agResolveLastPlayedTimestamp for the last-played l
 });
 
 test('hero: updateHeroSection uses _agResolveLastPlayedTimestamp for last-played display', () => {
-    const body = extractFn(HERO_JS, 'function updateHeroSection(');
+    const body = extractFn(HERO_JS, 'function _homeHeroCommit(');
     assert.match(body, /_agResolveLastPlayedTimestamp/);
 });
 
 test('hero: updateHeroSection guards _agResolveLastPlayedTimestamp with typeof check', () => {
-    const body = extractFn(HERO_JS, 'function updateHeroSection(');
+    const body = extractFn(HERO_JS, 'function _homeHeroCommit(');
     assert.match(body, /typeof _agResolveLastPlayedTimestamp\s*===\s*['"]function['"]/);
 });
 

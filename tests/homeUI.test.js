@@ -2278,16 +2278,17 @@ test('app.js: processQueue cacheAllAssets branch updates imgElement.src after lo
     assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called after caching');
 });
 
-test('app.js: onGameImageUpdated uses _patchGameInMemory and does not early-return on missing id', () => {
+test('app.js: onGameImageUpdated routes through canonical artwork coordinator without structural rerender', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
     const handlerStart = src.indexOf('window.electronAPI.onGameImageUpdated');
     assert.ok(handlerStart > -1, 'onGameImageUpdated handler found');
-    const block = src.slice(handlerStart, handlerStart + 600);
-    // Must use _patchGameInMemory, not the old idx === -1 return pattern
-    assert.match(block, /_patchGameInMemory/, '_patchGameInMemory used in handler');
+    const block = src.slice(handlerStart, handlerStart + 1400);
+    assert.match(block, /__baddelCommitCanonicalGameUpdate/, 'canonical coordinator used in handler');
+    assert.match(block, /suppressDuplicateRevision:\s*true/, 'save echo revisions are deduped');
+    assert.doesNotMatch(block, /applyFilters\(\)/, 'artwork event must not structurally rerender Installed');
+    assert.doesNotMatch(block, /renderExploreCarousel\(\)/, 'artwork event must not rebuild Explore');
+    assert.doesNotMatch(block, /renderRecentlyPlayed\(\)/, 'artwork event must not rebuild JBI');
     assert.ok(!block.includes("if (idx === -1) return"), 'early-return on missing id must be removed');
-    // Must set aliases
-    assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called');
 });
 
 test('main.js: save-game-metadata handler emits game-image-updated on success', () => {

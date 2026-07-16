@@ -154,7 +154,7 @@ test('home card and Jump Back In displays resolve through GameSurfaceArtworkAdap
 test('home hero and collection member hero displays resolve through GameSurfaceArtworkAdapter', () => {
     const src = read('src/js/app/hero.js');
     assert.match(extractFn(src, 'function _heroSurfaceArtwork('), /BaddelGameSurfaceArtworkAdapter/);
-    assert.match(extractFn(src, 'function updateHeroSection('), /_heroSurfaceArtwork\(game,\s*'home-hero'\)/);
+    assert.match(extractFn(src, 'function _homeHeroArtworkFor('), /_heroSurfaceArtwork\(game,\s*'home-hero'\)/);
     assert.match(extractFn(src, 'function updateHeroForCollection('), /_heroSurfaceArtwork\(g,\s*'collection-hero-member'\)/);
 });
 

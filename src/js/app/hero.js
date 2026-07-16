@@ -6,6 +6,11 @@
 
 let currentHeroGameId = null;
 let currentHeroSlideshowInterval = null;
+let _homeHeroRequestToken = 0;
+let _homeHeroPendingTimer = null;
+let _homeHeroPendingId = null;
+const _homeHeroPreloadCache = new Map();
+const _HOME_HERO_PRELOAD_CACHE_MAX = 150;
 
 function _heroSurfaceArtwork(game, surface = 'home-hero') {
     const adapter = window.BaddelGameSurfaceArtworkAdapter;
@@ -26,9 +31,9 @@ function _heroSurfaceArtwork(game, surface = 'home-hero') {
 function applyHeroForHome() {
     const recent = getRecentGames();
     if (recent.length > 0) {
-        updateHeroSection(recent[0].id);
+        updateHeroSection(recent[0].id, { immediate: true, reason: 'apply-home' });
     } else if (allGamesData.length > 0) {
-        updateHeroSection(allGamesData[0].id);
+        updateHeroSection(allGamesData[0].id, { immediate: true, reason: 'apply-home' });
     } else {
         // Fallback: no games present — show gradient and hide hero controls
         const bgImg = document.getElementById('heroBg');
@@ -45,33 +50,47 @@ function applyHeroForHome() {
     }
 }
 
-function updateHeroSection(gameId) {
-    if (isLaunching) return;
-    clearInterval(currentHeroSlideshowInterval);
+function _homeHeroRememberPreload(key, promise) {
+    if (_homeHeroPreloadCache.has(key)) _homeHeroPreloadCache.delete(key);
+    _homeHeroPreloadCache.set(key, promise);
+    while (_homeHeroPreloadCache.size > _HOME_HERO_PRELOAD_CACHE_MAX) {
+        const oldest = _homeHeroPreloadCache.keys().next().value;
+        _homeHeroPreloadCache.delete(oldest);
+    }
+}
 
+function _homeHeroPreloadImage(url) {
+    const safe = safeImageUrl(url);
+    if (!safe) return Promise.resolve({ ok: false, url: null });
+    const cached = _homeHeroPreloadCache.get(safe);
+    if (cached) return cached;
+    const promise = new Promise(resolve => {
+        const img = new Image();
+        img.onload = () => resolve({ ok: true, url: safe });
+        img.onerror = () => {
+            failedImageIds?.add?.(safe);
+            setTimeout(() => _homeHeroPreloadCache.delete(safe), 5000);
+            resolve({ ok: false, url: safe });
+        };
+        img.src = safe;
+    });
+    _homeHeroRememberPreload(safe, promise);
+    return promise;
+}
+
+function _homeHeroPickGame(gameId) {
     let game = allGamesData.find(g => String(g.id) === String(gameId));
-    if (!game) return;
+    if (!game) return null;
     if (window.BaddelCanonicalArtworkProjection?.projectFromRecords) {
         game = window.BaddelCanonicalArtworkProjection.projectFromRecords(
             game,
             Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : []
         ) || game;
     }
-    currentHeroGameId = String(gameId);
+    return game;
+}
 
-    // Hydrate hero/logo from localStorage before reading the fields
-    checkBackgroundAssets(game);
-
-    const bgImg = document.getElementById('heroBg');
-    const logoImg = document.getElementById('heroLogo');
-    const titleTxt = document.getElementById('heroTitle');
-    const statsDiv = document.getElementById('heroStats');
-    const actionsDiv = document.querySelector('.hero-actions');
-    const playBtn = document.getElementById('heroPlayBtn');
-    const settingsBtn = document.getElementById('heroSettingsBtn');
-
-    if (!bgImg || !logoImg) return;
-
+function _homeHeroArtworkFor(game) {
     const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
         ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame: game, canonicalGame: game })
         : null;
@@ -79,58 +98,127 @@ function updateHeroSection(gameId) {
     const presentation = window.BaddelGameArtworkReadModel?.selectPresentationCandidates
         ? window.BaddelGameArtworkReadModel.selectPresentationCandidates(readModel, 'home-hero')
         : [];
-    const rawBg = presentation[0] || heroArtwork.hero?.value || heroArtwork.cover?.value || null;
-    const safeBg = safeImageUrl(rawBg);
-    if (safeBg) {
-        const sanitized = safeBg.replace(/\\/g, '/').replace(/'/g, "\\'");
-        const probe = new Image();
-        probe.onload = () => {
-            if (currentHeroGameId !== String(gameId)) return;
-            bgImg.style.backgroundImage = `url('${sanitized}')`;
-        };
-        probe.onerror = () => {
-            if (currentHeroGameId !== String(gameId)) return;
-            bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
-        };
-        probe.src = safeBg;
-    } else {
-        bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
-    }
+    return {
+        readModel,
+        heroArtwork,
+        bg: safeImageUrl(presentation[0] || heroArtwork.hero?.value || heroArtwork.cover?.value || null),
+        logo: safeImageUrl(readModel?.logo?.effectiveValue || heroArtwork.logo?.value),
+    };
+}
 
-    const safeLogo = safeImageUrl(readModel?.logo?.effectiveValue || heroArtwork.logo?.value);
-    if (safeLogo) {
-        logoImg.onerror = () => {
+function _homeHeroCommit(payload) {
+    const { token, gameId, game, bg, logo, heroLoaded } = payload || {};
+    if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
+    const bgImg = document.getElementById('heroBg');
+    const logoImg = document.getElementById('heroLogo');
+    const titleTxt = document.getElementById('heroTitle');
+    const statsDiv = document.getElementById('heroStats');
+    const actionsDiv = document.querySelector('.hero-actions');
+    const playBtn = document.getElementById('heroPlayBtn');
+    const settingsBtn = document.getElementById('heroSettingsBtn');
+    if (!bgImg || !logoImg) return;
+
+    requestAnimationFrame(() => {
+        if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
+        if (heroLoaded && bg) {
+            const sanitized = bg.replace(/\\/g, '/').replace(/'/g, "\\'");
+            bgImg.style.backgroundImage = `url('${sanitized}')`;
+        } else if (!bgImg.dataset.lastGoodBg && !bgImg.style.backgroundImage) {
+            bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
+        }
+
+        if (logo) {
+            logoImg.onerror = null;
+            logoImg.src = logo;
+            logoImg.style.display = 'block';
+            titleTxt.innerText = game.name;
+            titleTxt.style.display = 'none';
+        } else {
+            logoImg.onerror = null;
             logoImg.style.display = 'none';
             titleTxt.innerText = game.name;
             titleTxt.style.display = 'block';
-        };
-        logoImg.src = safeLogo; logoImg.style.display = 'block'; titleTxt.style.display = 'none';
-    } else {
-        logoImg.style.display = 'none'; titleTxt.innerText = game.name; titleTxt.style.display = 'block';
+        }
+
+        const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
+        const heroLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
+            ? _agResolveLastPlayedTimestamp(game)
+            : pData.lastPlayed;
+        statsDiv.innerHTML = `
+            <span class="stat-badge playtime-stat"><span id="heroPlaytime">${formatPlaytime(pData.totalMinutes)}</span></span>
+            <span class="stat-badge">Last Played: <span id="heroLastPlayed">${formatLastPlayed(heroLastPlayedTs)}</span></span>
+        `;
+
+        statsDiv.style.display = 'flex';
+        playBtn.style.display = 'block';
+
+        if (settingsBtn) {
+            settingsBtn.style.display = 'flex';
+            settingsBtn.style.width = '48px';
+            settingsBtn.style.height = '48px';
+            settingsBtn.style.fontSize = '1.2rem';
+            actionsDiv.appendChild(settingsBtn);
+            settingsBtn.onclick = () => openGameSettings(game.id);
+        }
+
+        playBtn.onclick = () => triggerLaunchSequence(game.id);
+    });
+}
+
+function __baddelRequestHomeHeroTransition(gameId, options = {}) {
+    const id = String(gameId || '');
+    if (!id) return;
+    if (!options.immediate && currentHeroGameId === id && _homeHeroPendingId === id) return;
+    clearTimeout(_homeHeroPendingTimer);
+    _homeHeroPendingId = id;
+    const delay = options.immediate ? 0 : 120;
+    _homeHeroPendingTimer = setTimeout(() => {
+        _homeHeroPendingTimer = null;
+        updateHeroSection(id, { ...options, fromController: true });
+    }, delay);
+}
+
+function __baddelPrewarmExploreHeroArtwork(games) {
+    const visible = (Array.isArray(games) ? games : []).slice(0, 8);
+    const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
+    schedule(() => {
+        visible.forEach(game => {
+            const art = _homeHeroArtworkFor(game);
+            if (art.bg) _homeHeroPreloadImage(art.bg);
+            if (art.logo) _homeHeroPreloadImage(art.logo);
+        });
+    });
+}
+
+async function updateHeroSection(gameId, options) {
+    options = options || {};
+    if (isLaunching) return;
+    if (!options.fromController && options.hover === true) {
+        __baddelRequestHomeHeroTransition(gameId, options);
+        return;
     }
+    clearInterval(currentHeroSlideshowInterval);
 
-    const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
-    const heroLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
-        ? _agResolveLastPlayedTimestamp(game)
-        : pData.lastPlayed;
-    statsDiv.innerHTML = `
-        <span class="stat-badge playtime-stat"><span id="heroPlaytime">${formatPlaytime(pData.totalMinutes)}</span></span>
-        <span class="stat-badge">Last Played: <span id="heroLastPlayed">${formatLastPlayed(heroLastPlayedTs)}</span></span>
-    `;
+    let game = _homeHeroPickGame(gameId);
+    if (!game) return;
+    currentHeroGameId = String(gameId);
+    const token = ++_homeHeroRequestToken;
 
-    statsDiv.style.display = 'flex';
-    playBtn.style.display = 'block';
-
-    if (settingsBtn) {
-        settingsBtn.style.display = 'flex';
-        settingsBtn.style.width = '48px';
-        settingsBtn.style.height = '48px';
-        settingsBtn.style.fontSize = '1.2rem';
-        actionsDiv.appendChild(settingsBtn);
-        settingsBtn.onclick = () => openGameSettings(game.id);
-    }
-
-    playBtn.onclick = () => triggerLaunchSequence(game.id);
+    // Hydrate hero/logo from localStorage before reading the fields
+    checkBackgroundAssets(game);
+    const art = _homeHeroArtworkFor(game);
+    const [heroResult, logoResult] = await Promise.all([
+        _homeHeroPreloadImage(art.bg),
+        art.logo ? _homeHeroPreloadImage(art.logo) : Promise.resolve({ ok: false, url: null }),
+    ]);
+    _homeHeroCommit({
+        token,
+        gameId,
+        game,
+        bg: art.bg,
+        logo: logoResult.ok ? art.logo : null,
+        heroLoaded: heroResult.ok,
+    });
 }
 
 function updateHeroForCollection(coll) {
@@ -223,6 +311,9 @@ function openCurrentGameSettings() {
 // Explicit window exports so inline onclick handlers and cross-file typeof guards resolve correctly
 window.applyHeroForHome        = applyHeroForHome;
 window.updateHeroSection       = updateHeroSection;
+window.__baddelRequestHomeHeroTransition = __baddelRequestHomeHeroTransition;
+window.__baddelHomeHeroPreloadImage = _homeHeroPreloadImage;
+window.__baddelPrewarmExploreHeroArtwork = __baddelPrewarmExploreHeroArtwork;
 window.updateHeroForCollection = updateHeroForCollection;
 window.triggerPlayFromHero     = triggerPlayFromHero;
 window.openCurrentGameSettings = openCurrentGameSettings;

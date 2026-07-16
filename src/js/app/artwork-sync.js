@@ -286,13 +286,92 @@ function _projectCanonicalOntoGame(game, canonicalGame) {
     return game;
 }
 
+const _ARTWORK_TYPES = ['cover', 'hero', 'logo'];
+const _latestArtworkRevisions = new Map();
+
+function _artworkTypeRevision(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    return Number.isFinite(Number(item?.revision)) ? Number(item.revision) : null;
+}
+
+function _artworkTypeValue(game, type) {
+    const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
+    if (item?.overrideValue) return item.overrideValue;
+    if (item?.fallbackValue) return item.fallbackValue;
+    if (type === 'cover') return game?.image || game?.defaultImage || game?.coverUrl || game?.cover || null;
+    if (type === 'hero') return game?.heroImage || game?.defaultHero || game?.heroUrl || game?.hero || null;
+    if (type === 'logo') return game?.logo || game?.defaultLogo || game?.logoUrl || null;
+    return null;
+}
+
+function _canonicalRevisionKey(canonicalGameId, type) {
+    return `${canonicalGameId}:${type}`;
+}
+
+function _markArtworkRevision(canonicalGameId, type, revision) {
+    if (!canonicalGameId || revision == null) return;
+    const key = _canonicalRevisionKey(canonicalGameId, type);
+    const current = _latestArtworkRevisions.get(key);
+    if (current == null || Number(revision) > Number(current)) {
+        _latestArtworkRevisions.set(key, Number(revision));
+    }
+}
+
+function _classifyIncomingArtworkTypes(updatedGame, requestedTypes = []) {
+    const explicit = Array.isArray(requestedTypes) ? requestedTypes.filter(type => _ARTWORK_TYPES.includes(type)) : [];
+    const types = explicit.length
+        ? explicit
+        : _ARTWORK_TYPES.filter(type => _artworkTypeRevision(updatedGame, type) != null || _artworkTypeValue(updatedGame, type));
+    return types.length ? types : _ARTWORK_TYPES.slice();
+}
+
+window.__baddelArtworkEventRuntime = window.__baddelArtworkEventRuntime || {};
+window.__baddelArtworkEventRuntime.latestRevisions = _latestArtworkRevisions;
+window.__baddelDetectArtworkChangedTypes = _classifyIncomingArtworkTypes;
+
 window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameUpdate(updatedGame, {
     reason = 'canonical-update',
     changedTypes = [],
+    suppressDuplicateRevision = false,
 } = {}) {
     if (!updatedGame || !updatedGame.id) return null;
     const canonicalGame = _normalizeArtworkAliases({ ...updatedGame });
     _upsertCanonicalGameRegistry(canonicalGame);
+    const incomingTypes = _classifyIncomingArtworkTypes(canonicalGame, changedTypes);
+    const appliedTypes = [];
+    const ignoredTypes = [];
+    for (const type of incomingTypes) {
+        const incomingRevision = _artworkTypeRevision(canonicalGame, type);
+        const revisionKey = _canonicalRevisionKey(canonicalGame.id, type);
+        const currentRevision = _latestArtworkRevisions.get(revisionKey);
+        const duplicate = suppressDuplicateRevision &&
+            incomingRevision != null &&
+            currentRevision != null &&
+            Number(incomingRevision) <= Number(currentRevision);
+        console.info('[ArtworkEventDedup]', {
+            canonicalGameId: canonicalGame.id,
+            type,
+            incomingRevision,
+            currentRevision,
+            action: duplicate ? 'ignored' : 'applied',
+        });
+        if (duplicate) ignoredTypes.push(type);
+        else {
+            appliedTypes.push(type);
+            _markArtworkRevision(canonicalGame.id, type, incomingRevision);
+        }
+    }
+    if (!appliedTypes.length) {
+        return {
+            canonicalGame,
+            canonicalGameId: canonicalGame.id,
+            changedTypes: [],
+            ignoredTypes,
+            matchedDisplayIds: [],
+            duplicate: true,
+            scannedCount: 0,
+        };
+    }
     const matchedDisplayIds = new Set();
     let scannedCount = 0;
 
@@ -318,29 +397,35 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
     if (Array.isArray(window._allGamesRawCache)) window._allGamesRawCache = patchArray(window._allGamesRawCache);
     if (Array.isArray(window.allGamesData) && typeof allGamesData !== 'undefined') allGamesData = window.allGamesData;
 
-    _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds]);
+    if (appliedTypes.includes('cover')) {
+        _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds]);
+    }
     try {
         window._gdApplyExternalPatch?.(canonicalGame, {
             cover: canonicalGame.image,
             hero: canonicalGame.heroImage,
             logo: canonicalGame.logo,
-            logoCleared: changedTypes.includes('logo') && !canonicalGame.logo,
+            logoCleared: appliedTypes.includes('logo') && !canonicalGame.logo,
             artworkSource: canonicalGame.artworkSource,
             artworkUpdatedAt: canonicalGame.artworkUpdatedAt,
         });
     } catch (_) {}
-    if (typeof updateHeroSection === 'function' && typeof currentHeroGameId !== 'undefined' && currentHeroGameId) {
+    if ((appliedTypes.includes('hero') || appliedTypes.includes('logo')) &&
+        typeof currentHeroGameId !== 'undefined' && currentHeroGameId) {
         const match = String(currentHeroGameId) === String(canonicalGame.id) ||
             (Array.isArray(window.allGamesData) && window.allGamesData.some(g => String(g.id) === String(currentHeroGameId) && g.localGameId === canonicalGame.id));
-        if (match) updateHeroSection(currentHeroGameId);
-    }
-    if (typeof renderRecentlyPlayed === 'function') {
-        try { renderRecentlyPlayed(); } catch (_) {}
+        if (match) {
+            if (typeof window.__baddelRequestHomeHeroTransition === 'function') {
+                window.__baddelRequestHomeHeroTransition(currentHeroGameId, { immediate: true, reason });
+            } else if (typeof updateHeroSection === 'function') {
+                updateHeroSection(currentHeroGameId);
+            }
+        }
     }
     console.info('[ArtworkCommit]', {
         reason,
         canonicalGameId: canonicalGame.id,
-        changedTypes,
+        changedTypes: appliedTypes,
     });
     const uniqueMatchedDisplayIds = [...matchedDisplayIds];
     console.info('[ArtworkCommitSummary]', {
@@ -349,7 +434,15 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
         matchedCount: uniqueMatchedDisplayIds.length,
         matchedDisplayIds: uniqueMatchedDisplayIds,
     });
-    return canonicalGame;
+    return {
+        canonicalGame,
+        canonicalGameId: canonicalGame.id,
+        changedTypes: appliedTypes,
+        ignoredTypes,
+        matchedDisplayIds: uniqueMatchedDisplayIds,
+        duplicate: false,
+        scannedCount,
+    };
 };
 
 // ── Visible card DOM patcher ──────────────────────────────────────────────────

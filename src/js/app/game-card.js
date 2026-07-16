@@ -389,7 +389,9 @@ function createGameCard(game, isRecent = false) {
     card.setAttribute('data-id', game.id);
 
     card.addEventListener('mouseenter', () => {
-        if (currentFilters.collectionId === null && currentView === 'home') updateHeroSection(game.id);
+        if (currentFilters.collectionId === null && currentView === 'home') {
+            window.__baddelRequestHomeHeroTransition?.(game.id, { reason: 'card-hover' });
+        }
     });
 
     const pData = playtimeData[game.id] || { totalMinutes: 0 };
@@ -789,7 +791,9 @@ function createRecentCard(game, isFeatured = false) {
 
     // Hero update on hover (same as createGameCard)
     card.addEventListener('mouseenter', () => {
-        if (currentView === 'home') updateHeroSection(game.id);
+        if (currentView === 'home') {
+            window.__baddelRequestHomeHeroTransition?.(game.id, { reason: 'jbi-hover' });
+        }
     });
 
     // Context menu (same as createGameCard)

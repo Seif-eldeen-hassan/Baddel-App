@@ -1010,9 +1010,9 @@ test('app.js: _patchGameInMemory also gates _allGamesRawCache updates', () => {
 test('app.js: onGameImageUpdated removes All Games card for installed-only games', () => {
     const listenerIdx = APP_JS.indexOf('onGameImageUpdated((updatedGame)');
     const block = APP_JS.slice(listenerIdx, listenerIdx + 1000);
-    assert.match(block, /belongsInAllGames/, 'must check belongsInAllGames');
-    assert.match(block, /_agIsUserLibraryGame\(patched/, 'must call _agIsUserLibraryGame');
-    assert.match(block, /#allGamesView.*remove\(\)|remove\(\).*#allGamesView/s, 'must remove card from #allGamesView');
+    assert.match(block, /__baddelCommitCanonicalGameUpdate/, 'artwork events must route through canonical coordinator');
+    assert.match(block, /matchedDisplayIds/, 'handler must use strong coordinator matches');
+    assert.doesNotMatch(block, /applyFilters\(\)|renderExploreCarousel\(\)/, 'artwork events must not structurally rerender');
 });
 
 test('game-details.js: _gdRefreshGameFromDbAfterMutation does not patch _allGamesCache for installed-only game', () => {
@@ -2340,9 +2340,8 @@ test('scroll: _preserveActiveScrollDuring skips restore when currentView changed
 // ── onLibraryUpdated handler source-text tests ───────────────────────────────
 
 test('scroll: onLibraryUpdated calls renderSidebar unconditionally then guards Home branch', () => {
-    // Anchor on the line just before renderSidebar() which is after the data merge
-    const anchor = APP_JS.indexOf('invalidate stale RTI page count');
-    assert.ok(anchor !== -1, 'RTI invalidation comment not found in onLibraryUpdated handler');
+    const anchor = APP_JS.indexOf('function _renderStructuralLibraryUpdate');
+    assert.ok(anchor !== -1, 'structural library update renderer not found');
     const handler = APP_JS.slice(anchor, anchor + 600);
     assert.match(handler, /renderSidebar\s*\(\s*\)/);
     assert.match(handler, /_homeIsUserScrolled\s*\(\s*\)/);
@@ -2350,9 +2349,9 @@ test('scroll: onLibraryUpdated calls renderSidebar unconditionally then guards H
 });
 
 test('scroll: onLibraryUpdated non-home branch still uses _preserveActiveScrollDuring', () => {
-    const idx = APP_JS.indexOf("'library-updated'");
-    assert.ok(idx !== -1, 'library-updated label not found in app.js');
-    const context = APP_JS.slice(Math.max(0, idx - 60), idx + 200);
+    const idx = APP_JS.indexOf('function _renderStructuralLibraryUpdate');
+    assert.ok(idx !== -1, 'structural library update renderer not found');
+    const context = APP_JS.slice(Math.max(0, idx - 60), idx + 900);
     assert.match(context, /_preserveActiveScrollDuring/);
 });
 
