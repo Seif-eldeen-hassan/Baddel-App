@@ -25,6 +25,14 @@ function isUsableImageUrl(url) {
     return null;
 }
 
+function isCacheBackedArtworkUrl(url) {
+    const safe = isUsableImageUrl(url);
+    if (!safe) return null;
+    const lower = safe.toLowerCase();
+    if (lower.startsWith('http://') || lower.startsWith('https://')) return null;
+    return safe;
+}
+
 function _preferLocalImage(candidates) {
     const usable = candidates.map(isUsableImageUrl).filter(Boolean);
     return usable.find(u => u.startsWith('file://')) || usable[0] || null;
@@ -64,8 +72,8 @@ function _cardImageApply(el, url) {
 
 function setCardImageStable(el, newUrl, fallbackUrl) {
     if (!el) return;
-    const candidate = isUsableImageUrl(newUrl);
-    const fallback = isUsableImageUrl(el.dataset?.lastGoodImage) || isUsableImageUrl(fallbackUrl);
+    const candidate = isCacheBackedArtworkUrl(newUrl);
+    const fallback = isCacheBackedArtworkUrl(el.dataset?.lastGoodImage) || isCacheBackedArtworkUrl(fallbackUrl);
     if (!candidate) {
         if (fallback) _cardImageApply(el, fallback);
         return;
@@ -96,8 +104,8 @@ function _heroBgApply(el, url) {
 }
 function setHeroBgStable(el, newUrl, fallbackUrl) {
     if (!el) return;
-    const candidate = isUsableImageUrl(newUrl);
-    const fallback  = isUsableImageUrl(el.dataset?.lastGoodBg) || isUsableImageUrl(fallbackUrl);
+    const candidate = isCacheBackedArtworkUrl(newUrl);
+    const fallback  = isCacheBackedArtworkUrl(el.dataset?.lastGoodBg) || isCacheBackedArtworkUrl(fallbackUrl);
     if (!candidate) {
         if (fallback) _heroBgApply(el, fallback);
         return;

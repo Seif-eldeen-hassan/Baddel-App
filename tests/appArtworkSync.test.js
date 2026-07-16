@@ -98,6 +98,9 @@ describe('Phase 2.12B: artwork-sync — image URL helpers in artwork-sync.js', (
     it('_preferLocalImage is defined', () => {
         assert.match(ARTWORK_SYNC_JS, /function _preferLocalImage\s*\(/);
     });
+    it('isCacheBackedArtworkUrl is defined', () => {
+        assert.match(ARTWORK_SYNC_JS, /function isCacheBackedArtworkUrl\s*\(/);
+    });
     it('getPosterUrl is defined', () => {
         assert.match(ARTWORK_SYNC_JS, /function getPosterUrl\s*\(/);
     });
@@ -115,6 +118,18 @@ describe('Phase 2.12B: artwork-sync — image URL helpers in artwork-sync.js', (
     });
     it('setHeroBgStable is defined', () => {
         assert.match(ARTWORK_SYNC_JS, /function setHeroBgStable\s*\(/);
+    });
+    it('normal artwork setters reject direct remote renderer URLs', () => {
+        const guard = getFunctionBody(ARTWORK_SYNC_JS, 'isCacheBackedArtworkUrl');
+        const card = getFunctionBody(ARTWORK_SYNC_JS, 'setCardImageStable');
+        const hero = getFunctionBody(ARTWORK_SYNC_JS, 'setHeroBgStable');
+
+        assert.match(guard, /startsWith\('http:\/\/'\)/);
+        assert.match(guard, /startsWith\('https:\/\/'\)/);
+        assert.match(card, /isCacheBackedArtworkUrl\(newUrl\)/);
+        assert.match(card, /isCacheBackedArtworkUrl\(fallbackUrl\)/);
+        assert.match(hero, /isCacheBackedArtworkUrl\(newUrl\)/);
+        assert.match(hero, /isCacheBackedArtworkUrl\(fallbackUrl\)/);
     });
     it('_getGameCoverUrl is defined in collections.js', () => {
         assert.match(COLLECTIONS_JS, /function _getGameCoverUrl\s*\(/);

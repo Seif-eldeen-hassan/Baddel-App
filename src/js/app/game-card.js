@@ -624,6 +624,14 @@ function _jbiSafeArtworkValue(value) {
     return isUsableArtworkValue(value) ? safeImageUrl(String(value).trim()) : null;
 }
 
+function _jbiCacheBackedArtworkValue(value) {
+    if (typeof isCacheBackedArtworkUrl === 'function') return isCacheBackedArtworkUrl(value);
+    const safe = _jbiSafeArtworkValue(value);
+    if (!safe) return null;
+    const lower = safe.toLowerCase();
+    return (lower.startsWith('http://') || lower.startsWith('https://')) ? null : safe;
+}
+
 function _jbiUniqueUsableCandidates(values = []) {
     const seen = new Set();
     const out = [];
@@ -701,7 +709,8 @@ function createRecentCard(game, isFeatured = false) {
     const displayGame = game;
     const selection = _jbiResolveArtworkSelection(displayGame);
     game = selection.game;
-    const displayImg = selection.selectedValue;
+    const displayImg = _jbiCacheBackedArtworkValue(selection.selectedValue) ||
+        'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
     card.setAttribute('data-id', game.id);
@@ -769,7 +778,7 @@ function createRecentCard(game, isFeatured = false) {
         }).then(() => {
             if (card.getAttribute('data-id') !== String(game.id)) return;
             const refreshed = _jbiResolveArtworkSelection(displayGame);
-            const refreshedValue = refreshed.selectedValue;
+            const refreshedValue = _jbiCacheBackedArtworkValue(refreshed.selectedValue);
             if (refreshed.selectedType === 'hero' && refreshedValue && refreshedValue !== imgEl.src) {
                 imgEl.src = refreshedValue;
                 imgEl.style.opacity = '';
@@ -779,11 +788,13 @@ function createRecentCard(game, isFeatured = false) {
 
     let jbiCandidateIndex = 0;
     imgEl.onerror = () => {
-        jbiCandidateIndex += 1;
-        if (selection.candidates[jbiCandidateIndex]) {
-            imgEl.src = selection.candidates[jbiCandidateIndex];
-            imgEl.style.opacity = '';
-            return;
+        while (++jbiCandidateIndex < selection.candidates.length) {
+            const next = _jbiCacheBackedArtworkValue(selection.candidates[jbiCandidateIndex]);
+            if (next) {
+                imgEl.src = next;
+                imgEl.style.opacity = '';
+                return;
+            }
         }
         imgEl.onerror = null;
         imgEl.style.opacity = '0';

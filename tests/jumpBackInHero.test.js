@@ -128,9 +128,22 @@ test('artwork-sync.js: hydrateRecentHeroArtwork only uses cover as last fallback
 
 test('game-card.js: createRecentCard uses JBI artwork selection for initial displayImg', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
-    const block = GAME_CARD_JS.slice(idx, idx + 600);
+    const block = GAME_CARD_JS.slice(idx, idx + 900);
     assert.ok(block.includes('_jbiResolveArtworkSelection(displayGame)'), '_jbiResolveArtworkSelection not called for displayImg');
     assert.ok(block.includes('selection.selectedValue'), 'selection.selectedValue not used for displayImg');
+});
+
+test('game-card.js: createRecentCard does not assign remote JBI artwork directly to img.src', () => {
+    const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
+    const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
+    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 3000);
+
+    assert.ok(GAME_CARD_JS.includes('function _jbiCacheBackedArtworkValue(value)'), '_jbiCacheBackedArtworkValue not defined');
+    assert.ok(block.includes('_jbiCacheBackedArtworkValue(selection.selectedValue)'), 'initial JBI image must be cache-backed');
+    assert.ok(block.includes('_jbiCacheBackedArtworkValue(refreshed.selectedValue)'), 'refreshed JBI image must be cache-backed');
+    assert.ok(block.includes('_jbiCacheBackedArtworkValue(selection.candidates[jbiCandidateIndex])'), 'fallback JBI candidates must be cache-backed');
+    assert.ok(!block.includes('imgEl.src = refreshed.selectedValue'), 'refreshed remote value must not be assigned directly');
+    assert.ok(!block.includes('imgEl.src = selection.candidates[jbiCandidateIndex]'), 'fallback remote value must not be assigned directly');
 });
 
 test('game-card.js: createRecentCard does NOT call fetchMetadata directly', () => {
@@ -188,8 +201,9 @@ test('game-card.js: createRecentCard advances failed image to the next JBI candi
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
     const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('jbiCandidateIndex += 1'), 'candidate advance not found');
+    assert.ok(block.includes('++jbiCandidateIndex'), 'candidate advance not found');
     assert.ok(block.includes('selection.candidates[jbiCandidateIndex]'), 'next candidate lookup not found');
+    assert.ok(block.includes('_jbiCacheBackedArtworkValue(selection.candidates[jbiCandidateIndex])'), 'next candidate must be cache-backed');
 });
 
 // ── hydrateRecentHeroArtwork error handling ───────────────────────────────────
