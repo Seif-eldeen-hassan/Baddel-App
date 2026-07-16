@@ -4,7 +4,7 @@
 // All behaviour is verbatim — only outer-scope references are threaded through deps.
 //
 // deps shape:
-//   { app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
+//   { app, path, fs, dialog, imageWebpCache, artworkDownloadManager, ipcValidation, fileURLToPath,
 //     getSavedGames, getMainWindow,
 //     _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
 //     IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, setGameArtwork, resetGameArtwork, resetGameImage }
@@ -14,7 +14,7 @@
 
 module.exports.register = function registerImageHandlers(ipcMain, deps) {
     const {
-        app, path, fs, dialog, imageWebpCache, ipcValidation, fileURLToPath,
+        app, path, fs, dialog, imageWebpCache, artworkDownloadManager, ipcValidation, fileURLToPath,
         getSavedGames, getMainWindow,
         _collectImageCacheIdsFromGame, _readReadyToInstallProtectedImageIds,
         IMAGE_CACHE_PRUNE_GRACE_MS, updateGameImage, setGameArtwork, resetGameArtwork, resetGameImage,
@@ -59,16 +59,16 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
             } catch { /* File gone — fall through to re-download */ }
         }
         try {
-            const cacheDir = path.join(app.getPath('userData'), 'image_cache');
-            const baseName = imageWebpCache.cacheBaseName(type, gameId);
-            const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url, {
+            if (!artworkDownloadManager) return url;
+            return await artworkDownloadManager.downloadAsset({
+                sourceUrl: url,
+                canonicalGameId: gameId,
+                type,
+                priority: 'visible',
                 sourceSubsystem: 'renderer-cache-image-ipc',
                 reason: 'cache-image',
-                canonicalGameId: gameId,
-                assetType: type,
                 rendererDirectRemote: true,
             });
-            return localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
         } catch (err) {
             console.error(`[Cache] Failed for ${gameId} (${type}):`, err.message);
             return url;
@@ -76,26 +76,13 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
     });
 
     ipcMain.handle('cache-all-assets', async (_, assets, gameId) => {
-        const results = {};
-        const cacheDir = path.join(app.getPath('userData'), 'image_cache');
-        await Promise.all(Object.entries(assets).map(async ([type, url]) => {
-            if (!url) return;
-            try {
-                const baseName = imageWebpCache.cacheBaseName(type, gameId);
-                const localPath = await imageWebpCache.downloadToCacheAsWebp(cacheDir, baseName, url, {
-                    sourceSubsystem: 'renderer-cache-all-assets-ipc',
-                    reason: 'cache-all-assets',
-                    canonicalGameId: gameId,
-                    assetType: type,
-                    rendererDirectRemote: true,
-                });
-                results[type] = localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
-            } catch (e) {
-                console.warn(`[cache-all-assets] ${type} for ${gameId}:`, e.message);
-                results[type] = url;
-            }
-        }));
-        return results;
+        if (!artworkDownloadManager) return assets || {};
+        return artworkDownloadManager.downloadAssets(assets, gameId, {
+            priority: 'visible',
+            sourceSubsystem: 'renderer-cache-all-assets-ipc',
+            reason: 'cache-all-assets',
+            rendererDirectRemote: true,
+        });
     });
 
     // Prune image_cache of files that don't belong to installed or synced Ready-to-Install games.

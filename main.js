@@ -3,6 +3,7 @@ let autoUpdater = null; // lazy-loaded inside setupAutoUpdater() - never require
 const path = require('path');
 const fs = require('fs').promises;
 const fsSync = require('fs');
+const crypto = require('crypto');
 const os = require('os');
 const { exec, spawn } = require('child_process');
 const util = require('util');
@@ -26,6 +27,10 @@ const { registerAccountHandlers, switchAccountByPlatform } = require('./accounts
 const accountShortcuts = require('./services/accountShortcuts');
 const quickSwitcher = require('./services/quickSwitcher');
 const quickSwitcherSettings = require('./services/quickSwitcherSettings');
+const { ContentAddressedArtworkCache } = require('./src/features/games/infrastructure/services/ContentAddressedArtworkCache');
+const { ArtworkDownloadScheduler, ARTWORK_DOWNLOAD_PRIORITIES } = require('./src/features/games/infrastructure/services/ArtworkDownloadScheduler');
+const { ArtworkHttpClient } = require('./src/features/games/infrastructure/services/ArtworkHttpClient');
+const { ArtworkDownloadManager } = require('./src/features/games/infrastructure/services/ArtworkDownloadManager');
 const {
     getSyncFeature,
 } = require('./src/features/sync/infrastructure/composition/SyncContainer');
@@ -1547,6 +1552,7 @@ ipcMain.handle('get-artwork-network-diagnostics', () =>
 // IMAGE CACHE
 // ============================================================
 let CACHE_DIR;
+let artworkDownloadManager;
 
 // ============================================================
 // APP STARTUP
@@ -1595,6 +1601,20 @@ app.whenReady().then(async () => {
     artworkNetworkTelemetry.configure({
         summaryFile: path.join(app.getPath('userData'), 'artwork-network-diagnostics.json'),
     });
+    artworkDownloadManager = new ArtworkDownloadManager({
+        cache: new ContentAddressedArtworkCache({
+            fs: fsSync,
+            path,
+            crypto,
+            baseDir: path.join(app.getPath('userData'), 'artwork-cache-v2'),
+        }),
+        scheduler: new ArtworkDownloadScheduler({
+            concurrency: 3,
+            worker: task => task.run(),
+        }),
+        httpClient: new ArtworkHttpClient(),
+        telemetry: artworkNetworkTelemetry,
+    });
 
     // -- Games feature IPC — primary registration via games adapter (Phase 3.3) --
     // All four legacy handler groups (installedGames, gameLibrary, image, localMetadata)
@@ -1624,6 +1644,7 @@ app.whenReady().then(async () => {
         app,
         dialog,
         imageWebpCache,
+        artworkDownloadManager,
         fileURLToPath,
         _collectImageCacheIdsFromGame,
         _readReadyToInstallProtectedImageIds,
@@ -2032,24 +2053,12 @@ const allAchievements = allSchemaAchievements.length
     });
 
     const _downloadAssetsToCache = async (assets, gameId) => {
-        if (!CACHE_DIR) return assets;
-        const results = {};
-        await Promise.all(Object.entries(assets).map(async ([type, url]) => {
-            if (!url) return;
-            try {
-                const baseName = imageWebpCache.cacheBaseName(type, gameId);
-                const localPath = await imageWebpCache.downloadToCacheAsWebp(CACHE_DIR, baseName, url, {
-                    sourceSubsystem: 'main-shared-asset-downloader',
-                    reason: 'platform-sync-or-background-metadata',
-                    canonicalGameId: gameId,
-                    assetType: type,
-                });
-                results[type] = localPath ? imageWebpCache.filePathToFileUrl(localPath) : url;
-            } catch (e) {
-                results[type] = url;
-            }
-        }));
-        return results;
+        if (!artworkDownloadManager) return assets;
+        return artworkDownloadManager.downloadAssets(assets, gameId, {
+            priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+            sourceSubsystem: 'main-shared-asset-downloader',
+            reason: 'platform-sync-or-background-metadata',
+        });
     };
 
     // Wire the same downloader into both pipelines so Steam/Epic games from

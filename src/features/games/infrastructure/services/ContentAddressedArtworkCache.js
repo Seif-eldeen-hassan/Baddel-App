@@ -230,6 +230,23 @@ class ContentAddressedArtworkCache {
         return this._materializedResult(entry.assetHash);
     }
 
+    lookupUrl(sourceUrl, { canonicalGameId = null, type = null } = {}) {
+        if (!sourceUrl) return null;
+        const urlHash = this.hashUrl(sourceUrl);
+        const existing = this._resolveUrlHash(urlHash);
+        if (!existing) return null;
+        this._attachAlias(existing.assetHash, canonicalGameId, type);
+        this._saveManifest();
+        return { ...existing, urlHash };
+    }
+
+    linkAlias({ assetHash, canonicalGameId, type }) {
+        if (!assetHash || !this._manifest.assets[assetHash]) return null;
+        this._attachAlias(assetHash, canonicalGameId, type);
+        this._saveManifest();
+        return this._materializedResult(assetHash);
+    }
+
     cleanupTemp() {
         this._cleanupTemp();
     }
