@@ -75,12 +75,20 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
         }
     });
 
-    ipcMain.handle('cache-all-assets', async (_, assets, gameId) => {
+    ipcMain.handle('cache-all-assets', async (_, assets, gameId, opts = {}) => {
         if (!artworkDownloadManager) return assets || {};
+        const requestedPriority = String(opts?.priority || 'visible');
+        const priority = ['game-details', 'visible', 'prewarm', 'background'].includes(requestedPriority)
+            ? requestedPriority
+            : 'visible';
         return artworkDownloadManager.downloadAssets(assets, gameId, {
-            priority: 'visible',
-            sourceSubsystem: 'renderer-cache-all-assets-ipc',
-            reason: 'cache-all-assets',
+            priority,
+            sourceSubsystem: opts?.sourceSubsystem || (priority === 'game-details'
+                ? 'game-details-cache-all-assets-ipc'
+                : 'renderer-cache-all-assets-ipc'),
+            reason: opts?.reason || (priority === 'game-details'
+                ? 'game-details-cache-all-assets'
+                : 'cache-all-assets'),
             rendererDirectRemote: true,
         });
     });

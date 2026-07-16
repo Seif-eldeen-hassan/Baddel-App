@@ -60,7 +60,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cacheImage:             (url, gameId, type)       => ipcRenderer.invoke('cache-image', url, gameId, type),
     getCachedImage:         (gameId, type)             => ipcRenderer.invoke('get-cached-image', gameId, type),
     probeLocalImage:        (fileUrl)                 => ipcRenderer.invoke('probe-local-image', fileUrl),
-    cacheAllAssets:         (assets, gameId)          => ipcRenderer.invoke('cache-all-assets', assets, gameId),
+    cacheAllAssets:         (assets, gameId, opts)    => ipcRenderer.invoke('cache-all-assets', assets, gameId, opts),
     pruneImageCache:        ()                        => ipcRenderer.invoke('prune-image-cache'),
     getImageCacheDirUrl:    ()                        => ipcRenderer.invoke('get-image-cache-dir-url'),
     getUserArtworkDirUrl:   ()                        => ipcRenderer.invoke('get-user-artwork-dir-url'),

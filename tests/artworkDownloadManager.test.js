@@ -23,6 +23,8 @@ const MANAGER_PATH = path.join(
 );
 const MAIN_PATH = path.join(__dirname, '..', 'main.js');
 const IMAGE_HANDLERS_PATH = path.join(__dirname, '..', 'handlers', 'imageHandlers.js');
+const PRELOAD_PATH = path.join(__dirname, '..', 'preload.js');
+const GAME_DETAILS_PATH = path.join(__dirname, '..', 'src', 'js', 'game-details.js');
 
 const PNG_1X1 = Buffer.from(
     'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lWv2YQAAAABJRU5ErkJggg==',
@@ -255,4 +257,21 @@ test('production artwork download routes delegate through ArtworkDownloadManager
     assert.match(imageHandlers, /artworkDownloadManager\.downloadAssets\(/);
     assert.match(imageHandlers, /artworkDownloadManager\?\.getCachedAsset\?\.\(/);
     assert.doesNotMatch(imageHandlers, /downloadToCacheAsWebp\(/);
+});
+
+test('Game Details artwork requests use the highest download priority', () => {
+    const preload = fs.readFileSync(PRELOAD_PATH, 'utf8');
+    const imageHandlers = fs.readFileSync(IMAGE_HANDLERS_PATH, 'utf8');
+    const gameDetails = fs.readFileSync(GAME_DETAILS_PATH, 'utf8');
+
+    assert.match(preload, /cacheAllAssets:\s*\(assets,\s*gameId,\s*opts\)\s*=>\s*ipcRenderer\.invoke\('cache-all-assets',\s*assets,\s*gameId,\s*opts\)/);
+    assert.match(imageHandlers, /const requestedPriority = String\(opts\?\.priority \|\| 'visible'\)/);
+    assert.match(imageHandlers, /priority === 'game-details'/);
+    assert.match(imageHandlers, /game-details-cache-all-assets-ipc/);
+
+    const detailsPriorityCount = (gameDetails.match(/priority:\s*'game-details'/g) || []).length;
+    assert.ok(detailsPriorityCount >= 3, `expected Game Details cacheAllAssets calls to use game-details priority, found ${detailsPriorityCount}`);
+    assert.match(gameDetails, /reason:\s*'game-details-cached-fallback'/);
+    assert.match(gameDetails, /reason:\s*'game-details-metadata-fallback'/);
+    assert.match(gameDetails, /reason:\s*'game-details-reset-assets'/);
 });

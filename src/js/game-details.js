@@ -1624,7 +1624,11 @@ window.openGameDetails = async function(gameId) {
                         cover: cachedFallback.cover,
                         hero:  cachedFallback.heroImage || cachedFallback.hero,
                         logo:  cachedFallback.logo,
-                    }, game.id)
+                    }, game.id, {
+                        priority: 'game-details',
+                        sourceSubsystem: 'game-details-cache-all-assets-ipc',
+                        reason: 'game-details-cached-fallback',
+                    })
                     .then(localAssets => {
                         // Persist local URLs (or remote fallback) back into the game DB
                         // so that the hero banner is stable across page re-opens.
@@ -1698,7 +1702,11 @@ window.openGameDetails = async function(gameId) {
                             cover: fallbackMeta.cover,
                             hero:  fallbackMeta.heroImage || fallbackMeta.hero,
                             logo:  fallbackMeta.logo,
-                        }, game.id)
+                        }, game.id, {
+                            priority: 'game-details',
+                            sourceSubsystem: 'game-details-cache-all-assets-ipc',
+                            reason: 'game-details-metadata-fallback',
+                        })
                         .then(localAssets => {
                             window.electronAPI.saveMetadata(game.id, {
                                 cover:            localAssets.cover,
@@ -9721,7 +9729,11 @@ async function _gdCacheResetAssets(meta, gameId) {
             cover: meta.cover || null,
             hero: meta.heroImage || meta.hero || null,
             logo: meta.logo || null,
-        }, gameId);
+        }, gameId, {
+            priority: 'game-details',
+            sourceSubsystem: 'game-details-cache-all-assets-ipc',
+            reason: 'game-details-reset-assets',
+        });
 
         return {
             cover: assets?.cover || meta.cover || null,
