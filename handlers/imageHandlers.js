@@ -42,6 +42,25 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
         }
     });
 
+    ipcMain.on('get-artwork-cache-dir-url-sync', (event) => {
+        try {
+            const dir = path.join(app.getPath('userData'), 'artwork-cache-v2');
+            event.returnValue = imageWebpCache.filePathToFileUrl(dir) + '/';
+        } catch (err) {
+            console.warn('[Main] get-artwork-cache-dir-url-sync failed:', err && err.message);
+            event.returnValue = '';
+        }
+    });
+
+    const _isRemoteArtworkUrl = value => /^https?:\/\//i.test(String(value || '').trim());
+    const _localOrNull = value => {
+        if (!value || _isRemoteArtworkUrl(value)) return null;
+        return value;
+    };
+    const _filterCachedAssetResult = assets => Object.fromEntries(
+        Object.entries(assets || {}).map(([type, value]) => [type, _localOrNull(value)])
+    );
+
     // ---- Image Caching ----
     ipcMain.handle('cache-image', async (_, url, gameId, type) => {
         try {
@@ -59,8 +78,8 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
             } catch { /* File gone — fall through to re-download */ }
         }
         try {
-            if (!artworkDownloadManager) return url;
-            return await artworkDownloadManager.downloadAsset({
+            if (!artworkDownloadManager) return _localOrNull(url);
+            const cached = await artworkDownloadManager.downloadAsset({
                 sourceUrl: url,
                 canonicalGameId: gameId,
                 type,
@@ -69,19 +88,20 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
                 reason: 'cache-image',
                 rendererDirectRemote: true,
             });
+            return _localOrNull(cached);
         } catch (err) {
             console.error(`[Cache] Failed for ${gameId} (${type}):`, err.message);
-            return url;
+            return null;
         }
     });
 
     ipcMain.handle('cache-all-assets', async (_, assets, gameId, opts = {}) => {
-        if (!artworkDownloadManager) return assets || {};
+        if (!artworkDownloadManager) return _filterCachedAssetResult(assets);
         const requestedPriority = String(opts?.priority || 'visible');
         const priority = ['game-details', 'visible', 'prewarm', 'background'].includes(requestedPriority)
             ? requestedPriority
             : 'visible';
-        return artworkDownloadManager.downloadAssets(assets, gameId, {
+        const cached = await artworkDownloadManager.downloadAssets(assets, gameId, {
             priority,
             sourceSubsystem: opts?.sourceSubsystem || (priority === 'game-details'
                 ? 'game-details-cache-all-assets-ipc'
@@ -91,6 +111,7 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
                 : 'cache-all-assets'),
             rendererDirectRemote: true,
         });
+        return _filterCachedAssetResult(cached);
     });
 
     // Prune image_cache of files that don't belong to installed or synced Ready-to-Install games.
@@ -172,6 +193,11 @@ module.exports.register = function registerImageHandlers(ipcMain, deps) {
 
     ipcMain.handle('get-user-artwork-dir-url', () => {
         const dir = path.join(app.getPath('userData'), 'user_artwork');
+        return imageWebpCache.filePathToFileUrl(dir) + '/';
+    });
+
+    ipcMain.handle('get-artwork-cache-dir-url', () => {
+        const dir = path.join(app.getPath('userData'), 'artwork-cache-v2');
         return imageWebpCache.filePathToFileUrl(dir) + '/';
     });
 

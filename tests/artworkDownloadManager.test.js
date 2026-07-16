@@ -210,7 +210,7 @@ test('ArtworkDownloadManager deduplicates concurrent same-URL downloads and link
     assert.equal(events.filter(event => event.cacheMiss).length, 2);
 });
 
-test('ArtworkDownloadManager returns original URL and records failure when HTTP fails', async () => {
+test('ArtworkDownloadManager returns null and records failure when HTTP fails', async () => {
     const { manager, events } = createManager({
         httpClient: {
             async fetchImage() {
@@ -225,9 +225,30 @@ test('ArtworkDownloadManager returns original URL and records failure when HTTP 
         type: 'hero',
     });
 
-    assert.equal(url, 'https://cdn.example/fail.png');
+    assert.equal(url, null);
     assert.equal(events[0].failed, true);
     assert.equal(events[0].cacheMiss, true);
+});
+
+test('ArtworkDownloadManager requestAsset exposes failed remote candidate without returning it as local artwork', async () => {
+    const { manager } = createManager({
+        httpClient: {
+            async fetchImage() {
+                throw new Error('network down');
+            },
+        },
+    });
+
+    const result = await manager.requestAsset({
+        sourceUrl: 'https://cdn.example/fail-structured.png',
+        canonicalGameId: 'game-structured',
+        type: 'cover',
+    });
+
+    assert.equal(result.status, 'failed');
+    assert.equal(result.localUrl, null);
+    assert.equal(result.remoteCandidate, 'https://cdn.example/fail-structured.png');
+    assert.ok(result.errorCode);
 });
 
 test('ArtworkDownloadManager downloadAssets preserves current asset map shape', async () => {
@@ -320,8 +341,8 @@ test('ArtworkDownloadManager Data Saver skips automatic hero/logo but keeps cove
     });
 
     assert.match(result.cover, /^file:\/\//);
-    assert.equal(result.hero, 'https://cdn.example/hero.png');
-    assert.equal(result.logo, 'https://cdn.example/logo.png');
+    assert.equal(result.hero, null);
+    assert.equal(result.logo, null);
     assert.equal(httpCalls, 1);
     assert.equal(events.filter(event => event.skipped).length, 2);
     assert.ok(events.every(event => event.downloadedBytes === 0 || event.assetType === 'cover'));
@@ -361,10 +382,33 @@ test('ArtworkDownloadManager automatic bandwidth budget skips future background 
     });
 
     assert.match(first, /^file:\/\//);
-    assert.equal(second, 'https://cdn.example/second.png');
+    assert.equal(second, null);
     assert.equal(httpCalls, 1);
     assert.equal(events.at(-1).skipped, true);
     assert.equal(events.at(-1).skipReason, 'automatic-artwork-bandwidth-budget-exhausted');
+});
+
+test('ArtworkDownloadManager requestAsset exposes blocked remote candidate without returning it as local artwork', async () => {
+    const { manager } = createManager({
+        bandwidthPolicy: new ArtworkBandwidthPolicy({ maxAutomaticBytes: 0 }),
+        httpClient: {
+            async fetchImage() {
+                throw new Error('blocked request must not fetch');
+            },
+        },
+    });
+
+    const result = await manager.requestAsset({
+        sourceUrl: 'https://cdn.example/blocked.png',
+        canonicalGameId: 'game-blocked',
+        type: 'cover',
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+    });
+
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.localUrl, null);
+    assert.equal(result.remoteCandidate, 'https://cdn.example/blocked.png');
+    assert.equal(result.blockedReason, 'automatic-artwork-bandwidth-budget-exhausted');
 });
 
 test('ArtworkDownloadManager Game Details requests bypass Data Saver and automatic budget', async () => {

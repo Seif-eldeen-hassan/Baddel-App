@@ -112,6 +112,25 @@ test('safeImageUrl: file:// URL with encoded spaces in trusted cache passes', ()
     assert.equal(safeImageUrl(encoded), encoded);
 });
 
+test('safeImageUrl: artwork-cache-v2 trusted root passes', () => {
+    const trusted = 'file:///C:/Users/test/AppData/Roaming/BaddelLauncher/artwork-cache-v2/';
+    const url = trusted + 'assets/ab/cd/abcdef_cover.webp';
+    addTrustedFileDir(trusted);
+    assert.equal(safeImageUrl(url), url);
+});
+
+test('safeImageUrl: artwork-cache-v2 trust does not allow sibling files', () => {
+    const trusted = 'file:///C:/Users/test/AppData/Roaming/BaddelLauncher/artwork-cache-v2/';
+    addTrustedFileDir(trusted);
+    assert.equal(safeImageUrl('file:///C:/Users/test/AppData/Roaming/BaddelLauncher/platform-sync/secret.jpg'), '');
+});
+
+test('safeImageUrl: artwork-cache-v2 trust blocks encoded traversal', () => {
+    const trusted = 'file:///C:/Users/test/AppData/Roaming/BaddelLauncher/artwork-cache-v2/';
+    addTrustedFileDir(trusted);
+    assert.equal(safeImageUrl(trusted + '%2e%2e/secret.jpg'), '');
+});
+
 // ─── safeImageUrl — blocked ───────────────────────────────────────────────────
 
 test('safeImageUrl: javascript: URL is blocked', () => {

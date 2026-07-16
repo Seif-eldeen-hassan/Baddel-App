@@ -39,6 +39,11 @@ test('preload: exposes __BADDEL_CACHE_URL__ via contextBridge', () => {
         'preload.js must expose __BADDEL_CACHE_URL__ for domUtils trust policy');
 });
 
+test('preload: exposes __BADDEL_ARTWORK_CACHE_URL__ via contextBridge', () => {
+    assert.match(preload, /__BADDEL_ARTWORK_CACHE_URL__/,
+        'preload.js must expose __BADDEL_ARTWORK_CACHE_URL__ so domUtils trusts artwork-cache-v2 before renderer scripts');
+});
+
 test('preload: image-cache URL block is wrapped in try/catch', () => {
     assert.match(preload, /try\s*\{[\s\S]*__BADDEL_CACHE_URL__[\s\S]*\}\s*catch/,
         'The __BADDEL_CACHE_URL__ block must be inside a try/catch so a failure never prevents electronAPI from loading');
@@ -47,6 +52,11 @@ test('preload: image-cache URL block is wrapped in try/catch', () => {
 test('preload: uses ipcRenderer.sendSync for cache URL (not app.getPath)', () => {
     assert.match(preload, /ipcRenderer\.sendSync\s*\(\s*['"]get-image-cache-dir-url-sync['"]\)/,
         'preload must use ipcRenderer.sendSync to get the image cache URL');
+});
+
+test('preload: uses ipcRenderer.sendSync for artwork-cache-v2 URL (not app.getPath)', () => {
+    assert.match(preload, /ipcRenderer\.sendSync\s*\(\s*['"]get-artwork-cache-dir-url-sync['"]\)/,
+        'preload must synchronously request artwork-cache-v2 before renderer scripts run');
 });
 
 test('preload: getSteamAccounts is exposed on electronAPI', () => {
@@ -67,6 +77,11 @@ test('preload: launchGame is exposed on electronAPI', () => {
 test('preload: getGames is exposed on electronAPI', () => {
     assert.match(preload, /getGames/,
         'getGames must be present in preload electronAPI');
+});
+
+test('preload: getArtworkCacheDirUrl is exposed on electronAPI', () => {
+    assert.match(preload, /getArtworkCacheDirUrl:\s*\(\)\s*=>\s*ipcRenderer\.invoke\(['"]get-artwork-cache-dir-url['"]\)/,
+        'getArtworkCacheDirUrl must expose the async artwork-cache-v2 URL IPC');
 });
 
 // ── dashboard.html CSP guards ────────────────────────────────────────────────
@@ -114,6 +129,15 @@ const imageHandlersJs = fs.readFileSync(path.join(ROOT, 'handlers', 'imageHandle
 test('imageHandlers.js: registers get-image-cache-dir-url-sync synchronous IPC handler', () => {
     assert.match(imageHandlersJs, /ipcMain\.on\s*\(\s*['"]get-image-cache-dir-url-sync['"]/,
         'imageHandlers.js must register the synchronous IPC handler used by preload');
+});
+
+test('imageHandlers.js: registers artwork-cache-v2 sync and async IPC handlers', () => {
+    assert.match(imageHandlersJs, /ipcMain\.on\s*\(\s*['"]get-artwork-cache-dir-url-sync['"]/,
+        'imageHandlers.js must register the synchronous artwork-cache-v2 IPC handler used by preload');
+    assert.match(imageHandlersJs, /ipcMain\.handle\s*\(\s*['"]get-artwork-cache-dir-url['"]/,
+        'imageHandlers.js must expose the async artwork-cache-v2 IPC handler');
+    assert.match(imageHandlersJs, /artwork-cache-v2/,
+        'artwork-cache-v2 directory name must be used by the handler');
 });
 
 test('imageHandlers.js: no root-relative require for services/imageWebpCache (wrong path from handlers/)', () => {

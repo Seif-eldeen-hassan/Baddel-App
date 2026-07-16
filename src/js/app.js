@@ -663,13 +663,17 @@ function navigateToInstalled() {
 function _explorePatchCardArtwork(card, game) {
     if (!card || !game) return;
     const img = card.querySelector?.('.actual-img');
-    const cover = typeof getPosterUrl === 'function'
-        ? getPosterUrl(game)
-        : (game.image || game.defaultImage || game.coverUrl || null);
-    const safe = safeImageUrl(cover);
+    const expectedId = String(game.id || '');
+    if (String(card.dataset?.id || '') !== expectedId) return;
+    const cover = game.image || game.defaultImage || game.coverUrl || null;
+    const safe = _isCacheBackedNormalArtworkUrl(cover);
+    card.dataset.artworkGameId = expectedId;
     if (img && safe && img.src !== safe) {
         img.src = safe;
+        img.dataset.lastGoodCover = safe;
+        card.dataset.artworkAssetHash = safe;
         img.style.display = 'block';
+        img.style.opacity = '';
     }
 }
 
@@ -1591,7 +1595,95 @@ function _patchGameInMemory(updatedGame) {
     return allGamesData.find(g => String(g.id) === id) || normalized;
 }
 
+let _artworkRequestSeq = 0;
+
+function _isRemoteArtworkCandidate(url) {
+    return /^https?:\/\//i.test(String(url || '').trim());
+}
+
+function _isCacheBackedNormalArtworkUrl(url) {
+    const safe = typeof safeImageUrl === 'function' ? safeImageUrl(url) : String(url || '');
+    if (!safe) return null;
+    return _isRemoteArtworkCandidate(safe) ? null : safe;
+}
+
+function _artworkCardForImage(imgElement) {
+    return imgElement?.closest?.('[data-id]') || null;
+}
+
+function _beginCardArtworkRequest(imgElement, game) {
+    const card = _artworkCardForImage(imgElement);
+    const expectedGameId = String(game?.id || card?.dataset?.id || '');
+    const requestId = String(++_artworkRequestSeq);
+    if (card) {
+        card.dataset.artworkRequestId = requestId;
+        card.dataset.artworkGameId = expectedGameId;
+    }
+    if (imgElement?.dataset) {
+        imgElement.dataset.artworkRequestId = requestId;
+        imgElement.dataset.artworkGameId = expectedGameId;
+    }
+    return { card, imgElement, expectedGameId, requestId };
+}
+
+function _cardArtworkRequestStillCurrent(ctx) {
+    const card = ctx?.card || _artworkCardForImage(ctx?.imgElement);
+    if (!ctx?.imgElement || !card || !card.isConnected) return false;
+    if (String(card.dataset?.id || '') !== String(ctx.expectedGameId || '')) return false;
+    if (String(card.dataset?.artworkRequestId || '') !== String(ctx.requestId || '')) return false;
+    return true;
+}
+
+function _logExploreArtworkRequest(patch = {}) {
+    try {
+        console.debug('[ExploreArtworkRequest]', {
+            gameId: patch.gameId || null,
+            requestId: patch.requestId || null,
+            source: patch.source || 'unknown',
+            trusted: patch.trusted === true,
+            applied: patch.applied === true,
+            ignoredReason: patch.ignoredReason || null,
+        });
+    } catch {}
+}
+
+function _applyCardCoverResult(ctx, coverUrl, { source = 'downloaded' } = {}) {
+    const safe = _isCacheBackedNormalArtworkUrl(coverUrl);
+    const gameId = ctx?.expectedGameId || null;
+    if (!safe) {
+        _logExploreArtworkRequest({ gameId, requestId: ctx?.requestId, source, trusted: false, applied: false, ignoredReason: 'untrusted-or-remote' });
+        return null;
+    }
+    if (!_cardArtworkRequestStillCurrent(ctx)) {
+        _logExploreArtworkRequest({ gameId, requestId: ctx?.requestId, source, trusted: true, applied: false, ignoredReason: 'stale-card-request' });
+        return null;
+    }
+
+    const img = ctx.imgElement;
+    const apply = () => {
+        if (!_cardArtworkRequestStillCurrent(ctx)) return;
+        img.src = safe;
+        img.dataset.lastGoodCover = safe;
+        img.style.opacity = '';
+        img.style.display = 'block';
+        img.classList.add('img-loaded');
+        ctx.card.dataset.artworkAssetHash = safe;
+        _logExploreArtworkRequest({ gameId, requestId: ctx.requestId, source, trusted: true, applied: true });
+    };
+
+    if (typeof Image === 'function' && img.src && img.src !== safe) {
+        const preloader = new Image();
+        preloader.onload = apply;
+        preloader.onerror = () => _logExploreArtworkRequest({ gameId, requestId: ctx.requestId, source, trusted: true, applied: false, ignoredReason: 'replacement-load-failed' });
+        preloader.src = safe;
+    } else {
+        apply();
+    }
+    return safe;
+}
+
 async function fetchMetadata(imgElement, game) {
+    const requestContext = _beginCardArtworkRequest(imgElement, game);
     const cacheKey = 'cover_' + game.id;
     const storedCover = localStorage.getItem(cacheKey);
     const hasExplicitArtwork =
@@ -1601,7 +1693,7 @@ async function fetchMetadata(imgElement, game) {
     // 1. In-memory path is already a local file — probe it first (may be gone after Delete Forever)
     if (game.image && game.image.startsWith('file://')) {
         const alive = await window.electronAPI.probeLocalImage(game.image).catch(() => false);
-        if (alive) { imgElement.src = game.image; checkBackgroundAssets(game); return; }
+        if (alive && _applyCardCoverResult(requestContext, game.image, { source: 'v2-cache-hit' })) { checkBackgroundAssets(game); return; }
         // File is gone — clear stale references so we fall through to a fresh fetch
         game.image = null; game.defaultImage = null; game.coverUrl = null;
         localStorage.removeItem('cover_' + game.id);
@@ -1609,7 +1701,8 @@ async function fetchMetadata(imgElement, game) {
 
     // 1b. Creator-locked with any URL — trust game.image, skip stale localStorage/server
     if (hasExplicitArtwork && game.image) {
-        imgElement.src = game.image; checkBackgroundAssets(game); return;
+        if (_applyCardCoverResult(requestContext, game.image, { source: 'user-artwork' })) checkBackgroundAssets(game);
+        return;
     }
 
     if (hasExplicitArtwork && !game.image) {
@@ -1619,7 +1712,7 @@ async function fetchMetadata(imgElement, game) {
     // 2. localStorage has a local file path — probe before trusting
     if (storedCover && storedCover.startsWith('file://')) {
         const alive = await window.electronAPI.probeLocalImage(storedCover).catch(() => false);
-        if (alive) { imgElement.src = storedCover; game.image = storedCover; checkBackgroundAssets(game); return; }
+        if (alive && _applyCardCoverResult(requestContext, storedCover, { source: 'legacy-cache-hit' })) { game.image = storedCover; checkBackgroundAssets(game); return; }
         // File is gone — drop stale entry
         localStorage.removeItem(cacheKey);
     }
@@ -1628,8 +1721,8 @@ async function fetchMetadata(imgElement, game) {
     if (window.electronAPI.getCachedImage) {
         try {
             const diskCover = await window.electronAPI.getCachedImage(game.id, 'cover');
-            if (diskCover && !hasExplicitArtwork) {
-                imgElement.src = diskCover;
+            const safeDiskCover = _isCacheBackedNormalArtworkUrl(diskCover);
+            if (safeDiskCover && !hasExplicitArtwork && _applyCardCoverResult(requestContext, safeDiskCover, { source: 'v2-cache-hit' })) {
                 game.image = diskCover;
                 localStorage.setItem(cacheKey, diskCover);
                 const diskHero = await window.electronAPI.getCachedImage(game.id, 'hero');
@@ -1649,14 +1742,14 @@ async function fetchMetadata(imgElement, game) {
     }
 
     // 5. Fetch fresh metadata from SteamGridDB API
-    imageQueue.push({ imgElement, game });
+    imageQueue.push({ imgElement, game, requestContext });
     processQueue();
 }
 
 async function processQueue() {
     if (activeRequests >= 3 || imageQueue.length === 0) return;
     activeRequests++;
-    const { imgElement, game, _coverRetries = 0 } = imageQueue.shift();
+    const { imgElement, game, requestContext = _beginCardArtworkRequest(imgElement, game), _coverRetries = 0 } = imageQueue.shift();
     const expectedUpdatedAt = game?.artworkUpdatedAt || null;
     const canApplyHydrated = (type) => {
         if (typeof shouldApplyHydratedArtwork === 'function') {
@@ -1686,7 +1779,7 @@ async function processQueue() {
             if (_coverRetries < 3) {
                 console.log(`[Metadata][Pending] ${game.name} found on server but no images yet. Retry ${_coverRetries + 1}/3 in 4s...`);
                 setTimeout(() => {
-                    imageQueue.push({ imgElement, game, _coverRetries: _coverRetries + 1 });
+                    imageQueue.push({ imgElement, game, requestContext, _coverRetries: _coverRetries + 1 });
                     processQueue();
                 }, 4000);
                 activeRequests--;
@@ -1713,29 +1806,24 @@ async function processQueue() {
                 console.log(`[Metadata][Pending] ${game.name} still has no usable assets/text — skip cache/save for now.`);
                 return;
             }
-            if (metaHero && canApplyHydrated('hero')) game.heroImage = metaHero;
-            if (metaLogo && canApplyHydrated('logo')) game.logo = metaLogo;
-            if (meta.cover && canApplyHydrated('cover')) { game.image = meta.cover; imgElement.src = meta.cover; }
-
             console.log(`[BaddelAPIEnrichAssets] ${game.name} (${game.id}): cover=${!!meta.cover} hero=${!!metaHero} logo=${!!metaLogo}`);
 
             if (window.electronAPI.cacheAllAssets) {
-                window.electronAPI.cacheAllAssets({ cover: meta.cover, hero: metaHero, logo: metaLogo }, game.id)
+                window.electronAPI.cacheAllAssets({ cover: meta.cover, hero: metaHero, logo: metaLogo }, game.id, {
+                    priority: 'visible',
+                    reason: 'explore-visible-cover',
+                })
                     .then(localAssets => {
-                        const finalCover = localAssets.cover || meta.cover || null;
-                        const finalHero  = localAssets.hero  || metaHero  || null;
-                        const finalLogo  = localAssets.logo  || metaLogo  || null;
+                        const finalCover = _isCacheBackedNormalArtworkUrl(localAssets?.cover);
+                        const finalHero  = _isCacheBackedNormalArtworkUrl(localAssets?.hero);
+                        const finalLogo  = _isCacheBackedNormalArtworkUrl(localAssets?.logo);
 
                         if (finalCover && canApplyHydrated('cover')) {
+                            if (!_applyCardCoverResult(requestContext, finalCover, { source: 'downloaded' })) return;
                             game.image = finalCover; game.defaultImage = finalCover; game.coverUrl = finalCover;
                             localStorage.setItem('cover_' + game.id, finalCover);
-                            if (imgElement) {
-                                imgElement.classList.remove('img-loaded');
-                                imgElement.addEventListener('load', () => imgElement.classList.add('img-loaded'), { once: true });
-                                imgElement.src = safeImageUrl(finalCover) + (finalCover.startsWith('file://') ? `?t=${Date.now()}` : '');
-                                imgElement.style.opacity = '';
-                                imgElement.style.display = 'block';
-                            }
+                        } else {
+                            _logExploreArtworkRequest({ gameId: game.id, requestId: requestContext.requestId, source: 'blocked', trusted: false, applied: false, ignoredReason: 'no-local-cover' });
                         }
                         if (finalHero && canApplyHydrated('hero')) {
                             game.heroImage = finalHero; game.defaultHero = finalHero; game.heroUrl = finalHero;

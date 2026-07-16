@@ -460,17 +460,43 @@ function _patchVisibleGameCard(updatedGame, displayIds = null) {
     if (!g || !g.id) return;
     const cover = g.image || g.defaultImage || g.coverUrl || null;
     if (!cover) return;
+    const safeCover = (() => {
+        const cacheBacked = typeof isCacheBackedArtworkUrl === 'function'
+            ? isCacheBackedArtworkUrl(cover)
+            : null;
+        if (cacheBacked) return cacheBacked;
+        const safe = typeof safeImageUrl === 'function' ? safeImageUrl(cover) : cover;
+        return /^https?:\/\//i.test(String(safe || '').trim()) ? null : safe;
+    })();
+    if (!safeCover) return;
     const ids = Array.isArray(displayIds) && displayIds.length ? displayIds : [g.id];
     ids.forEach(id => {
-        const card = document.querySelector(`[data-id="${CSS.escape(String(id))}"]`);
-        const img  = card?.querySelector?.('.actual-img');
-        if (img) {
-            img.classList.remove('img-loaded');
-            img.addEventListener('load', () => img.classList.add('img-loaded'), { once: true });
-            img.src = safeImageUrl(cover) + (cover.startsWith('file://') ? `?t=${Date.now()}` : '');
-            img.style.opacity  = '';
-            img.style.display  = 'block';
-        }
+        const selector = `[data-id="${CSS.escape(String(id))}"]`;
+        const cards = typeof document.querySelectorAll === 'function'
+            ? Array.from(document.querySelectorAll(selector))
+            : [document.querySelector?.(selector)].filter(Boolean);
+        cards.forEach(card => {
+            const img  = card?.querySelector?.('.actual-img');
+            if (!img) return;
+            const apply = () => {
+                img.src = safeCover;
+                if (img.dataset) img.dataset.lastGoodCover = safeCover;
+                if (card.dataset) {
+                    card.dataset.artworkGameId = String(id);
+                    card.dataset.artworkAssetHash = safeCover;
+                }
+                img.classList?.add?.('img-loaded');
+                img.style.opacity  = '';
+                img.style.display  = 'block';
+            };
+            if (typeof Image === 'function' && img.src && img.src !== safeCover) {
+                const preloader = new Image();
+                preloader.onload = apply;
+                preloader.src = safeCover;
+            } else {
+                apply();
+            }
+        });
         if (window._vs?.cardCache instanceof Map) window._vs.cardCache.delete(String(id));
     });
     if (window._vs?.cardCache instanceof Map) {

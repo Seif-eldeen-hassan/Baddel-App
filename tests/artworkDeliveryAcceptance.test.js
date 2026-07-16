@@ -235,7 +235,7 @@ test('automatic artwork bandwidth limits do not spend budget on joined in-flight
     });
 
     assert.equal(policy.getStats().automaticBytes, PNG_1X1.length);
-    assert.equal(next, 'https://cdn.example/next-background.png');
+    assert.equal(next, null);
     assert.equal(policy.getStats().skipped, 1);
 });
 
@@ -244,6 +244,8 @@ test('normal renderer artwork paths keep remote URLs behind cache manager IPC', 
     assert.match(ARTWORK_SYNC_JS, /setCardImageStable[\s\S]*isCacheBackedArtworkUrl\(newUrl\)/);
     assert.match(ARTWORK_SYNC_JS, /setHeroBgStable[\s\S]*isCacheBackedArtworkUrl\(newUrl\)/);
     assert.match(GAME_CARD_JS, /function _jbiCacheBackedArtworkValue\s*\(/);
+    assert.match(GAME_CARD_JS, /function _gcCacheBackedArtworkValue\s*\(/);
+    assert.match(GAME_CARD_JS, /_gcCacheBackedArtworkValue\(displayImg\) \|\| transparentPixel/);
     assert.match(GAME_CARD_JS, /_jbiCacheBackedArtworkValue\(selection\.selectedValue\)/);
     assert.match(IMAGE_HANDLERS_JS, /artworkDownloadManager\.downloadAsset\(/);
     assert.match(IMAGE_HANDLERS_JS, /artworkDownloadManager\.downloadAssets\(/);

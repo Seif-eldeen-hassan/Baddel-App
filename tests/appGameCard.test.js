@@ -152,9 +152,10 @@ test('createGameCard: uses escapeHtml for game.name', () => {
     assert.match(body, /escapeHtml\s*\(\s*game\.name\s*\)/);
 });
 
-test('createGameCard: uses safeImageUrl for image URL', () => {
+test('createGameCard: uses cache-backed artwork for normal image URL', () => {
     const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
-    assert.match(body, /safeImageUrl\s*\(/);
+    assert.match(body, /_gcCacheBackedArtworkValue\(displayImg\) \|\| transparentPixel/);
+    assert.doesNotMatch(body, /const _eImg\s*=\s*safeImageUrl\(displayImg\)/);
 });
 
 test('createGameCard: uses fetchMetadata for games without a local cached image', () => {

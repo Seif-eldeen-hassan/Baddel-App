@@ -41,6 +41,21 @@ function _normalizeFileUrlForCompare(url) {
     }
 }
 
+function _normalizeTrustedFileUrlForCompare(url) {
+    try {
+        const parsed = new URL(String(url));
+        if (parsed.protocol !== 'file:') return '';
+        const decodedPath = decodeURIComponent(parsed.pathname || '').replace(/\\/g, '/');
+        if (/(^|\/)\.\.(\/|$)/.test(decodedPath)) return '';
+        const segments = decodedPath.split('/').filter(Boolean);
+        const normalizedPath = '/' + segments.join('/');
+        const host = parsed.hostname ? `${parsed.hostname}` : '';
+        return `file://${host}${normalizedPath}${String(url).endsWith('/') ? '/' : ''}`.toLowerCase();
+    } catch {
+        return '';
+    }
+}
+
 /**
  * Register a directory as a trusted source for file:// image/media URLs.
  * Call once at startup with the app's image-cache directory URL.
@@ -55,7 +70,8 @@ function setSafeImageCacheDir(dirFileUrl) {
     }
     // Ensure trailing slash so prefix matching is directory-scoped
     if (!s.endsWith('/')) s += '/';
-    _trustedFilePrefixes.add(_normalizeFileUrlForCompare(s));
+    const normalized = _normalizeTrustedFileUrlForCompare(s);
+    if (normalized) _trustedFilePrefixes.add(normalized.endsWith('/') ? normalized : `${normalized}/`);
 }
 
 /** Alias — add an additional trusted directory (e.g. a second cache location). */
@@ -64,7 +80,8 @@ const addTrustedFileDir = setSafeImageCacheDir;
 /** Returns true if a file:// URL lives inside one of the registered trusted dirs. */
 function _isTrustedFileUrl(url) {
     if (_trustedFilePrefixes.size === 0) return false;
-    const norm = _normalizeFileUrlForCompare(url);
+    const norm = _normalizeTrustedFileUrlForCompare(url);
+    if (!norm) return false;
     for (const prefix of _trustedFilePrefixes) {
         if (norm.startsWith(prefix)) return true;
     }
@@ -192,6 +209,9 @@ function safeExternalUrl(value) {
 // time domUtils.js executes this block the value is already available.
 if (typeof window !== 'undefined' && typeof window.__BADDEL_CACHE_URL__ === 'string') {
     setSafeImageCacheDir(window.__BADDEL_CACHE_URL__);
+}
+if (typeof window !== 'undefined' && typeof window.__BADDEL_ARTWORK_CACHE_URL__ === 'string') {
+    setSafeImageCacheDir(window.__BADDEL_ARTWORK_CACHE_URL__);
 }
 if (typeof window !== 'undefined' && typeof window.__BADDEL_USER_ARTWORK_URL__ === 'string') {
     setSafeImageCacheDir(window.__BADDEL_USER_ARTWORK_URL__);

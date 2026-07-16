@@ -10,6 +10,8 @@ const { contextBridge, ipcRenderer, webUtils, shell } = require('electron');
 try {
     const cacheUrl = ipcRenderer.sendSync('get-image-cache-dir-url-sync');
     if (cacheUrl) contextBridge.exposeInMainWorld('__BADDEL_CACHE_URL__', cacheUrl);
+    const v2ArtworkCacheUrl = ipcRenderer.sendSync('get-artwork-cache-dir-url-sync');
+    if (v2ArtworkCacheUrl) contextBridge.exposeInMainWorld('__BADDEL_ARTWORK_CACHE_URL__', v2ArtworkCacheUrl);
     const artworkUrl = ipcRenderer.sendSync('get-user-artwork-dir-url-sync');
     if (artworkUrl) contextBridge.exposeInMainWorld('__BADDEL_USER_ARTWORK_URL__', artworkUrl);
 } catch (err) {
@@ -63,6 +65,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     cacheAllAssets:         (assets, gameId, opts)    => ipcRenderer.invoke('cache-all-assets', assets, gameId, opts),
     pruneImageCache:        ()                        => ipcRenderer.invoke('prune-image-cache'),
     getImageCacheDirUrl:    ()                        => ipcRenderer.invoke('get-image-cache-dir-url'),
+    getArtworkCacheDirUrl:  ()                        => ipcRenderer.invoke('get-artwork-cache-dir-url'),
     getUserArtworkDirUrl:   ()                        => ipcRenderer.invoke('get-user-artwork-dir-url'),
     getArtworkNetworkDiagnostics: ()                  => ipcRenderer.invoke('get-artwork-network-diagnostics'),
     getFilePath:            (file)                    => webUtils.getPathForFile(file),

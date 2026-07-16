@@ -507,7 +507,7 @@ function createGameCard(game, isRecent = false) {
 
     const _eName = escapeHtml(game.name);
     const _eId   = escapeHtml(game.id);
-    const _eImg  = safeImageUrl(displayImg);
+    const _eImg  = _gcCacheBackedArtworkValue(displayImg) || transparentPixel;
     card.innerHTML = `
         <div class="placeholder-bg"></div>
         <img class="actual-img" src="${_eImg}" alt="${_eName}" onerror="this.style.opacity='0'">
@@ -625,6 +625,14 @@ function _jbiSafeArtworkValue(value) {
 }
 
 function _jbiCacheBackedArtworkValue(value) {
+    if (typeof isCacheBackedArtworkUrl === 'function') return isCacheBackedArtworkUrl(value);
+    const safe = _jbiSafeArtworkValue(value);
+    if (!safe) return null;
+    const lower = safe.toLowerCase();
+    return (lower.startsWith('http://') || lower.startsWith('https://')) ? null : safe;
+}
+
+function _gcCacheBackedArtworkValue(value) {
     if (typeof isCacheBackedArtworkUrl === 'function') return isCacheBackedArtworkUrl(value);
     const safe = _jbiSafeArtworkValue(value);
     if (!safe) return null;

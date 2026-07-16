@@ -2267,12 +2267,13 @@ test('app.js/_patchGameInMemory and artwork-sync.js/_patchVisibleGameCard are de
     assert.ok(patchIdx < processIdx, '_patchGameInMemory defined before processQueue');
 });
 
-test('app.js: processQueue cacheAllAssets branch updates imgElement.src after localAssets.cover', () => {
+test('app.js: processQueue cacheAllAssets branch applies local cover through card request guard', () => {
     const src = fs.readFileSync(path.join(ROOT, 'src', 'js', 'app.js'), 'utf8');
     const cacheStart = src.indexOf('window.electronAPI.cacheAllAssets({ cover: meta.cover');
     assert.ok(cacheStart > -1, 'cacheAllAssets call found in processQueue');
     const block = src.slice(cacheStart, cacheStart + 4200);
-    assert.match(block, /imgElement\.src\s*=/, 'imgElement.src must be set after cacheAllAssets resolves');
+    assert.match(block, /_applyCardCoverResult\(requestContext,\s*finalCover/, 'local cover must be applied through the stale-card guard');
+    assert.doesNotMatch(block, /imgElement\.src\s*=\s*meta\.cover/, 'remote metadata cover must not be assigned directly');
     assert.match(block, /finalCover/, 'finalCover variable must be used');
     assert.match(block, /_patchGameInMemory/, '_patchGameInMemory called after caching');
     assert.match(block, /_patchVisibleGameCard/, '_patchVisibleGameCard called after caching');

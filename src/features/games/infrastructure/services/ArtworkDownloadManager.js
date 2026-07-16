@@ -27,6 +27,7 @@ class ArtworkDownloadManager {
     }
 
     async downloadAsset({
+        structured = false,
         sourceUrl,
         canonicalGameId,
         type,
@@ -35,8 +36,46 @@ class ArtworkDownloadManager {
         sourceSubsystem = 'artwork-download-manager',
         rendererDirectRemote = false,
     } = {}) {
-        if (!sourceUrl || !canonicalGameId || !type) return sourceUrl || null;
-        if (this._isLocalOrEmbedded(sourceUrl)) return sourceUrl;
+        const result = await this.requestAsset({
+            sourceUrl,
+            canonicalGameId,
+            type,
+            priority,
+            reason,
+            sourceSubsystem,
+            rendererDirectRemote,
+        });
+        if (structured) return result;
+        return result.localUrl || null;
+    }
+
+    async requestAsset({
+        sourceUrl,
+        canonicalGameId,
+        type,
+        priority = ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
+        reason = 'artwork-download-manager',
+        sourceSubsystem = 'artwork-download-manager',
+        rendererDirectRemote = false,
+    } = {}) {
+        if (!sourceUrl || !canonicalGameId || !type) {
+            return {
+                status: 'skipped',
+                localUrl: this._isLocalOrEmbedded(sourceUrl) ? sourceUrl : null,
+                remoteCandidate: this._isRemote(sourceUrl) ? sourceUrl : null,
+                blockedReason: 'missing-required-fields',
+                errorCode: null,
+            };
+        }
+        if (this._isLocalOrEmbedded(sourceUrl)) {
+            return {
+                status: 'local',
+                localUrl: sourceUrl,
+                remoteCandidate: null,
+                blockedReason: null,
+                errorCode: null,
+            };
+        }
 
         const startedAt = Date.now();
         const cached = this._cache.lookupUrl(sourceUrl, { canonicalGameId, type });
@@ -53,7 +92,13 @@ class ArtworkDownloadManager {
                 downloadedBytes: 0,
                 elapsedMs: Date.now() - startedAt,
             });
-            return cached.fileUrl;
+            return {
+                status: 'cache-hit',
+                localUrl: cached.fileUrl,
+                remoteCandidate: sourceUrl,
+                blockedReason: null,
+                errorCode: null,
+            };
         }
 
         const policyDecision = this._bandwidthPolicy?.evaluate?.({ priority, type, sourceUrl });
@@ -72,7 +117,13 @@ class ArtworkDownloadManager {
                 downloadedBytes: 0,
                 elapsedMs: Date.now() - startedAt,
             });
-            return sourceUrl;
+            return {
+                status: 'blocked',
+                localUrl: null,
+                remoteCandidate: sourceUrl,
+                blockedReason: policyDecision.reason,
+                errorCode: null,
+            };
         }
 
         try {
@@ -130,7 +181,13 @@ class ArtworkDownloadManager {
                     bytes: result.http?.bytes || result.bytes || 0,
                 });
             }
-            return linked.fileUrl;
+            return {
+                status: inFlightDeduplication ? 'deduplicated' : 'downloaded',
+                localUrl: linked.fileUrl,
+                remoteCandidate: sourceUrl,
+                blockedReason: null,
+                errorCode: null,
+            };
         } catch (err) {
             this._record({
                 sourceUrl,
@@ -146,7 +203,13 @@ class ArtworkDownloadManager {
                 elapsedMs: Date.now() - startedAt,
             });
             try { this._logger.warn?.(`[ArtworkDownloadManager] ${type} for ${canonicalGameId}:`, err.message); } catch {}
-            return sourceUrl;
+            return {
+                status: 'failed',
+                localUrl: null,
+                remoteCandidate: sourceUrl,
+                blockedReason: null,
+                errorCode: err?.code || err?.message || 'artwork-download-failed',
+            };
         }
     }
 
@@ -201,6 +264,10 @@ class ArtworkDownloadManager {
         return String(value || '').startsWith('file://') ||
             String(value || '').startsWith('data:') ||
             String(value || '').startsWith('assets/');
+    }
+
+    _isRemote(value) {
+        return /^https?:\/\//i.test(String(value || '').trim());
     }
 }
 
