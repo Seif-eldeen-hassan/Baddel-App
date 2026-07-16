@@ -2786,6 +2786,10 @@ function _gdApplyProductTypeBadge(game, metaData) {
 function _gdCanMergeInstalledRecord(baseGame, candidate) {
     // ID match is always safe — same record regardless of platform
     if (String(candidate.id) === String(baseGame.id)) return true;
+    const service = window.BaddelCanonicalProductIdentity;
+    const baseIdentity = service?.deriveCanonicalProductIdentity?.(baseGame);
+    const candIdentity = service?.deriveCanonicalProductIdentity?.(candidate);
+    if (baseIdentity?.productKey && baseIdentity.productKey === candIdentity?.productKey) return true;
 
     const basePlat = (baseGame.platform || '').toLowerCase().trim();
     const candPlat = (candidate.platform || '').toLowerCase().trim();
@@ -2868,11 +2872,13 @@ function _gdFindInstalledLocalMatch(game) {
     const steamId       = (game.allIds && game.allIds.steam) ? String(game.allIds.steam) : null;
     const steamFromSelf = (game.command || String(game.id || '')).match(/(\d{5,})/)?.[1] || null;
 
+    const service = window.BaddelCanonicalProductIdentity;
+    const productIdentity = service?.deriveCanonicalProductIdentity?.(game);
     const inRiotKey =
+        (productIdentity?.productKey === 'riot:valorant' ? 'valorant' : null) ||
         _gdRiotProductFromStr(game.command || '') ||
         _gdRiotProductFromStr(game.launchCommand || '') ||
         _gdRiotProductFromStr(game.path || '') ||
-        _gdTitleToRiotProduct(game.name || game.title || '') ||
         (game.allIds?.riot ? String(game.allIds.riot) : null);
     const inRiotSet = _gdRiotAliases(inRiotKey);
     const normSelf  = (game.name || '').toLowerCase().replace(/[®©™]/g, '').replace(/[:\-'']/g, ' ').replace(/\s+/g, ' ').trim();
@@ -2922,7 +2928,6 @@ function _gdFindInstalledLocalMatch(game) {
         const gNorm = (g.name || '').toLowerCase().replace(/[®©™]/g, '').replace(/[:\-'']/g, ' ').replace(/\s+/g, ' ').trim();
         if (gNorm && normSelf && gNorm === normSelf) {
             if (_gdCanMergeInstalledRecord(game, g)) return g;
-            if (_gdIsMainGame(game) && _gdIsMainGame(g)) return g;
         }
     }
     return null;

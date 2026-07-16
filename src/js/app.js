@@ -405,6 +405,13 @@ let playtimeData = {};
 // currentEditingCollectionId moved to src/js/app/collections.js
 // customSpinIds moved to src/js/app/roulette.js
 
+function _dedupeDelegatedLaunchProducts(games) {
+    const service = window.BaddelCanonicalProductIdentity;
+    return service?.dedupeDelegatedLaunchProducts
+        ? service.dedupeDelegatedLaunchProducts(games)
+        : games;
+}
+
 // ============================================================
 // PLAYTIME SYSTEM — wrappers delegating to window.BaddelPlaytime
 // Full implementations live in src/js/app/playtime.js.
@@ -526,12 +533,12 @@ async function initSystem() {
             window.electronAPI.getCollections()
         ]);
 
-        allGamesData = games;
+        allGamesData = _dedupeDelegatedLaunchProducts(games);
         window.allGamesData = allGamesData; // keep accounts.js in sync
-        window.__baddelSetCanonicalGamesRegistry?.(games);
+        window.__baddelSetCanonicalGamesRegistry?.(allGamesData);
         allCollections = collections;
 
-        buildPlaytimeCache(games);
+        buildPlaytimeCache(allGamesData);
         await migratePlaytimeFromLocalStorage();
 
         await traceStartupStep('renderSidebar',    () => renderSidebar());
@@ -1113,7 +1120,7 @@ function _renderStructuralLibraryUpdate() {
 
 async function _processLibraryUpdatedPayload(updatedGames) {
     await window.__baddelRefreshCanonicalGamesRegistry?.('library' + '-updated');
-    const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
+    const mergedGames = _dedupeDelegatedLaunchProducts(_mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData));
     const nextSnapshot = _librarySnapshot(mergedGames);
     const decision = _classifyLibrarySnapshot(_lastLibraryRenderSnapshot, nextSnapshot);
     allGamesData = mergedGames;
@@ -1486,13 +1493,13 @@ async function reloadLibrary() {
     try {
         const updatedGames = await window.electronAPI.scanAllGames();
 
-        const mergedGames = _mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData);
+        const mergedGames = _dedupeDelegatedLaunchProducts(_mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData));
 
         allGamesData = mergedGames;
         window.allGamesData = allGamesData; // keep accounts.js in sync
         await window.__baddelRefreshCanonicalGamesRegistry?.('scan-all-games');
         allCollections = await window.electronAPI.getCollections();
-        buildPlaytimeCache(updatedGames);
+        buildPlaytimeCache(allGamesData);
         
         renderSidebar();
         
@@ -1544,6 +1551,7 @@ function _patchGameInMemory(updatedGame) {
     } else {
         allGamesData.push(normalized);
     }
+    allGamesData = _dedupeDelegatedLaunchProducts(allGamesData);
     window.allGamesData = allGamesData;
 
     const belongsInAllGames =

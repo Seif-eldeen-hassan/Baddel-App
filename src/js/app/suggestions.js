@@ -188,6 +188,10 @@ function _agNormTitle(s) {
 // ── Same-platform guard for platform-specific ID steps ─────────────────────────
 function _agCanMerge(baseGame, candidate) {
     if (String(candidate.id) === String(baseGame.id)) return true;
+    const service = window.BaddelCanonicalProductIdentity;
+    const baseIdentity = service?.deriveCanonicalProductIdentity?.(baseGame);
+    const candIdentity = service?.deriveCanonicalProductIdentity?.(candidate);
+    if (baseIdentity?.productKey && baseIdentity.productKey === candIdentity?.productKey) return true;
     return _agPlatFamily(baseGame.platform) === _agPlatFamily(candidate.platform);
 }
 
@@ -202,11 +206,13 @@ function _agCollectMatches(game, local, dbg) {
     const steamId       = game.allIds?.steam ? String(game.allIds.steam) : null;
     const steamFromSelf = (game.command || String(game.id || '')).match(/(\d{5,})/)?.[1] || null;
 
+    const service = window.BaddelCanonicalProductIdentity;
+    const productIdentity = service?.deriveCanonicalProductIdentity?.(game);
     const inRiotKey =
+        (productIdentity?.productKey === 'riot:valorant' ? 'valorant' : null) ||
         _agRiotProductFromStr(game.command || '') ||
         _agRiotProductFromStr(game.launchCommand || '') ||
         _agRiotProductFromStr(game.path || '') ||
-        _agTitleToRiotProduct(game.name || game.title || '') ||
         (game.allIds?.riot ? String(game.allIds.riot) : null);
     const inRiotSet = _agRiotAliases(inRiotKey);
     const selfNorm  = _agNormTitle(game.name || game.title || '');
@@ -269,9 +275,10 @@ function _agCollectMatches(game, local, dbg) {
             }
         }
 
-        // P4: Exact normalized main-game title (cross-platform for main releases)
+        // P4: Exact normalized main-game title (same platform family only).
+        // Cross-platform delegated products are handled above by verified product identity.
         if (!why && gNorm && selfNorm && gNorm === selfNorm &&
-            _agIsMainGame(game) && _agIsMainGame(g))
+            _agIsMainGame(game) && _agIsMainGame(g) && _agCanMerge(game, g))
             why = 'title-main-game';
 
         if (dbg) {

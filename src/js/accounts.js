@@ -487,6 +487,13 @@ function _agApplyInstalledCreatorOverride(syncGame, localGame) {
     return out;
 }
 
+function _agDedupeDelegatedLaunchProducts(games) {
+    const service = window.BaddelCanonicalProductIdentity;
+    return service?.dedupeDelegatedLaunchProducts
+        ? service.dedupeDelegatedLaunchProducts(games)
+        : games;
+}
+
 async function _agApplyInstalledCreatorOverrides(games = []) {
     let installedGames = [];
 
@@ -494,7 +501,7 @@ async function _agApplyInstalledCreatorOverrides(games = []) {
         installedGames = await window.__baddelRefreshCanonicalGamesRegistry('accounts-sync-projection');
     } else if (window.electronAPI?.getGames) {
         try {
-            installedGames = await window.electronAPI.getGames();
+            installedGames = _agDedupeDelegatedLaunchProducts(await window.electronAPI.getGames());
             window.allGamesData = installedGames;
             window.__baddelSetCanonicalGamesRegistry?.(installedGames);
         } catch (_) {
@@ -508,12 +515,12 @@ async function _agApplyInstalledCreatorOverrides(games = []) {
 
     const overrideMap = _agBuildInstalledCreatorOverrideMap(installedGames);
 
-    if (overrideMap.size === 0) return games;
+    if (overrideMap.size === 0) return _agDedupeDelegatedLaunchProducts(games);
 
-   return games.map(game => {
+   return _agDedupeDelegatedLaunchProducts(games.map(game => {
         const localOverride = _agFindInstalledCreatorOverrideFromMap(overrideMap, game);
         return _agApplyInstalledCreatorOverride(game, localOverride);
-    });
+    }));
 }
 
 
@@ -1883,9 +1890,10 @@ window.renderAllGamesView = async function(options = {}) {
         });
 
         // Convert merged Map to array and apply installed-creator overrides.
-        const _rawResolved = await _agApplyInstalledCreatorOverrides(
+        let _rawResolved = await _agApplyInstalledCreatorOverrides(
             Array.from(mergedGamesMap.values())
         );
+        _rawResolved = _agDedupeDelegatedLaunchProducts(_rawResolved);
         window._allGamesRawCache = _rawResolved;
         window._allGamesCache    = _agGetUserLibraryGames(_rawResolved);
 
@@ -2124,7 +2132,7 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     if (old?._agCoverPipelineDone) g._agCoverPipelineDone = old._agCoverPipelineDone;
                     if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
                 });
-                newCache = await _agApplyInstalledCreatorOverrides(newCache);
+                newCache = _agDedupeDelegatedLaunchProducts(await _agApplyInstalledCreatorOverrides(newCache));
 
                 window._allGamesRawCache = newCache;
                 window._allGamesCache    = _agGetUserLibraryGames(newCache);
