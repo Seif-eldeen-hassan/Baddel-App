@@ -234,6 +234,53 @@ class ContentAddressedArtworkCache {
         this._cleanupTemp();
     }
 
+    migrateLegacyImageCache({ legacyCacheDir, entries = null } = {}) {
+        const summary = {
+            scanned: 0,
+            migrated: 0,
+            skipped: 0,
+            aliases: [],
+            errors: [],
+            duplicateContentFilesAvoided: 0,
+        };
+        if (!legacyCacheDir || !this._fs.existsSync(legacyCacheDir)) return summary;
+
+        const beforeDuplicates = this._manifest.stats.duplicateContentFilesAvoided;
+        const files = entries || this._safeReadDir(legacyCacheDir);
+        for (const fileName of files) {
+            const legacy = this._parseLegacyCacheFileName(fileName);
+            if (!legacy) continue;
+            summary.scanned += 1;
+
+            const legacyPath = this._path.join(legacyCacheDir, fileName);
+            try {
+                if (!this._fs.statSync(legacyPath).isFile()) {
+                    summary.skipped += 1;
+                    continue;
+                }
+                const stored = this.storeBuffer({
+                    canonicalGameId: legacy.gameId,
+                    type: legacy.type,
+                    buffer: this._fs.readFileSync(legacyPath),
+                });
+                summary.migrated += 1;
+                summary.aliases.push({
+                    canonicalGameId: legacy.gameId,
+                    type: legacy.type,
+                    assetHash: stored.assetHash,
+                });
+            } catch (err) {
+                summary.skipped += 1;
+                summary.errors.push({
+                    fileName,
+                    message: err?.message || 'Legacy artwork migration failed.',
+                });
+            }
+        }
+        summary.duplicateContentFilesAvoided = this._manifest.stats.duplicateContentFilesAvoided - beforeDuplicates;
+        return summary;
+    }
+
     async _downloadAndStore({ sourceUrl, canonicalGameId, type, urlHash }) {
         if (!this._fetch) throw new Error('No fetch implementation available for artwork cache.');
         const response = await this._fetch(sourceUrl);
@@ -403,6 +450,21 @@ class ContentAddressedArtworkCache {
         } catch {
             // Cache recovery must be best-effort.
         }
+    }
+
+    _safeReadDir(dirPath) {
+        try { return this._fs.readdirSync(dirPath); } catch { return []; }
+    }
+
+    _parseLegacyCacheFileName(fileName) {
+        const match = /^(cover|hero|logo)_(.+)\.[^.]+$/i.exec(String(fileName || ''));
+        if (!match) return null;
+        const gameId = match[2];
+        if (!gameId || gameId.includes('/') || gameId.includes('\\')) return null;
+        return {
+            type: match[1].toLowerCase(),
+            gameId,
+        };
     }
 
     _hash(value) {

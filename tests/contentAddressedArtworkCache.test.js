@@ -289,3 +289,68 @@ test('ContentAddressedArtworkCache materializes trusted file URLs without modify
     assert.match(fileURLToPath(stored.fileUrl), /artwork-cache-v2/);
     assert.deepEqual(after, before);
 });
+
+test('ContentAddressedArtworkCache migrates legacy image_cache files without network access or deletion', () => {
+    const root = tempDir();
+    const legacyCacheDir = path.join(root, 'image_cache');
+    fs.mkdirSync(legacyCacheDir, { recursive: true });
+    const legacyPath = path.join(legacyCacheDir, 'cover_game-1.webp');
+    fs.writeFileSync(legacyPath, PNG_1X1);
+    let fetchCount = 0;
+    const cache = makeCache(root, {
+        fetchImpl: async () => {
+            fetchCount += 1;
+            return makeResponse(PNG_1X1_ALT);
+        },
+    });
+
+    const summary = cache.migrateLegacyImageCache({ legacyCacheDir });
+    const migrated = cache.lookupAlias({ canonicalGameId: 'game-1', type: 'cover' });
+    const legacy = new ImageCacheService({ fs, path, dbFolder: root });
+
+    assert.equal(fetchCount, 0);
+    assert.equal(summary.scanned, 1);
+    assert.equal(summary.migrated, 1);
+    assert.equal(summary.skipped, 0);
+    assert.equal(fs.existsSync(legacyPath), true);
+    assert.ok(legacy.findInCache('game-1', 'cover').endsWith('cover_game-1.webp'));
+    assert.equal(cache.ownsUrl(migrated.fileUrl), true);
+    assert.deepEqual(assetFiles(cache), [`${migrated.assetHash}.png`]);
+});
+
+test('ContentAddressedArtworkCache migration deduplicates identical legacy files across aliases', () => {
+    const root = tempDir();
+    const legacyCacheDir = path.join(root, 'image_cache');
+    fs.mkdirSync(legacyCacheDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyCacheDir, 'cover_game-a.jpg'), PNG_1X1);
+    fs.writeFileSync(path.join(legacyCacheDir, 'hero_game-b.png'), PNG_1X1);
+    const cache = makeCache(root);
+
+    const summary = cache.migrateLegacyImageCache({ legacyCacheDir });
+    const cover = cache.lookupAlias({ canonicalGameId: 'game-a', type: 'cover' });
+    const hero = cache.lookupAlias({ canonicalGameId: 'game-b', type: 'hero' });
+
+    assert.equal(summary.scanned, 2);
+    assert.equal(summary.migrated, 2);
+    assert.equal(summary.duplicateContentFilesAvoided, 1);
+    assert.equal(cover.assetHash, hero.assetHash);
+    assert.deepEqual(assetFiles(cache), [`${cover.assetHash}.png`]);
+});
+
+test('ContentAddressedArtworkCache migration skips corrupt legacy files safely', () => {
+    const root = tempDir();
+    const legacyCacheDir = path.join(root, 'image_cache');
+    fs.mkdirSync(legacyCacheDir, { recursive: true });
+    fs.writeFileSync(path.join(legacyCacheDir, 'cover_game-a.png'), Buffer.from('not image bytes'));
+    fs.writeFileSync(path.join(legacyCacheDir, 'readme.txt'), 'ignored');
+    const cache = makeCache(root);
+
+    const summary = cache.migrateLegacyImageCache({ legacyCacheDir });
+
+    assert.equal(summary.scanned, 1);
+    assert.equal(summary.migrated, 0);
+    assert.equal(summary.skipped, 1);
+    assert.match(summary.errors[0].message, /not a supported image/);
+    assert.equal(cache.lookupAlias({ canonicalGameId: 'game-a', type: 'cover' }), null);
+    assert.deepEqual(assetFiles(cache), []);
+});
