@@ -547,7 +547,7 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
             artworkUpdatedAt: canonicalGame.artworkUpdatedAt,
         });
     } catch (_) {}
-    if ((appliedTypes.includes('hero') || appliedTypes.includes('logo')) &&
+    if ((appliedTypes.includes('cover') || appliedTypes.includes('hero') || appliedTypes.includes('logo')) &&
         typeof currentHeroGameId !== 'undefined' && currentHeroGameId) {
         const match = String(currentHeroGameId) === String(canonicalGame.id) ||
             (Array.isArray(window.allGamesData) && window.allGamesData.some(g => String(g.id) === String(currentHeroGameId) && g.localGameId === canonicalGame.id));

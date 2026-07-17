@@ -687,6 +687,18 @@ function _exploreCoverValue(game) {
     return model?.cover?.effectiveValue || game.image || game.defaultImage || game.coverUrl || game.cover || null;
 }
 
+function _exploreArtworkValues(game) {
+    if (!game) return { cover: null, hero: null, logo: null };
+    const model = window.BaddelGameArtworkReadModel?.createReadModel
+        ? window.BaddelGameArtworkReadModel.createReadModel(game, game, {})
+        : null;
+    return {
+        cover: model?.cover?.effectiveValue || game.image || game.defaultImage || game.coverUrl || game.cover || null,
+        hero:  model?.hero?.effectiveValue  || game.heroImage || game.defaultHero || game.heroUrl || game.hero || null,
+        logo:  model?.logo?.effectiveValue  || game.logo || game.defaultLogo || game.logoUrl || null,
+    };
+}
+
 function _exploreCanonicalId(game) {
     return String(game?.localGameId || game?.installedId || game?.id || '');
 }
@@ -707,6 +719,8 @@ class ExploreCoverHydrationController {
         this.finalReconcileQueued = false;
         this.homeVisible = false;
         this.concurrency = Number(window.__baddelExploreHydrationConcurrency || 3) || 3;
+        this.retryTtlMs = 30000;
+        this.lastHomeVisibleReason = null;
     }
 
     ownsDisplayId(id) {
@@ -726,6 +740,21 @@ class ExploreCoverHydrationController {
         for (const id of [...this.nodesByDisplayId.keys()]) {
             if (!this.selectedIds.has(id)) this.nodesByDisplayId.delete(id);
         }
+        for (const map of [this.pendingByDisplayId, this.completedByDisplayId, this.failedByDisplayId, this.negativeByDisplayId, this.blockedByDisplayId]) {
+            for (const id of [...map.keys()]) {
+                if (!this.selectedIds.has(id)) map.delete(id);
+            }
+        }
+        for (const id of [...this.queuedByDisplayId]) {
+            if (!this.selectedIds.has(id)) this.queuedByDisplayId.delete(id);
+        }
+        for (const id of this.selectedIds) {
+            const game = this.gamesByDisplayId.get(id);
+            if (_isCacheBackedNormalArtworkUrl(_exploreCoverValue(game))) continue;
+            this.completedByDisplayId.delete(id);
+            this.negativeByDisplayId.delete(id);
+            this.blockedByDisplayId.delete(id);
+        }
         this._log(reason);
         this.reconcile(reason);
     }
@@ -739,7 +768,12 @@ class ExploreCoverHydrationController {
     }
 
     onHomeVisible(reason = 'home-visible') {
+        if (this.homeVisible && this.lastHomeVisibleReason === reason) {
+            this._consumeAllPending(reason);
+            return;
+        }
         this.homeVisible = true;
+        this.lastHomeVisibleReason = reason;
         this.reconcile(reason);
     }
 
@@ -775,12 +809,14 @@ class ExploreCoverHydrationController {
                 });
                 continue;
             }
+            this._expireRetryState(id);
             this._ensureRequest(id, reason);
         }
+        this._pump(reason);
         this._log(reason);
     }
 
-    async _ensureRequest(id, reason) {
+    _ensureRequest(id, reason) {
         if (
             this.inFlightByDisplayId.has(id) ||
             this.queuedByDisplayId.has(id) ||
@@ -793,7 +829,7 @@ class ExploreCoverHydrationController {
         const game = this.gamesByDisplayId.get(id);
         if (!game) return;
         this.queuedByDisplayId.add(id);
-        this._pump(reason);
+        this._log(reason);
     }
 
     _pump(reason = 'pump') {
@@ -801,7 +837,7 @@ class ExploreCoverHydrationController {
             const id = this.queuedByDisplayId.values().next().value;
             this.queuedByDisplayId.delete(id);
             const game = this.gamesByDisplayId.get(id);
-            if (!game) continue;
+            if (!game || !this.selectedIds.has(id)) continue;
             this._startRequest(id, game, reason);
         }
     }
@@ -811,7 +847,7 @@ class ExploreCoverHydrationController {
         const canonicalGameId = _exploreCanonicalId(game);
         const promise = this._hydrateOne({ id, game, canonicalGameId, generation, reason })
             .catch(err => {
-                this.failedByDisplayId.set(id, { reason: err?.message || 'failed', retryAt: Date.now() + 30000 });
+            this.failedByDisplayId.set(id, { reason: err?.message || 'failed', retryAt: Date.now() + this.retryTtlMs });
             })
             .finally(() => {
                 this.inFlightByDisplayId.delete(id);
@@ -823,12 +859,14 @@ class ExploreCoverHydrationController {
     }
 
     async _hydrateOne({ id, game, canonicalGameId, generation, reason }) {
-        const cached = await this._lookupCachedCover(game, { id: canonicalGameId });
-        if (generation !== this.generation && !this.selectedIds.has(id)) return;
-        if (cached) {
+        const cached = await this._lookupCachedArtwork(game, { id: canonicalGameId });
+        if (!this._isGenerationCurrent(id, generation)) return;
+        if (cached.cover) {
+            this._applyTrustedArtworkToGame(game, cached);
             this._storeAndApply(id, {
                 canonicalGameId,
-                localUrl: cached,
+                localUrl: cached.cover,
+                assets: cached,
                 revision: game?.artworkState?.cover?.revision ?? null,
                 operationId: `explore-cache-${id}`,
                 source: 'cache-hit',
@@ -844,60 +882,139 @@ class ExploreCoverHydrationController {
             path: game.path,
             allIds: game.allIds,
             existingCover: game.image || null,
+            existingHero: game.heroImage || game.hero || null,
+            existingLogo: game.logo || null,
         }).catch(() => null);
-        const remoteCover = meta?.cover || null;
-        if (!remoteCover) {
-            this.negativeByDisplayId.set(id, { reason: 'no-cover-candidate', at: Date.now() });
+        const remoteAssets = {
+            cover: meta?.cover || null,
+            hero: meta?.hero || meta?.heroImage || null,
+            logo: meta?.logo || meta?.defaultLogo || null,
+        };
+        if (!remoteAssets.cover && !remoteAssets.hero && !remoteAssets.logo) {
+            this.negativeByDisplayId.set(id, { reason: 'no-cover-candidate', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
             return;
         }
 
         const priority = this.homeVisible ? 'visible' : 'prewarm';
-        const localAssets = await window.electronAPI?.cacheAllAssets?.({ cover: remoteCover }, canonicalGameId, {
+        const localAssets = await window.electronAPI?.cacheAllAssets?.(remoteAssets, canonicalGameId, {
             priority,
             reason: 'explore-cover-hydration',
             displayId: id,
         });
-        const cover = _isCacheBackedNormalArtworkUrl(localAssets?.cover);
-        if (!cover) {
-            this.blockedByDisplayId.set(id, { reason: localAssets?.reason || 'blocked-or-failed', at: Date.now() });
+        const assets = {
+            cover: _isCacheBackedNormalArtworkUrl(localAssets?.cover),
+            hero: _isCacheBackedNormalArtworkUrl(localAssets?.hero),
+            logo: _isCacheBackedNormalArtworkUrl(localAssets?.logo),
+        };
+        if (!assets.cover) {
+            this.blockedByDisplayId.set(id, { reason: localAssets?.reason || 'blocked-or-failed', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
             return;
         }
 
-        const saved = await window.electronAPI?.saveMetadata?.(canonicalGameId, { cover }, {
+        const savePayload = {
+            cover: assets.cover,
+            hero: assets.hero || null,
+            logo: assets.logo || null,
+        };
+        const saved = await window.electronAPI?.saveMetadata?.(canonicalGameId, savePayload, {
             source: 'explore-cover-hydration',
             displayId: id,
         }).catch(() => null);
+        const operationId = saved?.operationId || `explore-cover-${canonicalGameId}-${Date.now()}`;
+        let summary = null;
         if (saved?.updatedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
-            window.__baddelCommitCanonicalGameUpdate({
+            summary = window.__baddelCommitCanonicalGameUpdate({
                 canonicalGame: saved.updatedGame,
-                changedTypes: ['cover'],
-                operationId: saved.operationId || `explore-cover-${canonicalGameId}-${Date.now()}`,
+                changedTypes: [
+                    assets.cover ? 'cover' : null,
+                    assets.hero ? 'hero' : null,
+                    assets.logo ? 'logo' : null,
+                ].filter(Boolean),
+                operationId,
             }, { reason: 'explore-cover-hydration' });
-            return;
         }
+        if (!this._isGenerationCurrent(id, generation)) return;
+        this._applyTrustedArtworkToGame(game, assets);
         this._storeAndApply(id, {
             canonicalGameId,
-            localUrl: cover,
-            revision: null,
-            operationId: `explore-cover-${canonicalGameId}-${Date.now()}`,
+            localUrl: assets.cover,
+            assets,
+            revision: saved?.updatedGame?.artworkState?.cover?.revision ?? null,
+            operationId,
             source: reason,
+            canonicalMatched: Array.isArray(summary?.matchedDisplayIds) && summary.matchedDisplayIds.map(String).includes(String(id)),
         });
     }
 
-    async _lookupCachedCover(displayGame, canonicalGame) {
-        const cover = _isCacheBackedNormalArtworkUrl(_exploreCoverValue(displayGame));
-        if (cover) return cover;
+    async _lookupCachedArtwork(displayGame, canonicalGame) {
+        const current = _exploreArtworkValues(displayGame);
+        const direct = {
+            cover: _isCacheBackedNormalArtworkUrl(current.cover),
+            hero: _isCacheBackedNormalArtworkUrl(current.hero),
+            logo: _isCacheBackedNormalArtworkUrl(current.logo),
+        };
+        if (direct.cover && direct.hero && direct.logo) return direct;
+        if (window.__baddelLoadCachedArtworkForGame) {
+            const cached = await window.__baddelLoadCachedArtworkForGame(displayGame, canonicalGame).catch(() => null);
+            direct.cover = direct.cover || _isCacheBackedNormalArtworkUrl(cached?.cover);
+            direct.hero = direct.hero || _isCacheBackedNormalArtworkUrl(cached?.hero);
+            direct.logo = direct.logo || _isCacheBackedNormalArtworkUrl(cached?.logo);
+            if (direct.cover) return direct;
+        }
         if (!window.electronAPI?.getCachedImage) return null;
         const keys = window.BaddelGameArtworkReadModel?.resolveArtworkCacheKeys
             ? window.BaddelGameArtworkReadModel.resolveArtworkCacheKeys(displayGame, canonicalGame)
             : [canonicalGame?.id, displayGame?.localGameId, displayGame?.installedId, displayGame?.id].filter(Boolean);
-        for (const key of keys) {
-            const cached = await window.electronAPI.getCachedImage(key, 'cover').catch(() => null);
-            const safe = _isCacheBackedNormalArtworkUrl(cached);
-            if (safe) return safe;
+        for (const type of ['cover', 'hero', 'logo']) {
+            if (direct[type]) continue;
+            for (const key of keys) {
+                const cached = await window.electronAPI.getCachedImage(key, type).catch(() => null);
+                const safe = _isCacheBackedNormalArtworkUrl(cached);
+                if (safe) {
+                    direct[type] = safe;
+                    break;
+                }
+            }
         }
         const legacy = localStorage.getItem('cover_' + displayGame.id);
-        return _isCacheBackedNormalArtworkUrl(legacy);
+        direct.cover = direct.cover || _isCacheBackedNormalArtworkUrl(legacy);
+        return direct;
+    }
+
+    _isGenerationCurrent(id, generation) {
+        return generation === this.generation && this.selectedIds.has(String(id));
+    }
+
+    _expireRetryState(id) {
+        const now = Date.now();
+        for (const map of [this.failedByDisplayId, this.negativeByDisplayId, this.blockedByDisplayId]) {
+            const state = map.get(id);
+            const retryAt = Number(state?.retryAt || state?.at + this.retryTtlMs || 0);
+            if (retryAt && retryAt <= now) map.delete(id);
+        }
+    }
+
+    _consumeAllPending(reason) {
+        for (const id of [...this.pendingByDisplayId.keys()]) this._consumePending(id, reason);
+    }
+
+    _applyTrustedArtworkToGame(game, assets = {}) {
+        if (!game) return;
+        if (assets.cover) {
+            game.image = assets.cover;
+            game.defaultImage = assets.cover;
+            game.coverUrl = assets.cover;
+        }
+        if (assets.hero) {
+            game.heroImage = assets.hero;
+            game.defaultHero = assets.hero;
+            game.hero = assets.hero;
+        }
+        if (assets.logo) {
+            game.logo = assets.logo;
+            game.defaultLogo = assets.logo;
+            game.logoUrl = assets.logo;
+        }
     }
 
     _storeAndApply(id, result) {
@@ -909,7 +1026,7 @@ class ExploreCoverHydrationController {
         const result = this.pendingByDisplayId.get(id);
         if (!result) return false;
         const card = this.nodesByDisplayId.get(id) || document.querySelector?.(`[data-id="${CSS.escape(String(id))}"]`);
-        if (!card || card.isConnected === false || String(card.dataset?.id || '') !== String(id)) return false;
+        if (!card || card.isConnected === false || String(card.dataset?.id || '') !== String(id) || card.dataset?.artworkSurface !== 'explore') return false;
         this.pendingByDisplayId.delete(id);
         this.completedByDisplayId.set(id, { ...result, reason, at: Date.now() });
         window._patchVisibleGameCard?.({ id: result.canonicalGameId, image: result.localUrl }, [id], {
@@ -921,6 +1038,19 @@ class ExploreCoverHydrationController {
                 revision: result.revision,
             },
         });
+        if (typeof currentHeroGameId !== 'undefined' && String(currentHeroGameId) === String(id)) {
+            window.__baddelRequestHomeHeroTransition?.(id, { immediate: true, reason: 'explore-hydration' });
+        }
+        try {
+            console.info('[ExploreHydrationResult]', {
+                displayId: String(id),
+                canonicalGameId: String(result.canonicalGameId || ''),
+                source: result.source || reason,
+                exactApplied: true,
+                canonicalMatched: result.canonicalMatched === true,
+                ignoredReason: null,
+            });
+        } catch (_) {}
         return true;
     }
 
@@ -933,6 +1063,7 @@ class ExploreCoverHydrationController {
             const unresolved = [...this.selectedIds].filter(id =>
                 !this.completedByDisplayId.has(id) &&
                 !this.inFlightByDisplayId.has(id) &&
+                !this.queuedByDisplayId.has(id) &&
                 !this.negativeByDisplayId.has(id) &&
                 !this.failedByDisplayId.has(id) &&
                 !this.blockedByDisplayId.has(id)
@@ -954,6 +1085,7 @@ class ExploreCoverHydrationController {
                 failed: this.failedByDisplayId.size,
                 blocked: this.blockedByDisplayId.size,
                 pendingDom: this.pendingByDisplayId.size,
+                generation: this.generation,
                 reason,
             });
         } catch (_) {}
@@ -1016,6 +1148,7 @@ function renderExploreCarousel() {
     if (sameMembership && ids.every(id => previousNodes.get(id)?.isConnected)) {
         shuffled.forEach(game => {
             const node = previousNodes.get(String(game.id));
+            if (node?.dataset) node.dataset.artworkSurface = 'explore';
             _explorePatchCardArtwork(node, game);
             window.__baddelExploreCoverHydrationController?.registerCard(String(game.id), node, game);
         });
@@ -1024,7 +1157,8 @@ function renderExploreCarousel() {
         const fragment = document.createDocumentFragment();
         shuffled.forEach(game => {
             const id = String(game.id);
-            const node = previousNodes.get(id) || createGameCard(game);
+            const node = previousNodes.get(id) || createGameCard(game, false, { artworkSurface: 'explore' });
+            if (node?.dataset) node.dataset.artworkSurface = 'explore';
             _explorePatchCardArtwork(node, game);
             window.__baddelExploreCoverHydrationController?.registerCard(id, node, game);
             nextNodes.set(id, node);
@@ -2032,7 +2166,35 @@ async function fetchMetadata(imgElement, game) {
         localStorage.removeItem(cacheKey);
     }
 
-    // 3. Check disk cache directly (handles reinstall where localStorage was wiped)
+    // 3. Check disk cache directly across canonical/local/display aliases
+    if (window.__baddelLoadCachedArtworkForGame) {
+        const canonicalGame = { id: game.localGameId || game.installedId || game.id };
+        const cachedArtwork = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame).catch(() => null);
+        const cachedCover = _isCacheBackedNormalArtworkUrl(cachedArtwork?.cover);
+        if (cachedCover && !hasExplicitArtwork && _applyCardCoverResult(requestContext, cachedCover, { source: 'v2-cache-hit' })) {
+            game.image = cachedCover;
+            game.defaultImage = cachedCover;
+            game.coverUrl = cachedCover;
+            if (cachedArtwork?.hero) {
+                game.heroImage = cachedArtwork.hero;
+                game.defaultHero = cachedArtwork.hero;
+            }
+            if (cachedArtwork?.logo) {
+                game.logo = cachedArtwork.logo;
+                game.defaultLogo = cachedArtwork.logo;
+            }
+            window.electronAPI.saveMetadata?.(canonicalGame.id, { cover: cachedCover, hero: cachedArtwork?.hero || null, logo: cachedArtwork?.logo || null }, {
+                source: 'installed-cache-hit',
+                displayId: game.id,
+            }).catch(() => {});
+            if (typeof currentHeroGameId !== 'undefined' && String(currentHeroGameId) === String(game.id)) {
+                window.__baddelRequestHomeHeroTransition?.(game.id, { immediate: true, reason: 'installed-cache-hit' });
+            }
+            return;
+        }
+    }
+
+    // 3b. Check disk cache directly (handles reinstall where localStorage was wiped)
     if (window.electronAPI.getCachedImage) {
         try {
             const diskCover = await window.electronAPI.getCachedImage(game.id, 'cover');
@@ -2144,6 +2306,7 @@ async function processQueue() {
                         displayId: game.id,
                     }).catch(() => null);
                     if (saved?.updatedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+                        const operationId = saved.operationId || `explore-${canonicalArtworkId}-${Date.now()}`;
                         window.__baddelCommitCanonicalGameUpdate({
                             canonicalGame: saved.updatedGame,
                             changedTypes: [
@@ -2151,8 +2314,27 @@ async function processQueue() {
                                 saveHero ? 'hero' : null,
                                 saveLogo ? 'logo' : null,
                             ].filter(Boolean),
-                            operationId: saved.operationId || `explore-${canonicalArtworkId}-${Date.now()}`,
+                            operationId,
                         }, { reason: 'explore-visible-cover' });
+                        if (saveCover) {
+                            _applyCardCoverResult(requestContext, saveCover, { source: 'authoritative-exact-card-save' });
+                            game.image = saveCover;
+                            game.defaultImage = saveCover;
+                            game.coverUrl = saveCover;
+                        }
+                        if (saveHero) {
+                            game.heroImage = saveHero;
+                            game.defaultHero = saveHero;
+                            game.hero = saveHero;
+                        }
+                        if (saveLogo) {
+                            game.logo = saveLogo;
+                            game.defaultLogo = saveLogo;
+                            game.logoUrl = saveLogo;
+                        }
+                        if (typeof currentHeroGameId !== 'undefined' && String(currentHeroGameId) === String(game.id)) {
+                            window.__baddelRequestHomeHeroTransition?.(game.id, { immediate: true, reason: 'explore-visible-cover' });
+                        }
                         return;
                     }
                     _logExploreArtworkRequest({

@@ -103,6 +103,14 @@ describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
         const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
         assert.match(fn, /checkBackgroundAssets\(/);
     });
+    it('updateHeroSection resolves cached artwork aliases before choosing hero presentation', () => {
+        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        assert.match(fn, /await _homeHeroHydrateCachedArtwork\s*\(\s*game/);
+        assert.ok(
+            fn.indexOf('await _homeHeroHydrateCachedArtwork') < fn.indexOf('const art = _homeHeroArtworkFor'),
+            'cache hydration must happen before presentation selection'
+        );
+    });
     it('updateHeroSection gets heroBg, heroLogo, heroTitle, heroStats elements', () => {
         const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /getElementById\('heroBg'\)/);

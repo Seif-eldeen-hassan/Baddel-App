@@ -33,7 +33,7 @@ function makeCard(id) {
     });
     return {
         isConnected: true,
-        dataset: { id },
+        dataset: { id, artworkSurface: 'explore' },
         assignments,
         img,
         querySelector(selector) {
@@ -119,9 +119,9 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     };
     sandbox.window.electronAPI = {
         async getCachedImage(key, type) {
-            assert.equal(type, 'cover');
+            assert.ok(['cover', 'hero', 'logo'].includes(type));
             const index = Number(String(key).replace(/\D+/g, ''));
-            if (Number.isFinite(index) && index < cacheHits && String(key).startsWith('canonical-')) {
+            if (type === 'cover' && Number.isFinite(index) && index < cacheHits && String(key).startsWith('canonical-')) {
                 return `file://cached-${index}.webp`;
             }
             return null;
@@ -129,15 +129,23 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
         async getMetadata(name, payload) {
             calls.getMetadata.push({ name, payload });
             if (special.noCover?.has(payload.id)) return {};
-            return { cover: `https://cdn/${payload.id}.jpg` };
+            return {
+                cover: `https://cdn/${payload.id}.jpg`,
+                hero: `https://cdn/${payload.id}-hero.jpg`,
+                logo: `https://cdn/${payload.id}-logo.png`,
+            };
         },
         async cacheAllAssets(assets, canonicalGameId, opts) {
             calls.cacheAllAssets.push({ assets, canonicalGameId, opts, active: sandbox.window.__activeDownloads });
-            assert.deepEqual(Object.keys(assets), ['cover']);
+            assert.deepEqual(Object.keys(assets), ['cover', 'hero', 'logo']);
             if (special.fail?.has(canonicalGameId)) throw new Error('download failed');
             if (special.block?.has(canonicalGameId)) return {};
             return new Promise(resolve => {
-                setTimeout(() => resolve({ cover: `file://${canonicalGameId}.webp` }), special.delay || 0);
+                setTimeout(() => resolve({
+                    cover: `file://${canonicalGameId}.webp`,
+                    hero: `file://${canonicalGameId}-hero.webp`,
+                    logo: `file://${canonicalGameId}-logo.webp`,
+                }), special.delay || 0);
             });
         },
         async saveMetadata(canonicalGameId, meta, opts) {
@@ -147,7 +155,14 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
                 updatedGame: {
                     id: canonicalGameId,
                     image: meta.cover,
-                    artworkState: { version: 2, cover: { fallbackValue: meta.cover, overrideValue: null, revision: 1 } },
+                    heroImage: meta.hero,
+                    logo: meta.logo,
+                    artworkState: {
+                        version: 2,
+                        cover: { fallbackValue: meta.cover, overrideValue: null, revision: 1 },
+                        hero: { fallbackValue: meta.hero, overrideValue: null, revision: 1 },
+                        logo: { fallbackValue: meta.logo, overrideValue: null, revision: 1 },
+                    },
                 },
             };
         },
@@ -162,11 +177,14 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     };
     sandbox.window.__baddelCommitCanonicalGameUpdate = (transaction) => {
         const displayId = calls.saveMetadata.at(-1)?.opts?.displayId;
-        sandbox.window.__baddelExploreCoverHydrationController.onCanonicalCoverCommit({
+        return {
             canonicalGame: transaction.canonicalGame,
-            matchedDisplayIds: [displayId],
-            operationId: transaction.operationId,
-        });
+            canonicalGameId: transaction.canonicalGame.id,
+            changedTypes: transaction.changedTypes,
+            matchedDisplayIds: special.ambiguous?.has(displayId) ? [] : [displayId],
+            duplicate: false,
+            scannedCount: games.length,
+        };
     };
     sandbox.renderExploreCarousel = () => { calls.renders += 1; };
     sandbox.navigateToHome = () => { calls.navigations += 1; };
@@ -208,7 +226,6 @@ test('cold start hidden Home hydrates all 15 Explore covers without navigation',
         assert.equal(cards.get(`display-${i}`).img.src, expected, `display-${i}`);
     }
 });
-
 for (const concurrency of [2, 3]) {
     test(`Explore hydration queue drains all requests with concurrency=${concurrency}`, async () => {
         const { sandbox, games, cards, calls } = makeSandbox({ concurrency, cacheHits: 0, special: { delay: 1 } });
@@ -245,7 +262,6 @@ test('failed, blocked, and negative results do not stall remaining Explore reque
     assert.equal(controller.completedByDisplayId.size, 12);
     assert.equal(cards.get('display-14').img.src, 'file://canonical-14.webp');
 });
-
 test('pending result completed before mount applies only to matching card after mount', async () => {
     const { sandbox, games, cards } = makeSandbox({ count: 3, concurrency: 3, cacheHits: 0, special: { delay: 1 } });
     const controller = sandbox.window.__baddelExploreCoverHydrationController;

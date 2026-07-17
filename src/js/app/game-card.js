@@ -383,10 +383,13 @@ function _agDecorateAllGamesCardFields(card, game) {
     card.appendChild(overlay);
 }
 
-function createGameCard(game, isRecent = false) {
+function createGameCard(game, isRecent = false, options) {
+    options = options || {};
+    const artworkSurface = options.artworkSurface || 'installed';
     const card = document.createElement('div');
     card.className = 'game-card';
     card.setAttribute('data-id', game.id);
+    card.dataset.artworkSurface = artworkSurface;
 
     card.addEventListener('mouseenter', () => {
         if (currentFilters.collectionId === null && currentView === 'home') {
@@ -545,9 +548,14 @@ function createGameCard(game, isRecent = false) {
     });
 
     const imgEl = card.querySelector('.actual-img');
-    const exploreHydrationOwned =
-        typeof window !== 'undefined' &&
-        window.__baddelExploreCoverHydrationController?.ownsDisplayId?.(game.id) === true;
+    const exploreHydrationOwned = artworkSurface === 'explore';
+    try {
+        console.info('[ArtworkSurfaceOwnership]', {
+            displayId: String(game.id || ''),
+            surface: artworkSurface,
+            owner: exploreHydrationOwned ? 'explore-controller' : 'legacy-card-hydrator',
+        });
+    } catch (_) {}
 
     // Show image via class once loaded (prevents black flash)
     imgEl.addEventListener('load', () => {

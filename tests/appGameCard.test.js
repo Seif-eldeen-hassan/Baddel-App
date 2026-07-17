@@ -163,6 +163,20 @@ test('createGameCard: uses fetchMetadata for games without a local cached image'
     assert.match(body, /fetchMetadata\s*\(\s*imgEl,\s*game\s*\)/);
 });
 
+test('surface ownership: createGameCard accepts an explicit artworkSurface option', () => {
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
+    assert.match(body, /options\s*=\s*options\s*\|\|\s*\{\}/);
+    assert.match(body, /const artworkSurface\s*=\s*options\.artworkSurface\s*\|\|\s*['"]installed['"]/);
+    assert.match(body, /card\.dataset\.artworkSurface\s*=\s*artworkSurface/);
+});
+
+test('surface ownership: only explicit Explore cards suppress legacy fetchMetadata', () => {
+    const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
+    assert.match(body, /const exploreHydrationOwned\s*=\s*artworkSurface\s*===\s*['"]explore['"]/);
+    assert.doesNotMatch(body, /ownsDisplayId\?\.\(game\.id\)/);
+    assert.match(body, /else if \(!exploreHydrationOwned\)\s*\{[\s\S]*fetchMetadata\s*\(\s*imgEl,\s*game\s*\)/);
+});
+
 test('createGameCard: prefers poster fields (image, defaultImage, coverUrl) over hero', () => {
     const body = extractFn(GAME_CARD_JS, 'function createGameCard(');
     assert.match(body, /game\.image\s*\|\|\s*game\.defaultImage\s*\|\|\s*game\.coverUrl/);

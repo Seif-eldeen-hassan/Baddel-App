@@ -106,6 +106,41 @@ function _homeHeroArtworkFor(game) {
     };
 }
 
+async function _homeHeroHydrateCachedArtwork(game, source = 'hero') {
+    if (!game || !window.__baddelLoadCachedArtworkForGame) return { coverHit: false, heroHit: false, logoHit: false };
+    const canonicalGame = { id: game.localGameId || game.installedId || game.id };
+    const cached = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame).catch(() => null);
+    const cover = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.cover) : cached?.cover;
+    const hero = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.hero) : cached?.hero;
+    const logo = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.logo) : cached?.logo;
+    if (cover) {
+        game.image = cover;
+        game.defaultImage = cover;
+        game.coverUrl = cover;
+    }
+    if (hero) {
+        game.heroImage = hero;
+        game.defaultHero = hero;
+        game.hero = hero;
+    }
+    if (logo) {
+        game.logo = logo;
+        game.defaultLogo = logo;
+        game.logoUrl = logo;
+    }
+    try {
+        console.info('[HomeHeroHydration]', {
+            gameId: String(game.id || ''),
+            coverHit: !!cover,
+            heroHit: !!hero,
+            logoHit: !!logo,
+            source,
+            committed: !!(cover || hero || logo),
+        });
+    } catch (_) {}
+    return { coverHit: !!cover, heroHit: !!hero, logoHit: !!logo };
+}
+
 function _homeHeroCommit(payload) {
     const { token, gameId, game, bg, logo, heroLoaded } = payload || {};
     if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
@@ -182,7 +217,8 @@ function __baddelPrewarmExploreHeroArtwork(games) {
     const visible = (Array.isArray(games) ? games : []).slice(0, 8);
     const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
     schedule(() => {
-        visible.forEach(game => {
+        visible.forEach(async game => {
+            await _homeHeroHydrateCachedArtwork(game, 'explore-prewarm');
             const art = _homeHeroArtworkFor(game);
             if (art.bg) _homeHeroPreloadImage(art.bg);
             if (art.logo) _homeHeroPreloadImage(art.logo);
@@ -204,8 +240,10 @@ async function updateHeroSection(gameId, options) {
     currentHeroGameId = String(gameId);
     const token = ++_homeHeroRequestToken;
 
-    // Hydrate hero/logo from localStorage before reading the fields
+    // Hydrate hero/logo from localStorage and cache aliases before reading the fields
     checkBackgroundAssets(game);
+    await _homeHeroHydrateCachedArtwork(game, options.reason || 'updateHeroSection');
+    if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
     const art = _homeHeroArtworkFor(game);
     const [heroResult, logoResult] = await Promise.all([
         _homeHeroPreloadImage(art.bg),

@@ -574,6 +574,13 @@ describe('Phase 2.12B: artwork-sync — intentional dependencies', () => {
         assert.match(fn, /updateHeroSection/);
         assert.match(fn, /currentHeroGameId/);
     });
+    it('canonical coordinator refreshes Home Hero for cover commits because cover is a hero fallback', () => {
+        const start = ARTWORK_SYNC_JS.indexOf('window.__baddelCommitCanonicalGameUpdate');
+        const end = ARTWORK_SYNC_JS.indexOf('// ── Visible card DOM patcher', start);
+        const fn = ARTWORK_SYNC_JS.slice(start, end);
+        assert.match(fn, /appliedTypes\.includes\('cover'\)/);
+        assert.match(fn, /__baddelRequestHomeHeroTransition/);
+    });
     it('hydrateManualGameArtworkNow calls applyFilters to refresh visible cards', () => {
         const fn = getFunctionBody(ARTWORK_SYNC_JS, 'hydrateManualGameArtworkNow');
         assert.match(fn, /applyFilters\(\)/);
