@@ -59,6 +59,21 @@ test('app.js: initSystem uses traceStartupStep for initSortable', () => {
         'initSystem must trace initSortable step');
 });
 
+test('app.js: startup splash timing is reduced and configurable', () => {
+    assert.match(APP_JS, /__baddelSplashMinMs\s*\?\?\s*900/, 'splash minimum should default near 900ms and be configurable');
+    assert.match(APP_JS, /__baddelSplashFadeMs\s*\?\?\s*180/, 'splash fade should default near 180ms and be configurable');
+    assert.doesNotMatch(APP_JS, /SPLASH_MIN_MS\s*=\s*3200/, 'startup must not keep the old 3200ms minimum');
+    assert.doesNotMatch(APP_JS, /,\s*500\s*\)\s*;[\s\r\n]*\}/, 'startup must not keep the old 500ms splash fade');
+});
+
+test('app.js: startup defers sidebar All Games count hydration', () => {
+    const start = APP_JS.indexOf('async function initSystem');
+    const end = APP_JS.indexOf('initSystem();', start);
+    const block = APP_JS.slice(start, end);
+    assert.ok(block.includes("hydrateSidebarAllGamesCount:deferred"), 'startup should trace deferred sidebar count hydration');
+    assert.doesNotMatch(block, /await\s+traceStartupStep\(['"]hydrateSidebarAllGamesCount['"]/, 'sidebar count hydration must not block splash dismissal');
+});
+
 test('app.js: navigateToHome uses traceHomeStep for renderRecentlyPlayed', () => {
     assert.ok(APP_JS.includes("traceHomeStep('renderRecentlyPlayed'") || APP_JS.includes('traceHomeStep("renderRecentlyPlayed"'),
         'navigateToHome must isolate renderRecentlyPlayed with traceHomeStep');

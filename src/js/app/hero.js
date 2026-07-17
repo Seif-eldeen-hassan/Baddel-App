@@ -106,10 +106,10 @@ function _homeHeroArtworkFor(game) {
     };
 }
 
-async function _homeHeroHydrateCachedArtwork(game, source = 'hero') {
+async function _homeHeroHydrateCachedArtwork(game, source = 'hero', options = {}) {
     if (!game || !window.__baddelLoadCachedArtworkForGame) return { coverHit: false, heroHit: false, logoHit: false };
     const canonicalGame = { id: game.localGameId || game.installedId || game.id };
-    const cached = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame).catch(() => null);
+    const cached = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame, { types: options.types || ['cover', 'hero', 'logo'] }).catch(() => null);
     const cover = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.cover) : cached?.cover;
     const hero = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.hero) : cached?.hero;
     const logo = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.logo) : cached?.logo;
@@ -155,16 +155,22 @@ function _homeHeroCommit(payload) {
 
     requestAnimationFrame(() => {
         if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
+        const nextBg = bg || '';
+        const nextLogo = logo || '';
+        const unchangedBg = nextBg && bgImg.dataset.lastGoodBg === nextBg;
+        const unchangedLogo = nextLogo && logoImg.src === nextLogo;
         if (heroLoaded && bg) {
-            const sanitized = bg.replace(/\\/g, '/').replace(/'/g, "\\'");
-            bgImg.style.backgroundImage = `url('${sanitized}')`;
+            if (!unchangedBg) {
+                const sanitized = bg.replace(/\\/g, '/').replace(/'/g, "\\'");
+                bgImg.style.backgroundImage = `url('${sanitized}')`;
+            }
         } else if (!bgImg.dataset.lastGoodBg && !bgImg.style.backgroundImage) {
             bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
         }
 
         if (logo) {
             logoImg.onerror = null;
-            logoImg.src = logo;
+            if (!unchangedLogo) logoImg.src = logo;
             logoImg.style.display = 'block';
             titleTxt.innerText = game.name;
             titleTxt.style.display = 'none';
@@ -215,14 +221,37 @@ function __baddelRequestHomeHeroTransition(gameId, options = {}) {
 
 function __baddelPrewarmExploreHeroArtwork(games) {
     const visible = (Array.isArray(games) ? games : []).slice(0, 8);
+    if (window.__baddelExploreCoverHydrationController?.prewarmHeroArtwork) {
+        window.__baddelExploreCoverHydrationController.prewarmHeroArtwork(visible, { reason: 'explore-hero-prewarm' });
+        return;
+    }
     const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
     schedule(() => {
-        visible.forEach(async game => {
-            await _homeHeroHydrateCachedArtwork(game, 'explore-prewarm');
+        let index = 0;
+        let active = 0;
+        const pump = () => {
+            while (active < 2 && index < visible.length) {
+                const game = visible[index++];
+                active += 1;
+                Promise.resolve().then(async () => {
+                    const artBefore = _homeHeroArtworkFor(game);
+                    const hasHero = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(artBefore.bg) : artBefore.bg;
+                    const hasLogo = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(artBefore.logo) : artBefore.logo;
+                    if (!hasHero || !hasLogo) {
+                        await _homeHeroHydrateCachedArtwork(game, 'explore-prewarm', { types: ['hero', 'logo'] });
+                    }
+                }).catch(() => {}).finally(() => {
+                    active -= 1;
+                    pump();
+                });
+            }
+        };
+        pump();
+        for (const game of visible) {
             const art = _homeHeroArtworkFor(game);
             if (art.bg) _homeHeroPreloadImage(art.bg);
             if (art.logo) _homeHeroPreloadImage(art.logo);
-        });
+        }
     });
 }
 
@@ -242,7 +271,7 @@ async function updateHeroSection(gameId, options) {
 
     // Hydrate hero/logo from localStorage and cache aliases before reading the fields
     checkBackgroundAssets(game);
-    await _homeHeroHydrateCachedArtwork(game, options.reason || 'updateHeroSection');
+    await _homeHeroHydrateCachedArtwork(game, options.reason || 'updateHeroSection', { types: ['cover', 'hero', 'logo'] });
     if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
     const art = _homeHeroArtworkFor(game);
     const [heroResult, logoResult] = await Promise.all([

@@ -10,10 +10,14 @@ const ROOT = path.join(__dirname, '..');
 const APP_JS = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'utf8');
 
 function controllerSource() {
+    const perfStart = APP_JS.indexOf('function _baddelPerfNow');
+    const perfEnd = APP_JS.indexOf('function traceStartupStep', perfStart);
+    assert.ok(perfStart >= 0 && perfEnd > perfStart, 'performance helpers exist');
+    const perfHelpers = APP_JS.slice(perfStart, perfEnd);
     const start = APP_JS.indexOf('function _dispatchHomeVisibleWhenReady');
     const end = APP_JS.indexOf('function _explorePatchCardArtwork');
     assert.ok(start >= 0 && end > start, 'Explore hydration controller block exists');
-    return APP_JS.slice(start, end);
+    return perfHelpers + '\n' + APP_JS.slice(start, end);
 }
 
 function makeCard(id) {
@@ -47,6 +51,7 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     const listeners = new Map();
     const calls = {
         getMetadata: [],
+        cacheLookup: [],
         cacheAllAssets: [],
         saveMetadata: [],
         patches: [],
@@ -102,6 +107,7 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     };
     sandbox.window = sandbox;
     sandbox.window.__baddelExploreHydrationConcurrency = concurrency;
+    sandbox.window.__baddelExploreSecondaryHydrationConcurrency = special.secondaryConcurrency || 2;
     sandbox.window.addEventListener = (type, handler) => {
         if (!listeners.has(type)) listeners.set(type, []);
         listeners.get(type).push(handler);
@@ -116,6 +122,31 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
         createReadModel(game) {
             return { cover: { effectiveValue: game?.image || null } };
         },
+    };
+    sandbox.window.__baddelLoadCachedArtworkForGame = async (displayGame, canonicalGame, options = {}) => {
+        const types = Array.isArray(options.types) && options.types.length ? options.types : ['cover', 'hero', 'logo'];
+        calls.cacheLookup.push({ displayId: displayGame?.id, canonicalGameId: canonicalGame?.id, types });
+        const result = {
+            cover: null,
+            hero: null,
+            logo: null,
+            keysTried: [],
+            matchedKeys: { cover: null, hero: null, logo: null },
+        };
+        const index = Number(String(canonicalGame?.id || '').replace(/\D+/g, ''));
+        if (types.includes('cover') && Number.isFinite(index) && index < cacheHits) {
+            result.cover = `file://cached-${index}.webp`;
+            result.matchedKeys.cover = canonicalGame.id;
+        }
+        if (types.includes('hero') && special.cachedHero?.has(canonicalGame?.id)) {
+            result.hero = `file://${canonicalGame.id}-hero-cached.webp`;
+            result.matchedKeys.hero = canonicalGame.id;
+        }
+        if (types.includes('logo') && special.cachedLogo?.has(canonicalGame?.id)) {
+            result.logo = `file://${canonicalGame.id}-logo-cached.webp`;
+            result.matchedKeys.logo = canonicalGame.id;
+        }
+        return result;
     };
     sandbox.window.electronAPI = {
         async getCachedImage(key, type) {
@@ -137,14 +168,17 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
         },
         async cacheAllAssets(assets, canonicalGameId, opts) {
             calls.cacheAllAssets.push({ assets, canonicalGameId, opts, active: sandbox.window.__activeDownloads });
-            assert.deepEqual(Object.keys(assets), ['cover', 'hero', 'logo']);
+            assert.ok(Object.keys(assets).every(key => ['cover', 'hero', 'logo'].includes(key)));
             if (special.fail?.has(canonicalGameId)) throw new Error('download failed');
             if (special.block?.has(canonicalGameId)) return {};
+            if (opts?.reason === 'explore-secondary-hydration' && special.secondaryFail?.has(canonicalGameId)) {
+                throw new Error('secondary failed');
+            }
             return new Promise(resolve => {
                 setTimeout(() => resolve({
-                    cover: `file://${canonicalGameId}.webp`,
-                    hero: `file://${canonicalGameId}-hero.webp`,
-                    logo: `file://${canonicalGameId}-logo.webp`,
+                    cover: assets.cover ? `file://${canonicalGameId}.webp` : null,
+                    hero: assets.hero ? `file://${canonicalGameId}-hero.webp` : null,
+                    logo: assets.logo ? `file://${canonicalGameId}-logo.webp` : null,
                 }), special.delay || 0);
             });
         },
@@ -204,6 +238,22 @@ async function waitForIdle(controller) {
     throw new Error('controller did not become idle');
 }
 
+async function waitForSecondaryIdle(controller) {
+    for (let i = 0; i < 250; i += 1) {
+        await new Promise(resolve => setTimeout(resolve, 2));
+        if (
+            !controller.inFlightByDisplayId.size &&
+            !controller.queuedByDisplayId.size &&
+            !controller.secondaryInFlightByDisplayId.size &&
+            !controller.secondaryQueuedByDisplayId.size
+        ) {
+            await Promise.resolve();
+            return;
+        }
+    }
+    throw new Error('secondary queue did not become idle');
+}
+
 test('cold start hidden Home hydrates all 15 Explore covers without navigation', async () => {
     const { sandbox, games, cards, calls } = makeSandbox({ concurrency: 3, cacheHits: 2, special: { delay: 1 } });
     const controller = sandbox.window.__baddelExploreCoverHydrationController;
@@ -221,10 +271,80 @@ test('cold start hidden Home hydrates all 15 Explore covers without navigation',
     assert.equal(calls.renders, 0);
     assert.equal(calls.getMetadata.length, 13);
     assert.equal(calls.cacheAllAssets.length, 13);
+    assert.equal(calls.cacheLookup.filter(call => call.types.join(',') === 'cover').length, 15);
     for (let i = 0; i < games.length; i += 1) {
         const expected = i < 2 ? `file://cached-${i}.webp` : `file://canonical-${i}.webp`;
         assert.equal(cards.get(`display-${i}`).img.src, expected, `display-${i}`);
     }
+});
+
+test('downloaded Explore cover paints before saveMetadata settles', async () => {
+    let releaseSave;
+    const special = { delay: 1 };
+    const { sandbox, games, cards, calls } = makeSandbox({ count: 1, concurrency: 1, cacheHits: 0, special });
+    sandbox.window.electronAPI.saveMetadata = async (canonicalGameId, meta, opts) => {
+        calls.saveMetadata.push({ canonicalGameId, meta, opts, pending: true });
+        await new Promise(resolve => { releaseSave = resolve; });
+        return {
+            operationId: `op-${canonicalGameId}`,
+            updatedGame: { id: canonicalGameId, image: meta.cover, artworkState: { version: 2, cover: { fallbackValue: meta.cover, revision: 2 } } },
+        };
+    };
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'cover-before-save' });
+    cards.set('display-0', makeCard('display-0'));
+    controller.registerCard('display-0', cards.get('display-0'), games[0]);
+    await waitForIdle(controller);
+    assert.equal(cards.get('display-0').img.src, 'file://canonical-0.webp');
+    assert.equal(calls.saveMetadata.length, 1);
+    assert.equal(calls.saveMetadata[0].pending, true);
+    releaseSave();
+    await waitForSecondaryIdle(controller);
+});
+
+test('secondary hero/logo failure does not delay or remove painted cover', async () => {
+    const special = { delay: 1, secondaryFail: new Set(['canonical-0']) };
+    const { sandbox, games, cards, calls } = makeSandbox({ count: 1, concurrency: 1, cacheHits: 0, special });
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'secondary-failure' });
+    cards.set('display-0', makeCard('display-0'));
+    controller.registerCard('display-0', cards.get('display-0'), games[0]);
+    await waitForIdle(controller);
+    assert.equal(cards.get('display-0').img.src, 'file://canonical-0.webp');
+    await waitForSecondaryIdle(controller);
+    assert.equal(cards.get('display-0').img.src, 'file://canonical-0.webp');
+    assert.equal(controller.secondaryFailedByDisplayId.has('display-0'), true);
+    assert.equal(calls.cacheAllAssets.some(call => call.opts.reason === 'explore-secondary-hydration'), true);
+});
+
+test('Explore uses separate cover and secondary concurrency limits', async () => {
+    const { sandbox, games, cards, calls } = makeSandbox({
+        count: 6,
+        concurrency: 3,
+        cacheHits: 0,
+        special: { delay: 8, secondaryConcurrency: 1 },
+    });
+    let coverPeak = 0;
+    let secondaryPeak = 0;
+    const originalCacheAllAssets = sandbox.window.electronAPI.cacheAllAssets;
+    sandbox.window.electronAPI.cacheAllAssets = async (assets, canonicalGameId, opts) => {
+        const activeCover = sandbox.window.__baddelExploreCoverHydrationController.inFlightByDisplayId.size;
+        const activeSecondary = sandbox.window.__baddelExploreCoverHydrationController.secondaryInFlightByDisplayId.size;
+        if (opts.reason === 'explore-cover-hydration') coverPeak = Math.max(coverPeak, activeCover);
+        if (opts.reason === 'explore-secondary-hydration') secondaryPeak = Math.max(secondaryPeak, activeSecondary);
+        return originalCacheAllAssets(assets, canonicalGameId, opts);
+    };
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'separate-concurrency' });
+    games.forEach(game => {
+        cards.set(game.id, makeCard(game.id));
+        controller.registerCard(game.id, cards.get(game.id), game);
+    });
+    await waitForIdle(controller);
+    assert.ok(coverPeak <= 3, `cover peak ${coverPeak}`);
+    assert.equal(calls.cacheAllAssets.filter(call => call.opts.reason === 'explore-secondary-hydration').length, 0);
+    await waitForSecondaryIdle(controller);
+    assert.ok(secondaryPeak <= 1, `secondary peak ${secondaryPeak}`);
 });
 for (const concurrency of [2, 3]) {
     test(`Explore hydration queue drains all requests with concurrency=${concurrency}`, async () => {

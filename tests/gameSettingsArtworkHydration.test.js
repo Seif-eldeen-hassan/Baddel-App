@@ -104,6 +104,50 @@ test('__baddelLoadCachedArtworkForGame tries strong keys and returns matched dis
     assert.ok(calls.includes('logo:FallGuys'));
 });
 
+test('__baddelLoadCachedArtworkForGame supports type-scoped session cache lookups', async () => {
+    const calls = [];
+    const sandbox = {
+        window: {},
+        console: { info() {}, warn() {}, error() {}, debug() {} },
+        localStorage: { getItem() { return null; }, setItem() {}, removeItem() {} },
+        Map,
+        Set,
+        Promise,
+        String,
+        Number,
+        Boolean,
+        Array,
+        Object,
+        Date,
+        safeImageUrl(value) { return value || null; },
+    };
+    sandbox.window.window = sandbox.window;
+    sandbox.window.console = sandbox.console;
+    sandbox.window.localStorage = sandbox.localStorage;
+    sandbox.window.BaddelGameArtworkReadModel = { resolveArtworkCacheKeys };
+    sandbox.window.electronAPI = {
+        async getCachedImage(key, type) {
+            calls.push(`${type}:${key}`);
+            if (key === 'local-fall-guys' && type === 'cover') return 'file:///cache/cover-local.webp';
+            return null;
+        },
+        async probeLocalImage() {
+            throw new Error('batch lookup should trust main-validated cache hits');
+        },
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(ARTWORK_SYNC_JS, sandbox, { filename: 'artwork-sync.js' });
+
+    const displayGame = { id: 'epic:fall-guys', localGameId: 'local-fall-guys', appName: 'FallGuys' };
+    const canonicalGame = { id: 'local-fall-guys' };
+    const first = await sandbox.window.__baddelLoadCachedArtworkForGame(displayGame, canonicalGame, { types: ['cover'] });
+    const second = await sandbox.window.__baddelLoadCachedArtworkForGame(displayGame, canonicalGame, { types: ['cover'] });
+
+    assert.equal(first.cover, 'file:///cache/cover-local.webp');
+    assert.equal(second.cover, 'file:///cache/cover-local.webp');
+    assert.deepEqual(calls, ['cover:local-fall-guys']);
+});
+
 test('_gsSetArtworkPreview advances from stale first candidate to valid second candidate', () => {
     const normalizeSrc = extractFunction(ADD_GAME_MODAL_JS, '_gsNormalizeCandidates');
     const previewSrc = extractFunction(ADD_GAME_MODAL_JS, '_gsSetArtworkPreview');

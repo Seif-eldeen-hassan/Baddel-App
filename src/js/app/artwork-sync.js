@@ -212,9 +212,50 @@ window.__debugArtworkForGame = function __debugArtworkForGame(identity) {
 };
 
 const _artworkCacheLookupInFlight = new Map();
+const _artworkCacheLookupResolved = new Map();
 function _cacheLookupIdentity(displayGame, canonicalGame) {
     return String(canonicalGame?.id || displayGame?.localGameId || displayGame?.installedId || displayGame?.id || '');
 }
+
+function _normalizeArtworkLookupTypes(types) {
+    const requested = Array.isArray(types) && types.length ? types : ['cover', 'hero', 'logo'];
+    return requested.filter(type => ['cover', 'hero', 'logo'].includes(type));
+}
+
+function _cloneArtworkCacheLookupResult(result) {
+    return {
+        cover: result?.cover || null,
+        hero: result?.hero || null,
+        logo: result?.logo || null,
+        keysTried: Array.isArray(result?.keysTried) ? result.keysTried.slice() : [],
+        matchedKeys: { ...(result?.matchedKeys || {}) },
+    };
+}
+
+function _safeCacheLookupHit(url) {
+    const safe = safeImageUrl(url);
+    if (!safe) return null;
+    return String(safe).startsWith('file://') ? safe : null;
+}
+
+function _invalidateArtworkCacheLookup(identity, reason = 'unknown') {
+    const needle = identity ? String(identity) : '';
+    for (const map of [_artworkCacheLookupInFlight, _artworkCacheLookupResolved]) {
+        for (const key of [...map.keys()]) {
+            if (!needle || String(key).includes(needle)) map.delete(key);
+        }
+    }
+    try {
+        console.info('[ArtworkCacheLookupInvalidated]', {
+            identity: needle || '*',
+            reason,
+        });
+    } catch (_) {}
+}
+
+window.__baddelInvalidateArtworkCacheLookup = function __baddelInvalidateArtworkCacheLookup(identity, reason) {
+    _invalidateArtworkCacheLookup(identity, reason || 'external');
+};
 
 async function _probeCachedArtworkUrl(url) {
     const safe = safeImageUrl(url);
@@ -225,15 +266,18 @@ async function _probeCachedArtworkUrl(url) {
     return ok ? safe : null;
 }
 
-window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForGame(displayGame, canonicalGame) {
+window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForGame(displayGame, canonicalGame, options = {}) {
     const identityKey = _cacheLookupIdentity(displayGame, canonicalGame);
+    const types = _normalizeArtworkLookupTypes(options.types);
     const keys = window.BaddelGameArtworkReadModel?.resolveArtworkCacheKeys
         ? window.BaddelGameArtworkReadModel.resolveArtworkCacheKeys(displayGame, canonicalGame)
         : [canonicalGame?.id, displayGame?.localGameId, displayGame?.installedId, displayGame?.id].filter(Boolean);
-    const requestKey = `${identityKey}:${keys.join('|')}`;
+    const requestKey = `${identityKey}:${types.join(',')}:${keys.join('|')}`;
+    if (_artworkCacheLookupResolved.has(requestKey)) return Promise.resolve(_cloneArtworkCacheLookupResult(_artworkCacheLookupResolved.get(requestKey)));
     if (_artworkCacheLookupInFlight.has(requestKey)) return _artworkCacheLookupInFlight.get(requestKey);
 
     const promise = (async () => {
+        const startedAt = (typeof performance !== 'undefined' && performance?.now) ? performance.now() : Date.now();
         const result = {
             cover: null,
             hero: null,
@@ -242,12 +286,12 @@ window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForG
             matchedKeys: { cover: null, hero: null, logo: null },
         };
         if (!window.electronAPI?.getCachedImage) return result;
-        for (const type of ['cover', 'hero', 'logo']) {
+        for (const type of types) {
             for (const key of keys) {
                 if (!key) continue;
                 result.keysTried.push(`${type}:${key}`);
                 const cached = await window.electronAPI.getCachedImage(key, type).catch(() => null);
-                const usable = await _probeCachedArtworkUrl(cached);
+                const usable = _safeCacheLookupHit(cached);
                 if (usable) {
                     result[type] = usable;
                     result.matchedKeys[type] = key;
@@ -273,6 +317,19 @@ window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForG
                 });
             }
         }
+        try {
+            const now = (typeof performance !== 'undefined' && performance?.now) ? performance.now() : Date.now();
+            console.info('[ArtworkCacheLookupBatch]', {
+                displayId: displayGame?.id || null,
+                canonicalGameId: canonicalGame?.id || null,
+                types,
+                keysCount: keys.length,
+                hits: types.filter(type => !!result[type]),
+                durationMs: Math.round(now - startedAt),
+                cached: false,
+            });
+        } catch (_) {}
+        _artworkCacheLookupResolved.set(requestKey, _cloneArtworkCacheLookupResult(result));
         return result;
     })().finally(() => _artworkCacheLookupInFlight.delete(requestKey));
     _artworkCacheLookupInFlight.set(requestKey, promise);
@@ -465,6 +522,7 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
             if (operationId) _latestArtworkOperations.set(_canonicalRevisionKey(canonicalGame.id, type), operationId);
         }
     }
+    if (appliedTypes.length) _invalidateArtworkCacheLookup(canonicalGame.id, reason);
     if (!appliedTypes.length) {
         return {
             canonicalGame,
