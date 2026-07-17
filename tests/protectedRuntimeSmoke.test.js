@@ -50,18 +50,18 @@ test('app.js: initSystem uses traceStartupStep for renderSidebar', () => {
 });
 
 test('app.js: initSystem uses traceStartupStep for navigateToHome', () => {
-    assert.ok(APP_JS.includes("traceStartupStep('navigateToHome'") || APP_JS.includes('traceStartupStep("navigateToHome"'),
-        'initSystem must trace navigateToHome step');
+    assert.ok(APP_JS.includes("traceStartupStep('navigateToHomeShell'") || APP_JS.includes('traceStartupStep("navigateToHomeShell"'),
+        'initSystem must trace shell-only Home navigation step');
 });
 
 test('app.js: initSystem uses traceStartupStep for initSortable', () => {
-    assert.ok(APP_JS.includes("traceStartupStep('initSortable'") || APP_JS.includes('traceStartupStep("initSortable"'),
-        'initSystem must trace initSortable step');
+    assert.ok(APP_JS.includes("deferred:initSortable") || APP_JS.includes("_baddelScheduleDeferredTask('initSortable'"),
+        'initSystem must defer initSortable after shell paint');
 });
 
 test('app.js: startup splash timing is reduced and configurable', () => {
-    assert.match(APP_JS, /__baddelSplashMinMs\s*\?\?\s*900/, 'splash minimum should default near 900ms and be configurable');
-    assert.match(APP_JS, /__baddelSplashFadeMs\s*\?\?\s*180/, 'splash fade should default near 180ms and be configurable');
+    assert.match(APP_JS, /__baddelSplashMinMs\s*\?\?\s*450/, 'splash minimum should default near 450ms and be configurable');
+    assert.match(APP_JS, /__baddelSplashFadeMs\s*\?\?\s*120/, 'splash fade should default near 120ms and be configurable');
     assert.doesNotMatch(APP_JS, /SPLASH_MIN_MS\s*=\s*3200/, 'startup must not keep the old 3200ms minimum');
     assert.doesNotMatch(APP_JS, /,\s*500\s*\)\s*;[\s\r\n]*\}/, 'startup must not keep the old 500ms splash fade');
 });
@@ -70,8 +70,30 @@ test('app.js: startup defers sidebar All Games count hydration', () => {
     const start = APP_JS.indexOf('async function initSystem');
     const end = APP_JS.indexOf('initSystem();', start);
     const block = APP_JS.slice(start, end);
-    assert.ok(block.includes("hydrateSidebarAllGamesCount:deferred"), 'startup should trace deferred sidebar count hydration');
+    assert.ok(block.includes("_baddelScheduleDeferredTask('hydrateSidebarAllGamesCount'"), 'startup should defer sidebar count hydration');
     assert.doesNotMatch(block, /await\s+traceStartupStep\(['"]hydrateSidebarAllGamesCount['"]/, 'sidebar count hydration must not block splash dismissal');
+});
+
+test('app.js: splash cleanup cancels RAF, timers, intervals, and audio', () => {
+    assert.match(APP_JS, /cancelAnimationFrame\(window\._splashRafId\)/);
+    assert.match(APP_JS, /window\._splashTimers/);
+    assert.match(APP_JS, /window\._splashIntervals/);
+    assert.match(APP_JS, /window\._splashAudioContext/);
+});
+
+test('main.js: analytics starts after window visibility, not before createWindow', () => {
+    const readyIdx = MAIN_JS.indexOf('app.whenReady().then');
+    const createCallIdx = MAIN_JS.indexOf('createWindow();', readyIdx);
+    const beforeCreate = MAIN_JS.slice(readyIdx, createCallIdx);
+    assert.doesNotMatch(beforeCreate, /await\s+analytics\.init\(/);
+    assert.doesNotMatch(beforeCreate, /await\s+runAfterStartupGrace\(['"]analytics\.init/);
+    assert.match(MAIN_JS, /startAnalyticsAfterWindowVisible/);
+});
+
+test('analytics.js: no execSync or PowerShell OS query on startup path', () => {
+    const analytics = fs.readFileSync(path.join(ROOT, 'analytics.js'), 'utf8');
+    assert.doesNotMatch(analytics, /execSync/);
+    assert.doesNotMatch(analytics, /powershell|Get-WmiObject|Win32_OperatingSystem/i);
 });
 
 test('app.js: navigateToHome uses traceHomeStep for renderRecentlyPlayed', () => {

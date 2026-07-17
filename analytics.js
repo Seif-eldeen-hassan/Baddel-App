@@ -11,7 +11,7 @@ const https        = require('https');
 const crypto       = require('crypto');
 const path         = require('path');
 const fs           = require('fs').promises;
-const { execSync } = require('child_process');
+const os           = require('os');
 const { app }      = require('electron');
 
 // PostHog API key is intentionally public (client-side key, not a secret).
@@ -516,12 +516,11 @@ function _bucketCount(n) {
 
 function _osVersion() {
     try {
-        const build = execSync(
-            'powershell -NoProfile -Command "(Get-WmiObject Win32_OperatingSystem).BuildNumber"',
-            { timeout: 2000, stdio: ['ignore', 'pipe', 'ignore'] }
-        ).toString().trim();
-
-        const num = parseInt(build, 10);
+        const release = typeof process.getSystemVersion === 'function'
+            ? process.getSystemVersion()
+            : os.release();
+        const parts = String(release || '').split('.');
+        const num = parseInt(parts[2] || parts[0] || '0', 10);
 
         if (num >= 22000) return 'win11';
         if (num >= 10240) return 'win10';

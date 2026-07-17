@@ -43,6 +43,48 @@ const safeLauncher  = require('./services/safeLauncher');
 const ipcValidation = require('./services/ipcValidation');
 const gamesIpc = require('./src/features/games/infrastructure/ipc/games.ipc');
 
+const _startupPerf = {
+    processStart: Date.now(),
+    ready: null,
+    createWindowCalled: null,
+    domReady: null,
+    readyToShow: null,
+    windowShown: null,
+};
+
+function _startupPerfLog(event, extra = {}) {
+    try {
+        const now = Date.now();
+        console.log('[StartupPerfMain]', event, {
+            sinceProcessStartMs: now - _startupPerf.processStart,
+            ...extra,
+        });
+    } catch (_) {}
+}
+
+function _startupPerfSummary() {
+    try {
+        console.log('[StartupPerfSummary]', {
+            processToWindowCreatedMs: _startupPerf.createWindowCalled && _startupPerf.createWindowCalled - _startupPerf.processStart,
+            windowCreatedToDomReadyMs: _startupPerf.domReady && _startupPerf.createWindowCalled ? _startupPerf.domReady - _startupPerf.createWindowCalled : null,
+            windowCreatedToReadyToShowMs: _startupPerf.readyToShow && _startupPerf.createWindowCalled ? _startupPerf.readyToShow - _startupPerf.createWindowCalled : null,
+            readyToShowToWindowShownMs: _startupPerf.windowShown && _startupPerf.readyToShow ? _startupPerf.windowShown - _startupPerf.readyToShow : null,
+        });
+    } catch (_) {}
+}
+
+function startAnalyticsAfterWindowVisible() {
+    if (startAnalyticsAfterWindowVisible.started) return;
+    startAnalyticsAfterWindowVisible.started = true;
+    Promise.resolve(runAfterStartupGrace('analytics.init', async () => {
+        await analytics.init();
+        analytics.writeUninstallTelemetryConfig().catch(() => {});
+        analytics.startHeartbeat();
+    }, 30000)).catch(err => {
+        console.warn('[Analytics] Deferred init failed:', err?.message || err);
+    });
+}
+
 // ── Production build detection ────────────────────────────────────────────────
 // Returns true when running from a packaged (installed) build.
 // Set BADDEL_ENABLE_DEVTOOLS=1 in the environment to re-enable DevTools even in
@@ -1383,6 +1425,8 @@ function createTray() {
 // WINDOW
 // ============================================================
 function createWindow() {
+    _startupPerf.createWindowCalled = Date.now();
+    _startupPerfLog('createWindow called');
     mainWindow = new BrowserWindow({
         width: 1280, height: 800,
         minWidth: 1000, minHeight: 600,
@@ -1408,6 +1452,12 @@ function createWindow() {
 
     mainWindow.on('close', (event) => {
         if (!isQuitting) { event.preventDefault(); mainWindow.hide(); }
+    });
+    mainWindow.once('show', () => {
+        _startupPerf.windowShown = _startupPerf.windowShown || Date.now();
+        _startupPerfLog('window shown');
+        _startupPerfSummary();
+        startAnalyticsAfterWindowVisible();
     });
 
     // -- Security hardening --
@@ -1462,6 +1512,10 @@ function createWindow() {
 
     mainWindow.maximize();
     mainWindow.loadFile(path.join(__dirname, 'src', 'dashboard.html'));
+    mainWindow.webContents.once('dom-ready', () => {
+        _startupPerf.domReady = Date.now();
+        _startupPerfLog('dom-ready');
+    });
 
     // In packaged builds, mirror all renderer console output to a log file.
     // This makes post-install diagnosis possible without DevTools.
@@ -1477,6 +1531,8 @@ function createWindow() {
     }
 
     mainWindow.once('ready-to-show', () => {
+        _startupPerf.readyToShow = Date.now();
+        _startupPerfLog('ready-to-show');
         if (isStartupLaunch) {
             // Boot-time launch: stay hidden in tray, do not steal focus.
             console.log('[Startup] launched hidden to tray');
@@ -1566,6 +1622,8 @@ protocol.registerSchemesAsPrivileged([
 ]);
 
 app.whenReady().then(async () => {
+    _startupPerf.ready = Date.now();
+    _startupPerfLog('process ready');
     // -- Startup diagnostics - logged before anything else can throw --
     try {
         const fsSync = require('fs');
@@ -1585,13 +1643,6 @@ app.whenReady().then(async () => {
 
     // -- Auto-updater (must be after app is ready - electron-updater reads package.json) --
     setupAutoUpdater();
-
-    // Analytics init - deferred at boot so the network flush doesn't fail during
-    // the Windows startup window where network services may not be ready yet.
-    // For normal launches, runAfterStartupGrace returns fn() so await still works.
-    await runAfterStartupGrace('analytics.init', () => analytics.init(), 30000);
-    analytics.writeUninstallTelemetryConfig().catch(() => {});
-    analytics.startHeartbeat();
 
     setupWindowsIntegration();
     runAfterStartupGrace('refreshDriveCache', () => refreshDriveCache(), 20000);

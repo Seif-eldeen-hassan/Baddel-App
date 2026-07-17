@@ -290,6 +290,9 @@ window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForG
             for (const key of keys) {
                 if (!key) continue;
                 result.keysTried.push(`${type}:${key}`);
+                if (window.__baddelStartupMetrics) {
+                    window.__baddelStartupMetrics.cacheIpcCount = Number(window.__baddelStartupMetrics.cacheIpcCount || 0) + 1;
+                }
                 const cached = await window.electronAPI.getCachedImage(key, type).catch(() => null);
                 const usable = _safeCacheLookupHit(cached);
                 if (usable) {

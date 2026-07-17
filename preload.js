@@ -22,6 +22,8 @@ try {
 // both receive the event without one registration evicting the other.
 const _libraryUpdatedCallbacks = new Set();
 let _libraryUpdatedListenerAttached = false;
+const _installedGamesScanStateCallbacks = new Set();
+let _installedGamesScanStateListenerAttached = false;
 
 contextBridge.exposeInMainWorld('electronAPI', {
 
@@ -47,6 +49,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }
     },
     onGameImageUpdated:     (cb)                      => ipcRenderer.on('game-image-updated', (_, game) => cb(game)),
+    onInstalledGamesScanState: (cb)                   => {
+        _installedGamesScanStateCallbacks.add(cb);
+        if (!_installedGamesScanStateListenerAttached) {
+            _installedGamesScanStateListenerAttached = true;
+            ipcRenderer.on('installed-games-scan-state', (_, payload) => {
+                _installedGamesScanStateCallbacks.forEach(fn => { try { fn(payload); } catch (_e) {} });
+            });
+        }
+    },
     onGameDeletedPermanently: (cb)                    => {
         ipcRenderer.removeAllListeners('game-deleted-permanently');
         ipcRenderer.on('game-deleted-permanently', (_, payload) => cb(payload));

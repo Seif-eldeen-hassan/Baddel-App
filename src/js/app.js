@@ -6,7 +6,37 @@
 // SPLASH SCREEN — Letterboxed cinematic loader (CSS-driven)
 // No canvas needed — bars + meta handled via CSS transitions
 // ============================================================
-window._stopSplashCanvas = () => { /* no-op: no canvas in this version */ };
+window.__baddelStartupMetrics = window.__baddelStartupMetrics || {
+    rendererInitAt: (typeof performance !== 'undefined' && performance?.now) ? performance.now() : Date.now(),
+    firstShellAt: null,
+    splashHiddenAt: null,
+    firstHomePaintAt: null,
+    firstExploreCoverAt: null,
+    allVisibleExploreCoversAt: null,
+    cacheIpcCount: 0,
+    artworkHttpDownloadCount: 0,
+};
+
+window._splashTimers = window._splashTimers || new Set();
+window._splashIntervals = window._splashIntervals || new Set();
+window._splashRafId = null;
+window._splashAudioContext = null;
+window._stopSplashCanvas = () => {
+    if (window._splashRafId != null && typeof cancelAnimationFrame === 'function') {
+        cancelAnimationFrame(window._splashRafId);
+    }
+    window._splashRafId = null;
+    for (const timer of window._splashTimers || []) clearTimeout(timer);
+    for (const interval of window._splashIntervals || []) clearInterval(interval);
+    window._splashTimers?.clear?.();
+    window._splashIntervals?.clear?.();
+    if (window._splashAudioContext?.close) {
+        window._splashAudioContext.close().catch(() => {});
+    }
+    window._splashAudioContext = null;
+    window._splashCounterInterval = null;
+    window._splashClockInterval = null;
+};
 
 // ── Runtime error capture ─────────────────────────────────────────────────────
 // In packaged builds these forward unhandled errors to the main process which
@@ -38,6 +68,7 @@ function playSplashSound() {
         const AudioCtx = window.AudioContext || window.webkitAudioContext;
         if (!AudioCtx) return;
         const ctx = new AudioCtx();
+        window._splashAudioContext = ctx;
 
         const isFirst = !localStorage.getItem('baddel_launched_before');
         if (isFirst) localStorage.setItem('baddel_launched_before', '1');
@@ -159,6 +190,19 @@ function playSplashSound() {
 // ============================================================
 function runSplash() {
     playSplashSound();
+    const splashSetTimeout = (fn, ms) => {
+        const id = setTimeout(() => {
+            window._splashTimers.delete(id);
+            fn();
+        }, ms);
+        window._splashTimers.add(id);
+        return id;
+    };
+    const splashSetInterval = (fn, ms) => {
+        const id = setInterval(fn, ms);
+        window._splashIntervals.add(id);
+        return id;
+    };
 
     // ── Element refs ────────────────────────────────────
     const canvas    = document.getElementById('splashCanvas');
@@ -191,7 +235,6 @@ function runSplash() {
             phase: Math.random() * Math.PI * 2,
         }));
 
-        let rafId;
         function drawParticles(t) {
             ctx.clearRect(0, 0, W, H);
             particles.forEach(p => {
@@ -203,40 +246,39 @@ function runSplash() {
                 ctx.fillStyle = `rgba(255,255,255,${p.alpha * pulse})`;
                 ctx.fill();
             });
-            rafId = requestAnimationFrame(drawParticles);
+            window._splashRafId = requestAnimationFrame(drawParticles);
         }
-        window._splashRafId = rafId;
-        setTimeout(() => {
+        splashSetTimeout(() => {
             canvas.classList.add('visible');
-            drawParticles(0);
-        }, 120);
+            window._splashRafId = requestAnimationFrame(drawParticles);
+        }, 40);
     }
 
     // ── Scan line sweep ─────────────────────────────────
     if (scanLine) {
-        setTimeout(() => {
+        splashSetTimeout(() => {
             const H = window.innerHeight;
             scanLine.style.opacity = '1';
-            scanLine.style.transition = 'top 0.9s cubic-bezier(.4,0,.6,1)';
+            scanLine.style.transition = 'top 0.35s cubic-bezier(.4,0,.6,1)';
             scanLine.style.top = '0px';
             requestAnimationFrame(() => requestAnimationFrame(() => {
                 scanLine.style.top = H + 'px';
-                setTimeout(() => {
+                splashSetTimeout(() => {
                     scanLine.style.opacity = '0';
                     scanLine.style.top = '-2px';
                     scanLine.style.transition = 'none';
-                }, 960);
+                }, 380);
             }));
-        }, 200);
+        }, 40);
     }
 
     // ── Corners ─────────────────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         corners.forEach(c => c.classList.add('visible'));
-    }, 350);
+    }, 80);
 
     // ── HUD top ──────────────────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (hudTop) hudTop.classList.add('visible');
         if (hudClock) {
             const tick = () => {
@@ -245,63 +287,71 @@ function runSplash() {
                     .map(n => String(n).padStart(2, '0')).join(':');
             };
             tick();
-            window._splashClockInterval = setInterval(tick, 1000);
+            window._splashClockInterval = splashSetInterval(tick, 1000);
         }
-    }, 400);
+    }, 100);
 
     // ── HUD bottom + frame counter ───────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (hudBot) hudBot.classList.add('visible');
         if (frameEl) {
             let f = 0;
-            window._splashCounterInterval = setInterval(() => {
+            window._splashCounterInterval = splashSetInterval(() => {
                 f++;
                 frameEl.textContent = String(f).padStart(2, '0');
-                if (f >= 120) clearInterval(window._splashCounterInterval);
+                if (f >= 30) {
+                    clearInterval(window._splashCounterInterval);
+                    window._splashIntervals.delete(window._splashCounterInterval);
+                    window._splashCounterInterval = null;
+                }
             }, 33);
         }
-    }, 480);
+    }, 120);
 
     // ── Logo ring + logo ─────────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (logoWrap) logoWrap.classList.add('visible');
-    }, 550);
+    }, 140);
 
     // ── Name wipe ────────────────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         name.classList.add('visible');
-    }, 1100);
+    }, 160);
 
     // ── Tagline ──────────────────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (sub) sub.classList.add('visible');
-    }, 1500);
+    }, 200);
 
     // ── Status row + cycle ───────────────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (statusRow) statusRow.classList.add('visible');
         if (statusTxt) {
-            const messages = ['INITIALIZING', 'LOADING LIBRARIES', 'SYNCING LAUNCHERS', 'READY'];
+            const messages = ['STARTING', 'OPENING HOME', 'READY'];
             let idx = 0;
-            const iv = setInterval(() => {
+            const iv = splashSetInterval(() => {
                 idx++;
                 statusTxt.style.opacity = '0';
-                setTimeout(() => {
+                splashSetTimeout(() => {
                     statusTxt.textContent = messages[idx];
                     statusTxt.style.opacity = '1';
-                }, 180);
-                if (idx >= messages.length - 1) clearInterval(iv);
-            }, 800);
+                }, 80);
+                if (idx >= messages.length - 1) {
+                    clearInterval(iv);
+                    window._splashIntervals.delete(iv);
+                }
+            }, 180);
         }
-    }, 1700);
+    }, 220);
 
     // ── Progress bar fills over 3s ───────────────────────
-    setTimeout(() => {
+    splashSetTimeout(() => {
         if (bar) {
-            bar.style.transition = 'width 3s cubic-bezier(.4,0,.15,1)';
-            bar.style.width = '100%';
+            bar.style.transition = 'transform 0.45s ease-in-out';
+            bar.style.width = '45%';
+            bar.style.transform = 'translateX(140%)';
         }
-    }, 800);
+    }, 80);
 }
 
 // ---- State ----
@@ -459,6 +509,40 @@ function _baddelPerfLog(name, payload = {}) {
     } catch (_) {}
 }
 
+function _baddelScheduleDeferredTask(name, fn, timeout = 250) {
+    const run = () => {
+        Promise.resolve()
+            .then(() => traceStartupStep(`deferred:${name}`, fn))
+            .catch(err => {
+                console.warn('[StartupDeferred]', name, 'failed:', err?.message || err);
+            });
+    };
+    if (typeof requestIdleCallback === 'function') {
+        requestIdleCallback(run, { timeout });
+    } else {
+        setTimeout(run, timeout);
+    }
+}
+
+function _baddelLogStartupSummary(reason = 'shell-visible') {
+    const m = window.__baddelStartupMetrics || {};
+    const now = _baddelPerfNow();
+    try {
+        console.info('[StartupSummary]', {
+            reason,
+            rendererInitToFirstShellMs: m.firstShellAt && m.rendererInitAt ? Math.round(m.firstShellAt - m.rendererInitAt) : null,
+            visibleSplashDurationMs: m.splashHiddenAt && m.rendererInitAt ? Math.round(m.splashHiddenAt - m.rendererInitAt) : null,
+            firstHomePaintMs: m.firstHomePaintAt && m.rendererInitAt ? Math.round(m.firstHomePaintAt - m.rendererInitAt) : null,
+            firstExploreCoverMs: m.firstExploreCoverAt && m.rendererInitAt ? Math.round(m.firstExploreCoverAt - m.rendererInitAt) : null,
+            allVisibleExploreCoversMs: m.allVisibleExploreCoversAt && m.rendererInitAt ? Math.round(m.allVisibleExploreCoversAt - m.rendererInitAt) : null,
+            backgroundScanDurationMs: Number.isFinite(Number(m.backgroundScanDurationMs)) ? Math.round(Number(m.backgroundScanDurationMs)) : null,
+            cacheIpcCount: Number(m.cacheIpcCount || 0),
+            artworkHttpDownloadCount: Number(m.artworkHttpDownloadCount || 0),
+            atMs: Math.round(now),
+        });
+    } catch (_) {}
+}
+
 function traceStartupStep(name, fn) {
     const startedAt = _baddelPerfNow();
     console.log('[Startup]', name, 'start');
@@ -522,8 +606,8 @@ async function initSystem() {
 
     // Minimum time the splash stays visible — ensures animation plays fully
     // even when data loads instantly (cached / fast machine).
-    const SPLASH_MIN_MS = Number(window.__baddelSplashMinMs ?? 900);
-    const SPLASH_FADE_MS = Number(window.__baddelSplashFadeMs ?? 180);
+    const SPLASH_MIN_MS = Number(window.__baddelSplashMinMs ?? 450);
+    const SPLASH_FADE_MS = Number(window.__baddelSplashFadeMs ?? 120);
     const splashStart   = _baddelPerfNow();
 
     function hideSplash(loader, grid) {
@@ -537,13 +621,16 @@ async function initSystem() {
                     loader.style.visibility    = 'hidden';
                     loader.style.pointerEvents = 'none';
                     if (typeof window._stopSplashCanvas === 'function') window._stopSplashCanvas();
-                    if (window._splashCounterInterval) { clearInterval(window._splashCounterInterval); window._splashCounterInterval = null; }
                     if (typeof initAnalyticsConsent === 'function') initAnalyticsConsent();
+                    if (window.__baddelStartupMetrics) {
+                        window.__baddelStartupMetrics.splashHiddenAt = _baddelPerfNow();
+                    }
                     _baddelPerfLog('splashDuration', {
                         elapsedMs: _baddelPerfNow() - splashStart,
                         minMs: SPLASH_MIN_MS,
                         fadeMs: SPLASH_FADE_MS,
                     });
+                    _baddelLogStartupSummary('splash-hidden');
                 }, SPLASH_FADE_MS);
             }
             if (grid) grid.style.display = 'grid';
@@ -571,20 +658,24 @@ async function initSystem() {
         window.__baddelSetCanonicalGamesRegistry?.(allGamesData);
         allCollections = collections;
 
-        await traceStartupStep('buildPlaytimeCache', () => buildPlaytimeCache(allGamesData));
-        await traceStartupStep('migratePlaytimeFromLocalStorage', () => migratePlaytimeFromLocalStorage());
-
         await traceStartupStep('renderSidebar',    () => renderSidebar());
-        if (typeof window.hydrateSidebarAllGamesCount === 'function') {
-            Promise.resolve()
-                .then(() => traceStartupStep('hydrateSidebarAllGamesCount:deferred', () => window.hydrateSidebarAllGamesCount('startup-cache')))
-                .catch(() => {});
-            _baddelPerfLog('hydrateSidebarAllGamesCount', { deferred: true });
-        }
-        await traceStartupStep('navigateToHome',   () => navigateToHome());
-        await traceStartupStep('initSortable',     () => initSortable());
+        await traceStartupStep('navigateToHomeShell', () => navigateToHome({ shellOnly: true }));
 
         hideSplash(loader, grid);
+        _baddelScheduleDeferredTask('buildPlaytimeCache', () => buildPlaytimeCache(allGamesData));
+        _baddelScheduleDeferredTask('migratePlaytimeFromLocalStorage', () => migratePlaytimeFromLocalStorage());
+        _baddelScheduleDeferredTask('hydrateSidebarAllGamesCount', () => {
+            if (typeof window.hydrateSidebarAllGamesCount === 'function') return window.hydrateSidebarAllGamesCount('startup-cache');
+        });
+        _baddelScheduleDeferredTask('renderRecentlyPlayed', () => renderRecentlyPlayed());
+        _baddelScheduleDeferredTask('renderExploreCarousel', () => renderExploreCarousel());
+        _baddelScheduleDeferredTask('renderSyncedSuggestions', () => renderSyncedSuggestions());
+        _baddelScheduleDeferredTask('applyHeroForHome', () => applyHeroForHome());
+        _baddelScheduleDeferredTask('renderAccountShortcuts', () => {
+            if (typeof window.renderAccountShortcuts === 'function') return window.renderAccountShortcuts();
+        });
+        _baddelScheduleDeferredTask('updateFooterStats', () => updateFooterStats());
+        _baddelScheduleDeferredTask('initSortable', () => initSortable());
 
         setTimeout(() => {
             if (typeof window.checkAndStartTour === 'function') window.checkAndStartTour();
@@ -600,6 +691,32 @@ async function initSystem() {
     }
 }
 initSystem();
+
+if (window.electronAPI?.onInstalledGamesScanState) {
+    window.electronAPI.onInstalledGamesScanState((payload = {}) => {
+        if (window.__baddelStartupMetrics) {
+            if (payload.state === 'scan-started') {
+                window.__baddelStartupMetrics.backgroundScanStartedAt = _baddelPerfNow();
+            }
+            if (payload.state === 'scan-finished' || payload.state === 'scan-failed') {
+                window.__baddelStartupMetrics.backgroundScanDurationMs = Number(payload.durationMs || 0) || (
+                    window.__baddelStartupMetrics.backgroundScanStartedAt
+                        ? _baddelPerfNow() - window.__baddelStartupMetrics.backgroundScanStartedAt
+                        : null
+                );
+                _baddelLogStartupSummary(payload.state);
+            }
+        }
+        try {
+            console.info('[InstalledGamesScanState]', {
+                state: payload.state || 'unknown',
+                source: payload.source || 'unknown',
+                count: Number(payload.count || 0),
+                durationMs: Number(payload.durationMs || 0) || null,
+            });
+        } catch (_) {}
+    });
+}
 
 // Prune stale image_cache entries 3 minutes after launch — runs once per session,
 // after the metadata pipeline has had time to finish its first pass.
@@ -636,6 +753,7 @@ function _hideAllViews() {
 }
 
 function navigateToHome() {
+    const options = arguments[0] || {};
     window.agReadyOnly = false;
     if (currentView === 'installed') {
         _igSaveFilterState();
@@ -659,6 +777,14 @@ function navigateToHome() {
     updateSidebarActiveState();
     syncSidebarActionButton();
     requestAnimationFrame(() => { syncSidebarActionButton(); });
+
+    if (options.shellOnly) {
+        if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.firstShellAt) {
+            window.__baddelStartupMetrics.firstShellAt = _baddelPerfNow();
+        }
+        _baddelPerfLog('firstShell', { durationMs: _baddelPerfNow() - (window.__baddelStartupMetrics?.rendererInitAt || _baddelPerfNow()) });
+        return;
+    }
 
     traceHomeStep('renderRecentlyPlayed',    () => renderRecentlyPlayed());
     traceHomeStep('renderExploreCarousel',   () => renderExploreCarousel());
@@ -702,6 +828,10 @@ function navigateToInstalled() {
 // ============================================================
 function _dispatchHomeVisibleWhenReady(reason = 'navigation') {
     const fire = () => {
+        if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.firstHomePaintAt) {
+            window.__baddelStartupMetrics.firstHomePaintAt = _baddelPerfNow();
+            _baddelLogStartupSummary('first-home-paint');
+        }
         try {
             window.dispatchEvent(new CustomEvent('baddel:home-visible', {
                 detail: { reason },
@@ -951,6 +1081,9 @@ class ExploreCoverHydrationController {
 
         const priority = this.homeVisible ? 'visible' : 'prewarm';
         const coverCacheStartedAt = _baddelPerfNow();
+        if (window.__baddelStartupMetrics) {
+            window.__baddelStartupMetrics.artworkHttpDownloadCount = Number(window.__baddelStartupMetrics.artworkHttpDownloadCount || 0) + 1;
+        }
         const localAssets = await window.electronAPI?.cacheAllAssets?.({ cover: remoteAssets.cover }, canonicalGameId, {
             priority,
             reason: 'explore-cover-hydration',
@@ -1146,6 +1279,9 @@ class ExploreCoverHydrationController {
             if (!assets.logo && remote?.logo) requested.logo = remote.logo;
             if (requested.hero || requested.logo) {
                 const secondaryCacheStartedAt = _baddelPerfNow();
+                if (window.__baddelStartupMetrics) {
+                    window.__baddelStartupMetrics.artworkHttpDownloadCount = Number(window.__baddelStartupMetrics.artworkHttpDownloadCount || 0) + Object.keys(requested).length;
+                }
                 const localAssets = await window.electronAPI?.cacheAllAssets?.(requested, canonicalGameId, {
                     priority: 'background',
                     reason: 'explore-secondary-hydration',
@@ -1256,7 +1392,16 @@ class ExploreCoverHydrationController {
         if (!card || card.isConnected === false || String(card.dataset?.id || '') !== String(id) || card.dataset?.artworkSurface !== 'explore') return false;
         this.pendingByDisplayId.delete(id);
         this.completedByDisplayId.set(id, { ...result, reason, at: Date.now() });
-        if (!this.firstCoverPaintAt) this.firstCoverPaintAt = _baddelPerfNow();
+        if (!this.firstCoverPaintAt) {
+            this.firstCoverPaintAt = _baddelPerfNow();
+            if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.firstExploreCoverAt) {
+                window.__baddelStartupMetrics.firstExploreCoverAt = this.firstCoverPaintAt;
+            }
+        }
+        if (this.completedByDisplayId.size >= this.selectedIds.size && window.__baddelStartupMetrics && !window.__baddelStartupMetrics.allVisibleExploreCoversAt) {
+            window.__baddelStartupMetrics.allVisibleExploreCoversAt = _baddelPerfNow();
+            _baddelLogStartupSummary('all-visible-explore-covers');
+        }
         window._patchVisibleGameCard?.({ id: result.canonicalGameId, image: result.localUrl }, [id], {
             canonicalGameId: result.canonicalGameId,
             operationId: result.operationId,

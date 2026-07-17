@@ -11,6 +11,7 @@ const APP_JS             = fs.readFileSync(path.join(ROOT, 'src/js/app.js'), 'ut
 const SETTINGS_QS_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/settings-quick-switcher.js'), 'utf8');
 const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 const PRELOAD            = fs.readFileSync(path.join(ROOT, 'preload.js'),  'utf8');
+const ANALYTICS_JS       = fs.readFileSync(path.join(ROOT, 'analytics.js'), 'utf8');
 
 // ─── 1. Startup preference helpers ──────────────────────────────────────────
 
@@ -170,6 +171,24 @@ test('main.js: checkForUpdates is wrapped with runAfterStartupGrace', () => {
     const rtIdx = MAIN_JS.indexOf("mainWindow.once('ready-to-show'");
     const block = MAIN_JS.slice(rtIdx, rtIdx + 1000);
     assert.match(block, /runAfterStartupGrace\('checkForUpdates'/, 'checkForUpdates must be wrapped');
+});
+
+test('main.js: analytics init is not awaited before createWindow', () => {
+    const readyIdx = MAIN_JS.indexOf('app.whenReady().then');
+    const createCallIdx = MAIN_JS.indexOf('createWindow();', readyIdx);
+    const beforeCreate = MAIN_JS.slice(readyIdx, createCallIdx);
+    assert.doesNotMatch(beforeCreate, /await\s+runAfterStartupGrace\(['"]analytics\.init/);
+    assert.doesNotMatch(beforeCreate, /await\s+analytics\.init\(/);
+    assert.match(MAIN_JS, /function startAnalyticsAfterWindowVisible/);
+    const createWindowFn = MAIN_JS.slice(MAIN_JS.indexOf('function createWindow'), MAIN_JS.indexOf('// -- Webview security'));
+    assert.match(createWindowFn, /mainWindow\.once\('show'/);
+    assert.match(createWindowFn, /startAnalyticsAfterWindowVisible\(\)/);
+});
+
+test('analytics.js: startup OS version check uses non-blocking local API', () => {
+    assert.doesNotMatch(ANALYTICS_JS, /execSync/);
+    assert.doesNotMatch(ANALYTICS_JS, /powershell|Get-WmiObject|Win32_OperatingSystem/i);
+    assert.match(ANALYTICS_JS, /os\.release\(\)|process\.getSystemVersion/);
 });
 
 test('main.js: autoSyncOnStartup is wrapped with runAfterStartupGrace', () => {
