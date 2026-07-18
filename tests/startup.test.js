@@ -12,6 +12,8 @@ const SETTINGS_QS_JS     = fs.readFileSync(path.join(ROOT, 'src/js/app/settings-
 const HTML               = fs.readFileSync(path.join(ROOT, 'src/dashboard.html'), 'utf8');
 const PRELOAD            = fs.readFileSync(path.join(ROOT, 'preload.js'),  'utf8');
 const ANALYTICS_JS       = fs.readFileSync(path.join(ROOT, 'analytics.js'), 'utf8');
+const HERO_JS            = fs.readFileSync(path.join(ROOT, 'src/js/app/hero.js'), 'utf8');
+const DASHBOARD_CSS      = fs.readFileSync(path.join(ROOT, 'src/css/dashboard.css'), 'utf8');
 
 // ─── 1. Startup preference helpers ──────────────────────────────────────────
 
@@ -497,4 +499,132 @@ test('main.js: set-startup-enabled logs isPackaged and path at entry', () => {
     const handler = SYSTEM_HANDLERS_JS.slice(handlerIdx, handlerIdx + 600);
     assert.match(handler, /isPackaged/, 'must log app.isPackaged at entry');
     assert.match(handler, /opts\.path/, 'must log startup exe path');
+});
+
+// ─── Phase 25.2A-R8: adaptive Home startup readiness ───────────────────────
+
+test('app.js: defines explicit startup library readiness states', () => {
+    assert.match(APP_JS, /STARTUP_LIBRARY_STATES\s*=\s*Object\.freeze/, 'startup library states must be explicit');
+    for (const state of ['bootstrapping', 'cached-ready', 'scanning', 'ready-with-games', 'confirmed-empty', 'scan-failed']) {
+        assert.ok(APP_JS.includes(`'${state}'`), `missing startup library state ${state}`);
+    }
+});
+
+test('app.js: startup scan-state signals register before initSystem starts', () => {
+    const registerIdx = APP_JS.indexOf('registerStartupLibrarySignals();');
+    const initIdx = APP_JS.indexOf('initSystem();');
+    assert.ok(registerIdx > -1, 'startup signal registration call must exist');
+    assert.ok(initIdx > -1, 'initSystem call must exist');
+    assert.ok(registerIdx < initIdx, 'scan-state listener must be registered before initSystem starts');
+});
+
+test('app.js: non-empty cached library renders critical Home before splash dismissal', () => {
+    const fnStart = APP_JS.indexOf('async function _resolveStartupLibraryBeforeSplash');
+    const fn = APP_JS.slice(fnStart, fnStart + 900);
+    const cachedIdx = fn.indexOf('cachedCount > 0');
+    const criticalIdx = fn.indexOf("_renderCriticalHomeContent('cached-ready')");
+    const paintIdx = fn.indexOf('_waitForNextHomePaint(220)');
+    const hideIdx = fn.indexOf('hideSplash(loader, grid)');
+    assert.ok(cachedIdx > -1, 'cached-count branch must exist');
+    assert.ok(criticalIdx > cachedIdx, 'must render critical Home for cached games');
+    assert.ok(paintIdx > criticalIdx, 'must wait only for bounded DOM paint after critical render');
+    assert.ok(hideIdx > paintIdx, 'splash hides after critical cached Home paint');
+});
+
+test('app.js: empty cached library with active scan uses adaptive grace, not immediate empty render', () => {
+    const fnStart = APP_JS.indexOf('async function _resolveStartupLibraryBeforeSplash');
+    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+    assert.match(fn, /lib\.scanActive|\bSCANNING\b/, 'must detect active startup scan');
+    assert.match(fn, /_startStartupLibraryGrace\(loader,\s*grid,\s*hideSplash\)/, 'must start adaptive library grace');
+    assert.doesNotMatch(fn, /No Games Found|No games yet/, 'startup resolver must not render final empty copy');
+});
+
+test('app.js: adaptive startup library grace defaults to 1200ms and reveals loading skeleton', () => {
+    const fnStart = APP_JS.indexOf('function _startStartupLibraryGrace');
+    const fn = APP_JS.slice(fnStart, fnStart + 900);
+    assert.match(fn, /__baddelStartupLibraryGraceMs\s*\?\?\s*1200/, 'grace default must be 1200ms');
+    assert.match(fn, /startupLibraryGraceExpired\s*=\s*true/, 'metrics must record grace expiry');
+    assert.match(fn, /renderHomeLoadingState\(\)/, 'slow scans must reveal loading state');
+    assert.doesNotMatch(fn, /No Games Found|No games yet/, 'grace expiry must not show final empty copy');
+});
+
+test('app.js and hero.js: pending startup states suppress false empty Home copy', () => {
+    const exploreStart = APP_JS.indexOf('function renderExploreCarousel');
+    const explore = APP_JS.slice(exploreStart, exploreStart + 1800);
+    assert.match(explore, /BOOTSTRAPPING[\s\S]*SCANNING[\s\S]*renderHomeLoadingState\(\)/, 'Explore must render loading while startup library is pending');
+    assert.match(explore, /SCAN_FAILED[\s\S]*renderHomeScanErrorState\(\)/, 'Explore must render retry/error UI on scan failure');
+    const loadingIdx = explore.indexOf('renderHomeLoadingState()');
+    const emptyIdx = explore.indexOf('No games yet.');
+    assert.ok(loadingIdx > -1 && emptyIdx > loadingIdx, 'Explore empty copy must come after pending-state guard');
+
+    const heroStart = HERO_JS.indexOf('function applyHeroForHome');
+    const hero = HERO_JS.slice(heroStart, heroStart + 1600);
+    assert.match(hero, /bootstrapping[\s\S]*scanning[\s\S]*renderHomeLoadingState\(\)/, 'Hero must render loading while startup library is pending');
+    assert.match(hero, /scan-failed[\s\S]*renderHomeScanErrorState\(\)/, 'Hero must render scan error UI');
+    const heroLoadingIdx = hero.indexOf('renderHomeLoadingState()');
+    const noGamesIdx = hero.indexOf('No Games Found');
+    assert.ok(heroLoadingIdx > -1 && noGamesIdx > heroLoadingIdx, 'Hero empty copy must come after pending-state guard');
+});
+
+test('app.js: scan-finished zero is the only startup path to confirmed empty', () => {
+    const fnStart = APP_JS.indexOf('function _handleStartupScanState');
+    const fn = APP_JS.slice(fnStart, fnStart + 1000);
+    assert.match(fn, /payload\.state === 'scan-finished'/, 'must handle scan-finished');
+    assert.match(fn, /count === 0[\s\S]*renderHomeConfirmedEmptyState\(\)/, 'zero scan result must render confirmed empty');
+    const confirmedStart = APP_JS.indexOf('function renderHomeConfirmedEmptyState');
+    const confirmed = APP_JS.slice(confirmedStart, confirmedStart + 500);
+    assert.match(confirmed, /CONFIRMED_EMPTY/, 'confirmed empty state must be explicit');
+    assert.match(confirmed, /confirmedEmptyAt/, 'confirmed empty metric must be recorded');
+});
+
+test('app.js: scan-failed shows retry/error UI and preserves cached games', () => {
+    const fnStart = APP_JS.indexOf('function renderHomeScanErrorState');
+    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    assert.match(fn, /SCAN_FAILED/, 'scan failed state must be explicit');
+    assert.match(fn, /_startupLibraryHasGames\(\)[\s\S]*_renderCriticalHomeContent\('scan-failed-cached'\)/, 'cached games must remain visible after failed refresh scan');
+    assert.match(fn, /Library scan needs a retry|Preparing your library hit a snag/, 'empty-cache failure must show retry/error copy');
+    assert.doesNotMatch(fn, /No Games Found|No games yet/, 'scan failure must not show normal empty copy');
+});
+
+test('app.js: library-updated readiness is handled inside the existing debounced processing path', () => {
+    const listenerCount = (APP_JS.match(/window\.electronAPI\.onLibraryUpdated\(/g) || []).length;
+    assert.equal(listenerCount, 1, 'app.js must keep one effective library-updated listener');
+    const processStart = APP_JS.indexOf('async function _processLibraryUpdatedPayload');
+    const processBlock = APP_JS.slice(processStart, processStart + 1300);
+    assert.match(processBlock, /_handleStartupLibraryUpdatedPayload\(mergedGames\)/, 'startup readiness must observe the existing library-updated pipeline');
+    assert.match(processBlock, /if \(startupHandled\)[\s\S]*return;/, 'initial scan result must not render structural Home twice');
+});
+
+test('app.js: library-updated inside grace renders populated Home and hides splash', () => {
+    const fnStart = APP_JS.indexOf('function _handleStartupLibraryUpdatedPayload');
+    const fn = APP_JS.slice(fnStart, fnStart + 1100);
+    assert.match(fn, /READY_WITH_GAMES/, 'non-empty library update must mark ready-with-games');
+    assert.match(fn, /_cancelStartupLibraryGrace\(\)/, 'non-empty update must cancel startup grace timer');
+    assert.match(fn, /_renderCriticalHomeContent\('library-updated'\)/, 'non-empty update must render one critical Home refresh');
+    assert.match(fn, /_hideSplashForStartupLibrary\('library-updated'\)/, 'non-empty update must resolve the splash gate');
+});
+
+test('app.js and dashboard.css: Home loading presentation has skeletons and no empty copy', () => {
+    const fnStart = APP_JS.indexOf('function renderHomeLoadingState');
+    const fn = APP_JS.slice(fnStart, fnStart + 1800);
+    assert.match(fn, /Preparing your library\.\.\./, 'loading state must show preparing status');
+    assert.match(fn, /home-hero-skeleton/, 'loading state must apply hero skeleton class');
+    assert.match(fn, /home-explore-skeleton-card/, 'loading state must render Explore skeleton cards');
+    assert.doesNotMatch(fn, /No Games Found|No games yet/, 'loading state must not include final empty copy');
+    assert.match(DASHBOARD_CSS, /\.home-hero-skeleton/, 'hero skeleton CSS must exist');
+    assert.match(DASHBOARD_CSS, /\.home-explore-skeleton-card/, 'Explore skeleton CSS must exist');
+});
+
+test('app.js: R8 startup metrics remain available', () => {
+    for (const metric of [
+        'startupLibraryState',
+        'startupLibraryGraceExpired',
+        'firstCriticalHomeRenderAt',
+        'homeLoadingStateShownAt',
+        'confirmedEmptyAt',
+    ]) {
+        assert.ok(APP_JS.includes(metric), `missing startup metric ${metric}`);
+    }
+    assert.ok(APP_JS.includes('firstShellAt'), 'R7 firstShellAt metric must remain');
+    assert.ok(APP_JS.includes('splashHiddenAt'), 'R7 splashHiddenAt metric must remain');
 });

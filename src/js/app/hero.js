@@ -31,10 +31,21 @@ function _heroSurfaceArtwork(game, surface = 'home-hero') {
 function applyHeroForHome() {
     const recent = getRecentGames();
     if (recent.length > 0) {
+        if (typeof clearHomeLoadingState === 'function') clearHomeLoadingState();
         updateHeroSection(recent[0].id, { immediate: true, reason: 'apply-home' });
     } else if (allGamesData.length > 0) {
+        if (typeof clearHomeLoadingState === 'function') clearHomeLoadingState();
         updateHeroSection(allGamesData[0].id, { immediate: true, reason: 'apply-home' });
     } else {
+        const startupState = typeof _startupLibraryState === 'function' ? _startupLibraryState() : 'confirmed-empty';
+        if (startupState === 'bootstrapping' || startupState === 'scanning') {
+            if (typeof renderHomeLoadingState === 'function') renderHomeLoadingState();
+            return;
+        }
+        if (startupState === 'scan-failed') {
+            if (typeof renderHomeScanErrorState === 'function') renderHomeScanErrorState();
+            return;
+        }
         // Fallback: no games present — show gradient and hide hero controls
         const bgImg = document.getElementById('heroBg');
         const titleTxt = document.getElementById('heroTitle');

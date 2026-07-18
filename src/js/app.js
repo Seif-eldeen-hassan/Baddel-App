@@ -13,8 +13,33 @@ window.__baddelStartupMetrics = window.__baddelStartupMetrics || {
     firstHomePaintAt: null,
     firstExploreCoverAt: null,
     allVisibleExploreCoversAt: null,
+    firstCriticalHomeRenderAt: null,
+    homeLoadingStateShownAt: null,
+    confirmedEmptyAt: null,
+    startupLibraryState: 'bootstrapping',
+    startupLibraryGraceExpired: false,
     cacheIpcCount: 0,
     artworkHttpDownloadCount: 0,
+};
+
+const STARTUP_LIBRARY_STATES = Object.freeze({
+    BOOTSTRAPPING: 'bootstrapping',
+    CACHED_READY: 'cached-ready',
+    SCANNING: 'scanning',
+    READY_WITH_GAMES: 'ready-with-games',
+    CONFIRMED_EMPTY: 'confirmed-empty',
+    SCAN_FAILED: 'scan-failed',
+});
+
+window.__baddelStartupLibrary = window.__baddelStartupLibrary || {
+    state: STARTUP_LIBRARY_STATES.BOOTSTRAPPING,
+    scanActive: false,
+    scanResolved: false,
+    initialCachedCount: null,
+    graceTimer: null,
+    graceExpired: false,
+    loadingVisible: false,
+    criticalRendered: false,
 };
 
 window._splashTimers = window._splashTimers || new Set();
@@ -596,6 +621,317 @@ function traceHomeStep(name, fn) {
     }
 }
 
+function _setStartupLibraryState(state, detail = {}) {
+    const lib = window.__baddelStartupLibrary || {};
+    lib.state = state;
+    window.__baddelStartupLibrary = lib;
+    if (window.__baddelStartupMetrics) {
+        window.__baddelStartupMetrics.startupLibraryState = state;
+    }
+    try {
+        console.info('[StartupLibrary]', state, detail);
+    } catch (_) {}
+}
+
+function _startupLibraryState() {
+    return window.__baddelStartupLibrary?.state || STARTUP_LIBRARY_STATES.BOOTSTRAPPING;
+}
+
+function _startupLibraryIsPending() {
+    const state = _startupLibraryState();
+    return state === STARTUP_LIBRARY_STATES.BOOTSTRAPPING || state === STARTUP_LIBRARY_STATES.SCANNING;
+}
+
+function _startupLibraryHasGames(games = allGamesData) {
+    return Array.isArray(games) && games.length > 0;
+}
+
+function _cancelStartupLibraryGrace() {
+    const lib = window.__baddelStartupLibrary;
+    if (lib?.graceTimer) clearTimeout(lib.graceTimer);
+    if (lib) lib.graceTimer = null;
+}
+
+function _hideSplashForStartupLibrary(reason = 'startup-library-ready') {
+    const lib = window.__baddelStartupLibrary || {};
+    if (lib.splashRequested || typeof lib.hideSplash !== 'function') return;
+    lib.splashRequested = true;
+    window.__baddelStartupLibrary = lib;
+    lib.hideSplash(lib.loader || null, lib.grid || null);
+    _baddelLogStartupSummary(reason);
+}
+
+function _waitForNextHomePaint(timeoutMs = 200) {
+    return new Promise(resolve => {
+        let done = false;
+        const finish = () => {
+            if (done) return;
+            done = true;
+            resolve();
+        };
+        const timer = setTimeout(finish, timeoutMs);
+        const raf = typeof requestAnimationFrame === 'function'
+            ? requestAnimationFrame
+            : cb => setTimeout(cb, 16);
+        raf(() => raf(() => {
+            clearTimeout(timer);
+            finish();
+        }));
+    });
+}
+
+function renderHomeLoadingState() {
+    clearHomeConfirmedEmptyState();
+    const lib = window.__baddelStartupLibrary || {};
+    lib.loadingVisible = true;
+    window.__baddelStartupLibrary = lib;
+    if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.homeLoadingStateShownAt) {
+        window.__baddelStartupMetrics.homeLoadingStateShownAt = _baddelPerfNow();
+    }
+
+    const hero = document.getElementById('heroSection');
+    const heroBg = document.getElementById('heroBg');
+    const title = document.getElementById('heroTitle');
+    const logo = document.getElementById('heroLogo');
+    const stats = document.getElementById('heroStats');
+    const play = document.getElementById('heroPlayBtn');
+    const settings = document.getElementById('heroSettingsBtn');
+    if (hero) hero.classList.add('home-startup-loading');
+    if (heroBg) {
+        heroBg.style.backgroundImage = '';
+        heroBg.classList.add('home-hero-skeleton');
+    }
+    if (title) {
+        title.innerText = 'Preparing your library...';
+        title.style.display = 'block';
+    }
+    if (logo) logo.style.display = 'none';
+    if (stats) stats.style.display = 'none';
+    if (play) play.style.display = 'none';
+    if (settings) settings.style.display = 'none';
+
+    const grid = document.getElementById('exploreGrid');
+    if (grid) {
+        grid.classList.add('home-explore-skeleton-grid');
+        grid.innerHTML = Array.from({ length: 6 }, () => '<div class="home-explore-skeleton-card" aria-hidden="true"></div>').join('');
+        window._exploreRenderedIds = [];
+        window._exploreRenderedNodes = new Map();
+    }
+
+    const section = document.getElementById('recentlyPlayedSection');
+    if (section) section.style.display = 'none';
+}
+
+function clearHomeLoadingState() {
+    const lib = window.__baddelStartupLibrary || {};
+    lib.loadingVisible = false;
+    window.__baddelStartupLibrary = lib;
+    const hero = document.getElementById('heroSection');
+    const heroBg = document.getElementById('heroBg');
+    const grid = document.getElementById('exploreGrid');
+    if (hero) hero.classList.remove('home-startup-loading', 'home-confirmed-empty', 'home-scan-error');
+    if (heroBg) heroBg.classList.remove('home-hero-skeleton');
+    if (grid) grid.classList.remove('home-explore-skeleton-grid');
+}
+
+function clearHomeConfirmedEmptyState() {
+    const hero = document.getElementById('heroSection');
+    const grid = document.getElementById('exploreGrid');
+    if (hero) hero.classList.remove('home-confirmed-empty', 'home-scan-error');
+    if (grid) grid.classList.remove('home-explore-skeleton-grid');
+}
+
+function renderHomeConfirmedEmptyState() {
+    _setStartupLibraryState(STARTUP_LIBRARY_STATES.CONFIRMED_EMPTY, { count: 0 });
+    _cancelStartupLibraryGrace();
+    clearHomeLoadingState();
+    if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.confirmedEmptyAt) {
+        window.__baddelStartupMetrics.confirmedEmptyAt = _baddelPerfNow();
+    }
+    if (typeof applyHeroForHome === 'function') applyHeroForHome();
+    if (typeof renderExploreCarousel === 'function') renderExploreCarousel();
+    _hideSplashForStartupLibrary('confirmed-empty');
+}
+
+function renderHomeScanErrorState() {
+    _setStartupLibraryState(STARTUP_LIBRARY_STATES.SCAN_FAILED, { count: allGamesData.length });
+    _cancelStartupLibraryGrace();
+    if (_startupLibraryHasGames()) {
+        clearHomeLoadingState();
+        _renderCriticalHomeContent('scan-failed-cached');
+        _hideSplashForStartupLibrary('scan-failed-cached');
+        return;
+    }
+    clearHomeLoadingState();
+    const hero = document.getElementById('heroSection');
+    const heroBg = document.getElementById('heroBg');
+    const title = document.getElementById('heroTitle');
+    const logo = document.getElementById('heroLogo');
+    const stats = document.getElementById('heroStats');
+    const play = document.getElementById('heroPlayBtn');
+    const settings = document.getElementById('heroSettingsBtn');
+    if (hero) hero.classList.add('home-scan-error');
+    if (heroBg) {
+        heroBg.style.backgroundImage = 'linear-gradient(135deg, rgba(46, 18, 18, 0.95), rgba(10, 10, 10, 0.98))';
+    }
+    if (title) {
+        title.innerText = 'Library scan needs a retry';
+        title.style.display = 'block';
+    }
+    if (logo) logo.style.display = 'none';
+    if (stats) stats.style.display = 'none';
+    if (play) play.style.display = 'none';
+    if (settings) settings.style.display = 'none';
+    const grid = document.getElementById('exploreGrid');
+    if (grid) {
+        grid.innerHTML = '<div class="home-scan-error-card">Preparing your library hit a snag. Use Scan Library to try again.</div>';
+        window._exploreRenderedIds = [];
+        window._exploreRenderedNodes = new Map();
+    }
+    _hideSplashForStartupLibrary('scan-failed');
+}
+
+function _renderCriticalHomeContent(reason = 'startup') {
+    clearHomeLoadingState();
+    try {
+        if (typeof buildPlaytimeCache === 'function') buildPlaytimeCache(allGamesData);
+    } catch (_) {}
+    traceHomeStep('renderRecentlyPlayed', () => renderRecentlyPlayed());
+    traceHomeStep('renderExploreCarousel', () => renderExploreCarousel());
+    traceHomeStep('applyHeroForHome', () => applyHeroForHome());
+    if (window.__baddelStartupMetrics && !window.__baddelStartupMetrics.firstCriticalHomeRenderAt) {
+        window.__baddelStartupMetrics.firstCriticalHomeRenderAt = _baddelPerfNow();
+    }
+    const lib = window.__baddelStartupLibrary || {};
+    lib.criticalRendered = true;
+    window.__baddelStartupLibrary = lib;
+    _baddelPerfLog('firstCriticalHomeRender', { reason, count: allGamesData.length });
+}
+
+function _startStartupLibraryGrace(loader, grid, hideSplash) {
+    const lib = window.__baddelStartupLibrary || {};
+    if (lib.graceTimer) return;
+    const graceMs = Number(window.__baddelStartupLibraryGraceMs ?? 1200);
+    lib.graceExpired = false;
+    lib.loader = loader || null;
+    lib.grid = grid || null;
+    lib.hideSplash = hideSplash;
+    lib.graceTimer = setTimeout(() => {
+        lib.graceTimer = null;
+        lib.graceExpired = true;
+        if (window.__baddelStartupMetrics) window.__baddelStartupMetrics.startupLibraryGraceExpired = true;
+        if (_startupLibraryState() === STARTUP_LIBRARY_STATES.SCANNING && !_startupLibraryHasGames()) {
+            renderHomeLoadingState();
+            _hideSplashForStartupLibrary('startup-library-grace-expired');
+            _baddelLogStartupSummary('startup-library-grace-expired');
+        }
+    }, graceMs);
+    window.__baddelStartupLibrary = lib;
+}
+
+async function _resolveStartupLibraryBeforeSplash(games, loader, grid, hideSplash) {
+    const cachedCount = Array.isArray(games) ? games.length : 0;
+    const lib = window.__baddelStartupLibrary || {};
+    lib.initialCachedCount = cachedCount;
+    window.__baddelStartupLibrary = lib;
+
+    if (cachedCount > 0) {
+        _setStartupLibraryState(STARTUP_LIBRARY_STATES.CACHED_READY, { count: cachedCount });
+        _renderCriticalHomeContent('cached-ready');
+        await _waitForNextHomePaint(220);
+        _setStartupLibraryState(STARTUP_LIBRARY_STATES.READY_WITH_GAMES, { count: cachedCount });
+        hideSplash(loader, grid);
+        return;
+    }
+
+    if (lib.scanActive || _startupLibraryState() === STARTUP_LIBRARY_STATES.SCANNING) {
+        _setStartupLibraryState(STARTUP_LIBRARY_STATES.SCANNING, { count: 0 });
+        _startStartupLibraryGrace(loader, grid, hideSplash);
+        return;
+    }
+
+    renderHomeLoadingState();
+    hideSplash(loader, grid);
+}
+
+function _handleStartupScanState(payload = {}) {
+    const lib = window.__baddelStartupLibrary || {};
+    if (payload.state === 'scan-started') {
+        lib.scanActive = true;
+        lib.scanResolved = false;
+        window.__baddelStartupLibrary = lib;
+        if (!_startupLibraryHasGames()) {
+            _setStartupLibraryState(STARTUP_LIBRARY_STATES.SCANNING, { source: payload.source || 'unknown' });
+        }
+        return;
+    }
+    if (payload.state === 'scan-finished') {
+        lib.scanActive = false;
+        lib.scanResolved = true;
+        window.__baddelStartupLibrary = lib;
+        const count = Number(payload.count || 0);
+        if (count === 0 && !_startupLibraryHasGames()) {
+            renderHomeConfirmedEmptyState();
+        }
+        return;
+    }
+    if (payload.state === 'scan-failed') {
+        lib.scanActive = false;
+        lib.scanResolved = true;
+        window.__baddelStartupLibrary = lib;
+        renderHomeScanErrorState();
+    }
+}
+
+function _handleStartupLibraryUpdatedPayload(mergedGames) {
+    if (!_startupLibraryIsPending() && _startupLibraryState() !== STARTUP_LIBRARY_STATES.SCAN_FAILED) return false;
+    if (!_startupLibraryHasGames(mergedGames)) return false;
+    _cancelStartupLibraryGrace();
+    _setStartupLibraryState(STARTUP_LIBRARY_STATES.READY_WITH_GAMES, { count: mergedGames.length, source: 'library-updated' });
+    if (currentView === 'home' && !_homeIsUserScrolled()) {
+        _renderCriticalHomeContent('library-updated');
+        renderSyncedSuggestions();
+        _hideSplashForStartupLibrary('library-updated');
+    } else if (currentView === 'home') {
+        clearHomeLoadingState();
+        renderSidebar();
+        _markHomeRefreshPending('library-updated-home-scrolled');
+        _hideSplashForStartupLibrary('library-updated-scrolled');
+    }
+    return true;
+}
+
+function registerStartupLibrarySignals() {
+    if (window.__baddelStartupLibrarySignalsRegistered) return;
+    window.__baddelStartupLibrarySignalsRegistered = true;
+    if (window.electronAPI?.onInstalledGamesScanState) {
+        window.electronAPI.onInstalledGamesScanState((payload = {}) => {
+            _handleStartupScanState(payload);
+            if (window.__baddelStartupMetrics) {
+                if (payload.state === 'scan-started') {
+                    window.__baddelStartupMetrics.backgroundScanStartedAt = _baddelPerfNow();
+                }
+                if (payload.state === 'scan-finished' || payload.state === 'scan-failed') {
+                    window.__baddelStartupMetrics.backgroundScanDurationMs = Number(payload.durationMs || 0) || (
+                        window.__baddelStartupMetrics.backgroundScanStartedAt
+                            ? _baddelPerfNow() - window.__baddelStartupMetrics.backgroundScanStartedAt
+                            : null
+                    );
+                    _baddelLogStartupSummary(payload.state);
+                }
+            }
+            try {
+                console.info('[InstalledGamesScanState]', {
+                    state: payload.state || 'unknown',
+                    source: payload.source || 'unknown',
+                    count: Number(payload.count || 0),
+                    durationMs: Number(payload.durationMs || 0) || null,
+                });
+            } catch (_) {}
+        });
+    }
+}
+
 async function initSystem() {
     // Dev-only font readiness check — gated on NODE_ENV so it is silent in production
     if (typeof process !== 'undefined' && process.env?.NODE_ENV === 'development') {
@@ -661,16 +997,13 @@ async function initSystem() {
         await traceStartupStep('renderSidebar',    () => renderSidebar());
         await traceStartupStep('navigateToHomeShell', () => navigateToHome({ shellOnly: true }));
 
-        hideSplash(loader, grid);
+        await _resolveStartupLibraryBeforeSplash(allGamesData, loader, grid, hideSplash);
         _baddelScheduleDeferredTask('buildPlaytimeCache', () => buildPlaytimeCache(allGamesData));
         _baddelScheduleDeferredTask('migratePlaytimeFromLocalStorage', () => migratePlaytimeFromLocalStorage());
         _baddelScheduleDeferredTask('hydrateSidebarAllGamesCount', () => {
             if (typeof window.hydrateSidebarAllGamesCount === 'function') return window.hydrateSidebarAllGamesCount('startup-cache');
         });
-        _baddelScheduleDeferredTask('renderRecentlyPlayed', () => renderRecentlyPlayed());
-        _baddelScheduleDeferredTask('renderExploreCarousel', () => renderExploreCarousel());
         _baddelScheduleDeferredTask('renderSyncedSuggestions', () => renderSyncedSuggestions());
-        _baddelScheduleDeferredTask('applyHeroForHome', () => applyHeroForHome());
         _baddelScheduleDeferredTask('renderAccountShortcuts', () => {
             if (typeof window.renderAccountShortcuts === 'function') return window.renderAccountShortcuts();
         });
@@ -690,33 +1023,10 @@ async function initSystem() {
         }
     }
 }
+registerStartupLibrarySignals();
 initSystem();
 
-if (window.electronAPI?.onInstalledGamesScanState) {
-    window.electronAPI.onInstalledGamesScanState((payload = {}) => {
-        if (window.__baddelStartupMetrics) {
-            if (payload.state === 'scan-started') {
-                window.__baddelStartupMetrics.backgroundScanStartedAt = _baddelPerfNow();
-            }
-            if (payload.state === 'scan-finished' || payload.state === 'scan-failed') {
-                window.__baddelStartupMetrics.backgroundScanDurationMs = Number(payload.durationMs || 0) || (
-                    window.__baddelStartupMetrics.backgroundScanStartedAt
-                        ? _baddelPerfNow() - window.__baddelStartupMetrics.backgroundScanStartedAt
-                        : null
-                );
-                _baddelLogStartupSummary(payload.state);
-            }
-        }
-        try {
-            console.info('[InstalledGamesScanState]', {
-                state: payload.state || 'unknown',
-                source: payload.source || 'unknown',
-                count: Number(payload.count || 0),
-                durationMs: Number(payload.durationMs || 0) || null,
-            });
-        } catch (_) {}
-    });
-}
+// Startup scan-state registration happens before initSystem() starts.
 
 // Prune stale image_cache entries 3 minutes after launch — runs once per session,
 // after the metadata pipeline has had time to finish its first pass.
@@ -1511,12 +1821,23 @@ function renderExploreCarousel() {
     const shuffled = selectedIds.map(id => byId.get(String(id))).filter(Boolean);
 
     if (shuffled.length === 0) {
+        const state = _startupLibraryState();
+        if (state === STARTUP_LIBRARY_STATES.BOOTSTRAPPING || state === STARTUP_LIBRARY_STATES.SCANNING) {
+            renderHomeLoadingState();
+            return;
+        }
+        if (state === STARTUP_LIBRARY_STATES.SCAN_FAILED) {
+            renderHomeScanErrorState();
+            return;
+        }
+        grid.classList.remove('home-explore-skeleton-grid');
         grid.innerHTML = '<div class="empty-state" style="width:100%"><div class="empty-title">No games yet.</div></div>';
         window._exploreRenderedIds = [];
         window._exploreRenderedNodes = new Map();
         return;
     }
 
+    clearHomeLoadingState();
     const ids = shuffled.map(game => String(game.id));
     const previousIds = Array.isArray(window._exploreRenderedIds) ? window._exploreRenderedIds : [];
     const previousNodes = window._exploreRenderedNodes instanceof Map ? window._exploreRenderedNodes : new Map();
@@ -1954,8 +2275,14 @@ async function _processLibraryUpdatedPayload(updatedGames) {
     window.allGamesData = allGamesData;
     window._readyToInstallRenderedGames = null;
     _lastLibraryRenderSnapshot = nextSnapshot;
+    const startupHandled = _handleStartupLibraryUpdatedPayload(mergedGames);
     if (decision.structuralRender && typeof window.hydrateSidebarAllGamesCount === 'function') {
         window.hydrateSidebarAllGamesCount('library-updated').catch(() => {});
+    }
+
+    if (startupHandled) {
+        _logRenderDecision('library-updated', decision, ['startup-critical']);
+        return;
     }
 
     if (decision.structuralRender) {

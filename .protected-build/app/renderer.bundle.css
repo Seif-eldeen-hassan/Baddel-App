@@ -2990,6 +2990,54 @@ img.invert-on-dark {
 }
 .view-all-btn:hover { background: white; transform: translateY(-2px); }
 
+.home-startup-loading #heroTitle {
+    color: rgba(255, 255, 255, 0.86);
+}
+
+.home-hero-skeleton {
+    position: relative;
+    overflow: hidden;
+    background:
+        linear-gradient(120deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.11) 45%, rgba(255,255,255,0.04) 90%),
+        linear-gradient(135deg, #111 0%, #1c1f22 52%, #0b0b0b 100%) !important;
+    background-size: 220% 100%, 100% 100% !important;
+    animation: homeStartupSkeletonSweep 1.15s ease-in-out infinite;
+}
+
+.home-explore-skeleton-grid {
+    min-height: 310px;
+}
+
+.home-explore-skeleton-card {
+    flex: 0 0 260px;
+    max-width: 260px;
+    height: 330px;
+    border-radius: 14px;
+    border: 1px solid rgba(255,255,255,0.08);
+    background:
+        linear-gradient(120deg, rgba(255,255,255,0.04) 0%, rgba(255,255,255,0.12) 45%, rgba(255,255,255,0.04) 90%),
+        rgba(255,255,255,0.05);
+    background-size: 220% 100%, 100% 100%;
+    animation: homeStartupSkeletonSweep 1.15s ease-in-out infinite;
+}
+
+.home-scan-error-card {
+    width: 100%;
+    min-height: 140px;
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 10px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(255,255,255,0.82);
+    background: rgba(255,255,255,0.045);
+}
+
+@keyframes homeStartupSkeletonSweep {
+    0% { background-position: 180% 0, 0 0; }
+    100% { background-position: -80% 0, 0 0; }
+}
+
 /* ========================================= */
 /* ❌ UNPIN BUTTON & SORTABLE FOR SHORTCUTS  */
 /* ========================================= */
