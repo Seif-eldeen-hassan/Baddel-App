@@ -41,6 +41,16 @@ window.__baddelStartupLibrary = window.__baddelStartupLibrary || {
     loadingVisible: false,
     criticalRendered: false,
 };
+window.__baddelLibraryRevision = window.__baddelLibraryRevision || 0;
+
+const BADDEL_EMBEDDED_FALLBACK_COVER = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+    '<svg xmlns="http://www.w3.org/2000/svg" width="520" height="720" viewBox="0 0 520 720">' +
+    '<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#1d2228"/><stop offset="1" stop-color="#08090b"/></linearGradient></defs>' +
+    '<rect width="520" height="720" fill="url(#g)"/><rect x="42" y="42" width="436" height="636" rx="28" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="3"/>' +
+    '<circle cx="260" cy="300" r="64" fill="rgba(255,255,255,.08)"/><path d="M218 402h84m-118 54h152" stroke="rgba(255,255,255,.38)" stroke-width="18" stroke-linecap="round"/>' +
+    '<text x="260" y="548" text-anchor="middle" font-family="Arial, sans-serif" font-size="30" font-weight="700" fill="rgba(255,255,255,.66)">No Image Available</text></svg>'
+);
+window.BADDEL_EMBEDDED_FALLBACK_COVER = window.BADDEL_EMBEDDED_FALLBACK_COVER || BADDEL_EMBEDDED_FALLBACK_COVER;
 
 window._splashTimers = window._splashTimers || new Set();
 window._splashIntervals = window._splashIntervals || new Set();
@@ -652,13 +662,272 @@ function _cancelStartupLibraryGrace() {
     if (lib) lib.graceTimer = null;
 }
 
+function _sanitizeStartupMetricNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round(n) : null;
+}
+
+function _setStartupLoaderText(text, note = null) {
+    const clean = String(text || '').trim();
+    if (!clean) return;
+    const targets = [
+        document.getElementById('loaderStatus'),
+        document.getElementById('splashStatusText'),
+        document.querySelector?.('.loader-status'),
+        document.querySelector?.('.splash-status-text'),
+    ].filter(Boolean);
+    for (const el of targets) el.textContent = clean;
+    const noteEl = document.getElementById('splashStatusNote');
+    if (noteEl) {
+        const cleanNote = String(note == null ? '' : note).trim();
+        noteEl.textContent = cleanNote;
+        noteEl.classList.toggle('visible', !!cleanNote);
+    }
+}
+
+function _nextLibraryRevision() {
+    window.__baddelLibraryRevision = Number(window.__baddelLibraryRevision || 0) + 1;
+    return window.__baddelLibraryRevision;
+}
+
+function _currentLibraryRevision() {
+    return Number(window.__baddelLibraryRevision || 0);
+}
+
+function _computeInstalledGamesSnapshot(games, filters = currentFilters, collections = allCollections, playtime = playtimeData) {
+    let filtered = Array.isArray(games) ? [...games] : [];
+    const platform = filters?.platform || 'all';
+    if (platform && platform !== 'all') filtered = filtered.filter(g => _gameMatchesPlatformFilter(g, platform));
+    const search = String(filters?.search || '').trim().toLowerCase();
+    if (search) {
+        filtered = filtered.filter(g => {
+            const name = String(g?.name || '').toLowerCase();
+            return name.startsWith(search) || name.includes(` ${search}`) || name.includes(`-${search}`) || name.includes(`_${search}`) || name.includes(`:${search}`);
+        });
+    }
+    const sort = filters?.sort || 'name';
+    if (sort === 'name') filtered.sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || '')));
+    else if (sort === 'playtime') filtered.sort((a, b) => Number(playtime?.[b.id]?.totalMinutes || 0) - Number(playtime?.[a.id]?.totalMinutes || 0));
+    else if (sort === 'last_played') filtered.sort((a, b) => Number(playtime?.[b.id]?.lastPlayed || 0) - Number(playtime?.[a.id]?.lastPlayed || 0));
+    else if (sort === 'manual' && filters?.collectionId != null) {
+        const targetColl = (Array.isArray(collections) ? collections : []).find(c => c.id === filters.collectionId);
+        if (targetColl) filtered.sort((a, b) => targetColl.gameIds.indexOf(String(a.id)) - targetColl.gameIds.indexOf(String(b.id)));
+    }
+    if (filters?.collectionId != null) {
+        const targetColl = (Array.isArray(collections) ? collections : []).find(c => c.id === filters.collectionId);
+        if (targetColl) filtered = filtered.filter(g => targetColl.gameIds.includes(String(g.id)));
+    }
+    return {
+        revision: _currentLibraryRevision(),
+        filters: {
+            platform,
+            search: filters?.search || '',
+            sort,
+            collectionId: filters?.collectionId ?? null,
+        },
+        games: filtered,
+        count: filtered.length,
+        preparedAt: Date.now(),
+    };
+}
+
+function _prepareInstalledGamesSnapshot(reason = 'startup') {
+    try {
+        if (typeof buildPlaytimeCache === 'function') buildPlaytimeCache(allGamesData);
+    } catch (_) {}
+    const snapshot = _computeInstalledGamesSnapshot(allGamesData);
+    window.__baddelInstalledSnapshot = snapshot;
+    window._lastInstalledFilteredGames = snapshot.games;
+    console.info('[StartupReadiness]', 'installed-snapshot-ready', { reason, revision: snapshot.revision, count: snapshot.count });
+    return snapshot;
+}
+
+function _installedSnapshotMatchesCurrentFilters(snapshot) {
+    if (!snapshot || snapshot.revision !== _currentLibraryRevision()) return false;
+    const filters = snapshot.filters || {};
+    return String(filters.platform || 'all') === String(currentFilters.platform || 'all') &&
+        String(filters.search || '') === String(currentFilters.search || '') &&
+        String(filters.sort || 'name') === String(currentFilters.sort || 'name') &&
+        String(filters.collectionId ?? '') === String(currentFilters.collectionId ?? '');
+}
+
+function _renderInstalledSnapshot(snapshot) {
+    const grid = document.getElementById('gamesGrid');
+    if (!grid || !_installedSnapshotMatchesCurrentFilters(snapshot)) return false;
+    const games = Array.isArray(snapshot.games) ? snapshot.games : [];
+    window._lastInstalledFilteredGames = games;
+    grid.style.minHeight = grid.offsetHeight + 'px';
+    grid.innerHTML = '';
+    if (typeof imageQueue !== 'undefined') imageQueue.length = 0;
+    for (const game of games) {
+        try {
+            grid.appendChild(createGameCard(game));
+        } catch (err) {
+            console.error('[IG][PreparedSnapshot] failed for game', { id: game?.id, name: game?.name }, err);
+        }
+    }
+    updateFooterStats();
+    setTimeout(() => { grid.style.minHeight = 'auto'; }, 10);
+    return true;
+}
+
+class StartupReadinessCoordinator {
+    constructor() {
+        this.libraryScanState = 'bootstrapping';
+        this.libraryDataReady = false;
+        this.installedSnapshotReady = false;
+        this.homeSelectionGeneration = 0;
+        this.homeCoverTotal = 0;
+        this.homeCoverResolved = 0;
+        this.homeCoverFallbackCount = 0;
+        this.homeCoversReady = false;
+        this.revealRequested = false;
+        this.revealed = false;
+        this.startedAt = _baddelPerfNow();
+        this.scanStartedAt = null;
+        this.scanDurationMs = null;
+        this.coverDurationMs = null;
+        this.storedGameCount = 0;
+        this.finalGameCount = 0;
+        this.loader = null;
+        this.grid = null;
+        this.hideSplash = null;
+        this.revealReason = null;
+        this.coverGateTimedOut = false;
+        this.coverCacheHits = 0;
+        this.coverDownloads = 0;
+        this.timedOutPlatforms = [];
+        this.libraryRevision = _currentLibraryRevision();
+        this.gatePromise = null;
+    }
+
+    attachSplash({ loader, grid, hideSplash }) {
+        this.loader = loader || this.loader;
+        this.grid = grid || this.grid;
+        this.hideSplash = hideSplash || this.hideSplash;
+    }
+
+    noteInitialStoredGames(games) {
+        this.storedGameCount = Array.isArray(games) ? games.length : 0;
+        this.finalGameCount = this.storedGameCount;
+    }
+
+    noteScanState(payload = {}) {
+        const state = payload.state || 'unknown';
+        this.libraryScanState = state;
+        if (state === 'scan-started') {
+            this.scanStartedAt = _baddelPerfNow();
+            _setStartupLoaderText(
+                'Scanning installed games',
+                this.storedGameCount === 0 ? 'First launch can take a little longer while Baddel builds your library and artwork cache.' : null
+            );
+        }
+        if (state === 'scan-finished' || state === 'scan-failed') {
+            this.scanDurationMs = Number(payload.durationMs || 0) || (this.scanStartedAt ? _baddelPerfNow() - this.scanStartedAt : null);
+            if (state === 'scan-failed' && payload.platform) this.timedOutPlatforms.push(String(payload.platform));
+        }
+        this._tryReveal(`${state}`);
+    }
+
+    noteLibraryDataReady(games, { reason = 'library-ready' } = {}) {
+        this.libraryDataReady = true;
+        this.finalGameCount = Array.isArray(games) ? games.length : 0;
+        this.libraryRevision = _currentLibraryRevision();
+        _setStartupLoaderText(
+            this.finalGameCount ? 'Preparing game covers' : 'Finishing your library',
+            this.storedGameCount === 0 && this.finalGameCount ? 'This first setup only happens once. Future launches use the local cache.' : null
+        );
+        this._tryReveal(reason);
+    }
+
+    noteInstalledSnapshotReady(snapshot) {
+        this.installedSnapshotReady = true;
+        this.installedSnapshotRevision = snapshot?.revision;
+        this._tryReveal('installed-snapshot-ready');
+    }
+
+    requestReveal(reason = 'startup-ready') {
+        this.revealRequested = true;
+        this.revealReason = this.revealReason || reason;
+        this._tryReveal(reason);
+    }
+
+    async waitForHomeCovers(controller, { generation, timeoutMs = 2200 } = {}) {
+        if (!controller || typeof controller.waitForCoversReady !== 'function') {
+            this.homeCoversReady = true;
+            return { generation, total: 0, loaded: 0, fallback: 0, failed: 0, timedOut: false, durationMs: 0 };
+        }
+        this.homeSelectionGeneration = generation || controller.generation || 0;
+        const startedAt = _baddelPerfNow();
+        _setStartupLoaderText(
+            'Preparing game covers',
+            this.storedGameCount === 0 ? 'A few missing images may continue improving quietly after Home opens.' : null
+        );
+        const result = await controller.waitForCoversReady({
+            generation: this.homeSelectionGeneration,
+            timeoutMs,
+            requireDecoded: false,
+        });
+        if (result?.stale || result?.generation !== this.homeSelectionGeneration) return result;
+        this.homeCoverTotal = result.total;
+        this.homeCoverResolved = result.loaded + result.fallback + result.failed;
+        this.homeCoverFallbackCount = result.fallback;
+        this.homeCoversReady = true;
+        this.coverDurationMs = result.durationMs || (_baddelPerfNow() - startedAt);
+        this.coverGateTimedOut = result.timedOut === true;
+        this.coverCacheHits = Number(result.cacheHits || 0);
+        this.coverDownloads = Number(result.downloads || 0);
+        this._tryReveal('covers-ready');
+        return result;
+    }
+
+    async _tryReveal(reason) {
+        if (this.revealed || !this.revealRequested || typeof this.hideSplash !== 'function') return;
+        if (this.libraryRevision !== _currentLibraryRevision()) return;
+        const controller = window.__baddelExploreCoverHydrationController;
+        if (controller && this.homeSelectionGeneration && controller.generation !== this.homeSelectionGeneration) return;
+        const terminalScan = ['scan-finished', 'scan-failed', STARTUP_LIBRARY_STATES.CONFIRMED_EMPTY].includes(this.libraryScanState) || this.storedGameCount > 0;
+        if (!terminalScan || !this.libraryDataReady || !this.installedSnapshotReady || !this.homeCoversReady) return;
+        if (this.gatePromise) return this.gatePromise;
+        this.gatePromise = (async () => {
+            await _waitForNextHomePaint(240);
+            if (this.revealed || this.libraryRevision !== _currentLibraryRevision()) return;
+            this.revealed = true;
+            this.revealReason = this.revealReason || reason;
+            _setStartupLoaderText('Finishing your library');
+            this.hideSplash(this.loader, this.grid);
+            window.__baddelExploreCoverHydrationController?.onStartupRevealed?.('startup-revealed');
+            this._logSummary();
+        })();
+        return this.gatePromise;
+    }
+
+    _logSummary() {
+        const summary = {
+            freshInstall: this.storedGameCount === 0,
+            storedGameCount: this.storedGameCount,
+            finalGameCount: this.finalGameCount,
+            scanDurationMs: _sanitizeStartupMetricNumber(this.scanDurationMs),
+            coverTotal: this.homeCoverTotal,
+            coverCacheHits: this.coverCacheHits,
+            coverDownloads: this.coverDownloads,
+            coverFallbacks: this.homeCoverFallbackCount,
+            coverGateDurationMs: _sanitizeStartupMetricNumber(this.coverDurationMs),
+            startupRevealDurationMs: _sanitizeStartupMetricNumber(_baddelPerfNow() - this.startedAt),
+            revealReason: this.revealReason,
+            timedOutPlatforms: this.timedOutPlatforms,
+            coverGateTimedOut: this.coverGateTimedOut,
+        };
+        console.info('[StartupReadinessSummary]', summary);
+    }
+}
+
+window.__baddelStartupReadinessCoordinator = window.__baddelStartupReadinessCoordinator || new StartupReadinessCoordinator();
+
 function _hideSplashForStartupLibrary(reason = 'startup-library-ready') {
     const lib = window.__baddelStartupLibrary || {};
-    if (lib.splashRequested || typeof lib.hideSplash !== 'function') return;
-    lib.splashRequested = true;
+    window.__baddelStartupReadinessCoordinator?.requestReveal(reason);
     window.__baddelStartupLibrary = lib;
-    lib.hideSplash(lib.loader || null, lib.grid || null);
-    _baddelLogStartupSummary(reason);
 }
 
 function _waitForNextHomePaint(timeoutMs = 200) {
@@ -750,6 +1019,10 @@ function renderHomeConfirmedEmptyState() {
     }
     if (typeof applyHeroForHome === 'function') applyHeroForHome();
     if (typeof renderExploreCarousel === 'function') renderExploreCarousel();
+    window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(allGamesData, { reason: 'confirmed-empty' });
+    const snapshot = _prepareInstalledGamesSnapshot('confirmed-empty');
+    window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+    if (window.__baddelStartupReadinessCoordinator) window.__baddelStartupReadinessCoordinator.homeCoversReady = true;
     _hideSplashForStartupLibrary('confirmed-empty');
 }
 
@@ -759,7 +1032,14 @@ function renderHomeScanErrorState() {
     if (_startupLibraryHasGames()) {
         clearHomeLoadingState();
         _renderCriticalHomeContent('scan-failed-cached');
-        _hideSplashForStartupLibrary('scan-failed-cached');
+        window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(allGamesData, { reason: 'scan-failed-cached' });
+        const snapshot = _prepareInstalledGamesSnapshot('scan-failed-cached');
+        window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+        const controller = window.__baddelExploreCoverHydrationController;
+        window.__baddelStartupReadinessCoordinator?.waitForHomeCovers(controller, {
+            generation: controller?.generation || 0,
+            timeoutMs: Number(window.__baddelStartupCoverGateTimeoutMs ?? 2200),
+        }).then(() => _hideSplashForStartupLibrary('scan-failed-cached'));
         return;
     }
     clearHomeLoadingState();
@@ -788,6 +1068,10 @@ function renderHomeScanErrorState() {
         window._exploreRenderedIds = [];
         window._exploreRenderedNodes = new Map();
     }
+    window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(allGamesData, { reason: 'scan-failed' });
+    const snapshot = _prepareInstalledGamesSnapshot('scan-failed');
+    window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+    if (window.__baddelStartupReadinessCoordinator) window.__baddelStartupReadinessCoordinator.homeCoversReady = true;
     _hideSplashForStartupLibrary('scan-failed');
 }
 
@@ -822,7 +1106,7 @@ function _startStartupLibraryGrace(loader, grid, hideSplash) {
         if (window.__baddelStartupMetrics) window.__baddelStartupMetrics.startupLibraryGraceExpired = true;
         if (_startupLibraryState() === STARTUP_LIBRARY_STATES.SCANNING && !_startupLibraryHasGames()) {
             renderHomeLoadingState();
-            _hideSplashForStartupLibrary('startup-library-grace-expired');
+            _setStartupLoaderText('Still scanning installed games...');
             _baddelLogStartupSummary('startup-library-grace-expired');
         }
     }, graceMs);
@@ -833,14 +1117,26 @@ async function _resolveStartupLibraryBeforeSplash(games, loader, grid, hideSplas
     const cachedCount = Array.isArray(games) ? games.length : 0;
     const lib = window.__baddelStartupLibrary || {};
     lib.initialCachedCount = cachedCount;
+    lib.loader = loader || null;
+    lib.grid = grid || null;
+    lib.hideSplash = hideSplash;
     window.__baddelStartupLibrary = lib;
+    window.__baddelStartupReadinessCoordinator?.attachSplash({ loader, grid, hideSplash });
+    window.__baddelStartupReadinessCoordinator?.noteInitialStoredGames(games);
 
     if (cachedCount > 0) {
         _setStartupLibraryState(STARTUP_LIBRARY_STATES.CACHED_READY, { count: cachedCount });
         _renderCriticalHomeContent('cached-ready');
-        await _waitForNextHomePaint(220);
         _setStartupLibraryState(STARTUP_LIBRARY_STATES.READY_WITH_GAMES, { count: cachedCount });
-        hideSplash(loader, grid);
+        window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(allGamesData, { reason: 'cached-ready' });
+        const snapshot = _prepareInstalledGamesSnapshot('cached-ready');
+        window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+        const controller = window.__baddelExploreCoverHydrationController;
+        await window.__baddelStartupReadinessCoordinator?.waitForHomeCovers(controller, {
+            generation: controller?.generation || 0,
+            timeoutMs: Number(window.__baddelStartupCoverGateTimeoutMs ?? 2200),
+        });
+        window.__baddelStartupReadinessCoordinator?.requestReveal('cached-ready');
         return;
     }
 
@@ -851,10 +1147,16 @@ async function _resolveStartupLibraryBeforeSplash(games, loader, grid, hideSplas
     }
 
     renderHomeLoadingState();
-    hideSplash(loader, grid);
+    _setStartupLibraryState(STARTUP_LIBRARY_STATES.CONFIRMED_EMPTY, { count: 0 });
+    window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady([], { reason: 'empty-no-scan' });
+    const snapshot = _prepareInstalledGamesSnapshot('empty-no-scan');
+    window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+    if (window.__baddelStartupReadinessCoordinator) window.__baddelStartupReadinessCoordinator.homeCoversReady = true;
+    window.__baddelStartupReadinessCoordinator?.requestReveal('empty-no-scan');
 }
 
 function _handleStartupScanState(payload = {}) {
+    window.__baddelStartupReadinessCoordinator?.noteScanState(payload);
     const lib = window.__baddelStartupLibrary || {};
     if (payload.state === 'scan-started') {
         lib.scanActive = true;
@@ -891,11 +1193,22 @@ function _handleStartupLibraryUpdatedPayload(mergedGames) {
     if (currentView === 'home' && !_homeIsUserScrolled()) {
         _renderCriticalHomeContent('library-updated');
         renderSyncedSuggestions();
-        _hideSplashForStartupLibrary('library-updated');
+        window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(mergedGames, { reason: 'library-updated' });
+        const snapshot = _prepareInstalledGamesSnapshot('library-updated');
+        window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+        const controller = window.__baddelExploreCoverHydrationController;
+        window.__baddelStartupReadinessCoordinator?.waitForHomeCovers(controller, {
+            generation: controller?.generation || 0,
+            timeoutMs: Number(window.__baddelStartupCoverGateTimeoutMs ?? 2200),
+        }).then(() => _hideSplashForStartupLibrary('library-updated'));
     } else if (currentView === 'home') {
         clearHomeLoadingState();
         renderSidebar();
         _markHomeRefreshPending('library-updated-home-scrolled');
+        window.__baddelStartupReadinessCoordinator?.noteLibraryDataReady(mergedGames, { reason: 'library-updated-scrolled' });
+        const snapshot = _prepareInstalledGamesSnapshot('library-updated-scrolled');
+        window.__baddelStartupReadinessCoordinator?.noteInstalledSnapshotReady(snapshot);
+        if (window.__baddelStartupReadinessCoordinator) window.__baddelStartupReadinessCoordinator.homeCoversReady = true;
         _hideSplashForStartupLibrary('library-updated-scrolled');
     }
     return true;
@@ -990,6 +1303,7 @@ async function initSystem() {
         ]);
 
         allGamesData = _dedupeDelegatedLaunchProducts(games);
+        _nextLibraryRevision();
         window.allGamesData = allGamesData; // keep accounts.js in sync
         window.__baddelSetCanonicalGamesRegistry?.(allGamesData);
         allCollections = collections;
@@ -1121,7 +1435,8 @@ function navigateToInstalled() {
     // رجّع آخر فلتر Installed محفوظ
     _igRestoreFilterState();
 
-    applyFilters();
+    const usedPreparedSnapshot = _renderInstalledSnapshot(window.__baddelInstalledSnapshot);
+    if (!usedPreparedSnapshot) applyFilters();
 
     // مهم للـ List mode عشان يعيد رسم القائمة بنفس الفلتر
     if (typeof _renderInstalledViewModeAware === 'function') {
@@ -1198,6 +1513,14 @@ class ExploreCoverHydrationController {
         this.secondaryFailedByDisplayId = new Map();
         this.secondaryScheduled = false;
         this.finalReconcileQueued = false;
+        this.terminalCoverByDisplayId = new Map();
+        this.coverWaiters = [];
+        this.coverStatsByGeneration = new Map();
+        this.postRevealRetryByDisplayId = new Map();
+        this.postRevealRetryTimersByDisplayId = new Map();
+        this.postRevealRetryDelaysMs = Array.isArray(window.__baddelExploreArtworkRetryDelaysMs)
+            ? window.__baddelExploreArtworkRetryDelaysMs
+            : [15000, 60000, 180000];
         this.homeVisible = false;
         this.concurrency = Number(window.__baddelExploreCoverHydrationConcurrency || window.__baddelExploreHydrationConcurrency || 6) || 6;
         this.secondaryConcurrency = Number(window.__baddelExploreSecondaryHydrationConcurrency || 2) || 2;
@@ -1211,9 +1534,18 @@ class ExploreCoverHydrationController {
     }
 
     setSelection(games, { reason = 'render' } = {}) {
+        this._resolveCoverWaiters({ stale: true, timedOut: true });
         this.generation += 1;
         this.selectedIds = new Set();
         this.gamesByDisplayId = new Map();
+        this.terminalCoverByDisplayId = new Map();
+        this._clearPostRevealRetryTimers();
+        this.postRevealRetryByDisplayId = new Map();
+        this.coverStatsByGeneration.set(this.generation, {
+            startedAt: _baddelPerfNow(),
+            cacheHits: 0,
+            downloads: 0,
+        });
         for (const game of Array.isArray(games) ? games : []) {
             const id = String(game?.id || '');
             if (!id) continue;
@@ -1223,7 +1555,7 @@ class ExploreCoverHydrationController {
         for (const id of [...this.nodesByDisplayId.keys()]) {
             if (!this.selectedIds.has(id)) this.nodesByDisplayId.delete(id);
         }
-        for (const map of [this.pendingByDisplayId, this.completedByDisplayId, this.failedByDisplayId, this.negativeByDisplayId, this.blockedByDisplayId, this.metadataByDisplayId, this.secondaryCompletedByDisplayId, this.secondaryFailedByDisplayId]) {
+        for (const map of [this.pendingByDisplayId, this.completedByDisplayId, this.failedByDisplayId, this.negativeByDisplayId, this.blockedByDisplayId, this.metadataByDisplayId, this.secondaryCompletedByDisplayId, this.secondaryFailedByDisplayId, this.postRevealRetryByDisplayId, this.postRevealRetryTimersByDisplayId]) {
             for (const id of [...map.keys()]) {
                 if (!this.selectedIds.has(id)) map.delete(id);
             }
@@ -1243,6 +1575,7 @@ class ExploreCoverHydrationController {
         }
         this._log(reason);
         this.reconcile(reason);
+        this._notifyCoverWaiters();
     }
 
     registerCard(displayId, card, game) {
@@ -1333,13 +1666,16 @@ class ExploreCoverHydrationController {
         const canonicalGameId = _exploreCanonicalId(game);
         const promise = this._hydrateOne({ id, game, canonicalGameId, generation, reason })
             .catch(err => {
-            this.failedByDisplayId.set(id, { reason: err?.message || 'failed', retryAt: Date.now() + this.retryTtlMs });
+                this.failedByDisplayId.set(id, { reason: err?.message || 'failed', retryAt: Date.now() + this.retryTtlMs });
+                if (this._isGenerationCurrent(id, generation)) this._applyFallbackCover(id, 'cover-request-failed');
+                this._schedulePostRevealArtworkRetry(id, 'cover-request-failed');
             })
             .finally(() => {
                 this.inFlightByDisplayId.delete(id);
                 this._pump('settled');
                 this._scheduleSecondaryDrain('cover-settled');
                 this._log('settled');
+                this._notifyCoverWaiters();
                 if (!this.inFlightByDisplayId.size && !this.queuedByDisplayId.size) this._queueFinalReconcile();
             });
         this.inFlightByDisplayId.set(id, promise);
@@ -1350,6 +1686,8 @@ class ExploreCoverHydrationController {
         const cached = await this._lookupCachedArtwork(game, { id: canonicalGameId }, { types: ['cover'], stage: 'cover-cache' });
         if (!this._isGenerationCurrent(id, generation)) return;
         if (cached.cover) {
+            const stats = this.coverStatsByGeneration.get(generation);
+            if (stats) stats.cacheHits += 1;
             this._applyTrustedArtworkToGame(game, cached);
             this._storeAndApply(id, {
                 canonicalGameId,
@@ -1385,11 +1723,14 @@ class ExploreCoverHydrationController {
         this.metadataByDisplayId.set(id, remoteAssets);
         if (!remoteAssets.cover) {
             this.negativeByDisplayId.set(id, { reason: 'no-cover-candidate', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
+            this._applyFallbackCover(id, 'metadata-no-cover');
             this._ensureSecondaryRequest(id, game, canonicalGameId, generation, 'metadata-no-cover');
+            this._schedulePostRevealArtworkRetry(id, 'metadata-no-cover');
             return;
         }
 
-        const priority = this.homeVisible ? 'visible' : 'prewarm';
+        const startupPending = window.__baddelStartupReadinessCoordinator && !window.__baddelStartupReadinessCoordinator.revealed;
+        const priority = startupPending ? 'startup-critical-cover' : (this.homeVisible ? 'visible' : 'prewarm');
         const coverCacheStartedAt = _baddelPerfNow();
         if (window.__baddelStartupMetrics) {
             window.__baddelStartupMetrics.artworkHttpDownloadCount = Number(window.__baddelStartupMetrics.artworkHttpDownloadCount || 0) + 1;
@@ -1400,6 +1741,8 @@ class ExploreCoverHydrationController {
             displayId: id,
         });
         const coverCacheMs = _baddelPerfNow() - coverCacheStartedAt;
+        const stats = this.coverStatsByGeneration.get(generation);
+        if (stats) stats.downloads += 1;
         const assets = {
             cover: _isCacheBackedNormalArtworkUrl(localAssets?.cover),
             hero: null,
@@ -1407,6 +1750,8 @@ class ExploreCoverHydrationController {
         };
         if (!assets.cover) {
             this.blockedByDisplayId.set(id, { reason: localAssets?.reason || 'blocked-or-failed', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
+            this._applyFallbackCover(id, 'cover-cache-blocked');
+            this._schedulePostRevealArtworkRetry(id, 'cover-cache-blocked');
             return;
         }
 
@@ -1510,6 +1855,10 @@ class ExploreCoverHydrationController {
             this.secondaryCompletedByDisplayId.has(id) ||
             this.secondaryFailedByDisplayId.has(id)
         ) return;
+        if (window.__baddelStartupReadinessCoordinator && !window.__baddelStartupReadinessCoordinator.revealed) {
+            this.secondaryQueuedByDisplayId.add(id);
+            return;
+        }
         const current = _exploreArtworkValues(game);
         if (_isCacheBackedNormalArtworkUrl(current.hero) && _isCacheBackedNormalArtworkUrl(current.logo)) {
             this.secondaryCompletedByDisplayId.set(id, { reason: 'already-local', at: Date.now() });
@@ -1521,6 +1870,10 @@ class ExploreCoverHydrationController {
 
     _scheduleSecondaryDrain(reason = 'secondary-schedule') {
         if (this.inFlightByDisplayId.size || this.queuedByDisplayId.size) return;
+        if (window.__baddelStartupReadinessCoordinator && !window.__baddelStartupReadinessCoordinator.revealed) {
+            setTimeout(() => this._scheduleSecondaryDrain(reason), 250);
+            return;
+        }
         if (this.secondaryScheduled) return;
         this.secondaryScheduled = true;
         const schedule = window.requestIdleCallback || ((fn) => setTimeout(fn, 50));
@@ -1542,6 +1895,7 @@ class ExploreCoverHydrationController {
             const promise = this._hydrateSecondary({ id, game, canonicalGameId, generation, reason })
                 .catch(err => {
                     this.secondaryFailedByDisplayId.set(id, { reason: err?.message || 'secondary-failed', at: Date.now() });
+                    this._schedulePostRevealArtworkRetry(id, 'secondary-failed');
                 })
                 .finally(() => {
                     this.secondaryInFlightByDisplayId.delete(id);
@@ -1551,6 +1905,72 @@ class ExploreCoverHydrationController {
             this.secondaryInFlightByDisplayId.set(id, promise);
         }
         this._log(reason);
+    }
+
+    onStartupRevealed(reason = 'startup-revealed') {
+        for (const id of this.selectedIds) {
+            const game = this.gamesByDisplayId.get(id);
+            if (!game) continue;
+            const completed = this.completedByDisplayId.get(id);
+            const current = _exploreArtworkValues(game);
+            if (completed?.fallback === true || !_isCacheBackedNormalArtworkUrl(current.cover) || !_isCacheBackedNormalArtworkUrl(current.hero) || !_isCacheBackedNormalArtworkUrl(current.logo)) {
+                this._schedulePostRevealArtworkRetry(id, reason, { immediate: true });
+            }
+        }
+        this._consumeAllPending(reason);
+        this._pump(reason);
+        this._scheduleSecondaryDrain(reason);
+        this._log(reason);
+    }
+
+    _schedulePostRevealArtworkRetry(id, reason = 'post-reveal-artwork-retry', { immediate = false } = {}) {
+        const displayId = String(id || '');
+        if (!displayId || !this.selectedIds.has(displayId)) return;
+        if (!window.__baddelStartupReadinessCoordinator?.revealed) return;
+        if (this.postRevealRetryTimersByDisplayId.has(displayId)) return;
+        const delays = this.postRevealRetryDelaysMs.length ? this.postRevealRetryDelaysMs : [15000, 60000, 180000];
+        const count = Number(this.postRevealRetryByDisplayId.get(displayId) || 0);
+        if (count >= delays.length) return;
+        const delayMs = immediate ? 0 : Math.max(0, Number(delays[Math.min(count, delays.length - 1)]) || 0);
+        this.postRevealRetryByDisplayId.set(displayId, count + 1);
+        const run = () => {
+            this.postRevealRetryTimersByDisplayId.delete(displayId);
+            this._runPostRevealArtworkRetry(displayId, reason);
+        };
+        if (delayMs <= 0) {
+            Promise.resolve().then(run);
+            return;
+        }
+        this.postRevealRetryTimersByDisplayId.set(displayId, setTimeout(run, delayMs));
+    }
+
+    _runPostRevealArtworkRetry(id, reason = 'post-reveal-artwork-retry') {
+        const displayId = String(id || '');
+        const game = this.gamesByDisplayId.get(displayId);
+        if (!game || !this.selectedIds.has(displayId) || !window.__baddelStartupReadinessCoordinator?.revealed) return;
+        const current = _exploreArtworkValues(game);
+        const completed = this.completedByDisplayId.get(displayId);
+        if (completed?.fallback === true || !_isCacheBackedNormalArtworkUrl(current.cover)) {
+            this.completedByDisplayId.delete(displayId);
+            this.failedByDisplayId.delete(displayId);
+            this.negativeByDisplayId.delete(displayId);
+            this.blockedByDisplayId.delete(displayId);
+            if (!this.inFlightByDisplayId.has(displayId)) this.queuedByDisplayId.add(displayId);
+        }
+        if (!_isCacheBackedNormalArtworkUrl(current.hero) || !_isCacheBackedNormalArtworkUrl(current.logo)) {
+            this.secondaryFailedByDisplayId.delete(displayId);
+            this.secondaryCompletedByDisplayId.delete(displayId);
+            if (!this.secondaryInFlightByDisplayId.has(displayId)) this.secondaryQueuedByDisplayId.add(displayId);
+        }
+        this._consumePending(displayId, reason);
+        this._pump(reason);
+        this._scheduleSecondaryDrain(reason);
+        this._log(reason);
+    }
+
+    _clearPostRevealRetryTimers() {
+        for (const timer of this.postRevealRetryTimersByDisplayId?.values?.() || []) clearTimeout(timer);
+        this.postRevealRetryTimersByDisplayId = new Map();
     }
 
     async _hydrateSecondary({ id, game, canonicalGameId, generation, reason }) {
@@ -1606,6 +2026,7 @@ class ExploreCoverHydrationController {
         }
         if (!assets.hero && !assets.logo) {
             this.secondaryFailedByDisplayId.set(id, { reason: 'no-secondary-assets', at: Date.now() });
+            this._schedulePostRevealArtworkRetry(id, 'secondary-no-assets');
             return;
         }
         if (!this._isGenerationCurrent(id, generation)) return;
@@ -1695,6 +2116,168 @@ class ExploreCoverHydrationController {
         this._consumePending(id, result.source || 'result');
     }
 
+    waitForCoversReady({ generation = this.generation, timeoutMs = 10000, requireDecoded = true } = {}) {
+        const requestedGeneration = generation || this.generation;
+        const startedAt = _baddelPerfNow();
+        if (requestedGeneration !== this.generation) {
+            return Promise.resolve(this._coverReadinessResult(requestedGeneration, { stale: true, timedOut: true, startedAt }));
+        }
+        if (this._areCoversTerminal(requestedGeneration, requireDecoded)) {
+            return Promise.resolve(this._coverReadinessResult(requestedGeneration, { startedAt }));
+        }
+        return new Promise(resolve => {
+            const waiter = {
+                generation: requestedGeneration,
+                requireDecoded,
+                startedAt,
+                resolve,
+                timer: null,
+            };
+            waiter.timer = setTimeout(() => {
+                this._applyFallbacksForUnresolved(requestedGeneration, 'cover-gate-timeout');
+                setTimeout(() => {
+                    if (!this.coverWaiters.includes(waiter)) return;
+                    resolve(this._coverReadinessResult(requestedGeneration, { timedOut: true, startedAt }));
+                    this.coverWaiters = this.coverWaiters.filter(item => item !== waiter);
+            }, 450);
+            }, Math.max(0, Number(timeoutMs) || 0));
+            this.coverWaiters.push(waiter);
+            this._notifyCoverWaiters();
+        });
+    }
+
+    _fallbackCoverUrl() {
+        return window.BADDEL_EMBEDDED_FALLBACK_COVER || (typeof BADDEL_EMBEDDED_FALLBACK_COVER !== 'undefined'
+            ? BADDEL_EMBEDDED_FALLBACK_COVER
+            : 'data:image/svg+xml;charset=utf-8,%3Csvg%20xmlns%3D%22http%3A//www.w3.org/2000/svg%22%20width%3D%22520%22%20height%3D%22720%22%3E%3Crect%20width%3D%22520%22%20height%3D%22720%22%20fill%3D%22%23111217%22/%3E%3Ctext%20x%3D%2250%25%22%20y%3D%2250%25%22%20text-anchor%3D%22middle%22%20fill%3D%22%23fff%22%20font-family%3D%22Arial%22%20font-size%3D%2230%22%3ENo%20Image%3C/text%3E%3C/svg%3E');
+    }
+
+    _areCoversTerminal(generation, requireDecoded = true) {
+        if (generation !== this.generation) return false;
+        if (this.selectedIds.size === 0) return true;
+        for (const id of this.selectedIds) {
+            const state = this.terminalCoverByDisplayId.get(id);
+            if (!state) return false;
+            if (requireDecoded && state.decoded !== true) return false;
+        }
+        return true;
+    }
+
+    _coverReadinessResult(generation, { timedOut = false, stale = false, startedAt = null } = {}) {
+        const states = [...this.terminalCoverByDisplayId.values()].filter(state => state.generation === generation);
+        const stats = this.coverStatsByGeneration.get(generation) || {};
+        return {
+            generation,
+            total: generation === this.generation ? this.selectedIds.size : states.length,
+            loaded: states.filter(state => !state.fallback && !state.failed).length,
+            fallback: states.filter(state => state.fallback).length,
+            failed: states.filter(state => state.failed).length,
+            cacheHits: Number(stats.cacheHits || 0),
+            downloads: Number(stats.downloads || 0),
+            timedOut: timedOut === true,
+            stale: stale === true,
+            durationMs: Math.round(_baddelPerfNow() - (startedAt || stats.startedAt || _baddelPerfNow())),
+        };
+    }
+
+    _resolveCoverWaiters(payload = {}) {
+        const waiters = this.coverWaiters.splice(0);
+        for (const waiter of waiters) {
+            clearTimeout(waiter.timer);
+            waiter.resolve(this._coverReadinessResult(waiter.generation, { ...payload, startedAt: waiter.startedAt }));
+        }
+    }
+
+    _notifyCoverWaiters() {
+        for (const waiter of [...this.coverWaiters]) {
+            if (waiter.generation !== this.generation) {
+                clearTimeout(waiter.timer);
+                waiter.resolve(this._coverReadinessResult(waiter.generation, { stale: true, timedOut: true, startedAt: waiter.startedAt }));
+                this.coverWaiters = this.coverWaiters.filter(item => item !== waiter);
+                continue;
+            }
+            if (!this._areCoversTerminal(waiter.generation, waiter.requireDecoded)) continue;
+            clearTimeout(waiter.timer);
+            waiter.resolve(this._coverReadinessResult(waiter.generation, { startedAt: waiter.startedAt }));
+            this.coverWaiters = this.coverWaiters.filter(item => item !== waiter);
+        }
+    }
+
+    _applyFallbacksForUnresolved(generation, reason) {
+        if (generation !== this.generation) return;
+        for (const id of this.selectedIds) {
+            if (!this.terminalCoverByDisplayId.has(id)) this._applyFallbackCover(id, reason);
+        }
+    }
+
+    _applyFallbackCover(id, reason = 'fallback') {
+        if (!this.selectedIds.has(String(id))) return;
+        const game = this.gamesByDisplayId.get(String(id)) || {};
+        this._storeAndApply(String(id), {
+            canonicalGameId: _exploreCanonicalId(game) || String(id),
+            localUrl: this._fallbackCoverUrl(),
+            revision: null,
+            operationId: `explore-fallback-${id}-${this.generation}`,
+            source: reason,
+            fallback: true,
+            failed: reason !== 'metadata-no-cover',
+        });
+    }
+
+    async _decodeCardImage(img) {
+        if (!img) throw new Error('missing-image');
+        if (typeof img.decode === 'function') {
+            await img.decode();
+        } else if (img.complete === false && typeof img.addEventListener === 'function') {
+            await new Promise((resolve, reject) => {
+                const cleanup = () => {
+                    img.removeEventListener?.('load', onLoad);
+                    img.removeEventListener?.('error', onError);
+                };
+                const onLoad = () => { cleanup(); resolve(); };
+                const onError = () => { cleanup(); reject(new Error('image-load-failed')); };
+                img.addEventListener('load', onLoad, { once: true });
+                img.addEventListener('error', onError, { once: true });
+            });
+        }
+        if (img.complete === true && typeof img.naturalWidth === 'number' && img.naturalWidth <= 0 && !String(img.src || '').startsWith('data:image/svg+xml')) {
+            throw new Error('image-decode-empty');
+        }
+    }
+
+    _markCoverTerminal(id, result, { decoded = true, failed = false } = {}) {
+        const generation = this.generation;
+        const existing = this.terminalCoverByDisplayId.get(String(id));
+        this.terminalCoverByDisplayId.set(String(id), {
+            generation,
+            decoded: decoded === true || existing?.decoded === true,
+            fallback: result?.fallback === true,
+            failed: failed === true || result?.failed === true,
+            source: result?.source || 'cover',
+            at: Date.now(),
+        });
+        this._notifyCoverWaiters();
+    }
+
+    _applyCoverResultToCard(card, id, result) {
+        const img = card?.querySelector?.('.actual-img');
+        const url = result?.localUrl;
+        if (!img || !url) return false;
+        img.src = url;
+        if (img.dataset) {
+            img.dataset.lastGoodCover = url;
+            img.dataset.lastGoodImage = url;
+        }
+        img.classList?.add?.('img-loaded');
+        img.style.opacity = '';
+        img.style.display = 'block';
+        if (card.dataset) {
+            card.dataset.artworkGameId = String(id);
+            card.dataset.artworkAssetHash = url;
+        }
+        return true;
+    }
+
     _consumePending(id, reason) {
         const result = this.pendingByDisplayId.get(id);
         if (!result) return false;
@@ -1721,6 +2304,20 @@ class ExploreCoverHydrationController {
                 revision: result.revision,
             },
         });
+        this._applyCoverResultToCard(card, id, result);
+        this._markCoverTerminal(id, result, { decoded: false });
+        const img = card.querySelector?.('.actual-img');
+        Promise.resolve()
+            .then(() => this._decodeCardImage(img))
+            .then(() => this._markCoverTerminal(id, result))
+            .catch(() => {
+                if (result.fallback) {
+                    this._markCoverTerminal(id, result, { failed: true });
+                } else {
+                    this._applyFallbackCover(id, 'cover-decode-failed');
+                    this._schedulePostRevealArtworkRetry(id, 'cover-decode-failed');
+                }
+            });
         if (typeof currentHeroGameId !== 'undefined' && String(currentHeroGameId) === String(id)) {
             window.__baddelRequestHomeHeroTransition?.(id, { immediate: true, reason: 'explore-hydration' });
         }
@@ -1859,13 +2456,15 @@ function renderExploreCarousel() {
             const node = previousNodes.get(id) || createGameCard(game, false, { artworkSurface: 'explore' });
             if (node?.dataset) node.dataset.artworkSurface = 'explore';
             _explorePatchCardArtwork(node, game);
-            window.__baddelExploreCoverHydrationController?.registerCard(id, node, game);
             nextNodes.set(id, node);
             fragment.appendChild(node);
         });
         grid.replaceChildren(fragment);
         window._exploreRenderedNodes = nextNodes;
         window._exploreRenderedIds = ids;
+        nextNodes.forEach((node, id) => {
+            window.__baddelExploreCoverHydrationController?.registerCard(id, node, byId.get(String(id)));
+        });
     }
     grid.scrollLeft = previousScrollLeft;
     if (activeId) grid.querySelector(`[data-id="${CSS.escape(activeId)}"]`)?.focus?.();
@@ -2272,6 +2871,7 @@ async function _processLibraryUpdatedPayload(updatedGames) {
     const nextSnapshot = _librarySnapshot(mergedGames);
     const decision = _classifyLibrarySnapshot(_lastLibraryRenderSnapshot, nextSnapshot);
     allGamesData = mergedGames;
+    _nextLibraryRevision();
     window.allGamesData = allGamesData;
     window._readyToInstallRenderedGames = null;
     _lastLibraryRenderSnapshot = nextSnapshot;
@@ -2653,6 +3253,7 @@ async function reloadLibrary() {
         const mergedGames = _dedupeDelegatedLaunchProducts(_mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData));
 
         allGamesData = mergedGames;
+        _nextLibraryRevision();
         window.allGamesData = allGamesData; // keep accounts.js in sync
         await window.__baddelRefreshCanonicalGamesRegistry?.('scan-all-games');
         allCollections = await window.electronAPI.getCollections();
@@ -2716,6 +3317,7 @@ function _patchGameInMemory(updatedGame) {
         typeof window._agIsUserLibraryGame === 'function'
             ? window._agIsUserLibraryGame(normalized)
             : false;
+    _nextLibraryRevision();
 
     if (Array.isArray(window._allGamesCache)) {
         const cidx = window._allGamesCache.findIndex(g => String(g.id) === id);

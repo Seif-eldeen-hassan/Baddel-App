@@ -520,31 +520,35 @@ test('app.js: startup scan-state signals register before initSystem starts', () 
 
 test('app.js: non-empty cached library renders critical Home before splash dismissal', () => {
     const fnStart = APP_JS.indexOf('async function _resolveStartupLibraryBeforeSplash');
-    const fn = APP_JS.slice(fnStart, fnStart + 900);
+    const fnEnd = APP_JS.indexOf('function _handleStartupScanState', fnStart);
+    const fn = APP_JS.slice(fnStart, fnEnd);
     const cachedIdx = fn.indexOf('cachedCount > 0');
     const criticalIdx = fn.indexOf("_renderCriticalHomeContent('cached-ready')");
-    const paintIdx = fn.indexOf('_waitForNextHomePaint(220)');
-    const hideIdx = fn.indexOf('hideSplash(loader, grid)');
+    const coversIdx = fn.indexOf('waitForHomeCovers(controller');
+    const revealIdx = fn.indexOf("requestReveal('cached-ready')");
     assert.ok(cachedIdx > -1, 'cached-count branch must exist');
     assert.ok(criticalIdx > cachedIdx, 'must render critical Home for cached games');
-    assert.ok(paintIdx > criticalIdx, 'must wait only for bounded DOM paint after critical render');
-    assert.ok(hideIdx > paintIdx, 'splash hides after critical cached Home paint');
+    assert.ok(coversIdx > criticalIdx, 'must wait for selected Home covers after critical render');
+    assert.ok(revealIdx > coversIdx, 'splash reveal is requested only after the cover gate');
 });
 
 test('app.js: empty cached library with active scan uses adaptive grace, not immediate empty render', () => {
     const fnStart = APP_JS.indexOf('async function _resolveStartupLibraryBeforeSplash');
-    const fn = APP_JS.slice(fnStart, fnStart + 1300);
+    const fnEnd = APP_JS.indexOf('function _handleStartupScanState', fnStart);
+    const fn = APP_JS.slice(fnStart, fnEnd);
     assert.match(fn, /lib\.scanActive|\bSCANNING\b/, 'must detect active startup scan');
     assert.match(fn, /_startStartupLibraryGrace\(loader,\s*grid,\s*hideSplash\)/, 'must start adaptive library grace');
     assert.doesNotMatch(fn, /No Games Found|No games yet/, 'startup resolver must not render final empty copy');
 });
 
-test('app.js: adaptive startup library grace defaults to 1200ms and reveals loading skeleton', () => {
+test('app.js: adaptive startup library grace defaults to 1200ms and keeps splash gate active', () => {
     const fnStart = APP_JS.indexOf('function _startStartupLibraryGrace');
     const fn = APP_JS.slice(fnStart, fnStart + 900);
     assert.match(fn, /__baddelStartupLibraryGraceMs\s*\?\?\s*1200/, 'grace default must be 1200ms');
     assert.match(fn, /startupLibraryGraceExpired\s*=\s*true/, 'metrics must record grace expiry');
     assert.match(fn, /renderHomeLoadingState\(\)/, 'slow scans must reveal loading state');
+    assert.doesNotMatch(fn, /requestReveal\(/, 'grace expiry must not request final reveal');
+    assert.doesNotMatch(fn, /hideSplash\(/, 'grace expiry must not hide the splash');
     assert.doesNotMatch(fn, /No Games Found|No games yet/, 'grace expiry must not show final empty copy');
 });
 
@@ -579,7 +583,8 @@ test('app.js: scan-finished zero is the only startup path to confirmed empty', (
 
 test('app.js: scan-failed shows retry/error UI and preserves cached games', () => {
     const fnStart = APP_JS.indexOf('function renderHomeScanErrorState');
-    const fn = APP_JS.slice(fnStart, fnStart + 1200);
+    const fnEnd = APP_JS.indexOf('function _startStartupLibraryGrace', fnStart);
+    const fn = APP_JS.slice(fnStart, fnEnd);
     assert.match(fn, /SCAN_FAILED/, 'scan failed state must be explicit');
     assert.match(fn, /_startupLibraryHasGames\(\)[\s\S]*_renderCriticalHomeContent\('scan-failed-cached'\)/, 'cached games must remain visible after failed refresh scan');
     assert.match(fn, /Library scan needs a retry|Preparing your library hit a snag/, 'empty-cache failure must show retry/error copy');
@@ -597,7 +602,8 @@ test('app.js: library-updated readiness is handled inside the existing debounced
 
 test('app.js: library-updated inside grace renders populated Home and hides splash', () => {
     const fnStart = APP_JS.indexOf('function _handleStartupLibraryUpdatedPayload');
-    const fn = APP_JS.slice(fnStart, fnStart + 1100);
+    const fnEnd = APP_JS.indexOf('function registerStartupLibrarySignals', fnStart);
+    const fn = APP_JS.slice(fnStart, fnEnd);
     assert.match(fn, /READY_WITH_GAMES/, 'non-empty library update must mark ready-with-games');
     assert.match(fn, /_cancelStartupLibraryGrace\(\)/, 'non-empty update must cancel startup grace timer');
     assert.match(fn, /_renderCriticalHomeContent\('library-updated'\)/, 'non-empty update must render one critical Home refresh');
@@ -627,4 +633,106 @@ test('app.js: R8 startup metrics remain available', () => {
     }
     assert.ok(APP_JS.includes('firstShellAt'), 'R7 firstShellAt metric must remain');
     assert.ok(APP_JS.includes('splashHiddenAt'), 'R7 splashHiddenAt metric must remain');
+});
+
+test('app.js: Phase 25.2A-R8 corrective startup coordinator tracks required readiness fields', () => {
+    assert.match(APP_JS, /class StartupReadinessCoordinator/, 'startup readiness coordinator must exist');
+    for (const field of [
+        'libraryScanState',
+        'libraryDataReady',
+        'installedSnapshotReady',
+        'homeSelectionGeneration',
+        'homeCoverTotal',
+        'homeCoverResolved',
+        'homeCoverFallbackCount',
+        'homeCoversReady',
+        'revealRequested',
+        'revealed',
+        'startedAt',
+        'scanDurationMs',
+        'coverDurationMs',
+    ]) {
+        assert.ok(APP_JS.includes(`this.${field}`), `missing coordinator field ${field}`);
+    }
+    assert.match(APP_JS, /StartupReadinessSummary/, 'must log sanitized startup readiness summary');
+});
+
+test('app.js: startup reveal waits for scan, data, Installed snapshot, cover gate, and two RAFs', () => {
+    const start = APP_JS.indexOf('class StartupReadinessCoordinator');
+    const block = APP_JS.slice(start, start + 6000);
+    assert.match(block, /terminalScan/, 'must require terminal scan state before reveal');
+    assert.match(block, /libraryDataReady/, 'must require merged library data before reveal');
+    assert.match(block, /installedSnapshotReady/, 'must require prepared Installed snapshot before reveal');
+    assert.match(block, /homeCoversReady/, 'must require selected Home cover readiness before reveal');
+    assert.match(block, /controller\.generation !== this\.homeSelectionGeneration/, 'must reject stale Explore generations');
+    assert.match(block, /_waitForNextHomePaint\(240\)/, 'must wait two RAFs before splash dismissal');
+    assert.match(block, /onStartupRevealed/, 'startup reveal must wake background artwork queues');
+});
+
+test('app.js: Explore cover gate exposes generation-aware decoded terminal readiness', () => {
+    const start = APP_JS.indexOf('class ExploreCoverHydrationController');
+    const block = APP_JS.slice(start);
+    assert.match(block, /waitForCoversReady\(\{\s*generation/, 'controller must expose waitForCoversReady API');
+    assert.match(block, /terminalCoverByDisplayId/, 'controller must track terminal cover states separately from cache completion');
+    assert.match(block, /requireDecoded/, 'cover gate must support decoded readiness');
+    assert.match(block, /_decodeCardImage/, 'cover gate must wait for browser image readiness');
+    assert.match(block, /naturalWidth/, 'image readiness must verify decoded dimensions where available');
+    assert.match(block, /_applyFallbackCover/, 'unresolved covers must fall back before terminal readiness');
+    assert.match(block, /stale:\s*true/, 'stale generations must not satisfy current startup gate');
+});
+
+test('app.js: startup Explore cover downloads use startup-critical priority and defer secondary art', () => {
+    const start = APP_JS.indexOf('class ExploreCoverHydrationController');
+    const block = APP_JS.slice(start);
+    assert.match(block, /startup-critical-cover/, 'startup selected cover downloads must use startup-critical-cover priority');
+    assert.match(block, /explore-cover-hydration/, 'cover-first request path must remain separate');
+    assert.match(APP_JS, /explore-secondary-hydration/, 'secondary hero/logo hydration must remain separate');
+    assert.match(block, /__baddelStartupReadinessCoordinator[\s\S]*!window\.__baddelStartupReadinessCoordinator\.revealed/, 'secondary hydration must be deferred while startup reveal is gated');
+    assert.match(block, /onStartupRevealed/, 'secondary hydration must resume after startup reveal');
+    assert.match(block, /postRevealRetryByDisplayId/, 'fallback covers must get a bounded post-reveal real-cover retry');
+});
+
+test('app.js: startup cover gate is cover-first and does not wait for full image decode', () => {
+    const start = APP_JS.indexOf('async waitForHomeCovers');
+    const block = APP_JS.slice(start, start + 900);
+    assert.match(block, /timeoutMs\s*=\s*2200/, 'startup cover gate default must stay short');
+    assert.match(block, /requireDecoded:\s*false/, 'startup reveal must not wait for full image decode');
+    assert.match(APP_JS, /__baddelStartupCoverGateTimeoutMs\s*\?\?\s*2200/, 'callers must use the shorter startup cover gate fallback');
+});
+
+test('app.js: Explore cover result patches the live card before decode or navigation', () => {
+    const start = APP_JS.indexOf('_applyCoverResultToCard');
+    const block = APP_JS.slice(start, start + 900);
+    assert.match(block, /img\.src\s*=\s*url/, 'cover result must assign the visible image directly');
+    assert.match(block, /img-loaded/, 'direct patch must mark the image as loaded');
+    const consumeStart = APP_JS.indexOf('\n    _consumePending(id, reason)');
+    const consume = APP_JS.slice(consumeStart, consumeStart + 2600);
+    assert.match(consume, /_applyCoverResultToCard\(card,\s*id,\s*result\)/, 'pending cover consumption must patch the mounted card');
+    assert.match(consume, /_markCoverTerminal\(id,\s*result,\s*\{\s*decoded:\s*false\s*\}\)/, 'cover gate can release after assignment while decode continues');
+    const renderStart = APP_JS.indexOf('function renderExploreCarousel');
+    const render = APP_JS.slice(renderStart, renderStart + 3600);
+    const replaceIdx = render.indexOf('grid.replaceChildren(fragment)');
+    const registerIdx = render.indexOf('nextNodes.forEach');
+    assert.ok(replaceIdx > -1 && registerIdx > replaceIdx, 'new Explore cards must register after they are mounted');
+});
+
+test('app.js: Installed view can reuse prepared startup snapshot for current revision', () => {
+    assert.match(APP_JS, /function _computeInstalledGamesSnapshot/, 'must compute Installed snapshot via shared helper');
+    assert.match(APP_JS, /function _prepareInstalledGamesSnapshot/, 'must prepare Installed snapshot before reveal');
+    assert.match(APP_JS, /function _installedSnapshotMatchesCurrentFilters/, 'must validate snapshot revision and filters');
+    const navStart = APP_JS.indexOf('function navigateToInstalled');
+    const nav = APP_JS.slice(navStart, navStart + 900);
+    assert.match(nav, /_renderInstalledSnapshot\(window\.__baddelInstalledSnapshot\)/, 'navigateToInstalled must try prepared snapshot first');
+    assert.match(nav, /if \(!usedPreparedSnapshot\) applyFilters\(\)/, 'navigateToInstalled must fall back to normal filtering if snapshot is stale');
+});
+
+test('app.js and dashboard: startup loader writes styled status text and first-run note', () => {
+    assert.match(HTML, /id="splashStatusText"/, 'splash status text element must exist');
+    assert.match(HTML, /id="splashStatusNote"/, 'splash first-run note element must exist');
+    const setterStart = APP_JS.indexOf('function _setStartupLoaderText');
+    const setter = APP_JS.slice(setterStart, setterStart + 900);
+    assert.match(setter, /splashStatusText/, 'loader updates must target text node, not the whole status row');
+    assert.match(setter, /splashStatusNote/, 'loader must support a quieter first-run note');
+    assert.doesNotMatch(setter, /getElementById\('splashStatus'\)/, 'loader must not overwrite status row structure');
+    assert.match(APP_JS, /First launch can take a little longer/, 'fresh install copy must explain first-run duration');
 });

@@ -2498,7 +2498,9 @@ test('app.js: _flushPendingHomeRefreshIfSafe guards on _homeIsUserScrolled and c
 test('app.js: onLibraryUpdated skips Home DOM when user is scrolled', () => {
     const idx = APP_JS.indexOf('library-updated-home-scrolled');
     assert.ok(idx !== -1, 'library-updated-home-scrolled label not found in app.js');
-    const context = APP_JS.slice(Math.max(0, idx - 400), idx + 100);
+    const fnStart = APP_JS.indexOf('function _handleStartupLibraryUpdatedPayload');
+    const fnEnd = APP_JS.indexOf('function registerStartupLibrarySignals', fnStart);
+    const context = APP_JS.slice(fnStart, fnEnd);
     assert.match(context, /_homeIsUserScrolled/);
     assert.match(context, /_markHomeRefreshPending/);
 });

@@ -108,6 +108,7 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     sandbox.window = sandbox;
     sandbox.window.__baddelExploreHydrationConcurrency = concurrency;
     sandbox.window.__baddelExploreSecondaryHydrationConcurrency = special.secondaryConcurrency || 2;
+    sandbox.window.__baddelExploreArtworkRetryDelaysMs = special.retryDelays || [5, 10, 20];
     sandbox.window.addEventListener = (type, handler) => {
         if (!listeners.has(type)) listeners.set(type, []);
         listeners.get(type).push(handler);
@@ -302,6 +303,132 @@ test('downloaded Explore cover paints before saveMetadata settles', async () => 
     await waitForSecondaryIdle(controller);
 });
 
+test('Explore cover readiness waits for same-generation mounted cover terminals', async () => {
+    const { sandbox, games, cards } = makeSandbox({ count: 2, concurrency: 1, cacheHits: 2 });
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'decoded-ready' });
+    const generation = controller.generation;
+    games.forEach(game => {
+        const card = makeCard(game.id);
+        card.img.complete = true;
+        card.img.naturalWidth = 320;
+        card.img.decode = async () => {};
+        cards.set(game.id, card);
+        controller.registerCard(game.id, card, game);
+    });
+    const result = await controller.waitForCoversReady({ generation, timeoutMs: 100, requireDecoded: true });
+    assert.equal(result.generation, generation);
+    assert.equal(result.total, 2);
+    assert.equal(result.loaded, 2);
+    assert.equal(result.fallback, 0);
+    assert.equal(result.stale, false);
+});
+
+test('Explore cover readiness never lets stale generations satisfy the current gate', async () => {
+    const { sandbox, games } = makeSandbox({ count: 2, concurrency: 1, cacheHits: 0, special: { delay: 5 } });
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'stale-a' });
+    const staleGeneration = controller.generation;
+    const staleWait = controller.waitForCoversReady({ generation: staleGeneration, timeoutMs: 100, requireDecoded: true });
+    controller.setSelection(games.slice(0, 1), { reason: 'stale-b' });
+    const result = await staleWait;
+    assert.equal(result.generation, staleGeneration);
+    assert.equal(result.stale, true);
+    assert.notEqual(controller.generation, staleGeneration);
+});
+
+test('startup reveal wakes fallback cover retry and secondary artwork queue', async () => {
+    const noCover = new Set(['display-0']);
+    const { sandbox, games, cards, calls } = makeSandbox({
+        count: 1,
+        concurrency: 1,
+        cacheHits: 0,
+        special: { noCover, delay: 1 },
+    });
+    sandbox.window.__baddelStartupReadinessCoordinator = { revealed: false };
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'fallback-before-reveal' });
+    const card = makeCard('display-0');
+    card.img.complete = true;
+    card.img.naturalWidth = 320;
+    card.img.decode = async () => {};
+    cards.set('display-0', card);
+    controller.registerCard('display-0', card, games[0]);
+    await controller.waitForCoversReady({ generation: controller.generation, timeoutMs: 100, requireDecoded: true });
+    assert.equal(controller.completedByDisplayId.get('display-0')?.fallback, true);
+    assert.equal(calls.cacheAllAssets.length, 0);
+
+    noCover.clear();
+    sandbox.window.__baddelStartupReadinessCoordinator.revealed = true;
+    controller.onStartupRevealed('test-reveal');
+    await waitForIdle(controller);
+    assert.equal(cards.get('display-0').img.src, 'file://canonical-0.webp');
+    assert.notEqual(controller.completedByDisplayId.get('display-0')?.fallback, true);
+    await waitForSecondaryIdle(controller);
+    assert.equal(calls.cacheAllAssets.some(call => call.opts.reason === 'explore-secondary-hydration'), true);
+});
+
+test('post-reveal fallback cover keeps retrying quietly after Home opens', async () => {
+    const noCover = new Set(['display-0']);
+    const { sandbox, games, cards } = makeSandbox({
+        count: 1,
+        concurrency: 1,
+        cacheHits: 0,
+        special: { noCover, delay: 1, retryDelays: [5, 10] },
+    });
+    sandbox.window.__baddelStartupReadinessCoordinator = { revealed: false };
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'fallback-background-retry' });
+    const card = makeCard('display-0');
+    card.img.complete = true;
+    card.img.naturalWidth = 320;
+    card.img.decode = async () => {};
+    cards.set('display-0', card);
+    controller.registerCard('display-0', card, games[0]);
+    await controller.waitForCoversReady({ generation: controller.generation, timeoutMs: 100, requireDecoded: true });
+    assert.equal(controller.completedByDisplayId.get('display-0')?.fallback, true);
+
+    sandbox.window.__baddelStartupReadinessCoordinator.revealed = true;
+    controller.onStartupRevealed('test-reveal');
+    await waitForIdle(controller);
+    assert.equal(controller.completedByDisplayId.get('display-0')?.fallback, true);
+
+    noCover.clear();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    await waitForIdle(controller);
+    assert.equal(cards.get('display-0').img.src, 'file://canonical-0.webp');
+    assert.notEqual(controller.completedByDisplayId.get('display-0')?.fallback, true);
+});
+
+test('post-reveal secondary hero and logo retry after a transient failure', async () => {
+    const secondaryFail = new Set(['canonical-0']);
+    const { sandbox, games, cards, calls } = makeSandbox({
+        count: 1,
+        concurrency: 1,
+        cacheHits: 0,
+        special: { secondaryFail, delay: 1, retryDelays: [5, 10] },
+    });
+    sandbox.window.__baddelStartupReadinessCoordinator = { revealed: true };
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'secondary-background-retry' });
+    const card = makeCard('display-0');
+    card.img.complete = true;
+    card.img.naturalWidth = 320;
+    card.img.decode = async () => {};
+    cards.set('display-0', card);
+    controller.registerCard('display-0', card, games[0]);
+    await waitForIdle(controller);
+    await waitForSecondaryIdle(controller);
+    assert.equal(controller.secondaryFailedByDisplayId.has('display-0'), true);
+
+    secondaryFail.clear();
+    await new Promise(resolve => setTimeout(resolve, 25));
+    await waitForSecondaryIdle(controller);
+    assert.equal(games[0].heroImage, 'file://canonical-0-hero.webp');
+    assert.equal(games[0].logo, 'file://canonical-0-logo.webp');
+    assert.ok(calls.cacheAllAssets.filter(call => call.opts.reason === 'explore-secondary-hydration').length >= 2);
+});
+
 test('secondary hero/logo failure does not delay or remove painted cover', async () => {
     const special = { delay: 1, secondaryFail: new Set(['canonical-0']) };
     const { sandbox, games, cards, calls } = makeSandbox({ count: 1, concurrency: 1, cacheHits: 0, special });
@@ -379,7 +506,8 @@ test('failed, blocked, and negative results do not stall remaining Explore reque
     assert.equal(controller.failedByDisplayId.has('display-2'), true);
     assert.equal(controller.blockedByDisplayId.has('display-3'), true);
     assert.equal(controller.negativeByDisplayId.has('display-4'), true);
-    assert.equal(controller.completedByDisplayId.size, 12);
+    assert.equal(controller.completedByDisplayId.size, 15);
+    assert.equal([...controller.completedByDisplayId.values()].filter(item => item.fallback).length, 3);
     assert.equal(cards.get('display-14').img.src, 'file://canonical-14.webp');
 });
 test('pending result completed before mount applies only to matching card after mount', async () => {
