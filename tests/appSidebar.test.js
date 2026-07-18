@@ -328,7 +328,7 @@ test('sidebar.js: _readyToInstallRenderedGames=125 + canonical count=119 -> side
 // ─── 9. Smart sidebar counts ──────────────────────────────────────────────────
 
 test('sidebar.js: updateSmartSidebarCounts reads sbNavInstalled element', () => {
-    const fn = extractFn(SIDEBAR_JS, 'function updateSmartSidebarCounts()');
+    const fn = extractFn(SIDEBAR_JS, 'function _sbApplyInstalledCountToDom(');
     assert.match(fn, /getElementById\('sbNavInstalled'\)/);
 });
 
@@ -338,9 +338,24 @@ test('sidebar.js: updateSmartSidebarCounts reads sbNavReady element', () => {
 });
 
 test('sidebar.js: updateSmartSidebarCounts uses allGamesData and _agIsInstalled for installed badge', () => {
-    const fn = extractFn(SIDEBAR_JS, 'function updateSmartSidebarCounts()');
+    const fn = extractFn(SIDEBAR_JS, 'function _sbComputeInstalledCount(');
     assert.match(fn, /allGamesData/);
     assert.match(fn, /_agIsInstalled/);
+});
+
+test('sidebar.js: Installed count decreases are delayed to avoid transient scanner flicker', () => {
+    const fn = extractFn(SIDEBAR_JS, 'function _sbResolveStableInstalledCount(');
+    assert.match(fn, /nextCount >= _sbStableInstalledCount/);
+    assert.match(fn, /setTimeout/);
+    assert.match(fn, /_sbComputeInstalledCount\(\)/);
+    assert.match(fn, /confirmed <= pending\.count/);
+});
+
+test('sidebar.js: updateSmartSidebarCounts applies stable Installed count, not raw transient count', () => {
+    const fn = extractFn(SIDEBAR_JS, 'function updateSmartSidebarCounts()');
+    assert.match(fn, /_sbComputeInstalledCount\(\)/);
+    assert.match(fn, /_sbResolveStableInstalledCount\(/);
+    assert.match(fn, /_sbApplyInstalledCountToDom\(/);
 });
 
 test('sidebar.js: updateSmartSidebarCounts calls getReadyToInstallCount for ready badge', () => {
@@ -797,8 +812,8 @@ test('sidebar.js: renderSidebarLibraryPulse reads allGamesData (global from app.
     assert.match(fn, /allGamesData/);
 });
 
-test('sidebar.js: updateSmartSidebarCounts reads allGamesData (global from app.js)', () => {
-    const fn = extractFn(SIDEBAR_JS, 'function updateSmartSidebarCounts()');
+test('sidebar.js: Installed count helper reads allGamesData (global from app.js)', () => {
+    const fn = extractFn(SIDEBAR_JS, 'function _sbComputeInstalledCount()');
     assert.match(fn, /allGamesData/);
 });
 

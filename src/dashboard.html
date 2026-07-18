@@ -230,7 +230,7 @@
                 <div class="hero-vignette"></div>
                 <div class="hero-content">
                     <img id="heroLogo" class="hero-game-logo" src="" alt="Game Logo" style="display: none;">
-                    <h1 id="heroTitle" class="hero-game-title">Welcome to Baddel</h1>
+                    <h1 id="heroTitle" class="hero-game-title" style="display: none;"></h1>
                     <div class="hero-stats" id="heroStats" style="display: none;">
                         <span class="stat-badge playtime-stat"><span id="heroPlaytime">0h</span></span>
                         <span class="stat-badge">Last Played: <span id="heroLastPlayed">Never</span></span>
@@ -1020,88 +1020,26 @@
         
         <button class="gd-lightbox-nav next" onclick="gdNavLightbox(1)">&#10095;</button>
     </div>
-    <!-- ══════════════════════════════════════════
-         BADDEL SPLASH SCREEN LOADER — LETTERBOXED CINEMATIC
-    ══════════════════════════════════════════ -->
-    <div id="mainLoader" class="loader-container active">
-
-        <!-- Particle canvas -->
-        <canvas class="splash-canvas" id="splashCanvas"></canvas>
-
-        <!-- Scan line sweep -->
-        <div class="splash-scan" id="splashScan"></div>
-
-        <!-- Vignette -->
-        <div class="splash-vignette"></div>
-
-        <!-- Corner brackets -->
-        <div class="splash-corner splash-corner-tl"></div>
-        <div class="splash-corner splash-corner-tr"></div>
-        <div class="splash-corner splash-corner-bl"></div>
-        <div class="splash-corner splash-corner-br"></div>
-
-        <!-- Top HUD -->
-        <div class="splash-hud-top" id="splashHudTop">
-            <span class="splash-hud-text">BADDEL LAUNCHER · v2.0</span>
-            <div class="splash-hud-dot"></div>
-            <span class="splash-hud-text" id="splashHudClock">00:00:00</span>
-        </div>
-
-        <!-- Bottom HUD -->
-        <div class="splash-hud-bot" id="splashHudBot">
-            <span class="splash-hud-text">ALL LAUNCHERS · ONE HOME</span>
-            <span class="splash-hud-text" id="splashFrameCounter">00</span>
-        </div>
-
-        <!-- Center stage -->
+    <!-- BADDEL STARTUP LOADER -->
+    <div id="mainLoader" class="loader-container active" role="status" aria-live="polite" aria-busy="true">
         <div class="splash-center" id="splashCenter">
-
-            <!-- Logo with spinning rings -->
             <div class="splash-logo-wrap" id="splashLogoImg">
-                <div class="splash-ring-outer"></div>
-                <div class="splash-ring-inner"></div>
-
-                <!-- Premium SVG arc spinner -->
-                <svg class="splash-arc-svg" viewBox="0 0 116 116" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Outer orbit track -->
-                    <circle class="splash-arc-track" cx="58" cy="58" r="55"/>
-                    <!-- Tick marks at 0°, 90°, 180°, 270° -->
-                    <line class="splash-arc-tick" x1="58" y1="3"  x2="58" y2="7"  />
-                    <line class="splash-arc-tick" x1="113" y1="58" x2="109" y2="58"/>
-                    <line class="splash-arc-tick" x1="58" y1="113" x2="58" y2="109"/>
-                    <line class="splash-arc-tick" x1="3"  y1="58" x2="7"  y2="58" />
-                    <!-- Primary chasing arc -->
-                    <circle class="splash-arc-primary" cx="58" cy="58" r="55"/>
-                    <!-- Secondary trailing arc -->
-                    <circle class="splash-arc-secondary" cx="58" cy="58" r="55"/>
-                    <!-- Inner counter-spin arc (tighter radius) -->
-                    <circle class="splash-arc-inner" cx="58" cy="58" r="46"/>
-                </svg>
-                <div class="splash-logo-box">
-                    <img src="../assets/app_icon.png" class="splash-logo-img" alt="BADDEL">
-                </div>
+                <img src="../assets/app_icon.png" class="splash-logo-img" alt="Baddel app logo">
             </div>
 
-            <!-- Wordmark -->
             <div class="splash-wordstack">
-                <div class="splash-name" id="splashName">BADDEL</div>
-                <div class="splash-sub"  id="splashSub">Every launcher · One place</div>
+                <div class="splash-name" id="splashName">Baddel</div>
+                <div class="splash-sub" id="splashSub">Every launcher. One place.</div>
             </div>
 
-            <!-- Status row -->
             <div class="splash-status" id="splashStatus">
-                <div class="splash-status-dash"></div>
-                <div class="splash-status-text" id="splashStatusText">INITIALIZING</div>
-                <div class="splash-status-cursor"></div>
-                <div class="splash-status-dash"></div>
+                <div class="splash-status-text" id="splashStatusText">Preparing your library</div>
             </div>
             <div class="splash-status-note" id="splashStatusNote"></div>
 
-        </div>
-
-        <!-- Progress bar -->
-        <div class="splash-progress-track">
-            <div class="splash-progress-bar" id="splashProgressBar"></div>
+            <div class="splash-progress-track" aria-hidden="true">
+                <div class="splash-progress-bar" id="splashProgressBar"></div>
+            </div>
         </div>
     </div>
     

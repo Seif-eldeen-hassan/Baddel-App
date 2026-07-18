@@ -111,6 +111,33 @@ describe('Phase 2.13B: hero — updateHeroSection behaviour', () => {
             'cache hydration must happen before presentation selection'
         );
     });
+    it('updateHeroSection primes the visible game shell before async artwork hydration', () => {
+        const fn = getFunctionBody(HERO_JS, 'updateHeroSection');
+        assert.match(fn, /_homeHeroPrimeGameShell\s*\(\s*game\s*,\s*gameId\s*\)/);
+        assert.ok(
+            fn.indexOf('checkBackgroundAssets(game)') < fn.indexOf('_homeHeroPrimeGameShell(game, gameId)'),
+            'localStorage asset aliases must be applied before the immediate shell paint'
+        );
+        assert.ok(
+            fn.indexOf('_homeHeroPrimeGameShell(game, gameId)') < fn.indexOf('await _homeHeroHydrateCachedArtwork'),
+            'normal logo/title/stats/play controls must appear before awaiting cache hydration'
+        );
+    });
+    it('home hero shell priming renders normal controls from current game data', () => {
+        const fn = getFunctionBody(HERO_JS, '_homeHeroPrimeGameShell');
+        assert.match(fn, /getElementById\('heroLogo'\)/);
+        assert.match(fn, /getElementById\('heroTitle'\)/);
+        assert.match(fn, /getElementById\('heroStats'\)/);
+        assert.match(fn, /getElementById\('heroPlayBtn'\)/);
+        assert.match(fn, /getElementById\('heroSettingsBtn'\)/);
+        assert.match(fn, /game\.name/);
+        assert.match(fn, /formatPlaytime\(/);
+        assert.match(fn, /formatLastPlayed\(/);
+        assert.match(fn, /playBtn\.style\.display\s*=\s*'block'/);
+        assert.match(fn, /settingsBtn\.style\.display\s*=\s*'flex'/);
+        assert.match(fn, /triggerLaunchSequence\(gameId\)/);
+        assert.match(fn, /openGameSettings\(gameId\)/);
+    });
     it('updateHeroSection gets heroBg, heroLogo, heroTitle, heroStats elements', () => {
         const fn = getFunctionBody(HERO_JS, '_homeHeroCommit');
         assert.match(fn, /getElementById\('heroBg'\)/);

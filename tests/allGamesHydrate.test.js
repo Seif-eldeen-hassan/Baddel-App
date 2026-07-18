@@ -108,6 +108,32 @@ test('accounts.js: _agHydrateCachedCoversIntoAllGames uses cover-patch-fallback 
 
 // ── 3. cardPool is NOT cleared during cover hydration (simulated) ─────────────
 
+test('accounts.js: All Games first paint warms disk cached covers before rendering cards', () => {
+    assert.match(ACCOUNTS_JS, /async function _agWarmCachedCoversForGames\s*\(/,
+        'first-paint disk cache warm helper must exist');
+    assert.match(ACCOUNTS_JS, /__baddelLoadCachedArtworkForGame/,
+        'All Games cache lookup should reuse the shared cached artwork lookup');
+    const fnStart = ACCOUNTS_JS.indexOf('window.renderAllGamesView = async function');
+    assert.ok(fnStart !== -1, 'renderAllGamesView not found');
+    const fn = ACCOUNTS_JS.slice(fnStart, fnStart + 5000);
+    const warmIdx = fn.indexOf('_agWarmCachedCoversForGames(window._allGamesCache');
+    const renderIdx = fn.indexOf('_renderAllGamesViewModeAware(window._allGamesCache');
+    assert.ok(warmIdx !== -1, 'renderAllGamesView must warm cached covers for first paint');
+    assert.ok(renderIdx !== -1, 'renderAllGamesView must still render All Games cache');
+    assert.ok(warmIdx < renderIdx, 'cached covers must be warmed before first All Games card render');
+});
+
+test('accounts.js: All Games warms remaining cached covers in the background without full rerender', () => {
+    assert.match(ACCOUNTS_JS, /function _agWarmCachedCoversInBackground\s*\(/,
+        'background disk cache warm helper must exist');
+    const idx = ACCOUNTS_JS.indexOf('function _agWarmCachedCoversInBackground');
+    const body = ACCOUNTS_JS.slice(idx, idx + 1600);
+    assert.match(body, /_vsRender\(false,\s*['"]all-games-background-cache-warm['"]\)/,
+        'background cache warm should only do a soft virtual-scroll repaint');
+    assert.doesNotMatch(body, /_vsRender\(true/,
+        'background cache warm must not force a full virtual-scroll rerender');
+});
+
 test('hydrate: cardPool row wrappers are not removed when covers are patched in cardCache', () => {
     // Simulate the hydration cardCache-patching loop.
     // The key invariant: patching cardCache does not touch cardPool.
@@ -192,6 +218,21 @@ test('accounts.js: _renderAllGamesGrid has baddel_debug_vs instrumentation', () 
     const slice = ACCOUNTS_JS.slice(idx, idx + 600);
     assert.match(slice, /baddel_debug_vs/);
     assert.match(slice, /VSDBG.*_renderAllGamesGrid/);
+});
+
+test('accounts.js: empty grid render clears stale virtual scroller items', () => {
+    const idx = ACCOUNTS_JS.indexOf('function _renderAllGamesGrid(');
+    assert.ok(idx !== -1);
+    const fn = ACCOUNTS_JS.slice(idx, idx + 2600);
+    const emptyIdx = fn.indexOf('if (!games || games.length === 0)');
+    assert.ok(emptyIdx !== -1, 'empty render branch not found');
+    const emptyBranch = fn.slice(emptyIdx, emptyIdx + 900);
+    assert.match(emptyBranch, /_vs\.items\s*=\s*\[\]/,
+        'empty filtered results must clear stale virtual-scroller items');
+    assert.match(emptyBranch, /_vs\.cardPool\.clear\(\)/,
+        'empty filtered results must clear virtual row wrappers');
+    assert.match(emptyBranch, /clearTimeout\(_vs\._scrollSettleTimer\)/,
+        'empty filtered results must cancel delayed scroll-settle work');
 });
 
 test('accounts.js: _applyAgFilters has baddel_debug_vs instrumentation', () => {

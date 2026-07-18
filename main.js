@@ -869,6 +869,161 @@ async function isGameRunning(command, gamePath, gameName, gameId, isDebugTick = 
     }
 }
 
+function _quickSwitcherPlatformKey(game = {}) {
+    const text = [
+        game.scannerPlatform,
+        game.platform,
+        game.command,
+        game.path,
+        game.launchCommand,
+    ].filter(Boolean).join(' ').toLowerCase();
+
+    if (text.includes('steam')) return 'steam';
+    if (text.includes('epic') || text.includes('com.epicgames')) return 'epic';
+    if (text.includes('riot') || text.includes('valorant') || text.includes('leagueclient')) return 'riot';
+    if (text.includes('ea') || text.includes('origin')) return 'ea';
+    if (text.includes('ubisoft') || text.includes('uplay')) return 'ubisoft';
+    if (text.includes('discord')) return 'discord';
+    if (text.includes('rockstar')) return 'rockstar';
+    if (text.includes('xbox') || text.includes('microsoft') || text.includes('shell:appsfolder')) return 'xbox';
+    return _detectPlatform(game.command || game.path || '') || 'manual';
+}
+
+function _quickSwitcherArtworkUrl(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    if (/^(https?:|file:|data:|blob:)/i.test(raw)) return raw;
+    if (/^[a-zA-Z]:[\\/]/.test(raw) || raw.startsWith('\\\\')) {
+        const normalised = raw.replace(/\\/g, '/');
+        return encodeURI(`file:///${normalised.replace(/^\/+/, '')}`);
+    }
+    return '';
+}
+
+function _quickSwitcherArtwork(game = {}) {
+    const candidates = [
+        game.coverUrl,
+        game.image,
+        game.cover,
+        game.defaultImage,
+        game.posterImage,
+        game.coverImage,
+        game.boxArtUrl,
+        game.capsuleImage,
+        game.heroImage,
+        game.hero,
+    ];
+    for (const candidate of candidates) {
+        const url = _quickSwitcherArtworkUrl(candidate);
+        if (url) return url;
+    }
+    return '';
+}
+
+async function _findQuickSwitcherGameProcesses(game = {}, processes = null) {
+    let list = processes;
+    if (!list) {
+        const { default: psList } = await import('ps-list');
+        list = await psList();
+    }
+    const gameId = game.id;
+    const command = String(game.command || game.launchCommand || '').toLowerCase();
+    const gamePath = String(game.path || game.executablePath || '').toLowerCase().replace(/"/g, '').trim();
+    const explicitExes = collectExplicitExeCandidates(game);
+    const explicitPathHints = collectExplicitPathHints(game);
+    const gameExes = await getDynamicGameExes(gameId, gamePath);
+    const isRiotGame = (game.scannerPlatform === 'riot') ||
+        (String(game.platform || '').toLowerCase().includes('riot')) ||
+        command.includes('riotclientservices.exe');
+    const riotProduct = _getRiotProductForGame(game, command, game.name, gameId);
+    const ignored = new Set([
+        'explorer.exe', 'steam.exe', 'steamwebhelper.exe', 'epicgameslauncher.exe',
+        'epicwebhelper.exe', 'riotclientservices.exe', 'eadesktop.exe',
+        'ubisoftconnect.exe', 'upc.exe', 'cmd.exe', 'powershell.exe',
+        'electron.exe', 'baddel.exe', 'baddel launcher.exe',
+        'game.exe', 'launcher.exe', 'client.exe', 'host.exe',
+    ]);
+
+    const matches = [];
+    for (const p of list) {
+        const pid = Number(p.pid);
+        if (!pid || pid === process.pid) continue;
+        const pName = String(p.name || '').toLowerCase();
+        const pCmd = String(p.cmd || '').toLowerCase();
+        if (!pName || ignored.has(pName)) continue;
+
+        let confidence = null;
+        if (explicitExes.includes(pName)) confidence = 'high';
+        else if (explicitPathHints.some(hint => pCmd.includes(hint))) confidence = 'high';
+        else if (gameExes.includes(pName)) confidence = 'medium';
+        else if (isRiotGame && riotProduct && _riotExeMatchesProduct(pName, riotProduct)) confidence = 'medium';
+        else if (gamePath.length > 5 && pCmd.includes(gamePath)) confidence = 'medium';
+
+        if (confidence) {
+            matches.push({ pid, name: p.name || pName, confidence });
+        }
+    }
+    return matches;
+}
+
+async function getQuickSwitcherInstalledGames() {
+    const games = (getSavedGames() || [])
+        .filter(game => game && (game.command || game.path))
+        .sort((a, b) => String(a.name || '').localeCompare(String(b.name || '')));
+    let processes = [];
+    try {
+        const { default: psList } = await import('ps-list');
+        processes = await psList();
+    }
+    catch { processes = []; }
+
+    return Promise.all(games.map(async (game) => {
+        const runningProcesses = processes.length
+            ? await _findQuickSwitcherGameProcesses(game, processes)
+            : [];
+        return {
+            id: game.id,
+            name: game.name || 'Unknown Game',
+            platform: _quickSwitcherPlatformKey(game),
+            platformLabel: game.platform || game.scannerPlatform || _quickSwitcherPlatformKey(game),
+            artwork: _quickSwitcherArtwork(game),
+            isRunning: runningProcesses.length > 0,
+            runningCount: runningProcesses.length,
+        };
+    }));
+}
+
+async function endQuickSwitcherGame(gameId) {
+    const game = (getSavedGames() || []).find(g => String(g.id) === String(gameId)) || null;
+    if (!game) return { status: 'error', code: 'GAME_NOT_FOUND', message: 'Game not found.' };
+    const matches = await _findQuickSwitcherGameProcesses(game);
+    if (matches.length === 0) {
+        return { status: 'error', code: 'GAME_NOT_RUNNING', message: 'No running game process was found.' };
+    }
+
+    const ended = [];
+    const failed = [];
+    for (const match of matches) {
+        try {
+            process.kill(match.pid);
+            ended.push(match);
+        } catch (err) {
+            failed.push({ ...match, error: err?.message || 'Could not end process.' });
+        }
+    }
+
+    if (activeTrackers[game.id]) {
+        _endTrackerSession(game.id, activeTrackers[game.id], game.name, 'ended_by_user');
+    }
+
+    return {
+        status: failed.length === 0 ? 'ok' : 'partial',
+        ended,
+        failed,
+        message: failed.length === 0 ? 'Game ended.' : 'Some game processes could not be ended.',
+    };
+}
+
 
 function _normalizeUwpText(value) {
     return String(value || '')
@@ -2081,6 +2236,7 @@ const allAchievements = allSchemaAchievements.length
     require('./handlers/quickSwitcherHandlers').register(ipcMain, {
         quickSwitcher, quickSwitcherSettings, accountShortcuts,
         ipcValidation, switchAccountByPlatform, analytics,
+        getQuickSwitcherInstalledGames, endQuickSwitcherGame,
     });
 
     // Register the global hotkey and open the overlay on fire.

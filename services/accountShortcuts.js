@@ -87,8 +87,8 @@ function validateAccelerator(accelerator) {
     const keys = parts.filter(p => !new Set(['ctrl','shift','alt','super']).has(p.toLowerCase()));
 
     if (keys.length === 0) return { valid: false, error: 'Shortcut must include a non-modifier key.' };
-    if (mods.length < 2) {
-        return { valid: false, error: 'Use at least 2 modifier keys (e.g. Ctrl+Alt, Ctrl+Shift, Alt+Shift).' };
+    if (mods.length < 1) {
+        return { valid: false, error: 'Use at least one modifier key (e.g. Ctrl+H, Alt+H, Ctrl+Alt+H).' };
     }
     if (BLOCKED.has(norm)) {
         return { valid: false, error: 'This shortcut is reserved by the system. Try a different combination.' };

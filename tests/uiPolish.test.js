@@ -43,6 +43,26 @@ test('Task D: _normPlatform inline logic maps known aliases', () => {
     assert.match(APP_JS, /'ubisoft connect':\s*'ubisoft'/);
 });
 
+test('Ready to Install empty state uses the centered inline empty class', () => {
+    assert.match(ACC_JS, /empty-state ag-inline-empty/, 'RTI empty renderer should reuse the Installed/Favorites empty panel');
+    assert.match(ACC_JS, /class="empty-icon"/, 'RTI empty renderer should reuse the quiet empty icon');
+    assert.match(ACC_JS, /\.\.\. It's quiet in here \.\.\./, 'RTI empty renderer should reuse the quiet title');
+    assert.match(ACC_JS, /empty-subtext/, 'RTI empty renderer should reuse the empty subtext class');
+    assert.match(CSS, /\.ag-inline-empty\s*\{/, 'dashboard.css should only size the RTI empty panel');
+    assert.match(CSS, /\.ag-inline-empty\s*\{[\s\S]{0,220}grid-column:\s*1\s*\/\s*-1/,
+        'RTI empty state should span all game-grid columns');
+    assert.match(CSS, /\.ag-inline-empty\s*\{[\s\S]{0,260}min-height:\s*350px/,
+        'RTI empty state should reuse the non-scrolling empty panel height');
+    assert.doesNotMatch(CSS, /\.ag-inline-empty\s*\{[\s\S]{0,260}calc\(100vh/,
+        'RTI empty state should not force a viewport-height panel that creates scroll');
+    assert.doesNotMatch(
+        ACC_JS,
+        /No ready-to-install games found\.[\s\S]{0,300}style="padding:40px 0;width:100%;"/,
+        'RTI empty state should not rely on the cramped inline padding style'
+    );
+    assert.doesNotMatch(ACC_JS, /ag-inline-empty-web/, 'RTI empty renderer should not use the custom web motif');
+});
+
 test('Task D: applyFilters uses _normPlatform via _gameMatchesPlatformFilter helper', () => {
     // Platform filtering is delegated to _gameMatchesPlatformFilter which calls _normPlatform internally
     const filterBlock = APP_JS.slice(
@@ -1164,7 +1184,7 @@ test('accounts.js: renderAllGamesView handles suppressInitialLoading option', ()
 
 test('accounts.js: _renderAllGamesGrid preserves previous height before clearing innerHTML', () => {
     const fnStart = ACC_JS.indexOf('function _renderAllGamesGrid');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3400);
     const heightCapture = fn.indexOf('previousHeight');
     const resetMode     = fn.indexOf('_agResetAllGamesGridMode');
     const clear         = fn.indexOf('grid.innerHTML');
@@ -1175,7 +1195,7 @@ test('accounts.js: _renderAllGamesGrid preserves previous height before clearing
 
 test('accounts.js: _renderAllGamesGrid calls _agUnlockAllGamesLayout after _vsInit', () => {
     const fnStart = ACC_JS.indexOf('function _renderAllGamesGrid');
-    const fn = ACC_JS.slice(fnStart, fnStart + 2500);
+    const fn = ACC_JS.slice(fnStart, fnStart + 3400);
     const vsInitIdx  = fn.indexOf('_vsInit(');
     const unlockIdx  = fn.indexOf('_agUnlockAllGamesLayout');
     assert.ok(vsInitIdx  > -1, '_vsInit must be called');

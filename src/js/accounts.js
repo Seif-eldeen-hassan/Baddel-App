@@ -908,6 +908,17 @@ function _agCoverCacheKeys(game) {
 async function _agGetCachedImageAnyKey(game, type = 'cover') {
     if (!window.electronAPI?.getCachedImage) return null;
 
+    if (type === 'cover' && typeof window.__baddelLoadCachedArtworkForGame === 'function') {
+        const canonicalGame = {
+            id: game?.localGameId || game?.installedId || game?.id || game?.appid || game?.appId || game?.appName,
+        };
+        const cachedArtwork = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame, { types: ['cover'] })
+            .catch(() => null);
+        if (cachedArtwork?.cover && String(cachedArtwork.cover).startsWith('file://')) {
+            return cachedArtwork.cover;
+        }
+    }
+
     for (const key of _agCoverCacheKeys(game)) {
         try {
             const cached = await window.electronAPI.getCachedImage(key, type);
@@ -918,6 +929,63 @@ async function _agGetCachedImageAnyKey(game, type = 'cover') {
     }
 
     return null;
+}
+
+function _agApplyCachedCoverToGame(game, cover, source = 'disk-cache') {
+    if (!game || !cover || !String(cover).startsWith('file://')) return false;
+    const creatorCover = game.coverUrl || game.image || game.defaultImage;
+    if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(creatorCover, game)) return false;
+
+    game.coverUrl = cover;
+    game.image = cover;
+    game.defaultImage = cover;
+    game._agCoverPipelineDone = true;
+    game._agCoverInFlight = false;
+    game._agRemoteFallbackReady = false;
+    game._agArtworkWarmSource = source;
+    try {
+        const id = String(game.id ?? game.appName ?? game.title ?? '');
+        if (id) localStorage.setItem('cover_' + id, cover);
+    } catch {}
+    return true;
+}
+
+async function _agWarmCachedCoversForGames(games, { limit = 48, reason = 'all-games-first-paint' } = {}) {
+    const list = (Array.isArray(games) ? games : [])
+        .filter(game => game && !_agHasLocalCover(game))
+        .slice(0, Math.max(0, Number(limit) || 0));
+    if (!list.length) return 0;
+
+    let changed = 0;
+    let cursor = 0;
+    const concurrency = Math.max(1, Math.min(8, Number(window.__baddelAllGamesCacheWarmConcurrency || 6) || 6));
+    const worker = async () => {
+        while (cursor < list.length) {
+            const game = list[cursor++];
+            const cached = await _agGetCachedImageAnyKey(game, 'cover');
+            if (_agApplyCachedCoverToGame(game, cached, reason)) changed++;
+        }
+    };
+
+    await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, worker));
+    return changed;
+}
+
+function _agWarmCachedCoversInBackground(games, { skip = 48, reason = 'all-games-background-cache-warm' } = {}) {
+    const list = (Array.isArray(games) ? games : []).slice(Math.max(0, Number(skip) || 0));
+    if (!list.length) return;
+    const run = async () => {
+        const changed = await _agWarmCachedCoversForGames(list, { limit: list.length, reason });
+        if (changed && window._vs?.items === games && typeof window._vsRender === 'function') {
+            _agEnsureVirtualGridIntegrity('all-games-background-cache-warm');
+            window._vsRender(false, 'all-games-background-cache-warm');
+        }
+    };
+    if (typeof requestIdleCallback !== 'undefined') {
+        requestIdleCallback(() => { run().catch(() => {}); }, { timeout: 1200 });
+    } else {
+        setTimeout(() => { run().catch(() => {}); }, 120);
+    }
 }
 
 async function _agResolveCoverForGame(game, tier = 3) {
@@ -1965,6 +2033,15 @@ window.renderAllGamesView = async function(options = {}) {
         window._allGamesCache    = _agGetUserLibraryGames(_rawResolved);
 
         if (window._vs?.cardCache) window._vs.cardCache.clear();
+        const warmLimit = Number(window.__baddelAllGamesFirstPaintWarmLimit ?? 48);
+        await _agWarmCachedCoversForGames(window._allGamesCache, {
+            limit: warmLimit,
+            reason: 'all-games-first-paint',
+        });
+        _agWarmCachedCoversInBackground(window._allGamesCache, {
+            skip: warmLimit,
+            reason: 'all-games-background-cache-warm',
+        });
 
         _agPublishAllGamesCount(window._allGamesCache.length, 'render-all-games');
         // Snapshot filters before account option rebuild may reset _agState.account.
@@ -1995,6 +2072,10 @@ window.renderAllGamesView = async function(options = {}) {
             && typeof window.getCanonicalReadyToInstallGames === 'function') {
             const readyGames = window.getCanonicalReadyToInstallGames();
             if (Array.isArray(readyGames)) {
+                await _agWarmCachedCoversForGames(readyGames, {
+                    limit: Number(window.__baddelAllGamesFirstPaintWarmLimit ?? 48),
+                    reason: 'ready-to-install-first-paint',
+                });
                 _renderAllGamesViewModeAware(readyGames);
                 return;
             }
@@ -2188,6 +2269,8 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                         'installedOnly=' + filterSnapshot.agInstalledOnly,
                         'readyOnly=' + filterSnapshot.agReadyOnly);
                 }
+
+                _agRestoreFilterState(filterSnapshot, { validateAccount: true });
 
                 // Compute the new visible pool BEFORE any DOM mutations so we know
                 // whether a re-render is actually needed. Clearing grid styles
@@ -3297,10 +3380,31 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
     if (!games || games.length === 0) {
         if (window._agNoLinkedAccounts) return;
         grid.style.minHeight = '';
-        const emptyMsg = window.agReadyOnly
-            ? '<p>No ready-to-install games found.</p><p style="margin-top:8px;color:#666;font-size:0.85rem;">All your synced games are already installed, or connect Steam or Epic accounts to discover more.</p>'
-            : '<p>No games found.</p>';
-        grid.innerHTML = `<div class="accounts-empty" style="padding:40px 0;width:100%;">${emptyMsg}</div>`;
+        _vs.items = [];
+        _vs.cols = 0;
+        _vs.renderedStart = -1;
+        _vs.renderedEnd = -1;
+        _vs.cardPool.forEach(rowEl => rowEl.remove());
+        _vs.cardPool.clear();
+        _vs._gridTopDirty = true;
+        if (_vs._scrollSettleTimer) {
+            clearTimeout(_vs._scrollSettleTimer);
+            _vs._scrollSettleTimer = null;
+        }
+        if (window.agReadyOnly) {
+            grid.innerHTML = `
+                <div class="empty-state ag-inline-empty">
+                    <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="8" y1="12" x2="16" y2="12"></line>
+                    </svg>
+                    <div class="empty-title">... It's quiet in here ...</div>
+                    <div class="empty-subtext">No ready-to-install games found. Try changing your filters or connect Steam or Epic accounts.</div>
+                </div>
+            `;
+        } else {
+            grid.innerHTML = '<div class="accounts-empty ag-inline-empty"><p>No games found.</p></div>';
+        }
         _updateAgCount(0);
         return;
     }

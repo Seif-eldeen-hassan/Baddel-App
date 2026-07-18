@@ -646,6 +646,10 @@ function _jbiCacheBackedArtworkValue(value) {
     return (lower.startsWith('http://') || lower.startsWith('https://')) ? null : safe;
 }
 
+function _jbiDisplayArtworkValue(value) {
+    return _jbiSafeArtworkValue(value);
+}
+
 function _gcCacheBackedArtworkValue(value) {
     if (typeof isCacheBackedArtworkUrl === 'function') return isCacheBackedArtworkUrl(value);
     const safe = _jbiSafeArtworkValue(value);
@@ -731,7 +735,7 @@ function createRecentCard(game, isFeatured = false) {
     const displayGame = game;
     const selection = _jbiResolveArtworkSelection(displayGame);
     game = selection.game;
-    const displayImg = _jbiCacheBackedArtworkValue(selection.selectedValue) ||
+    const displayImg = _jbiDisplayArtworkValue(selection.selectedValue) ||
         'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
@@ -800,7 +804,7 @@ function createRecentCard(game, isFeatured = false) {
         }).then(() => {
             if (card.getAttribute('data-id') !== String(game.id)) return;
             const refreshed = _jbiResolveArtworkSelection(displayGame);
-            const refreshedValue = _jbiCacheBackedArtworkValue(refreshed.selectedValue);
+            const refreshedValue = _jbiDisplayArtworkValue(refreshed.selectedValue);
             if (refreshed.selectedType === 'hero' && refreshedValue && refreshedValue !== imgEl.src) {
                 imgEl.src = refreshedValue;
                 imgEl.style.opacity = '';
@@ -811,7 +815,7 @@ function createRecentCard(game, isFeatured = false) {
     let jbiCandidateIndex = 0;
     imgEl.onerror = () => {
         while (++jbiCandidateIndex < selection.candidates.length) {
-            const next = _jbiCacheBackedArtworkValue(selection.candidates[jbiCandidateIndex]);
+            const next = _jbiDisplayArtworkValue(selection.candidates[jbiCandidateIndex]);
             if (next) {
                 imgEl.src = next;
                 imgEl.style.opacity = '';

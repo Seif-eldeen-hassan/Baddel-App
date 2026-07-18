@@ -3,8 +3,7 @@
 // ============================================================
 
 // ============================================================
-// SPLASH SCREEN — Letterboxed cinematic loader (CSS-driven)
-// No canvas needed — bars + meta handled via CSS transitions
+// SPLASH SCREEN - minimal startup loader
 // ============================================================
 window.__baddelStartupMetrics = window.__baddelStartupMetrics || {
     rendererInitAt: (typeof performance !== 'undefined' && performance?.now) ? performance.now() : Date.now(),
@@ -52,35 +51,10 @@ const BADDEL_EMBEDDED_FALLBACK_COVER = 'data:image/svg+xml;charset=utf-8,' + enc
 );
 window.BADDEL_EMBEDDED_FALLBACK_COVER = window.BADDEL_EMBEDDED_FALLBACK_COVER || BADDEL_EMBEDDED_FALLBACK_COVER;
 
-window._splashTimers = window._splashTimers || new Set();
-window._splashIntervals = window._splashIntervals || new Set();
-window._splashRafId = null;
-window._splashAudioContext = null;
-window._stopSplashCanvas = () => {
-    if (window._splashRafId != null && typeof cancelAnimationFrame === 'function') {
-        cancelAnimationFrame(window._splashRafId);
-    }
-    window._splashRafId = null;
-    for (const timer of window._splashTimers || []) clearTimeout(timer);
-    for (const interval of window._splashIntervals || []) clearInterval(interval);
-    window._splashTimers?.clear?.();
-    window._splashIntervals?.clear?.();
-    if (window._splashAudioContext?.close) {
-        window._splashAudioContext.close().catch(() => {});
-    }
-    window._splashAudioContext = null;
-    window._splashCounterInterval = null;
-    window._splashClockInterval = null;
-};
-
-// ── Runtime error capture ─────────────────────────────────────────────────────
-// In packaged builds these forward unhandled errors to the main process which
-// writes them to protected-renderer-runtime.log in userData for post-install
-// diagnosis.
-
+// Runtime errors are forwarded in packaged builds for post-install diagnosis.
 window.onerror = function (msg, src, line, col, err) {
     const text = '[onerror] ' + msg + ' at ' + src + ':' + line + ':' + col +
-                 (err ? ' — ' + (err.stack || err) : '');
+                 (err ? ' - ' + (err.stack || err) : '');
     console.error(text);
     try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(text); } catch (_) {}
 };
@@ -92,303 +66,28 @@ window.onunhandledrejection = function (ev) {
     try { if (window.electronAPI && window.electronAPI.logRuntimeError) window.electronAPI.logRuntimeError(text); } catch (_) {}
 };
 
-// ============================================================
-// SPLASH AUDIO — Cinematic swell, 2-3 seconds.
-// Built entirely with Web Audio oscillators + reverb convolution.
-// First launch: full orchestral-style pad swell
-// Return visit:  short soft chord bloom
-// ============================================================
-function playSplashSound() {
-    try {
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        if (!AudioCtx) return;
-        const ctx = new AudioCtx();
-        window._splashAudioContext = ctx;
-
-        const isFirst = !localStorage.getItem('baddel_launched_before');
-        if (isFirst) localStorage.setItem('baddel_launched_before', '1');
-
-        const master = ctx.createGain();
-        master.gain.setValueAtTime(0, ctx.currentTime);
-        master.connect(ctx.destination);
-
-        // ── Shared reverb tail (convolution via noise impulse) ──
-        function makeReverb(duration, decay) {
-            const len  = ctx.sampleRate * duration;
-            const buf  = ctx.createBuffer(2, len, ctx.sampleRate);
-            for (let c = 0; c < 2; c++) {
-                const d = buf.getChannelData(c);
-                for (let i = 0; i < len; i++) {
-                    d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, decay);
-                }
-            }
-            const conv = ctx.createConvolver();
-            conv.buffer = buf;
-            return conv;
-        }
-        const reverb = makeReverb(2.8, 2.2);
-        const reverbGain = ctx.createGain();
-        reverbGain.gain.setValueAtTime(0.42, ctx.currentTime);
-        reverb.connect(reverbGain);
-        reverbGain.connect(master);
-
-        // ── Helper: single sine voice with slow attack & release ──
-        function voice(freq, startAt, attackDur, holdDur, releaseDur, peakGain) {
-            const osc  = ctx.createOscillator();
-            const gain = ctx.createGain();
-            osc.type = 'sine';
-            osc.frequency.setValueAtTime(freq, ctx.currentTime + startAt);
-            gain.gain.setValueAtTime(0, ctx.currentTime + startAt);
-            gain.gain.linearRampToValueAtTime(peakGain, ctx.currentTime + startAt + attackDur);
-            gain.gain.setValueAtTime(peakGain, ctx.currentTime + startAt + attackDur + holdDur);
-            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startAt + attackDur + holdDur + releaseDur);
-            osc.connect(gain);
-            gain.connect(master);  // dry
-            gain.connect(reverb);  // wet
-            const stopAt = ctx.currentTime + startAt + attackDur + holdDur + releaseDur + 0.05;
-            osc.start(ctx.currentTime + startAt);
-            osc.stop(stopAt);
-        }
-
-        // ── Soft noise breath — the "air" that opens the scene ──
-        function breathLayer(startAt, duration, peakGain, hpfFreq) {
-            const bufLen = ctx.sampleRate * duration;
-            const buf    = ctx.createBuffer(1, bufLen, ctx.sampleRate);
-            const data   = buf.getChannelData(0);
-            for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
-            const src  = ctx.createBufferSource();
-            const hpf  = ctx.createBiquadFilter();
-            const lpf  = ctx.createBiquadFilter();
-            const gain = ctx.createGain();
-            hpf.type = 'highpass'; hpf.frequency.value = hpfFreq;
-            lpf.type = 'lowpass';  lpf.frequency.value = hpfFreq * 3.5;
-            src.buffer = buf;
-            gain.gain.setValueAtTime(0, ctx.currentTime + startAt);
-            gain.gain.linearRampToValueAtTime(peakGain, ctx.currentTime + startAt + duration * 0.35);
-            gain.gain.linearRampToValueAtTime(0, ctx.currentTime + startAt + duration);
-            src.connect(hpf); hpf.connect(lpf); lpf.connect(gain); gain.connect(reverb);
-            src.start(ctx.currentTime + startAt);
-            src.stop(ctx.currentTime + startAt + duration + 0.05);
-        }
-
-        if (isFirst) {
-            // ── FIRST LAUNCH: full cinematic swell (~2.8s) ──────────
-            // Root chord: Cm — C3 · Eb3 · G3 · Bb3 (film score "epic minor")
-            // Then resolves up a 5th — feels like "opening"
-
-            // Air breath — enters first, sets the space
-            breathLayer(0.0, 2.6, 0.06, 800);
-
-            // Bass foundation — slow bloom
-            voice(65.41,  0.00, 0.55, 0.80, 1.20, 0.28);  // C2
-            voice(130.81, 0.05, 0.50, 0.85, 1.10, 0.22);  // C3
-
-            // Chord tones — staggered entry, feels like strings coming in
-            voice(155.56, 0.10, 0.55, 0.90, 1.00, 0.18);  // Eb3
-            voice(196.00, 0.18, 0.52, 0.90, 1.00, 0.18);  // G3
-            voice(233.08, 0.28, 0.50, 0.85, 0.95, 0.14);  // Bb3
-
-            // Upper register — shimmer layer (2 octaves up, very soft)
-            voice(261.63, 0.30, 0.60, 0.70, 1.00, 0.08);  // C4
-            voice(392.00, 0.38, 0.55, 0.65, 0.95, 0.06);  // G4
-
-            // Resolution tone — a 5th above root, arrives late, lifts the feeling
-            voice(293.66, 0.65, 0.65, 0.60, 1.10, 0.10);  // D4 (brightens)
-            voice(391.99, 0.70, 0.60, 0.55, 1.00, 0.07);  // G4
-
-            // Master envelope — slow in, hold, slow out
-            master.gain.setValueAtTime(0, ctx.currentTime);
-            master.gain.linearRampToValueAtTime(0.70, ctx.currentTime + 0.40);
-            master.gain.setValueAtTime(0.70, ctx.currentTime + 1.80);
-            master.gain.linearRampToValueAtTime(0, ctx.currentTime + 2.90);
-
-        } else {
-            // ── RETURN VISIT: short 2-voice chord bloom (~1.4s) ──────
-            breathLayer(0.0, 1.2, 0.04, 1000);
-
-            voice(130.81, 0.00, 0.30, 0.45, 0.55, 0.22);  // C3
-            voice(196.00, 0.05, 0.30, 0.45, 0.55, 0.18);  // G3
-            voice(261.63, 0.10, 0.28, 0.40, 0.50, 0.12);  // C4
-
-            master.gain.setValueAtTime(0, ctx.currentTime);
-            master.gain.linearRampToValueAtTime(0.60, ctx.currentTime + 0.25);
-            master.gain.setValueAtTime(0.60, ctx.currentTime + 0.80);
-            master.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.45);
-        }
-
-    } catch (e) {
-        console.warn('[Baddel] Audio init failed:', e);
-    }
+function stopSplash() {
+    const loader = document.getElementById('mainLoader');
+    if (!loader) return;
+    loader.classList.remove('splash-running');
+    loader.setAttribute('aria-busy', 'false');
 }
+window.stopSplash = stopSplash;
+window._stopSplashCanvas = stopSplash;
 
-// SPLASH ANIMATION — Letterboxed cinematic sequence
-// ============================================================
 function runSplash() {
-    playSplashSound();
-    const splashSetTimeout = (fn, ms) => {
-        const id = setTimeout(() => {
-            window._splashTimers.delete(id);
-            fn();
-        }, ms);
-        window._splashTimers.add(id);
-        return id;
-    };
-    const splashSetInterval = (fn, ms) => {
-        const id = setInterval(fn, ms);
-        window._splashIntervals.add(id);
-        return id;
-    };
-
-    // ── Element refs ────────────────────────────────────
-    const canvas    = document.getElementById('splashCanvas');
-    const scanLine  = document.getElementById('splashScan');
-    const corners   = document.querySelectorAll('.splash-corner');
-    const hudTop    = document.getElementById('splashHudTop');
-    const hudBot    = document.getElementById('splashHudBot');
-    const hudClock  = document.getElementById('splashHudClock');
-    const frameEl   = document.getElementById('splashFrameCounter');
-    const logoWrap  = document.getElementById('splashLogoImg');
-    const name      = document.getElementById('splashName');
-    const sub       = document.getElementById('splashSub');
-    const statusRow = document.getElementById('splashStatus');
+    const loader = document.getElementById('mainLoader');
+    if (!loader || loader.classList.contains('splash-running')) return;
+    loader.style.opacity = '';
+    loader.style.visibility = '';
+    loader.style.pointerEvents = '';
+    loader.classList.add('splash-running');
+    loader.setAttribute('aria-busy', 'true');
     const statusTxt = document.getElementById('splashStatusText');
-    const bar       = document.getElementById('splashProgressBar');
-
-    if (!name) return;
-
-    // ── Particle canvas ─────────────────────────────────
-    if (canvas) {
-        const ctx = canvas.getContext('2d');
-        const W   = canvas.width  = canvas.offsetWidth  || window.innerWidth;
-        const H   = canvas.height = canvas.offsetHeight || window.innerHeight;
-        const particles = Array.from({ length: 85 }, () => ({
-            x: Math.random() * W, y: Math.random() * H,
-            r: Math.random() * 1.2 + 0.3,
-            vx: (Math.random() - 0.5) * 0.18,
-            vy: (Math.random() - 0.5) * 0.18,
-            alpha: Math.random() * 0.32 + 0.05,
-            phase: Math.random() * Math.PI * 2,
-        }));
-
-        function drawParticles(t) {
-            ctx.clearRect(0, 0, W, H);
-            particles.forEach(p => {
-                p.x = (p.x + p.vx + W) % W;
-                p.y = (p.y + p.vy + H) % H;
-                const pulse = 0.6 + 0.4 * Math.sin(t * 0.0008 + p.phase);
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
-                ctx.fillStyle = `rgba(255,255,255,${p.alpha * pulse})`;
-                ctx.fill();
-            });
-            window._splashRafId = requestAnimationFrame(drawParticles);
-        }
-        splashSetTimeout(() => {
-            canvas.classList.add('visible');
-            window._splashRafId = requestAnimationFrame(drawParticles);
-        }, 40);
+    if (statusTxt && !statusTxt.textContent.trim()) {
+        statusTxt.textContent = 'Preparing your library';
     }
-
-    // ── Scan line sweep ─────────────────────────────────
-    if (scanLine) {
-        splashSetTimeout(() => {
-            const H = window.innerHeight;
-            scanLine.style.opacity = '1';
-            scanLine.style.transition = 'top 0.35s cubic-bezier(.4,0,.6,1)';
-            scanLine.style.top = '0px';
-            requestAnimationFrame(() => requestAnimationFrame(() => {
-                scanLine.style.top = H + 'px';
-                splashSetTimeout(() => {
-                    scanLine.style.opacity = '0';
-                    scanLine.style.top = '-2px';
-                    scanLine.style.transition = 'none';
-                }, 380);
-            }));
-        }, 40);
-    }
-
-    // ── Corners ─────────────────────────────────────────
-    splashSetTimeout(() => {
-        corners.forEach(c => c.classList.add('visible'));
-    }, 80);
-
-    // ── HUD top ──────────────────────────────────────────
-    splashSetTimeout(() => {
-        if (hudTop) hudTop.classList.add('visible');
-        if (hudClock) {
-            const tick = () => {
-                const now = new Date();
-                hudClock.textContent = [now.getHours(), now.getMinutes(), now.getSeconds()]
-                    .map(n => String(n).padStart(2, '0')).join(':');
-            };
-            tick();
-            window._splashClockInterval = splashSetInterval(tick, 1000);
-        }
-    }, 100);
-
-    // ── HUD bottom + frame counter ───────────────────────
-    splashSetTimeout(() => {
-        if (hudBot) hudBot.classList.add('visible');
-        if (frameEl) {
-            let f = 0;
-            window._splashCounterInterval = splashSetInterval(() => {
-                f++;
-                frameEl.textContent = String(f).padStart(2, '0');
-                if (f >= 30) {
-                    clearInterval(window._splashCounterInterval);
-                    window._splashIntervals.delete(window._splashCounterInterval);
-                    window._splashCounterInterval = null;
-                }
-            }, 33);
-        }
-    }, 120);
-
-    // ── Logo ring + logo ─────────────────────────────────
-    splashSetTimeout(() => {
-        if (logoWrap) logoWrap.classList.add('visible');
-    }, 140);
-
-    // ── Name wipe ────────────────────────────────────────
-    splashSetTimeout(() => {
-        name.classList.add('visible');
-    }, 160);
-
-    // ── Tagline ──────────────────────────────────────────
-    splashSetTimeout(() => {
-        if (sub) sub.classList.add('visible');
-    }, 200);
-
-    // ── Status row + cycle ───────────────────────────────
-    splashSetTimeout(() => {
-        if (statusRow) statusRow.classList.add('visible');
-        if (statusTxt) {
-            const messages = ['STARTING', 'OPENING HOME', 'READY'];
-            let idx = 0;
-            const iv = splashSetInterval(() => {
-                idx++;
-                statusTxt.style.opacity = '0';
-                splashSetTimeout(() => {
-                    statusTxt.textContent = messages[idx];
-                    statusTxt.style.opacity = '1';
-                }, 80);
-                if (idx >= messages.length - 1) {
-                    clearInterval(iv);
-                    window._splashIntervals.delete(iv);
-                }
-            }, 180);
-        }
-    }, 220);
-
-    // ── Progress bar fills over 3s ───────────────────────
-    splashSetTimeout(() => {
-        if (bar) {
-            bar.style.transition = 'transform 0.45s ease-in-out';
-            bar.style.width = '45%';
-            bar.style.transform = 'translateX(140%)';
-        }
-    }, 80);
 }
-
 // ---- State ----
 let allGamesData = [];
 window.allGamesData = allGamesData; // expose to accounts.js from the start
@@ -668,8 +367,7 @@ function _sanitizeStartupMetricNumber(value) {
 }
 
 function _setStartupLoaderText(text, note = null) {
-    const clean = String(text || '').trim();
-    if (!clean) return;
+    const clean = 'Preparing your library';
     const targets = [
         document.getElementById('loaderStatus'),
         document.getElementById('splashStatusText'),
@@ -971,8 +669,8 @@ function renderHomeLoadingState() {
         heroBg.classList.add('home-hero-skeleton');
     }
     if (title) {
-        title.innerText = 'Preparing your library...';
-        title.style.display = 'block';
+        title.innerText = '';
+        title.style.display = 'none';
     }
     if (logo) logo.style.display = 'none';
     if (stats) stats.style.display = 'none';
@@ -1253,9 +951,7 @@ async function initSystem() {
         });
     }
 
-    // Minimum time the splash stays visible — ensures animation plays fully
-    // even when data loads instantly (cached / fast machine).
-    const SPLASH_MIN_MS = Number(window.__baddelSplashMinMs ?? 450);
+    const SPLASH_MIN_MS = Number(window.__baddelSplashMinMs ?? 0);
     const SPLASH_FADE_MS = Number(window.__baddelSplashFadeMs ?? 120);
     const splashStart   = _baddelPerfNow();
 
@@ -2751,6 +2447,8 @@ function _mergeCanonicalArtworkAcrossLibrary(updatedGames, previousGames = []) {
 let _libraryUpdateQueuedPayload = null;
 let _libraryUpdateTimer = null;
 let _lastLibraryRenderSnapshot = null;
+let _pendingInstalledDropPayload = null;
+let _pendingInstalledDropTimer = null;
 
 function _artValue(game, type) {
     const item = game?.artworkState?.version === 2 ? game.artworkState[type] : null;
@@ -2785,6 +2483,38 @@ function _librarySnapshot(games) {
         byId: new Map(entries.map(entry => [entry.id, entry])),
         order: entries.map(entry => entry.id).join('|'),
     };
+}
+
+function _countDirectInstalledGames(games) {
+    return (Array.isArray(games) ? games : []).filter(game => (
+        game?.path || game?.command || game?.isInstalled
+    )).length;
+}
+
+function _shouldDeferInstalledLibraryDrop(mergedGames, options = {}) {
+    if (options.confirmedInstalledDrop === true) return false;
+    const previousCount = _countDirectInstalledGames(allGamesData);
+    const nextCount = _countDirectInstalledGames(mergedGames);
+    return previousCount > 0 && nextCount < previousCount;
+}
+
+function _deferInstalledLibraryDrop(updatedGames, mergedGames) {
+    _pendingInstalledDropPayload = updatedGames;
+    if (_pendingInstalledDropTimer) return true;
+    _pendingInstalledDropTimer = setTimeout(() => {
+        const payload = _pendingInstalledDropPayload;
+        _pendingInstalledDropPayload = null;
+        _pendingInstalledDropTimer = null;
+        _processLibraryUpdatedPayload(payload, { confirmedInstalledDrop: true })
+            .catch(err => console.warn('[LibraryUpdate] deferred installed-count drop failed:', err));
+    }, 1500);
+    try {
+        console.info('[LibraryUpdate] deferred transient installed-count drop', {
+            previousCount: _countDirectInstalledGames(allGamesData),
+            nextCount: _countDirectInstalledGames(mergedGames),
+        });
+    } catch (_) {}
+    return true;
 }
 
 function _classifyLibrarySnapshot(prev, next) {
@@ -2865,9 +2595,18 @@ function _renderStructuralLibraryUpdate() {
     }
 }
 
-async function _processLibraryUpdatedPayload(updatedGames) {
+async function _processLibraryUpdatedPayload(updatedGames, options = {}) {
     await window.__baddelRefreshCanonicalGamesRegistry?.('library' + '-updated');
     const mergedGames = _dedupeDelegatedLaunchProducts(_mergeCanonicalArtworkAcrossLibrary(updatedGames, allGamesData));
+    if (_shouldDeferInstalledLibraryDrop(mergedGames, options)) {
+        _deferInstalledLibraryDrop(updatedGames, mergedGames);
+        return;
+    }
+    if (_pendingInstalledDropTimer) {
+        clearTimeout(_pendingInstalledDropTimer);
+        _pendingInstalledDropTimer = null;
+        _pendingInstalledDropPayload = null;
+    }
     const nextSnapshot = _librarySnapshot(mergedGames);
     const decision = _classifyLibrarySnapshot(_lastLibraryRenderSnapshot, nextSnapshot);
     allGamesData = mergedGames;

@@ -117,6 +117,58 @@ function _homeHeroArtworkFor(game) {
     };
 }
 
+function _homeHeroPrimeGameShell(game, gameId) {
+    const bgImg = document.getElementById('heroBg');
+    const logoImg = document.getElementById('heroLogo');
+    const titleTxt = document.getElementById('heroTitle');
+    const statsDiv = document.getElementById('heroStats');
+    const actionsDiv = document.querySelector('.hero-actions');
+    const playBtn = document.getElementById('heroPlayBtn');
+    const settingsBtn = document.getElementById('heroSettingsBtn');
+    if (!game || !titleTxt || !statsDiv || !playBtn) return;
+
+    const art = _homeHeroArtworkFor(game);
+    const immediateBg = safeImageUrl(art.bg);
+    const immediateLogo = safeImageUrl(art.logo);
+    if (bgImg && immediateBg && bgImg.dataset.lastGoodBg !== immediateBg) {
+        const sanitized = immediateBg.replace(/\\/g, '/').replace(/'/g, "\\'");
+        bgImg.style.backgroundImage = `url('${sanitized}')`;
+    }
+
+    if (logoImg && immediateLogo) {
+        logoImg.onerror = null;
+        if (logoImg.src !== immediateLogo) logoImg.src = immediateLogo;
+        logoImg.style.display = 'block';
+        titleTxt.innerText = game.name || '';
+        titleTxt.style.display = 'none';
+    } else {
+        if (logoImg) logoImg.style.display = 'none';
+        titleTxt.innerText = game.name || '';
+        titleTxt.style.display = game.name ? 'block' : 'none';
+    }
+
+    const pData = playtimeData[game.id] || { totalMinutes: 0, lastPlayed: null };
+    const heroLastPlayedTs = typeof _agResolveLastPlayedTimestamp === 'function'
+        ? _agResolveLastPlayedTimestamp(game)
+        : pData.lastPlayed;
+    statsDiv.innerHTML = `
+        <span class="stat-badge playtime-stat"><span id="heroPlaytime">${formatPlaytime(pData.totalMinutes)}</span></span>
+        <span class="stat-badge">Last Played: <span id="heroLastPlayed">${formatLastPlayed(heroLastPlayedTs)}</span></span>
+    `;
+    statsDiv.style.display = 'flex';
+    playBtn.style.display = 'block';
+    playBtn.onclick = () => triggerLaunchSequence(gameId);
+
+    if (settingsBtn) {
+        settingsBtn.style.display = 'flex';
+        settingsBtn.style.width = '48px';
+        settingsBtn.style.height = '48px';
+        settingsBtn.style.fontSize = '1.2rem';
+        if (actionsDiv) actionsDiv.appendChild(settingsBtn);
+        settingsBtn.onclick = () => openGameSettings(gameId);
+    }
+}
+
 async function _homeHeroHydrateCachedArtwork(game, source = 'hero', options = {}) {
     if (!game || !window.__baddelLoadCachedArtworkForGame) return { coverHit: false, heroHit: false, logoHit: false };
     const canonicalGame = { id: game.localGameId || game.installedId || game.id };
@@ -175,6 +227,7 @@ function _homeHeroCommit(payload) {
                 const sanitized = bg.replace(/\\/g, '/').replace(/'/g, "\\'");
                 bgImg.style.backgroundImage = `url('${sanitized}')`;
             }
+            bgImg.dataset.lastGoodBg = bg;
         } else if (!bgImg.dataset.lastGoodBg && !bgImg.style.backgroundImage) {
             bgImg.style.backgroundImage = 'linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%)';
         }
@@ -282,6 +335,7 @@ async function updateHeroSection(gameId, options) {
 
     // Hydrate hero/logo from localStorage and cache aliases before reading the fields
     checkBackgroundAssets(game);
+    _homeHeroPrimeGameShell(game, gameId);
     await _homeHeroHydrateCachedArtwork(game, options.reason || 'updateHeroSection', { types: ['cover', 'hero', 'logo'] });
     if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
     const art = _homeHeroArtworkFor(game);

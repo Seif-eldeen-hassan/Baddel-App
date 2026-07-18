@@ -176,6 +176,16 @@ test('_agRenderAccountFilterOptions logs when account is dropped', () => {
         assert.ok(restoreIdx !== -1, '_agRestoreFilterState(filterSnapshot) must appear in unchanged-pool path');
     });
 
+    test('onLibraryUpdated: restores filters before computing background pool signature', () => {
+        const snapIdx    = handlerBody.indexOf('filterSnapshot = _agSnapshotFilterState()');
+        const restoreIdx = handlerBody.indexOf('_agRestoreFilterState(filterSnapshot', snapIdx);
+        const poolIdx    = handlerBody.indexOf('_agBuildFilteredPool({ cache: _bgBase, useCanonical: _bgUseCanonical })');
+        assert.ok(snapIdx !== -1, 'filterSnapshot not found');
+        assert.ok(restoreIdx !== -1, 'early _agRestoreFilterState not found');
+        assert.ok(poolIdx !== -1, 'background _agBuildFilteredPool not found');
+        assert.ok(restoreIdx < poolIdx, 'filters must be restored before computing the background pool');
+    });
+
     test('onLibraryUpdated: calls _agRestoreFilterState in changed-pool path (before _applyAgFilters)', () => {
         // There must be a restore call before _applyAgFilters in the changed-pool path
         const applyIdx   = handlerBody.indexOf('_applyAgFilters(');

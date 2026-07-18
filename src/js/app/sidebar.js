@@ -223,11 +223,10 @@ function renderSidebarLibraryPulse() {
 
     // Installed — use the same predicate as the Installed Games filter (_agIsInstalled from accounts.js)
     if (instEl) {
-        if (games.length > 0 && typeof _agIsInstalled === 'function') {
-            const installedCount = games.filter(g => {
-                try { return _agIsInstalled(g); } catch (_) { return false; }
-            }).length;
-            instEl.textContent = installedCount;
+        const installedCount = _sbComputeInstalledCount();
+        if (installedCount !== null) {
+            const stableCount = _sbResolveStableInstalledCount(installedCount, 'library-pulse');
+            instEl.textContent = stableCount > 0 ? String(stableCount) : '—';
         } else {
             instEl.textContent = '—';
         }
@@ -296,12 +295,67 @@ function updateSidebarPlatformDots() {
     ).join('');
 }
 
+let _sbStableInstalledCount = null;
+let _sbPendingInstalledDrop = null;
+let _sbPendingInstalledTimer = null;
+
+function _sbComputeInstalledCount() {
+    if (!Array.isArray(allGamesData) || typeof _agIsInstalled !== 'function') return null;
+    return allGamesData.filter(g => { try { return _agIsInstalled(g); } catch (_) { return false; } }).length;
+}
+
+function _sbApplyInstalledCountToDom(count) {
+    const navInst = document.getElementById('sbNavInstalled');
+    if (navInst) navInst.textContent = count > 0 ? String(count) : '—';
+
+    const instEl = document.getElementById('sbInstalledGames');
+    if (instEl) instEl.textContent = count > 0 ? String(count) : '—';
+}
+
+function _sbResolveStableInstalledCount(nextCount, source = 'sidebar-counts') {
+    if (!Number.isInteger(nextCount) || nextCount < 0) return _sbStableInstalledCount;
+
+    if (_sbStableInstalledCount === null || nextCount >= _sbStableInstalledCount) {
+        _sbStableInstalledCount = nextCount;
+        _sbPendingInstalledDrop = null;
+        if (_sbPendingInstalledTimer) {
+            clearTimeout(_sbPendingInstalledTimer);
+            _sbPendingInstalledTimer = null;
+        }
+        return _sbStableInstalledCount;
+    }
+
+    _sbPendingInstalledDrop = {
+        count: nextCount,
+        source,
+        requestedAt: Date.now(),
+    };
+
+    if (!_sbPendingInstalledTimer) {
+        _sbPendingInstalledTimer = setTimeout(() => {
+            _sbPendingInstalledTimer = null;
+            const pending = _sbPendingInstalledDrop;
+            if (!pending) return;
+            const confirmed = _sbComputeInstalledCount();
+            if (Number.isInteger(confirmed) && confirmed <= pending.count) {
+                _sbStableInstalledCount = confirmed;
+                _sbPendingInstalledDrop = null;
+                _sbApplyInstalledCountToDom(confirmed);
+            } else {
+                _sbPendingInstalledDrop = null;
+            }
+        }, 1500);
+    }
+
+    return _sbStableInstalledCount;
+}
+
 function updateSmartSidebarCounts() {
     // Installed count badge in nav
-    const navInst = document.getElementById('sbNavInstalled');
-    if (navInst && Array.isArray(allGamesData) && typeof _agIsInstalled === 'function') {
-        const n = allGamesData.filter(g => { try { return _agIsInstalled(g); } catch(_) { return false; } }).length;
-        navInst.textContent = n > 0 ? n : '—';
+    const nextInstalledCount = _sbComputeInstalledCount();
+    if (nextInstalledCount !== null) {
+        const stableCount = _sbResolveStableInstalledCount(nextInstalledCount, 'smart-sidebar');
+        if (stableCount !== null) _sbApplyInstalledCountToDom(stableCount);
     }
     // Ready to Install — show real count, "…" while loading, "—" only on startup.
     const navReady = document.getElementById('sbNavReady');

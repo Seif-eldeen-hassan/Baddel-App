@@ -96,10 +96,10 @@ test('validateAccelerator: rejects single letter', () => {
     assert.equal(svc.validateAccelerator('A').valid, false);
 });
 
-test('validateAccelerator: rejects single modifier + key (only 1 modifier)', () => {
+test('validateAccelerator: accepts single modifier + key', () => {
     const r = svc.validateAccelerator('Ctrl+H');
-    assert.equal(r.valid, false);
-    assert.match(r.error, /modifier/i);
+    assert.equal(r.valid, true);
+    assert.equal(r.normalized, 'Ctrl+H');
 });
 
 test('validateAccelerator: rejects Ctrl+C (blocked)', () => {
@@ -370,11 +370,11 @@ test('platform-panels.js defines validateShortcutCapture', () => {
     assert.match(PLATFORM_PANELS_JS, /function validateShortcutCapture/);
 });
 
-test('validateShortcutCapture: Ctrl+K is invalid (only 1 modifier)', () => {
+test('validateShortcutCapture: Ctrl+K is valid with one modifier', () => {
     const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
     const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 3000);
-    // The function must check modifier count < 2 and return valid:false
-    assert.match(fn, /normMods\.length < 2/);
+    assert.match(fn, /normMods\.length < 1/);
+    assert.doesNotMatch(fn, /normMods\.length < 2/);
 });
 
 test('validateShortcutCapture: blocks Ctrl+C, Ctrl+S, Alt+Tab', () => {
@@ -401,11 +401,12 @@ test('validateShortcutCapture: returns { valid, message, normalized }', () => {
     assert.match(fn, /normalized:/);
 });
 
-test('validateShortcutCapture: error message for 1-modifier shortcut suggests example', () => {
+test('validateShortcutCapture: no-modifier shortcut error suggests one-modifier example', () => {
     const fnStart = PLATFORM_PANELS_JS.indexOf('function validateShortcutCapture');
     const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 2000);
-    // Must produce a friendly example like "Ctrl + Alt + H"
+    // Must produce a friendly example like "Ctrl + H"
     assert.match(fn, /for example/i);
+    assert.match(fn, /Ctrl/);
 });
 
 test('validateShortcutCapture: display format uses spaces around plus', () => {

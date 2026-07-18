@@ -60,8 +60,9 @@ test('app.js: initSystem uses traceStartupStep for initSortable', () => {
 });
 
 test('app.js: startup splash timing is reduced and configurable', () => {
-    assert.match(APP_JS, /__baddelSplashMinMs\s*\?\?\s*450/, 'splash minimum should default near 450ms and be configurable');
+    assert.match(APP_JS, /__baddelSplashMinMs\s*\?\?\s*0/, 'splash minimum should default to no fixed delay and remain configurable');
     assert.match(APP_JS, /__baddelSplashFadeMs\s*\?\?\s*120/, 'splash fade should default near 120ms and be configurable');
+    assert.doesNotMatch(APP_JS, /__baddelSplashMinMs\s*\?\?\s*700/, 'startup must not add a fixed normal-start delay');
     assert.doesNotMatch(APP_JS, /SPLASH_MIN_MS\s*=\s*3200/, 'startup must not keep the old 3200ms minimum');
     assert.doesNotMatch(APP_JS, /,\s*500\s*\)\s*;[\s\r\n]*\}/, 'startup must not keep the old 500ms splash fade');
 });
@@ -74,11 +75,14 @@ test('app.js: startup defers sidebar All Games count hydration', () => {
     assert.doesNotMatch(block, /await\s+traceStartupStep\(['"]hydrateSidebarAllGamesCount['"]/, 'sidebar count hydration must not block splash dismissal');
 });
 
-test('app.js: splash cleanup cancels RAF, timers, intervals, and audio', () => {
-    assert.match(APP_JS, /cancelAnimationFrame\(window\._splashRafId\)/);
-    assert.match(APP_JS, /window\._splashTimers/);
-    assert.match(APP_JS, /window\._splashIntervals/);
-    assert.match(APP_JS, /window\._splashAudioContext/);
+test('app.js: splash runtime has no canvas, timers, intervals, RAF, or audio resources', () => {
+    assert.match(APP_JS, /function runSplash\(\)/);
+    assert.match(APP_JS, /function stopSplash\(\)/);
+    assert.doesNotMatch(APP_JS, /cancelAnimationFrame\(window\._splashRafId\)/);
+    assert.doesNotMatch(APP_JS, /window\._splashTimers/);
+    assert.doesNotMatch(APP_JS, /window\._splashIntervals/);
+    assert.doesNotMatch(APP_JS, /window\._splashAudioContext/);
+    assert.doesNotMatch(APP_JS, /playSplashSound|AudioContext|webkitAudioContext/);
 });
 
 test('main.js: analytics starts after window visibility, not before createWindow', () => {

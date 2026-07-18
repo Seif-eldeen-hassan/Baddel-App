@@ -418,7 +418,7 @@ function validateShortcutCapture(accelerator) {
     const keys = parts.filter(p => !MODIFIER_KEYS.has(p.toLowerCase()));
 
     if (keys.length === 0) {
-        return { valid: false, message: 'Include a non-modifier key, for example Ctrl + Alt + H.', normalized: '' };
+        return { valid: false, message: 'Include a non-modifier key, for example Ctrl + H.', normalized: '' };
     }
 
     const rawKey = keys[0];
@@ -447,12 +447,12 @@ function validateShortcutCapture(accelerator) {
         return { valid: false, message: `${display} is reserved by the system. Try a different combination.`, normalized: display };
     }
 
-    if (normMods.length < 2) {
+    if (normMods.length < 1) {
         const exKey = normKey.length === 1 ? normKey : 'H';
-        const example = [...normMods, 'Alt', exKey].join(' + ');
+        const example = ['Ctrl', exKey].join(' + ');
         return {
             valid: false,
-            message: `Use at least 2 modifier keys — for example ${example}.`,
+            message: `Use at least one modifier key — for example ${example}.`,
             normalized: display,
         };
     }
@@ -486,7 +486,7 @@ function openShortcutCaptureModal(platform, accountId, accountName, accent, exis
 
         const sub = document.createElement('div');
         sub.style.cssText = 'color:#777;font-size:12px;margin-top:-8px;line-height:1.5;';
-        sub.textContent = 'Press a key combination while this window is open. Requires Ctrl, Shift, or Alt plus at least one other modifier.';
+        sub.textContent = 'Press a key combination while this window is open. Requires at least one modifier plus a key.';
 
         const captureBox = document.createElement('div');
         captureBox.className = 'shortcut-capture-box';
@@ -520,7 +520,7 @@ function openShortcutCaptureModal(platform, accountId, accountName, accent, exis
         function _refreshUI() {
             if (!capturedRaw) {
                 captureBox.className = 'shortcut-capture-box';
-                captureBox.textContent = 'Press a shortcut like Ctrl + Alt + H';
+                captureBox.textContent = 'Press a shortcut like Ctrl + H';
                 errorEl.textContent = '';
                 saveBtn.disabled = true;
             } else if (capturedValid) {

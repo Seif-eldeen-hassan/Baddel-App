@@ -294,7 +294,14 @@ test('createRecentCard: sets data-playtime attribute', () => {
 test('createRecentCard: uses the JBI artwork selection pipeline for cover image', () => {
     const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
     assert.match(body, /_jbiResolveArtworkSelection\s*\(\s*displayGame\s*\)/);
-    assert.match(body, /const displayImg = _jbiCacheBackedArtworkValue\(selection\.selectedValue\)/);
+    assert.match(body, /const displayImg = _jbiDisplayArtworkValue\(selection\.selectedValue\)/);
+});
+
+test('createRecentCard: initial Jump Back In image is display-safe, not cache-only', () => {
+    const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
+    assert.match(GAME_CARD_JS, /function _jbiDisplayArtworkValue\s*\(\s*value\s*\)/);
+    assert.match(body, /_jbiDisplayArtworkValue\(selection\.selectedValue\)/);
+    assert.doesNotMatch(body, /const displayImg = _jbiCacheBackedArtworkValue\(selection\.selectedValue\)/);
 });
 
 test('createRecentCard: renders jbi-cover-img element', () => {

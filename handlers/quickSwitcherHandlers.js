@@ -5,7 +5,8 @@
 //
 // deps shape:
 //   { quickSwitcher, quickSwitcherSettings, accountShortcuts,
-//     ipcValidation, switchAccountByPlatform, analytics }
+//     ipcValidation, switchAccountByPlatform, analytics,
+//     getQuickSwitcherInstalledGames, endQuickSwitcherGame }
 //
 // Note: quickSwitcher.registerQuickSwitcherHotkey() and
 // quickSwitcher.createQuickSwitcherWindow() lifecycle calls are NOT moved here —
@@ -38,6 +39,7 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
     const {
         quickSwitcher, quickSwitcherSettings, accountShortcuts,
         ipcValidation, switchAccountByPlatform, analytics,
+        getQuickSwitcherInstalledGames, endQuickSwitcherGame,
     } = deps;
 
     // ── Quick Switcher IPC ─────────────────────────────────────────────────
@@ -120,6 +122,30 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
         } catch (err) {
             try { analytics.track('quick_switcher_switch_failed', { platform: payload?.platform }); } catch {}
             return ipcValidation.sanitizeErrorForRenderer(err, 'Account switch failed.');
+        }
+    });
+
+    ipcMain.handle('quick-switcher:list-games', async () => {
+        try {
+            return typeof getQuickSwitcherInstalledGames === 'function'
+                ? await getQuickSwitcherInstalledGames()
+                : [];
+        } catch (err) {
+            return ipcValidation.sanitizeErrorForRenderer(err, 'Could not load installed games.');
+        }
+    });
+
+    ipcMain.handle('quick-switcher:end-game', async (_, payload) => {
+        try {
+            ipcValidation.assertString(payload?.gameId, 'gameId', 256);
+            try { analytics.track('quick_switcher_end_game_attempt'); } catch {}
+            const result = typeof endQuickSwitcherGame === 'function'
+                ? await endQuickSwitcherGame(payload.gameId)
+                : { status: 'error', message: 'End task is not available.' };
+            try { analytics.track('quick_switcher_end_game_result', { status: result?.status || 'unknown' }); } catch {}
+            return result;
+        } catch (err) {
+            return ipcValidation.sanitizeErrorForRenderer(err, 'Could not end game.');
         }
     });
 

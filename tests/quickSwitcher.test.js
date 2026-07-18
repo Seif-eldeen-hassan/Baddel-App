@@ -175,7 +175,8 @@ test('main.js: registers all quick-switcher IPC channels', () => {
         'quick-switcher:get-settings', 'quick-switcher:set-settings',
         'quick-switcher:set-hotkey', 'quick-switcher:clear-hotkey',
         'quick-switcher:validate-hotkey', 'quick-switcher:list-accounts',
-        'quick-switcher:switch-account', 'quick-switcher:hide', 'quick-switcher:toggle',
+        'quick-switcher:switch-account', 'quick-switcher:list-games',
+        'quick-switcher:end-game', 'quick-switcher:hide', 'quick-switcher:toggle',
     ];
     for (const ch of channels) {
         assert.ok(src.includes(`'${ch}'`), `missing IPC channel: ${ch}`);
@@ -228,7 +229,8 @@ test('preload.js: quickSwitcher exposes all required methods', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'preload.js'), 'utf8');
     const qsSrc = src.slice(src.indexOf('quickSwitcher:'), src.indexOf('quickSwitcher:') + 1200);
     for (const method of ['getSettings', 'setSettings', 'setHotkey', 'clearHotkey',
-        'validateHotkey', 'listAccounts', 'switchAccount', 'hide', 'toggle', 'onShow']) {
+        'validateHotkey', 'listAccounts', 'listGames', 'switchAccount',
+        'launchGame', 'endGame', 'hide', 'toggle', 'onShow']) {
         assert.ok(qsSrc.includes(method), `missing preload method: ${method}`);
     }
 });
@@ -272,6 +274,13 @@ test('quick-switcher.html: bar includes label, shortcut chip, and close button',
     assert.ok(src.includes('quickSwitcherClose'), 'close button');
 });
 
+test('quick-switcher.html: includes account and games mode tabs', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
+    assert.ok(src.includes('qsModeAccounts'), 'accounts mode tab');
+    assert.ok(src.includes('qsModeGames'), 'games mode tab');
+    assert.ok(src.includes('data-mode="games"'), 'games data-mode');
+});
+
 test('quick-switcher.html: search input inside bar search area', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
     assert.ok(src.includes('qs-bar-search'), 'search area container');
@@ -292,6 +301,13 @@ test('quick-switcher.html: loads quick-switcher.css and quick-switcher.js', () =
 test('quick-switcher.html: has CSP meta tag', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
     assert.ok(src.includes('Content-Security-Policy'), 'CSP present');
+});
+
+test('quick-switcher.html: CSP allows remote and cached game artwork', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'quick-switcher.html'), 'utf8');
+    assert.match(src, /img-src[^;]*https:/, 'img-src allows https artwork');
+    assert.match(src, /img-src[^;]*http:/, 'img-src allows http artwork');
+    assert.match(src, /img-src[^;]*file:/, 'img-src allows cached file artwork');
 });
 
 test('quick-switcher.html: shows keyboard hint footer', () => {
@@ -346,6 +362,15 @@ test('quick-switcher.css: has .qs-card (account card button)', () => {
     assert.ok(src.includes('.qs-card.is-selected'), '.qs-card.is-selected');
 });
 
+test('quick-switcher.css: has game mode card and end task styling', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
+    assert.ok(src.includes('.qs-mode-tabs'), 'mode tabs styled');
+    assert.ok(src.includes('.qs-game-card'), 'game cards styled');
+    assert.ok(src.includes('.qs-end-game'), 'end task action styled');
+    assert.ok(src.includes('.qs-play-glyph'), 'play icon glyph styled');
+    assert.ok(src.includes('.is-end-focused'), 'keyboard end-task focus styled');
+});
+
 test('quick-switcher.css: has .qs-deck-hints (replaces old footer bar)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'css', 'quick-switcher.css'), 'utf8');
     assert.ok(src.includes('.qs-deck-hints'), '.qs-deck-hints defined');
@@ -398,6 +423,53 @@ test('quick-switcher.js: calls api.listAccounts() to load data', () => {
     assert.ok(src.includes('api.listAccounts()'), 'listAccounts call');
 });
 
+test('quick-switcher.js: games mode loads installed games and exposes end task flow', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    assert.ok(src.includes('api.listGames()'), 'listGames call');
+    assert.ok(src.includes('api.launchGame('), 'launchGame call');
+    assert.ok(src.includes('api.endGame('), 'endGame call');
+    assert.ok(src.includes('qs-game-card'), 'game card renderer');
+    assert.ok(src.includes('_playIconHtml'), 'uses play icon helper instead of text play label');
+});
+
+test('quick-switcher.js: direct launch account-choice card keeps platform data for logo styling', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    const directSrc = src.slice(src.indexOf('function _choiceCardHtml'), src.indexOf('function _choiceCardHtml') + 700);
+    assert.ok(directSrc.includes('qs-direct-card'), 'direct launch card rendered');
+    assert.ok(directSrc.includes('data-platform'), 'direct card carries platform for icon styling');
+});
+
+test('quick-switcher.js: keyboard can move to mode tabs and back out of account choice', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    assert.ok(src.includes("_focusZone === 'modes'"), 'mode tab focus zone');
+    assert.ok(src.includes('_moveModeFocus'), 'keyboard switches modes');
+    assert.ok(src.includes('_returnToGames'), 'account choice can return to games');
+    assert.ok(src.includes("e.key === 'Backspace'"), 'Backspace handled for back navigation');
+    assert.ok(src.includes("_gameActionFocus = 'end'"), 'keyboard can focus end action');
+    assert.ok(src.includes('_endGame(_carouselItems[_selIdx])'), 'Enter can trigger selected end action');
+});
+
+test('quick-switcher end-game IPC accepts long platform game ids', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'handlers', 'quickSwitcherHandlers.js'), 'utf8');
+    const endSrc = src.slice(src.indexOf("'quick-switcher:end-game'"), src.indexOf("'quick-switcher:end-game'") + 500);
+    assert.ok(endSrc.includes("assertString(payload?.gameId, 'gameId', 256)"), 'long Epic ids are accepted');
+    assert.ok(!endSrc.includes('assertSafeId(payload?.gameId'), 'end-game must not use 64-char safe id limit');
+});
+
+test('quick-switcher.js: broken game artwork falls back to platform icon', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
+    assert.ok(src.includes('_replaceBrokenGameArt'), 'broken artwork helper');
+    assert.ok(src.includes("addEventListener('error'"), 'image error listener');
+    assert.ok(src.includes('_platformIcon(platform'), 'falls back to platform icon');
+});
+
+test('main.js: quick switcher artwork normalizes Windows paths to file URLs', () => {
+    const src = fs.readFileSync(path.join(__dirname, '..', 'main.js'), 'utf8');
+    assert.ok(src.includes('function _quickSwitcherArtworkUrl'), 'artwork URL normalizer');
+    assert.ok(src.includes('file:///'), 'normalizes file URLs');
+    assert.ok(src.includes('^[a-zA-Z]:[\\\\/]'), 'recognizes Windows drive paths');
+});
+
 test('quick-switcher.js: handles keyboard navigation (ArrowUp/ArrowDown/Enter/Escape)', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
     assert.ok(src.includes("'ArrowDown'"), 'ArrowDown');
@@ -408,7 +480,7 @@ test('quick-switcher.js: handles keyboard navigation (ArrowUp/ArrowDown/Enter/Es
 
 test('quick-switcher.js: Escape calls api.hide()', () => {
     const src = fs.readFileSync(path.join(__dirname, '..', 'src', 'js', 'quick-switcher.js'), 'utf8');
-    const escSrc = src.slice(src.indexOf("'Escape'"), src.indexOf("'Escape'") + 80);
+    const escSrc = src.slice(src.indexOf("'Escape'"), src.indexOf("'Escape'") + 220);
     assert.ok(escSrc.includes('api.hide()'), 'Escape hides overlay');
 });
 

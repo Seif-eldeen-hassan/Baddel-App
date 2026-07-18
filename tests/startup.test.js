@@ -595,9 +595,23 @@ test('app.js: library-updated readiness is handled inside the existing debounced
     const listenerCount = (APP_JS.match(/window\.electronAPI\.onLibraryUpdated\(/g) || []).length;
     assert.equal(listenerCount, 1, 'app.js must keep one effective library-updated listener');
     const processStart = APP_JS.indexOf('async function _processLibraryUpdatedPayload');
-    const processBlock = APP_JS.slice(processStart, processStart + 1300);
+    const processBlock = APP_JS.slice(processStart, processStart + 1700);
     assert.match(processBlock, /_handleStartupLibraryUpdatedPayload\(mergedGames\)/, 'startup readiness must observe the existing library-updated pipeline');
     assert.match(processBlock, /if \(startupHandled\)[\s\S]*return;/, 'initial scan result must not render structural Home twice');
+});
+
+test('app.js: library-updated defers transient Installed count drops before replacing allGamesData', () => {
+    assert.match(APP_JS, /function _countDirectInstalledGames\(/, 'library update path must count installed entries directly');
+    assert.match(APP_JS, /function _shouldDeferInstalledLibraryDrop\(/, 'library update path must detect transient installed drops');
+    assert.match(APP_JS, /function _deferInstalledLibraryDrop\(/, 'library update path must defer suspected drops');
+    const processStart = APP_JS.indexOf('async function _processLibraryUpdatedPayload');
+    const processBlock = APP_JS.slice(processStart, processStart + 1000);
+    assert.match(processBlock, /_shouldDeferInstalledLibraryDrop\(mergedGames,\s*options\)/);
+    assert.match(processBlock, /_deferInstalledLibraryDrop\(updatedGames,\s*mergedGames\)/);
+    assert.ok(
+        processBlock.indexOf('_shouldDeferInstalledLibraryDrop') < processBlock.indexOf('allGamesData = mergedGames'),
+        'suspected Installed drops must be deferred before allGamesData is replaced'
+    );
 });
 
 test('app.js: library-updated inside grace renders populated Home and hides splash', () => {
@@ -613,10 +627,15 @@ test('app.js: library-updated inside grace renders populated Home and hides spla
 test('app.js and dashboard.css: Home loading presentation has skeletons and no empty copy', () => {
     const fnStart = APP_JS.indexOf('function renderHomeLoadingState');
     const fn = APP_JS.slice(fnStart, fnStart + 1800);
-    assert.match(fn, /Preparing your library\.\.\./, 'loading state must show preparing status');
+    assert.match(fn, /title\.innerText\s*=\s*''/, 'loading state must keep hero title empty until a real game is selected');
+    assert.match(fn, /title\.style\.display\s*=\s*'none'/, 'loading state must hide placeholder hero title');
     assert.match(fn, /home-hero-skeleton/, 'loading state must apply hero skeleton class');
     assert.match(fn, /home-explore-skeleton-card/, 'loading state must render Explore skeleton cards');
-    assert.doesNotMatch(fn, /No Games Found|No games yet/, 'loading state must not include final empty copy');
+    assert.doesNotMatch(fn, /Welcome to Baddel|No Games Found|No games yet/, 'loading state must not include placeholder or final empty copy');
+    const heroStart = HTML.indexOf('id="heroSection"');
+    const heroEnd = HTML.indexOf('id="libraryView"', heroStart);
+    const hero = HTML.slice(heroStart, heroEnd);
+    assert.doesNotMatch(hero, /Welcome to Baddel/, 'initial hero markup must not flash welcome copy');
     assert.match(DASHBOARD_CSS, /\.home-hero-skeleton/, 'hero skeleton CSS must exist');
     assert.match(DASHBOARD_CSS, /\.home-explore-skeleton-card/, 'Explore skeleton CSS must exist');
 });
@@ -735,4 +754,22 @@ test('app.js and dashboard: startup loader writes styled status text and first-r
     assert.match(setter, /splashStatusNote/, 'loader must support a quieter first-run note');
     assert.doesNotMatch(setter, /getElementById\('splashStatus'\)/, 'loader must not overwrite status row structure');
     assert.match(APP_JS, /First launch can take a little longer/, 'fresh install copy must explain first-run duration');
+});
+
+test('dashboard startup loader is minimal, accessible, and motion-safe', () => {
+    const loaderStart = HTML.indexOf('id="mainLoader"');
+    const loaderEnd = HTML.indexOf('id="launchOverlay"', loaderStart);
+    const loader = HTML.slice(loaderStart, loaderEnd);
+
+    assert.match(loader, /role="status"/, 'startup loader must expose status semantics');
+    assert.match(loader, /aria-live="polite"/, 'startup loader status updates must be polite');
+    assert.match(loader, /aria-busy="true"/, 'startup loader must mark startup as busy while visible');
+    assert.match(loader, /Baddel app logo/, 'startup logo must have accessible alt text');
+    assert.match(loader, /Preparing your library/, 'startup loader must use the restrained status copy');
+    assert.match(loader, /Every launcher\. One place\./, 'startup loader must keep the Baddel tagline');
+
+    assert.doesNotMatch(loader, /canvas|splashCanvas|splashHud|splashFrameCounter|splashScan|splash-corner|splash-arc|splash-ring/i);
+    assert.match(DASHBOARD_CSS, /@media\s*\(prefers-reduced-motion:\s*reduce\)/, 'loader must support reduced motion');
+    assert.match(DASHBOARD_CSS, /@keyframes splashProgressSweep/, 'loader must keep the minimal indeterminate progress line');
+    assert.doesNotMatch(APP_JS, /playSplashSound|AudioContext|webkitAudioContext|_splashTimers|_splashIntervals|_splashRafId/);
 });
