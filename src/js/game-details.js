@@ -621,21 +621,108 @@ function _gdCacheSet(key, meta) {
     _gdMetaCache.set(key, { meta, timestamp: Date.now() });
 }
 
+function _gdMergeUniqueTrailers(primary = [], secondary = []) {
+    const out = [];
+    const seen = new Set();
+    for (const trailer of [...(primary || []), ...(secondary || [])]) {
+        const normalized = _gdNormalizeCreatorTrailer(trailer);
+        if (!normalized) continue;
+        const key = normalized.url.toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(normalized);
+    }
+    return out;
+}
+
+function _gdMergeUniqueRatings(primary = [], secondary = []) {
+    const out = [];
+    const seen = new Set();
+    for (const rating of [...(primary || []), ...(secondary || [])]) {
+        if (!rating || typeof rating !== 'object') continue;
+        const source = String(rating.source || rating.provider || rating.name || '').trim().toLowerCase();
+        const key = source || JSON.stringify(rating);
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(rating);
+    }
+    return out;
+}
+
+function _gdMergeUniqueList(primary = [], secondary = []) {
+    const out = [];
+    const seen = new Set();
+    for (const item of [...(primary || []), ...(secondary || [])]) {
+        if (item == null || item === '') continue;
+        const key = String(item).toLowerCase();
+        if (seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+    }
+    return out;
+}
+
+function _gdMarkTrailerSource(list = [], source = '') {
+    const cleanSource = String(source || '').trim().toLowerCase();
+    return (Array.isArray(list) ? list : [])
+        .map((trailer) => {
+            if (!trailer || typeof trailer !== 'object') return trailer;
+            return {
+                ...trailer,
+                source: String(trailer.source || trailer.platform || trailer.provider || cleanSource || '').trim().toLowerCase(),
+            };
+        });
+}
+
+function _gdTrailerDisplayTitle(trailer, index = 0) {
+    const baseTitle = String(trailer?.title || trailer?.name || `Trailer ${index + 1}`).trim() || `Trailer ${index + 1}`;
+    const source = String(trailer?.source || trailer?.platform || trailer?.provider || '').trim().toLowerCase();
+    if (source === 'gog' && !/^gog\b/i.test(baseTitle)) {
+        return `GOG ${baseTitle}`;
+    }
+    return baseTitle;
+}
+
 /**
  * Merges two metadata objects, giving preference to non-null visual asset fields
  * (heroImage, hero, cover, logo) from `base` when `override` carries explicit nulls.
- * All other fields follow standard spread semantics (override wins).
+ * Arrays that represent source data are combined so platform metadata can augment
+ * Baddel server metadata instead of replacing it.
  */
 function _gdMergeMetaSafe(base, override) {
     if (!override) return base;
     if (!base)     return override;
-    const VISUAL_KEYS = ['heroImage', 'hero', 'cover', 'logo'];
+    const VISUAL_KEYS = ['heroImage', 'hero', 'cover', 'logo', 'trailer'];
     const merged = { ...base, ...override };
     for (const k of VISUAL_KEYS) {
         if (merged[k] == null && base[k] != null) {
             merged[k] = base[k]; // restore non-null base value that override wiped
         }
     }
+    const baseInfo = base.info && typeof base.info === 'object' ? base.info : {};
+    const overrideInfo = override.info && typeof override.info === 'object' ? override.info : {};
+    if (base.info || override.info) {
+        merged.info = { ...baseInfo, ...overrideInfo };
+        for (const key of ['description', 'short_description', 'developer', 'publisher', 'releaseDate', 'rating', 'ratingSource', 'trailer']) {
+            if ((merged.info[key] == null || merged.info[key] === '') && baseInfo[key] != null && baseInfo[key] !== '') {
+                merged.info[key] = baseInfo[key];
+            }
+        }
+        for (const key of ['genres', 'screenshots', 'artworks', 'allTrailers', 'ratings']) {
+            if ((!Array.isArray(merged.info[key]) || merged.info[key].length === 0) && Array.isArray(baseInfo[key]) && baseInfo[key].length > 0) {
+                merged.info[key] = baseInfo[key];
+            }
+        }
+        merged.info.allTrailers = _gdMergeUniqueTrailers(overrideInfo.allTrailers, baseInfo.allTrailers);
+        merged.info.ratings = _gdMergeUniqueRatings(overrideInfo.ratings, baseInfo.ratings);
+        if (base._isGameInfoBackfill && baseInfo.releaseDate) {
+            merged.info.releaseDate = baseInfo.releaseDate;
+            merged.releaseDate = baseInfo.releaseDate;
+        }
+        if (!merged.info.requirements && baseInfo.requirements) merged.info.requirements = baseInfo.requirements;
+        if (!merged.info.steamReview && baseInfo.steamReview) merged.info.steamReview = baseInfo.steamReview;
+    }
+    merged.ratings = _gdMergeUniqueRatings(override.ratings, base.ratings);
     return merged;
 }
 
@@ -644,6 +731,155 @@ function _gdMergeMetaSafe(base, override) {
 //  Prevents sending enrich for the same game multiple times per session.
 //  Key: "${platform}:${cleanId}"   Value: timestamp of last enrich request
 // ──────────────────────────────────────────
+function _gdBuildGameInfoMeta(game) {
+    if (!game || typeof game !== 'object') return null;
+    const gameInfo = game.info && typeof game.info === 'object' ? game.info : {};
+    const hasUsefulInfo = !!(
+        game.description ||
+        game.short_description ||
+        game.developer ||
+        game.publisher ||
+        game.releaseDate ||
+        (Array.isArray(game.genres) && game.genres.length) ||
+        gameInfo.description ||
+        gameInfo.short_description ||
+        gameInfo.developer ||
+        gameInfo.publisher ||
+        gameInfo.releaseDate ||
+        (Array.isArray(gameInfo.genres) && gameInfo.genres.length) ||
+        (Array.isArray(gameInfo.screenshots) && gameInfo.screenshots.length) ||
+        (Array.isArray(gameInfo.allTrailers) && gameInfo.allTrailers.length) ||
+        gameInfo.requirements ||
+        (Array.isArray(gameInfo.ratings) && gameInfo.ratings.length) ||
+        (Array.isArray(game.ratings) && game.ratings.length)
+    );
+    if (!hasUsefulInfo) return null;
+
+    const info = {
+        ...gameInfo,
+        short_description: gameInfo.short_description || game.short_description || game.description || '',
+        description: gameInfo.description || game.description || game.short_description || '',
+        genres: Array.isArray(gameInfo.genres) && gameInfo.genres.length
+            ? gameInfo.genres
+            : (Array.isArray(game.genres) ? game.genres : []),
+        developer: gameInfo.developer || game.developer || null,
+        publisher: gameInfo.publisher || game.publisher || null,
+        releaseDate: gameInfo.releaseDate || game.releaseDate || null,
+        screenshots: Array.isArray(gameInfo.screenshots) ? gameInfo.screenshots : [],
+        allTrailers: Array.isArray(gameInfo.allTrailers) ? gameInfo.allTrailers : [],
+        requirements: gameInfo.requirements || null,
+        ratings: Array.isArray(gameInfo.ratings) && gameInfo.ratings.length
+            ? gameInfo.ratings
+            : (Array.isArray(game.ratings) ? game.ratings : []),
+    };
+
+    return {
+        info,
+        ratings: Array.isArray(game.ratings) && game.ratings.length ? game.ratings : info.ratings,
+        releaseDate: info.releaseDate,
+        cover: game.cover || game.coverUrl || game.image || game.defaultImage || null,
+        heroImage: game.heroImage || game.heroUrl || game.hero || null,
+        hero: game.hero || game.heroImage || game.heroUrl || null,
+        logo: game.logo || game.logoUrl || null,
+        _isGameInfoBackfill: true,
+    };
+}
+
+function _gdNormalizePlatformTitle(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[®©™]/g, '')
+        .replace(/[^a-z0-9]+/g, '')
+        .trim();
+}
+
+function _gdGogIdentityValue(game = {}) {
+    return String(
+        game.productId ||
+        game.allIds?.gog ||
+        game.appName ||
+        String(game.id || '').replace(/^gog[-_]/i, '') ||
+        ''
+    ).trim();
+}
+
+function _gdFindMatchingGogRecord(game, gogGames = []) {
+    if (!game || !Array.isArray(gogGames) || gogGames.length === 0) return null;
+
+    const wantedId = _gdGogIdentityValue(game);
+    if (wantedId) {
+        const byId = gogGames.find((candidate) => _gdGogIdentityValue(candidate) === wantedId);
+        if (byId) return byId;
+    }
+
+    const wantedTitle = _gdNormalizePlatformTitle(game.title || game.name);
+    if (!wantedTitle) return null;
+    return gogGames.find((candidate) => _gdNormalizePlatformTitle(candidate.title || candidate.name) === wantedTitle) || null;
+}
+
+function _gdMergeGogRichGameRecord(game, gogGame) {
+    if (!game || !gogGame) return game;
+
+    const gameInfo = game.info && typeof game.info === 'object' ? game.info : {};
+    const gogInfo = gogGame.info && typeof gogGame.info === 'object' ? gogGame.info : {};
+    const gogId = _gdGogIdentityValue(gogGame);
+    const platforms = new Set([
+        ...(Array.isArray(game.platforms) ? game.platforms : []),
+        ...String(game.platform || '').split(/[\s,\/|]+/).filter(Boolean),
+        'gog',
+    ].map((platform) => String(platform).toLowerCase()));
+
+    const info = {
+        ...gogInfo,
+        ...gameInfo,
+        allTrailers: _gdMergeUniqueTrailers(gameInfo.allTrailers, _gdMarkTrailerSource(gogInfo.allTrailers, 'gog')),
+        ratings: _gdMergeUniqueRatings(gameInfo.ratings, gogInfo.ratings),
+        screenshots: _gdMergeUniqueList(gameInfo.screenshots, gogInfo.screenshots),
+        genres: _gdMergeUniqueList(gameInfo.genres, gogInfo.genres),
+    };
+
+    if (gogInfo.releaseDate) info.releaseDate = gogInfo.releaseDate;
+
+    return {
+        ...gogGame,
+        ...game,
+        info,
+        platforms: Array.from(platforms),
+        platform: Array.from(platforms).join(', '),
+        allIds: {
+            ...(gogGame.allIds || {}),
+            ...(game.allIds || {}),
+            ...(gogId ? { gog: gogId } : {}),
+        },
+        productId: game.productId || gogId || gogGame.productId,
+        releaseDate: gogInfo.releaseDate || game.releaseDate || gogGame.releaseDate || null,
+        ratings: _gdMergeUniqueRatings(game.ratings, gogGame.ratings || gogInfo.ratings),
+        coverUrl: game.coverUrl || game.image || gogGame.coverUrl || null,
+        heroUrl: game.heroUrl || game.heroImage || gogGame.heroUrl || null,
+        logoUrl: game.logoUrl || game.logo || gogGame.logoUrl || null,
+    };
+}
+
+async function _gdHydrateGogRichRecordForDetails(game) {
+    if (!game || !window.electronAPI?.platformSyncGetCached) return game;
+    try {
+        const res = await window.electronAPI.platformSyncGetCached('gog');
+        const gogGame = _gdFindMatchingGogRecord(game, res?.games || []);
+        if (!gogGame) return game;
+        const merged = _gdMergeGogRichGameRecord(game, gogGame);
+        console.log('[GD][GOGRichMerge]', {
+            title: game.name || game.title,
+            gogTitle: gogGame.title || gogGame.name,
+            trailers: merged.info?.allTrailers?.length || 0,
+            ratings: merged.info?.ratings?.length || 0,
+        });
+        return merged;
+    } catch (err) {
+        console.warn('[GD][GOGRichMerge] failed:', err?.message || err);
+        return game;
+    }
+}
+
 const _gdEnrichSent = new Map();
 const _GD_ENRICH_COOLDOWN = 10 * 60 * 1000; // 10 min cooldown
 
@@ -662,6 +898,7 @@ const GD_PLATFORM_LOGOS = {
     steam:   { img: '../assets/Steam.png',    name: 'Steam',        color: '#1b2838' },
     epic:    { img: '../assets/epic.svg',      name: 'Epic Games',   color: '#181818', invert: true },
     ea:      { img: '../assets/ea.png',        name: 'EA App',       color: '#ff6b35' },
+    gog:     { img: '../assets/gog.png',       name: 'GOG',          color: '#a970ff' },
     riot:    { img: '../assets/riot.png',      name: 'Riot Games',   color: '#ff4655' },
     ubisoft: { img: '../assets/ubisoft.png',   name: 'Ubisoft',      color: '#0070d1', invert: true },
     discord: { img: '../assets/discord.webp',  name: 'Discord',      color: '#5865F2' },
@@ -752,13 +989,36 @@ function _gdIsValidEpicNamespace(s) {
  */
 function _gdIsMetadataTooIncomplete(meta) {
     if (!meta) return true;
-    const hasDescription = !!(meta.info?.description || meta.description);
+    const hasDescription = !!(meta.info?.description || meta.description || meta.info?.short_description || meta.short_description);
     const hasCover       = !!(meta.cover);
     const hasHero        = !!(meta.heroImage || meta.hero);
-    const hasScreenshots = (meta.info?.screenshots || []).length > 0;
-    // "Incomplete" = missing description AND at least two of the three visual assets
-    const missingVisuals = [hasCover, hasHero, hasScreenshots].filter(Boolean).length < 2;
-    return !hasDescription && missingVisuals;
+    const hasLogo        = !!(meta.logo);
+    const hasScreenshots = (meta.info?.screenshots || meta.screenshots || []).length > 0;
+    const hasTrailers    = (meta.info?.allTrailers || meta.allTrailers || []).length > 0 || !!(meta.info?.trailer || meta.trailer);
+    const hasGenres      = (meta.info?.genres || meta.genres || []).length > 0;
+
+    // Details may render fine with GOG/store data, but if a rich field is absent
+    // we still let Baddel API try to fill it. A miss keeps the current UI.
+    return !hasDescription || !hasCover || !hasHero || !hasLogo || !hasScreenshots || !hasTrailers || !hasGenres;
+}
+
+function _gdHasUsefulMetadataValue(meta) {
+    if (!meta) return false;
+    return !!(
+        meta.cover ||
+        meta.heroImage ||
+        meta.hero ||
+        meta.logo ||
+        meta.info?.description ||
+        meta.description ||
+        meta.info?.short_description ||
+        meta.short_description ||
+        (meta.info?.screenshots || meta.screenshots || []).length ||
+        (meta.info?.allTrailers || meta.allTrailers || []).length ||
+        meta.info?.trailer ||
+        meta.trailer ||
+        (meta.info?.genres || meta.genres || []).length
+    );
 }
 
 // ──────────────────────────────────────────
@@ -783,6 +1043,7 @@ function _gdResolveServerTarget(game) {
 
     const STEAM_ALIASES = new Set(['steam', 'steam_app']);
     const EPIC_ALIASES  = new Set(['epic', 'epic games', 'epic_games']);
+    const GOG_ALIASES   = new Set(['gog', 'gog games', 'gog galaxy']);
 
     for (const plat of platList) {
         // ── Steam ──────────────────────────────────────────────────────────
@@ -820,6 +1081,22 @@ function _gdResolveServerTarget(game) {
             }
             const rejected = candidates.join(', ') || '(none)';
             console.warn(`[GD][ServerTarget] Epic token in "${game.platform}" — no valid namespace [${rejected}], trying next.`);
+            continue;
+        }
+
+        if (GOG_ALIASES.has(plat)) {
+            const candidates = [
+                game.allIds?.gog,
+                game.productId,
+                game.appName,
+                String(game.id || '').replace(/^gog[-_]/i, ''),
+            ].map(v => String(v || '').trim()).filter(Boolean);
+            const id = candidates.find(c => /^\d+$/.test(c)) || null;
+            if (id) {
+                console.log(`[GD][ServerTarget] GOG "${game.name}" -> productId=${id}`);
+                return { platform: 'gog', id };
+            }
+            console.warn(`[GD][ServerTarget] GOG token in "${game.platform}" - no valid product id, trying next.`);
             continue;
         }
     }
@@ -1240,12 +1517,23 @@ window.openGameDetails = async function(gameId) {
                 image:         cachedGame.coverUrl,
                 heroImage:     cachedGame.heroUrl || cachedGame.heroImage || null,
                 logo:          cachedGame.logoUrl || cachedGame.logo || null,
+                short_description: cachedGame.short_description || cachedGame.info?.short_description || null,
+                description:       cachedGame.description       || cachedGame.info?.description       || null,
+                genres:            cachedGame.genres            || cachedGame.info?.genres            || [],
+                developer:         cachedGame.developer         || cachedGame.info?.developer         || null,
+                publisher:         cachedGame.publisher         || cachedGame.info?.publisher         || null,
+                releaseDate:       cachedGame.releaseDate       || cachedGame.info?.releaseDate       || null,
+                info:              cachedGame.info              || null,
                 platforms:     cachedGame.platforms || [cachedGame.platform],
                 allIds:        { ...(cachedGame.allIds || {}), epic: epicNs },
                 platform:      cachedGame.platforms ? cachedGame.platforms.join(', ') : cachedGame.platform,
                 path:          null,
                 command:       null,
                 appName:       cachedGame.appName,
+                productId:     cachedGame.productId,
+                source:        cachedGame.source,
+                _agSource:     cachedGame._agSource,
+                librarySource: cachedGame.librarySource,
                 namespace:     cachedGame.namespace,
                 catalogItemId: cachedGame.catalogItemId,
                 installedId:         cachedGame.installedId || null,
@@ -1305,14 +1593,15 @@ window.openGameDetails = async function(gameId) {
                 command:              installedMatch.command              || game.command,
                 launchCommand:        installedMatch.launchCommand        || game.launchCommand,
                 executablePath:       installedMatch.executablePath       || game.executablePath,
-                platform:             installedMatch.platform             || game.platform,
+                platform:             game.platform                       || installedMatch.platform,
+                platforms:            game.platforms                      || installedMatch.platforms,
                 scannerPlatform:      installedMatch.scannerPlatform      || game.scannerPlatform,
                 installedId:          installedMatch.id                   || game.installedId,
                 launcherGameId:       installedMatch.launcherGameId       || game.launcherGameId,
                 appName:              installedMatch.appName              || game.appName,
                 namespace:            installedMatch.namespace            || game.namespace,
                 catalogItemId:        installedMatch.catalogItemId        || game.catalogItemId,
-                allIds:               installedMatch.allIds               || game.allIds,
+                allIds:               { ...(installedMatch.allIds || {}), ...(game.allIds || {}) },
                 // Playtime fields — carry the local installed record's tracked data so
                 // game-details resolvers can find it even when game.id is a sync ID.
                 localGameId:          installedMatch.id                   ?? game.localGameId,
@@ -1324,6 +1613,9 @@ window.openGameDetails = async function(gameId) {
             };
         }
     }
+
+    game = await _gdHydrateGogRichRecordForDetails(game);
+    if (!tokenStillValid()) return;
 
     _gdCurrentBaseGame = typeof _gdClonePlain === 'function' ? _gdClonePlain(game) : { ...game };
     _gdCurrentCustomDetails = _gdLoadCustomDetails(game);
@@ -1423,6 +1715,8 @@ window.openGameDetails = async function(gameId) {
         const fullMetadataCacheId =
         platform === 'steam' && cleanedId
             ? `steam_${cleanedId}`
+            : platform === 'gog' && cleanedId
+                ? `gog_${cleanedId}`
             : String(game.id || _gdCurrentGameId || '');
 
         if (platform && cleanedId) {
@@ -1597,6 +1891,12 @@ window.openGameDetails = async function(gameId) {
                         !cachedFallback.description &&
                         !cachedFallback.info?.short_description &&
                         !cachedFallback.quality?.sources?.text &&
+                        !cachedFallback.cover &&
+                        !cachedFallback.heroImage &&
+                        !cachedFallback.hero &&
+                        !cachedFallback.logo &&
+                        !cachedFallback.info?.trailer &&
+                        !(cachedFallback.info?.allTrailers || []).length &&
                         !(cachedFallback.info?.screenshots || []).length
                     )
                 );
@@ -1666,6 +1966,8 @@ window.openGameDetails = async function(gameId) {
                         id: cleanedId || game.id,
                         platform: platform || game.platform,
                         platforms: game.platforms,
+                        productId: game.productId || game.allIds?.gog || undefined,
+                        appName: game.appName || undefined,
 
                         // مهم جدًا لـ Epic/Steam
                         namespace: platform === 'epic' ? cleanedId : (game.namespace || undefined),
@@ -1686,7 +1988,7 @@ window.openGameDetails = async function(gameId) {
                 } catch (_) { fallbackMeta = null; }
                 if (!tokenStillValid()) { console.warn('[GD-DIAG] stale-token bail gameId=', _gdCurrentGameId, 'at', new Error().stack?.split('\n')[1]?.trim()); return; }
 
-                if (fallbackMeta && !_gdIsMetadataTooIncomplete(fallbackMeta)) {
+                if (fallbackMeta && _gdHasUsefulMetadataValue(fallbackMeta)) {
                     // ── E. Fallback hit — render + persist ────────────────────
                     console.log(`[GD] ✅ getMetadata() fallback HIT for "${game.name}" — populating full Game Details`);
                     _gdPendingMetadataRetries.delete(String(game.id || _gdCurrentGameId || ''));
@@ -1727,7 +2029,10 @@ window.openGameDetails = async function(gameId) {
                     const _artOnly = fallbackMeta._isArtOnly === true
                         || (!fallbackMeta.info?.description
                             && !fallbackMeta.quality?.sources?.text
-                            && (fallbackMeta.info?.screenshots || []).length === 0);
+                            && (fallbackMeta.info?.screenshots || []).length === 0
+                            && (fallbackMeta.info?.allTrailers || fallbackMeta.allTrailers || []).length === 0
+                            && !fallbackMeta.info?.trailer
+                            && !fallbackMeta.trailer);
 
                     if (_artOnly) {
                         console.warn(`[GD] ⚠ Skipping saveFullMetadata for "${game.name}" — art-only result (no description, no text source, no screenshots). Will not persist hollow payload.`);
@@ -2000,6 +2305,13 @@ function _gdRenderCreatorEmptyState(game) {
         return;
     }
 
+    const minimumGogMeta = _gdBuildMinimumGogMeta(game);
+    if (minimumGogMeta) {
+        _gdCurrentMeta = minimumGogMeta;
+        _gdPopulateMeta(game, minimumGogMeta);
+        return;
+    }
+
     const emptyHtml = `
         <div class="gd-empty-state">
             <div class="gd-empty-icon" aria-hidden="true">
@@ -2068,6 +2380,36 @@ function _gdRenderCreatorEmptyState(game) {
     if (fullDescSection) fullDescSection.style.display = 'none';
 
     _gdSyncCreatorChrome();
+}
+
+function _gdBuildMinimumGogMeta(game) {
+    if (!_gdIsGogGame(game)) return null;
+    const title = game?.name || game?.title || 'This game';
+    const description = game?.description ||
+        game?.info?.description ||
+        game?.metadata?.description ||
+        `${title} is synced from your GOG library. Baddel will keep checking for richer metadata and media from GOG and the Baddel metadata server.`;
+    const shortDescription = game?.short_description ||
+        game?.info?.short_description ||
+        game?.metadata?.short_description ||
+        description;
+    const genres = Array.isArray(game?.genres)
+        ? game.genres
+        : (Array.isArray(game?.info?.genres) ? game.info.genres : []);
+
+    return {
+        info: {
+            short_description: shortDescription,
+            description,
+            genres,
+            screenshots: game?.info?.screenshots || [],
+            allTrailers: game?.info?.allTrailers || [],
+        },
+        cover: game?.cover || game?.coverUrl || game?.image || null,
+        heroImage: game?.heroImage || game?.heroUrl || game?.hero || null,
+        logo: game?.logo || game?.logoUrl || null,
+        _isMinimumGogMeta: true,
+    };
 }
 
 // ──────────────────────────────────────────
@@ -2233,7 +2575,7 @@ function _gdSetAccountsTabVisibility(game) {
     const accTabBtn     = document.querySelector('.gd-tab[data-tab="accounts"]');
     const accTabContent = document.getElementById('gdTab-accounts');
     const plats         = (window._baddelCanonicalPlatforms || function() { return ['manual']; })(game);
-    const hasStoreAccount = plats.includes('steam') || plats.includes('epic');
+    const hasStoreAccount = plats.includes('steam') || plats.includes('epic') || plats.includes('gog');
 
     if (accTabBtn) accTabBtn.style.display = hasStoreAccount ? '' : 'none';
 
@@ -2474,6 +2816,43 @@ function _gdApplyArtworkDiagnostics(el, type, decision) {
     el.dataset.artworkReason = decision.reason || '';
 }
 
+function _gdNormalizeArtworkUrlForCompare(value) {
+    return String(value || '').trim().replace(/\\/g, '/').replace(/[?#].*$/, '').toLowerCase();
+}
+
+function _gdIsGogGame(game = {}) {
+    const allIds = game?.allIds && typeof game.allIds === 'object' ? game.allIds : {};
+    const tokens = [
+        ...(Array.isArray(game.platforms) ? game.platforms : []),
+        game.platform,
+        game.source,
+        game.scannerPlatform,
+        game.librarySource,
+        game._agSource,
+        allIds.gog ? 'gog' : '',
+    ].flatMap((value) => String(value || '').toLowerCase().split(/[\s,\/|]+/));
+    return tokens.includes('gog');
+}
+
+function _gdShouldRenderLogoImage(game, logoDecision, art) {
+    const logoSrc = logoDecision?.value || null;
+    if (!logoSrc) return false;
+
+    const source = String(logoDecision?.source || '').toLowerCase();
+    if (source === 'creator' || source === 'settings') return true;
+
+    const logoKey = _gdNormalizeArtworkUrlForCompare(logoSrc);
+    const coverKey = _gdNormalizeArtworkUrlForCompare(art?.cover?.value);
+    const heroKey = _gdNormalizeArtworkUrlForCompare(art?.hero?.value);
+    if (logoKey && (logoKey === coverKey || logoKey === heroKey)) return false;
+
+    // GOG GamesDB exposes several artwork-like images under logo-ish fields.
+    // Keep those hidden, but allow a normalized Baddel metadata logo to fill the gap.
+    if (_gdIsGogGame(game) && source !== 'metadata') return false;
+
+    return true;
+}
+
 function _gdApplyResolvedArtworkToDom(game, metaData = null) {
     const art = _gdResolveArtworkForDisplay(game, metaData);
     const name = game?.name || game?.title || '';
@@ -2481,7 +2860,7 @@ function _gdApplyResolvedArtworkToDom(game, metaData = null) {
     const logoEl = document.getElementById('gdLogo');
     const titleEl = document.getElementById('gdTitle');
     const logoSrc = art?.logo?.value || null;
-    if (logoSrc && logoEl) {
+    if (_gdShouldRenderLogoImage(game, art?.logo, art) && logoEl) {
         logoEl.onerror = function _gdLogoOnErrorResolved() {
             this.onerror = null;
             this.style.display = 'none';
@@ -2668,6 +3047,7 @@ function _gdRenderPlatformBadges(game) {
             steam:    'none',
             epic:     'invert(1)',
             ea:       'none',
+            gog:      'none',
             riot:     'none',
             ubisoft:  'invert(1)',
             discord:  'none',
@@ -2828,7 +3208,10 @@ function _gdCanMergeInstalledRecord(baseGame, candidate) {
 }
 
 function _gdDetectPlatforms(game) {
-    return (window._baddelCanonicalPlatforms || function() { return ['manual']; })(game);
+    const detected = (window._baddelCanonicalPlatforms || function() { return ['manual']; })(game);
+    const platforms = new Set(Array.isArray(detected) ? detected : ['manual']);
+    if (_gdIsGogGame(game)) platforms.add('gog');
+    return Array.from(platforms);
 }
 
 // ── Riot product from command/path string (mirrors _agRiotProductFromStr in app.js) ─
@@ -4104,6 +4487,12 @@ function _gdPopulateMeta(game, metaData) {
     } else {
         metaData = _gdMergeCustomIntoMeta(game, metaData);
     }
+    if (_gdIsGogGame(game)) {
+        const gameInfoMeta = _gdBuildGameInfoMeta(game);
+        if (gameInfoMeta) {
+            metaData = _gdMergeMetaSafe(gameInfoMeta, metaData || {});
+        }
+    }
     const images = metaData || {};          
     const info = metaData?.info || {};
     const sources = metaData?.quality?.sources || {};
@@ -4293,11 +4682,17 @@ const heroSrc = artLocked
     }
 
     // ── Logo: SGDB → Steam CDN → RAWG → IGDB cover؛ لو فشل التحميل أو مفيش لوجو نعرض اسم اللعبة ──
-    const logoSrc = artLocked
-    ? (game.logo || null)
-    : (images.logo || game.logo || null);
+    const logoDecision = {
+        value: artLocked ? (game.logo || null) : (images.logo || game.logo || null),
+        source: artLocked ? 'settings' : 'metadata',
+    };
+    const logoSrc = logoDecision.value || null;
 
-    if (logoSrc) {
+    if (_gdShouldRenderLogoImage(game, logoDecision, {
+        cover: { value: game.image || images.cover || null },
+        hero: { value: game.heroImage || images.heroImage || null },
+        logo: logoDecision,
+    })) {
         game.logo = logoSrc;
         const logoEl = document.getElementById('gdLogo');
         if (logoEl) {
@@ -4310,7 +4705,7 @@ const heroSrc = artLocked
             logoEl.style.display = 'block';
             document.getElementById('gdTitle').style.display = 'none';
         }
-    } else if (metaData) {
+    } else if (metaData || logoSrc) {
         game.logo = null;
         const logoEl = document.getElementById('gdLogo');
         if (logoEl) {
@@ -4356,6 +4751,7 @@ const heroSrc = artLocked
         else if (srcKey.includes('metacritic')) iconHtml = `<img src="../assets/Metacritic.svg" class="gd-rd-icon">`;
         else if (srcKey.includes('steam')) iconHtml = `<img src="../assets/Steam.png" class="gd-rd-icon">`;
         else if (srcKey.includes('epic')) iconHtml = `<img src="../assets/epic.svg" class="gd-rd-icon" style="filter:invert(1)">`;
+        else if (srcKey.includes('gog')) iconHtml = `<img src="../assets/gog.png" class="gd-rd-icon">`;
 
         const sublabelHtml = sublabel ? `<div class="gd-pill-sub">${sublabel}</div>` : '';
 
@@ -4380,6 +4776,7 @@ const heroSrc = artLocked
         igdb:         { group: 'IGDB',        pillLabel: 'Score',    color: '#30d158', sublabelSuffix: 'ratings' },
         steam:        { group: 'Steam',       pillLabel: '',         color: '#66c0f4', sublabelSuffix: 'reviews' },
         epic:         { group: 'Epic',        pillLabel: '',         color: '#0094ff', sublabelSuffix: 'reviews' },
+        gog:          { group: 'GOG',         pillLabel: '',         color: '#a56eff', sublabelSuffix: 'ratings' },
         metacritic:   { group: 'Metacritic',  pillLabel: '',         color: '#ffcc00', sublabelSuffix: 'critics' },
     };
 
@@ -4407,6 +4804,8 @@ const _gdNormalizeRatingSourceKey = (value) => {
         s === 'epic_games' ||
         s.includes('epic')
     ) return 'epic';
+
+    if (s === 'gog' || s === 'gog_com' || s.includes('gog')) return 'gog';
 
     if (s.includes('metacritic')) return 'metacritic';
 
@@ -4514,6 +4913,7 @@ for (const rating of normalizedRatings) {
                 if (groupName.toLowerCase().includes('igdb')) logoHtml = `<img src="../assets/igdb.png" class="gd-rd-icon-rect">`;
                 else if (groupName.toLowerCase().includes('metacritic')) logoHtml = `<img src="../assets/Metacritic.svg" class="gd-rd-icon">`;
                 else if (groupName.toLowerCase().includes('epic')) logoHtml = `<img src="../assets/epic.svg" class="gd-rd-icon" style="filter:invert(1)">`;
+                else if (groupName.toLowerCase().includes('gog')) logoHtml = `<img src="../assets/gog.png" class="gd-rd-icon">`;
                 else if (isSteam) logoHtml = `<img src="../assets/Steam.png" class="gd-rd-icon">`;
 
                 if (isSteam) {
@@ -4609,7 +5009,7 @@ for (const rating of normalizedRatings) {
         let primaryGroup = null;
 
         // ترتيب الأولوية: إحنا عايزين نعرض IGDB أو Metacritic كأولوية بره
-        const priorityOrder = ['IGDB', 'Metacritic', 'Steam', 'Epic'];
+        const priorityOrder = ['IGDB', 'Metacritic', 'GOG', 'Steam', 'Epic'];
         
         for (const p of priorityOrder) {
             if (groups[p] && groups[p].length > 0) {
@@ -4680,7 +5080,13 @@ for (const rating of normalizedRatings) {
         })()
     }] : [])).filter(t => t?.url && !String(t.url).includes('undefined'));
 
-const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
+const allTrailers = _gdHydrateTrailerThumbnails(
+    _gdSortTrailersForPlayback(rawTrailers),
+    game,
+    info,
+    metaData
+);
+    _gdRenderMediaTrailerCards(allTrailers, game);
 
     if (allTrailers.length > 0 && trailerSection) {
         trailerSection.style.display = 'block';
@@ -4710,6 +5116,7 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
             const coverFallback = (game.heroImage || game.image || '').replace(/\\/g, '/');
 
             const thumbsHtml = allTrailers.map((t, i) => {
+                const trailerTitle = _gdTrailerDisplayTitle(t, i);
                 // Derive YouTube thumb from the embed/watch URL if available
                 let ytThumb = '';
                 const ytMatch = (t.url || '').match(/(?:youtube\.com\/(?:embed\/|watch\?v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
@@ -4730,7 +5137,7 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
                 const marginRight = showArrows && i === allTrailers.length - 1 ? '38px' : '0';
 
                 const imgOrPh = bestThumb
-                    ? `<img src="${_gdEscHtml(bestThumb)}" alt="${_gdEscHtml(t.name)}"
+                    ? `<img src="${_gdEscHtml(bestThumb)}" alt="${_gdEscHtml(trailerTitle)}"
                              style="width:130px;height:73px;object-fit:cover;border-radius:6px;
                                     border:2px solid ${borderColor};display:block;"
                              onerror="this.onerror=null;this.style.display='none';this.nextElementSibling.style.display='flex';">
@@ -4752,7 +5159,7 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
                     ${imgOrPh}
                     <div style="font-size:0.68rem;color:var(--gd-text-muted);margin-top:5px;
                                 max-width:130px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
-                        ${_gdEscHtml(t.name)}
+                        ${_gdEscHtml(trailerTitle)}
                     </div>
                 </div>`;
             }).join('');
@@ -4843,7 +5250,10 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
                         <img id="gd-ss-main-img" src="${fallbackScreenshots[0]}" alt="Screenshot"
                              style="position:absolute;inset:0;width:100%;height:100%;object-fit:cover;cursor:zoom-in;"
                              onclick="gdOpenLightbox(window._gdSsCurrentIdx||0)"
-                             onerror="this.style.display='none'">
+                             onerror="this.style.display='none';document.getElementById('gd-ss-main-fallback')?.style.setProperty('display','flex')">
+                        <div id="gd-ss-main-fallback" style="position:absolute;inset:0;display:none;align-items:center;justify-content:center;color:rgba(255,255,255,0.45);background:#080808;font-size:0.9rem;">
+                            Screenshot unavailable
+                        </div>
                         ${fallbackScreenshots.length > 1 ? `
                         <button id="gd-ss-prev" style="${arrowBtnStyle}left:10px;"
                             onmouseover="this.style.background='rgba(255,255,255,0.2)'"
@@ -4866,21 +5276,30 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
                 // Store screenshots list and current index globally for the nav function
                 window._gdSsImages = fallbackScreenshots;
                 window._gdSsCurrentIdx = 0;
+                window._gdSsShow = function(idx) {
+                    const imgs = window._gdSsImages || [];
+                    if (imgs.length === 0) return;
+                    window._gdSsCurrentIdx = (idx + imgs.length) % imgs.length;
+                    const mainImg = document.getElementById('gd-ss-main-img');
+                    const fallback = document.getElementById('gd-ss-main-fallback');
+                    if (fallback) fallback.style.display = 'none';
+                    if (mainImg) {
+                        mainImg.style.display = 'block';
+                        mainImg.src = imgs[window._gdSsCurrentIdx];
+                    }
+                    const counter = document.getElementById('gd-ss-counter');
+                    if (counter) counter.textContent = `${window._gdSsCurrentIdx + 1} / ${imgs.length}`;
+                    // Sync thumbnail highlight
+                    document.querySelectorAll('#gdTrailerThumbs [data-gd-ss-idx]').forEach((el, i) => {
+                        const img = el.querySelector('img');
+                        if (img) img.style.border = i === window._gdSsCurrentIdx ? '2px solid var(--accent)' : '2px solid rgba(255,255,255,0.1)';
+                        el.style.opacity = i === window._gdSsCurrentIdx ? '1' : '0.6';
+                    });
+                };
                 window._gdSsNav = function(dir) {
                     const imgs = window._gdSsImages || [];
                     if (imgs.length === 0) return;
-                    window._gdSsCurrentIdx = (window._gdSsCurrentIdx + dir + imgs.length) % imgs.length;
-                    const idx = window._gdSsCurrentIdx;
-                    const mainImg = document.getElementById('gd-ss-main-img');
-                    if (mainImg) mainImg.src = imgs[idx];
-                    const counter = document.getElementById('gd-ss-counter');
-                    if (counter) counter.textContent = `${idx + 1} / ${imgs.length}`;
-                    // Sync thumbnail highlight
-                    document.querySelectorAll('#gdTrailerThumbs [onclick^="gdOpenLightbox"]').forEach((el, i) => {
-                        const img = el.querySelector('img');
-                        if (img) img.style.border = i === idx ? '2px solid var(--accent)' : '2px solid rgba(255,255,255,0.1)';
-                        el.style.opacity = i === idx ? '1' : '0.6';
-                    });
+                    window._gdSsShow((window._gdSsCurrentIdx + dir + imgs.length) % imgs.length);
                 };
             }
 
@@ -4890,7 +5309,7 @@ const allTrailers = _gdSortTrailersForPlayback(rawTrailers);
                 thumbsContainer.innerHTML = `
                     <div style="display:flex;gap:8px;overflow-x:auto;scroll-behavior:smooth;scrollbar-width:none;padding-bottom:5px;">
                         ${fallbackScreenshots.map((url, i) => `
-                            <div onclick="gdOpenLightbox(${i})"
+                            <div data-gd-ss-idx="${i}" onclick="window._gdSsShow?.(${i})"
                                  style="cursor:pointer;flex-shrink:0;opacity:${i===0?1:0.6};transition:opacity 0.2s;"
                                  onmouseover="this.style.opacity='1'" onmouseout="this.style.opacity='${i===0?1:0.6}'">
                                 <img src="${url}" alt="Screenshot ${i+1}"
@@ -5615,12 +6034,13 @@ function _gdBuildYouTubeWatchUrl(videoId) {
     return `https://www.youtube.com/watch?v=${videoId}&autoplay=1`;
 }
 
-function _gdRenderYouTubeWebviewPlayer(container, videoId) {
+function _gdRenderYouTubeWebviewPlayer(container, videoId, trailer = null) {
     const embedUrl = _gdBuildYouTubeEmbedUrl(videoId);
     const watchUrl = _gdBuildYouTubeWatchUrl(videoId);
 
     // Build thumbnail with play overlay; clicking replaces it with <webview>
-    const thumbSrc = `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
+    const providedThumb = _gdPickTrailerThumbnail(trailer);
+    const thumbSrc = providedThumb || `https://i.ytimg.com/vi/${videoId}/maxresdefault.jpg`;
     const thumbFallback = `https://i.ytimg.com/vi/${videoId}/hqdefault.jpg`;
 
     const shell = document.createElement('div');
@@ -5629,7 +6049,7 @@ function _gdRenderYouTubeWebviewPlayer(container, videoId) {
     const thumb = document.createElement('div');
     thumb.className = 'gd-youtube-thumb';
     thumb.innerHTML = `
-        <img src="${thumbSrc}" onerror="this.src='${thumbFallback}'" alt="Trailer thumbnail" draggable="false">
+        <img src="${_gdEscHtml(thumbSrc)}" onerror="this.onerror=null;this.src='${_gdEscHtml(thumbFallback)}'" alt="Trailer thumbnail" draggable="false">
         <div class="gd-youtube-play">
             <svg width="68" height="48" viewBox="0 0 68 48" fill="none" xmlns="http://www.w3.org/2000/svg">
                 <rect width="68" height="48" rx="10" fill="rgba(0,0,0,0.7)"/>
@@ -5771,7 +6191,7 @@ function _gdRenderTrailerPlayer(container, trailers, idx, _candIdx) {
             try { node.remove(); } catch (_) {}
         });
         container.innerHTML = '';
-        _gdRenderYouTubeWebviewPlayer(container, _ytIdEarly);
+        _gdRenderYouTubeWebviewPlayer(container, _ytIdEarly, t);
         return;
     }
 
@@ -6505,7 +6925,7 @@ function _gdBuildInfoGrid(game, meta) {
 
     const developer   = meta?.developer   || game.developer   || null;
     const publisher   = meta?.publisher   || game.publisher   || null;
-    const releaseDate = meta?.releaseDate || game.releaseDate || null;
+    const releaseDate = meta?.releaseDate || meta?.info?.releaseDate || game.releaseDate || game.info?.releaseDate || null;
     const playerMode  = meta?.playerMode  || meta?.gameMode   || null;
     const engine      = meta?.engine      || null;
 
@@ -6559,7 +6979,7 @@ function _gdBuildDetailList(game, meta) {
     add('Last Played',    lpStr);
     add('Developer',      meta?.developer || game.developer, 'developer');
     add('Publisher',      meta?.publisher || game.publisher, 'publisher');
-    add('Release Date',   _gdFormatDate(meta?.releaseDate || game.releaseDate), 'releaseDate');
+    add('Release Date',   _gdFormatDate(meta?.releaseDate || meta?.info?.releaseDate || game.releaseDate || game.info?.releaseDate), 'releaseDate');
     add('Platform',       game.platform);  // read-only
     add('File Size',      meta?.fileSize || game.size);
 
@@ -7230,6 +7650,7 @@ function _gdNormalizeCreatorTrailer(trailer) {
             return _gdNormalizeCreatorTrailer({
                 url: rawUrl.url || rawUrl.src || rawUrl.href || '',
                 title: rawUrl.title || rawUrl.name || trailer.name || trailer.title || '',
+                source: rawUrl.source || rawUrl.platform || rawUrl.provider || trailer.source || trailer.platform || trailer.provider || '',
                 thumbnail:
                     _gdPickTrailerThumbnail(rawUrl) ||
                     _gdPickTrailerThumbnail(trailer)
@@ -7248,6 +7669,7 @@ function _gdNormalizeCreatorTrailer(trailer) {
             url,
             title: String(trailer.title || trailer.name || ''),
             name: String(trailer.name || trailer.title || ''),
+            source: String(trailer.source || trailer.platform || trailer.provider || '').trim().toLowerCase(),
             thumbnail,
             thumbUrl: thumbnail
         };
@@ -7260,6 +7682,7 @@ function _gdNormalizeCreatorTrailer(trailer) {
         url,
         title: '',
         name: '',
+        source: '',
         thumbnail: '',
         thumbUrl: ''
     };
@@ -7281,6 +7704,40 @@ function _gdNormalizeTrailerList(list) {
         out.push(normalized);
     }
     return out;
+}
+
+function _gdPickTrailerFallbackThumbnail(game, info = {}, metaData = {}) {
+    const screenshot = Array.isArray(info?.screenshots)
+        ? info.screenshots.find(Boolean)
+        : null;
+    return String(
+        screenshot ||
+        metaData?.heroImage ||
+        metaData?.heroUrl ||
+        metaData?.hero ||
+        metaData?.coverUrl ||
+        metaData?.cover ||
+        info?.heroImage ||
+        info?.heroUrl ||
+        game?.heroImage ||
+        game?.heroUrl ||
+        game?.image ||
+        game?.coverUrl ||
+        ''
+    ).replace(/\\/g, '/').trim();
+}
+
+function _gdHydrateTrailerThumbnails(trailers, game, info = {}, metaData = {}) {
+    const fallback = _gdPickTrailerFallbackThumbnail(game, info, metaData);
+    return _gdNormalizeTrailerList(trailers).map((trailer) => {
+        const thumbnail = _gdPickTrailerThumbnail(trailer) || fallback;
+        return {
+            ...trailer,
+            source: String(trailer.source || trailer.platform || trailer.provider || '').trim().toLowerCase(),
+            thumbnail,
+            thumbUrl: thumbnail
+        };
+    });
 }
 
 function _gdUpsertUniqueTrailer(list, trailer) {
@@ -7348,6 +7805,64 @@ function _gdSortTrailersForPlayback(list) {
             return a._gdOriginalIndex - b._gdOriginalIndex;
         })
         .map(({ _gdOriginalIndex, ...trailer }) => trailer);
+}
+
+function _gdRenderMediaTrailerCards(trailers, game) {
+    const mediaTab = document.getElementById('gdTab-media');
+    if (!mediaTab) return;
+
+    let section = document.getElementById('gdMediaTrailersSection');
+    if (!section) {
+        section = document.createElement('div');
+        section.className = 'gd-section';
+        section.id = 'gdMediaTrailersSection';
+        section.innerHTML = `
+            <h3 class="gd-section-title">Trailers</h3>
+            <div class="gd-media-trailer-grid" id="gdMediaTrailers"></div>
+        `;
+        mediaTab.insertBefore(section, mediaTab.firstElementChild || null);
+    }
+
+    const grid = document.getElementById('gdMediaTrailers');
+    const list = _gdNormalizeTrailerList(trailers || []);
+    if (!grid || list.length === 0) {
+        section.style.display = 'none';
+        if (grid) grid.innerHTML = '';
+        return;
+    }
+
+    section.style.display = '';
+    const coverFallback = (game?.heroImage || game?.hero || game?.image || game?.cover || '').replace(/\\/g, '/');
+    grid.innerHTML = list.map((trailer, index) => {
+        const ytId = extractYouTubeVideoId(trailer.url);
+        const thumb = trailer.thumbnail ||
+            trailer.thumbUrl ||
+            (ytId ? `https://img.youtube.com/vi/${ytId}/mqdefault.jpg` : '') ||
+            coverFallback;
+        const title = _gdTrailerDisplayTitle(trailer, index);
+        return `
+            <button class="gd-media-trailer-card" data-gd-media-trailer="${index}" type="button">
+                <span class="gd-media-trailer-thumb">
+                    ${thumb ? `<img src="${_gdEscHtml(thumb)}" alt="${_gdEscHtml(title)}" loading="lazy" onerror="this.style.display='none'">` : ''}
+                    <span class="gd-media-trailer-play" aria-hidden="true">
+                        <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor"><polygon points="7 4 19 12 7 20 7 4"/></svg>
+                    </span>
+                </span>
+                <span class="gd-media-trailer-title">${_gdEscHtml(title)}</span>
+            </button>
+        `;
+    }).join('');
+
+    grid.querySelectorAll('[data-gd-media-trailer]').forEach((btn) => {
+        btn.addEventListener('click', () => {
+            const idx = Number(btn.dataset.gdMediaTrailer || 0);
+            const wrap = document.querySelector('#gdTrailerSection .gd-trailer-wrap');
+            const overviewBtn = document.querySelector('.gd-tab[data-tab="overview"]');
+            if (overviewBtn && typeof gdSwitchTab === 'function') gdSwitchTab('overview', overviewBtn);
+            if (wrap) _gdRenderTrailerPlayer(wrap, list, idx);
+            document.getElementById('gdTrailerSection')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        });
+    });
 }
 
 function _gdCreatorTrailerPreviewHtml(trailer, index) {
@@ -10582,10 +11097,10 @@ async function _gdPopulateAccounts(game) {
     const container = document.getElementById('gdAccountsList');
     const rows = [];
     const detectedPlatforms = _gdDetectPlatforms(game);
-    const platformKeys = ['steam', 'epic'].filter(k => detectedPlatforms.includes(k));
+    const platformKeys = ['steam', 'epic', 'gog'].filter(k => detectedPlatforms.includes(k));
 
     if (platformKeys.length === 0) {
-        container.innerHTML = '<div class="gd-no-accounts">Accounts comparison is available for Steam and Epic games only.</div>';
+        container.innerHTML = '<div class="gd-no-accounts">Accounts comparison is available for Steam, Epic, and GOG games only.</div>';
         return;
     }
 

@@ -44,8 +44,8 @@ assert.ok(
     'main.js must register gameMetadataHandlers'
 );
 
-// 9 500 chars covers the full handler body on Windows CRLF line endings.
-const HANDLER_SRC = GAME_METADATA_HANDLERS_JS.slice(handlerStart, handlerStart + 9500);
+// Keep enough of the handler for source-level assertions as the metadata routes grow.
+const HANDLER_SRC = GAME_METADATA_HANDLERS_JS.slice(handlerStart, handlerStart + 12000);
 
 // ── Local mirrors of private helpers ─────────────────────────────────────────
 // Pattern from metadataPipeline.test.js: replicate private helper logic locally
@@ -286,6 +286,13 @@ test('get-game-metadata: server-pending info object has empty screenshots, artwo
 });
 
 // ─── 6. forceMetadata conditions ─────────────────────────────────────────────
+
+test('get-game-metadata: GOG hints try platform/id lookup before MRM fallback', () => {
+    assert.match(HANDLER_SRC, /hints\.allIds\?\.gog/);
+    assert.match(HANDLER_SRC, /hints\.productId/);
+    assert.match(HANDLER_SRC, /hints\.appName/);
+    assert.match(HANDLER_SRC, /lookupGame\(\{\s*platform:\s*['"]gog['"],\s*id:\s*cleanGogId\s*\}\)/);
+});
 
 test('get-game-metadata: forceMetadata checks hints.force === true', () => {
     assert.match(HANDLER_SRC, /hints\.force\s*===\s*true/);

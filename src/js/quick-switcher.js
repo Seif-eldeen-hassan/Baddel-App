@@ -37,6 +37,7 @@ const modeTabsEl     = document.querySelector('.qs-mode-tabs');
 const PLATFORM_ICONS = {
     steam:    '../assets/Steam.png',
     epic:     '../assets/epic.svg',
+    gog:      '../assets/gog.png',
     ea:       '../assets/ea.png',
     riot:     '../assets/riot.png',
     ubisoft:  '../assets/Ubisoft_white.png',
@@ -50,6 +51,7 @@ const PLATFORM_LABELS = {
     all:      'All accounts',
     steam:    'Steam',
     epic:     'Epic Games',
+    gog:      'GOG',
     ea:       'EA',
     riot:     'Riot Games',
     ubisoft:  'Ubisoft',

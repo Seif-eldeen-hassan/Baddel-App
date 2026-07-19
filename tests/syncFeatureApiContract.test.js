@@ -12,6 +12,7 @@ const EXPECTED_KEYS = [
     'registerPlatformSyncHandlers',
     'epicConnector',
     'steamConnector',
+    'gogConnector',
     'enrichProfilesWithSyncData',
     'registerPlatformSyncAssetDownloader',
     'autoSyncOnStartup',
@@ -54,6 +55,7 @@ test('createSyncFeatureApi preserves connector and function identity', () => {
 
     assert.equal(api.steamConnector, source.steamConnector);
     assert.equal(api.epicConnector, source.epicConnector);
+    assert.equal(api.gogConnector, source.gogConnector);
     assert.equal(api.registerPlatformSyncHandlers, source.registerPlatformSyncHandlers);
     assert.equal(api.cacheLibraryCoversFirst, source.cacheLibraryCoversFirst);
 });

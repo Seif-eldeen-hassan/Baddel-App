@@ -4,6 +4,7 @@ const SYNC_FEATURE_API_KEYS = Object.freeze([
     'registerPlatformSyncHandlers',
     'epicConnector',
     'steamConnector',
+    'gogConnector',
     'enrichProfilesWithSyncData',
     'registerPlatformSyncAssetDownloader',
     'autoSyncOnStartup',

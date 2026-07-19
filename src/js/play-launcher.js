@@ -5,6 +5,7 @@
 const PL_PLATFORM_CONFIG = {
     steam:    { img: '../assets/Steam.png',    name: 'Steam',         color: '#1b2838',  accent: '#66c0f4', invert: false },
     epic:     { img: '../assets/epic.svg',     name: 'Epic Games',    color: '#181818',  accent: '#ffffff', invert: true  },
+    gog:      { img: '../assets/gog.png',      name: 'GOG',           color: '#8638e5',  accent: '#a970ff', invert: false },
     ea:       { img: '../assets/ea.png',       name: 'EA App',        color: '#ff6b35',  accent: '#ff8c5a', invert: false },
     riot:     { img: '../assets/riot.png',     name: 'Riot Games',    color: '#ff4655',  accent: '#ff6673', invert: false },
     ubisoft:  { img: '../assets/ubisoft.png',  name: 'Ubisoft',       color: '#0070d1',  accent: '#00a8ff', invert: true  },
@@ -15,6 +16,7 @@ const PL_PLATFORM_CONFIG = {
 const PL_SWITCH_MAP = {
     steam:    (u) => window.electronAPI.switchSteam?.(u),
     epic:     (u) => window.electronAPI.switchEpic?.(u),
+    gog:      null,
     ea:       (u) => window.electronAPI.switchEA?.(u),
     riot:     (u) => window.electronAPI.switchRiot?.(u),
     ubisoft:  (u) => window.electronAPI.switchUbisoft?.(u),
@@ -35,6 +37,7 @@ const PL_PROFILES_MAP = {
         return accounts;
     },
     epic:     () => window.electronAPI.getEpicProfiles?.(),
+    gog:      () => window.electronAPI.platformSyncGetAccounts?.('gog'),
     ea:       () => window.electronAPI.getEAProfiles?.(),
     riot:     () => window.electronAPI.getRiotProfiles?.(),
     ubisoft:  () => window.electronAPI.getUbisoftProfiles?.(),
@@ -46,10 +49,12 @@ const PL_PROFILES_MAP = {
 const PL_SYNC_ACCOUNTS_MAP = {
     epic:  () => window.electronAPI.platformSyncGetAccounts?.('epic'),
     steam: () => window.electronAPI.platformSyncGetAccounts?.('steam'),
+    gog:   () => window.electronAPI.platformSyncGetAccounts?.('gog'),
 };
 const PL_SYNC_CACHE_MAP = {
     epic:  () => window.electronAPI.platformSyncGetCached?.('epic'),
     steam: () => window.electronAPI.platformSyncGetCached?.('steam'),
+    gog:   () => window.electronAPI.platformSyncGetCached?.('gog'),
 };
 
 

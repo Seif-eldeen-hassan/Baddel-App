@@ -212,7 +212,8 @@ test('platformSync imports the factory while keeping connector method implementa
     assert.match(source, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/createSyncConnectors['"]\)/);
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
-    assert.match(source, /createSyncConnectors\(\{\s*steam:\s*steamConnectorMethods,\s*epic:\s*epicConnectorMethods,\s*\}\)/);
+    assert.match(source, /const\s+gogConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors\(\{\s*steam:\s*steamConnectorMethods,\s*epic:\s*epicConnectorMethods,\s*gog:\s*gogConnectorMethods,\s*\}\)/);
     assert.match(source, /ALL_CONNECTORS/);
     assert.doesNotMatch(source, /require\([^)]*SyncContainer/);
     assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile|registerPlatformSyncHandlers/);
@@ -222,10 +223,12 @@ test('connector method shape and exported object identity expectations remain st
     const source = readSource(PLATFORM_SYNC_PATH);
     const steamConnector = Object.fromEntries(CONNECTOR_METHODS.map((method) => [method, function steamMethod() {}]));
     const epicConnector = Object.fromEntries(CONNECTOR_METHODS.map((method) => [method, function epicMethod() {}]));
+    const gogConnector = Object.fromEntries(CONNECTOR_METHODS.map((method) => [method, function gogMethod() {}]));
     const feature = createPlatformSyncFeature({
         registerPlatformSyncHandlers() {},
         epicConnector,
         steamConnector,
+        gogConnector,
         enrichProfilesWithSyncData() {},
         registerPlatformSyncAssetDownloader() {},
         autoSyncOnStartup() {},
@@ -239,16 +242,20 @@ test('connector method shape and exported object identity expectations remain st
 
     assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
     assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'gogConnectorMethods')), CONNECTOR_METHODS);
     assert.deepEqual(Object.keys(feature.steamConnector), CONNECTOR_METHODS);
     assert.deepEqual(Object.keys(feature.epicConnector), CONNECTOR_METHODS);
+    assert.deepEqual(Object.keys(feature.gogConnector), CONNECTOR_METHODS);
 
     for (const method of CONNECTOR_METHODS) {
         assert.equal(typeof feature.steamConnector[method], 'function', `steamConnector.${method} should remain a function`);
         assert.equal(typeof feature.epicConnector[method], 'function', `epicConnector.${method} should remain a function`);
+        assert.equal(typeof feature.gogConnector[method], 'function', `gogConnector.${method} should remain a function`);
     }
 
     assert.equal(feature.steamConnector, steamConnector);
     assert.equal(feature.epicConnector, epicConnector);
+    assert.equal(feature.gogConnector, gogConnector);
 });
 
 test('platformSync exports both connectors and preserves public API key order', () => {
@@ -256,31 +263,31 @@ test('platformSync exports both connectors and preserves public API key order', 
     const exportBlock = extractBalancedBlock(source, source.indexOf('module.exports = createPlatformSyncFeature'));
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ]);
     assert.match(source, /module\.exports\s*=\s*createPlatformSyncFeature\s*\(/);
     assert.match(exportBlock, /\bsteamConnector\b/);
     assert.match(exportBlock, /\bepicConnector\b/);
+    assert.match(exportBlock, /\bgogConnector\b/);
 });
 
 test('registerPlatformSyncHandlers still resolves connectors through local connector objects and IPC channels', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const handlerSource = extractFunctionSource(source, 'registerPlatformSyncHandlers');
 
-    assert.match(handlerSource, /const\s+connectors\s*=\s*\{/);
-    assert.match(handlerSource, /epic:\s*epicConnector/);
-    assert.match(handlerSource, /steam:\s*steamConnector/);
+    assert.match(handlerSource, /const\s+connectors\s*=\s*ALL_CONNECTORS/);
 
     for (const channel of PLATFORM_SYNC_IPC_CHANNELS) {
         assert.match(handlerSource, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} should remain registered`);

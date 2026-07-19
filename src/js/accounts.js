@@ -415,6 +415,13 @@ function _agCollectIdentityKeys(game = {}) {
         _agAddIdentityKey(keys, `epic-${epicAppName}`);
     }
 
+    const gogProductId = game.allIds?.gog || game.productId;
+    if (gogProductId) {
+        _agAddIdentityKey(keys, gogProductId);
+        _agAddIdentityKey(keys, `gog_${gogProductId}`);
+        _agAddIdentityKey(keys, `gog-${gogProductId}`);
+    }
+
     // Fallback title key
     [
         game.title,
@@ -603,6 +610,74 @@ function _agBuildAccountLabelsForGame(game, accountNameByKey) {
     return labels;
 }
 
+function _agPlatformIdentityValue(game = {}) {
+    const platform = String(game.platform || '').toLowerCase();
+    if (platform === 'gog') return game.productId || game.allIds?.gog || game.appName || game.id;
+    if (platform === 'steam') return game.appName || game.allIds?.steam || game.id;
+    if (platform === 'epic') return game.appName || game.launcherGameId || game.allIds?.epic || game.id;
+    return game.id || game.appName || game.productId;
+}
+
+function _agMergeUniqueList(primary = [], secondary = [], keyFn = (item) => String(item || '').toLowerCase()) {
+    const out = [];
+    const seen = new Set();
+    for (const item of [...(primary || []), ...(secondary || [])]) {
+        if (item == null || item === '') continue;
+        const key = keyFn(item);
+        if (!key || seen.has(key)) continue;
+        seen.add(key);
+        out.push(item);
+    }
+    return out;
+}
+
+function _agMergeTrailerLists(primary = [], secondary = []) {
+    return _agMergeUniqueList(primary, secondary, (item) => {
+        if (typeof item === 'string') return item.toLowerCase();
+        return String(item?.url || item?.src || item?.href || item?.title || item?.name || '').toLowerCase();
+    });
+}
+
+function _agMergeRatingLists(primary = [], secondary = []) {
+    return _agMergeUniqueList(primary, secondary, (item) => {
+        if (!item || typeof item !== 'object') return '';
+        return String(item.source || item.provider || item.name || JSON.stringify(item)).toLowerCase();
+    });
+}
+
+function _agMergeRichSyncedGameMeta(targetGame, sourceGame) {
+    if (!targetGame || !sourceGame) return;
+    const sourceInfo = sourceGame.info && typeof sourceGame.info === 'object' ? sourceGame.info : {};
+    const targetInfo = targetGame.info && typeof targetGame.info === 'object' ? targetGame.info : {};
+    const isGogSource = String(sourceGame.platform || '').toLowerCase() === 'gog';
+
+    targetGame.info = {
+        ...sourceInfo,
+        ...targetInfo,
+    };
+
+    for (const key of ['description', 'short_description', 'developer', 'publisher', 'releaseDate', 'trailer']) {
+        if ((targetGame.info[key] == null || targetGame.info[key] === '') && sourceInfo[key]) {
+            targetGame.info[key] = sourceInfo[key];
+        }
+    }
+
+    targetGame.info.allTrailers = _agMergeTrailerLists(targetInfo.allTrailers, sourceInfo.allTrailers);
+    targetGame.info.ratings = _agMergeRatingLists(targetInfo.ratings, sourceInfo.ratings);
+    targetGame.info.screenshots = _agMergeUniqueList(targetInfo.screenshots, sourceInfo.screenshots);
+    targetGame.info.genres = _agMergeUniqueList(targetInfo.genres, sourceInfo.genres, (item) => String(item || '').toLowerCase());
+    targetGame.ratings = _agMergeRatingLists(targetGame.ratings, sourceGame.ratings || sourceInfo.ratings);
+
+    if (isGogSource && sourceInfo.releaseDate) {
+        targetGame.info.releaseDate = sourceInfo.releaseDate;
+        targetGame.releaseDate = sourceInfo.releaseDate;
+    }
+
+    for (const key of ['coverUrl', 'heroUrl', 'logoUrl', 'short_description', 'description', 'developer', 'publisher']) {
+        if (!targetGame[key] && sourceGame[key]) targetGame[key] = sourceGame[key];
+    }
+}
+
 function _agMergeAccountMeta(targetGame, sourceGame, accountNameByKey) {
     const sourceKeys = _agExtractGameAccountKeys(sourceGame);
     const targetKeys = Array.isArray(targetGame.accountKeys) ? targetGame.accountKeys : [];
@@ -668,6 +743,7 @@ function _agBuildAccountNameByKey(accountMetadata = {}) {
     if (accountMetadata instanceof Map) return accountMetadata;
     addAccounts('epic', accountMetadata.epic || accountMetadata.epicAccounts);
     addAccounts('steam', accountMetadata.steam || accountMetadata.steamAccounts);
+    addAccounts('gog', accountMetadata.gog || accountMetadata.gogAccounts);
     return accountNameByKey;
 }
 
@@ -682,16 +758,17 @@ function _agMergeSyncedLibraryRecords(rawGames = [], accountNameByKey = new Map(
             if (!existingGame.platforms.includes(game.platform)) {
                 existingGame.platforms.push(game.platform);
             }
-            existingGame.allIds[game.platform] = game.id;
+            existingGame.allIds[game.platform] = _agPlatformIdentityValue(game);
             existingGame._agSource     = 'platform-sync';
             existingGame.librarySource = 'synced-account';
+            _agMergeRichSyncedGameMeta(existingGame, game);
             _agMergeAccountMeta(existingGame, game, accountNameByKey);
             return;
         }
 
         const newGame = { ...game };
         newGame.platforms     = [game.platform];
-        newGame.allIds        = { [game.platform]: game.id };
+        newGame.allIds        = { [game.platform]: _agPlatformIdentityValue(game) };
         newGame._agSource     = 'platform-sync';
         newGame.librarySource = 'synced-account';
         _agMergeAccountMeta(newGame, game, accountNameByKey);
@@ -723,7 +800,7 @@ async function _agReadCachedAllGamesProjection() {
         ? await window.electronAPI.platformSyncStatus().catch(() => ({}))
         : {};
     const cachedPlatformGames = [];
-    const accountMetadata = { epic: [], steam: [] };
+    const accountMetadata = { epic: [], steam: [], gog: [] };
 
     if (status?.epic === true) {
         const epicAccountsRes = typeof window.electronAPI?.platformSyncGetAccounts === 'function'
@@ -744,6 +821,16 @@ async function _agReadCachedAllGamesProjection() {
             ? await window.electronAPI.platformSyncGetCached('steam').catch(() => ({}))
             : {};
         if (steamRes?.games) cachedPlatformGames.push(...steamRes.games);
+    }
+    if (status?.gog === true) {
+        const gogAccountsRes = typeof window.electronAPI?.platformSyncGetAccounts === 'function'
+            ? await window.electronAPI.platformSyncGetAccounts('gog').catch(() => ({}))
+            : {};
+        accountMetadata.gog = gogAccountsRes?.accounts || [];
+        const gogRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
+            ? await window.electronAPI.platformSyncGetCached('gog').catch(() => ({}))
+            : {};
+        if (gogRes?.games) cachedPlatformGames.push(...gogRes.games);
     }
 
     return buildAllGamesLibraryProjection({ cachedPlatformGames, accountMetadata });
@@ -1347,12 +1434,12 @@ function _agIsUserLibraryGame(g) {
         g.syncSource    === 'platform-sync'  ||
         g._agSource     === 'platform-sync';
 
-    // Steam/Epic only belong when they came from a linked account library,
+    // Steam/Epic/GOG only belong when they came from a linked account library,
     // not merely from a local installed scanner.
-    const isSteamOrEpic =
-        platform === 'steam' || platform === 'epic' ||
-        scanner  === 'steam' || scanner  === 'epic';
-    if (isSteamOrEpic && hasSyncedAccountEvidence) return true;
+    const isSyncedLibraryPlatform =
+        platform === 'steam' || platform === 'epic' || platform === 'gog' ||
+        scanner  === 'steam' || scanner  === 'epic' || scanner  === 'gog';
+    if (isSyncedLibraryPlatform && hasSyncedAccountEvidence) return true;
 
     // Everything else is an auto-scanned installed-only record.
     return false;
@@ -1531,7 +1618,7 @@ async function navigateToAllGames(opts = {}) {
             if (_rdbg) console.log('[AGROUTE] stale token skipped token=' + _myRouteToken);
             return;
         }
-        const _hasLinked = _syncSt?.steam === true || _syncSt?.epic === true;
+        const _hasLinked = _syncSt?.steam === true || _syncSt?.epic === true || _syncSt?.gog === true;
         if (!_hasLinked) {
             window._allGamesCache    = [];
             window._allGamesRawCache = [];
@@ -2621,6 +2708,7 @@ if (window.electronAPI?.onAllGamesCoverCached) {
 const PLAT_BADGE_META = {
     steam:   { color: '#66c0f4', icon: '../assets/Steam.png',   invert: false, label: 'Steam'   },
     epic:    { color: '#ffffff', icon: '../assets/epic.svg',    invert: true,  label: 'Epic'    },
+    gog:     { color: '#a970ff', icon: '../assets/gog.png',     invert: false, label: 'GOG'     },
     ea:      { color: '#ff6b35', icon: '../assets/ea.png',      invert: false, label: 'EA'      },
     riot:    { color: '#ff4655', icon: '../assets/riot.png',    invert: false, label: 'Riot'    },
     ubisoft: { color: '#00a8ff', icon: '../assets/ubisoft.png', invert: false, label: 'Ubisoft' },
@@ -2855,6 +2943,10 @@ async function _agHydrateCachedCoversIntoAllGames() {
         const epicRes = await window.electronAPI.platformSyncGetCached?.('epic');
         if (Array.isArray(epicRes?.games)) rawGames.push(...epicRes.games);
     } catch {}
+    try {
+        const gogRes = await window.electronAPI.platformSyncGetCached?.('gog');
+        if (Array.isArray(gogRes?.games)) rawGames.push(...gogRes.games);
+    } catch {}
 
     const coverByKey = new Map();
 
@@ -2867,6 +2959,8 @@ async function _agHydrateCachedCoversIntoAllGames() {
             g.namespace,
             g.allIds?.steam,
             g.allIds?.epic,
+            g.allIds?.gog,
+            g.productId,
             String(g.title || g.name || g.appName || '').toLowerCase().replace(/[^a-z0-9]/g, '')
         ].filter(Boolean).forEach(k => coverByKey.set(String(k), cover));
     };
@@ -3366,6 +3460,7 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
     grid.innerHTML = '';
     grid.style.position = 'relative';
     grid.style.height = '';
+    grid.classList.remove('ag-ready-empty-grid');
     _vs.cardPool.clear();
     _vs.cols = 0;
     _vs._gridTopDirty = true;
@@ -3392,6 +3487,7 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
             _vs._scrollSettleTimer = null;
         }
         if (window.agReadyOnly) {
+            grid.classList.add('ag-ready-empty-grid');
             grid.innerHTML = `
                 <div class="empty-state ag-inline-empty">
                     <svg class="empty-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

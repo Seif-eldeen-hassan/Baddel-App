@@ -159,6 +159,13 @@
                         <span class="nav-text">Epic Games</span>
                         <span class="platform-count" id="epicCount">—</span>
                     </div>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-gog" onclick="selectAccountPlatform('gog')">
+                        <div class="nav-icon platform-icon gog-icon">
+                            <img src="../assets/gog.png" alt="GOG" style="width:16px;height:16px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">GOG</span>
+                        <span class="platform-count" id="gogCount">â€”</span>
+                    </div>
                     <div class="nav-item sb-sub-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
                         <div class="nav-icon platform-icon ea-icon">
                             <img src="../assets/ea.png" alt="EA" style="width:18px;height:18px;object-fit:contain;">
@@ -657,6 +664,9 @@
                                     </button>
                                     <button class="ag-pill" data-platform="epic" onclick="setAgPlatformFilter('epic', this)">
                                         <img src="../assets/epic.svg" alt="Epic" class="ag-pill-icon ag-pill-icon-invert">Epic
+                                    </button>
+                                    <button class="ag-pill" data-platform="gog" onclick="setAgPlatformFilter('gog', this)">
+                                        <img src="../assets/gog.png" alt="GOG" class="ag-pill-icon">GOG
                                     </button>
 
                                     <!-- All Accounts dropdown — inline with pills -->
@@ -1983,6 +1993,15 @@
                     <div style="display: flex; flex-direction: column;">
                         <span style="font-weight: 600; font-size: 0.9rem;">Steam</span>
                         <span id="steamAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
+                    </div>
+                </div>
+                <div class="platform-nav-item" id="plat-nav-gog" onclick="openPlatformDetails('gog')">
+                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: #8638e5; border-radius: 6px;">
+                        <img src="../assets/gog.png" alt="GOG" style="width: 16px; height: 16px; object-fit: contain;">
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">GOG</span>
+                        <span id="gogAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
                     </div>
                 </div>
                 

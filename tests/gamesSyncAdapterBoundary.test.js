@@ -136,18 +136,19 @@ test('library update events still fetch saved games through the Games API seam',
 test('public platform sync API keys and IPC channels remain unchanged', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const expectedKeys = [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);

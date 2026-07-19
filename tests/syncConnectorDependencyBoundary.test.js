@@ -60,6 +60,7 @@ test('connector method implementations stay in platformSync while factory owns a
 
     assert.match(platformSyncSource, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(platformSyncSource, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(platformSyncSource, /const\s+gogConnectorMethods\s*=\s*\{/);
     assert.match(platformSyncSource, /createSyncConnectors\(\{/);
     assert.match(platformSyncSource, /ALL_CONNECTORS/);
     assert.equal(fs.existsSync(CREATE_SYNC_CONNECTORS_PATH), true, 'createSyncConnectors.js should exist after extraction');
@@ -77,10 +78,12 @@ test('connector method names remain stable at the current boundary', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
     const steamConnectorSource = extractObjectLiteral(platformSyncSource, 'steamConnectorMethods');
     const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnectorMethods');
+    const gogConnectorSource = extractObjectLiteral(platformSyncSource, 'gogConnectorMethods');
 
     for (const method of CONNECTOR_METHODS) {
         assert.match(steamConnectorSource, new RegExp(`\\b(?:async\\s+)?${method}\\s*\\(`), `steamConnector.${method} must remain`);
         assert.match(epicConnectorSource, new RegExp(`\\b(?:async\\s+)?${method}\\s*\\(`), `epicConnector.${method} must remain`);
+        assert.match(gogConnectorSource, new RegExp(`\\b(?:async\\s+)?${method}\\s*\\(`), `gogConnector.${method} must remain`);
     }
 });
 
@@ -120,7 +123,7 @@ test('platformSync still owns Electron login, session, notification, state, and 
     const source = readSource(PLATFORM_SYNC_PATH);
     const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
 
-    assert.match(source, /const\s+\{\s*app,\s*BrowserWindow,\s*Notification\s*\}\s*=\s*require\(['"]electron['"]\)/);
+    assert.match(source, /const\s+\{\s*app,\s*BrowserWindow,\s*Notification,\s*session\s*\}\s*=\s*require\(['"]electron['"]\)/);
     assert.match(source, /app\.getPath\(['"]userData['"]\)/);
     assert.match(source, /BrowserWindow\.fromWebContents/);
     assert.match(source, /BrowserWindow\.getFocusedWindow/);
@@ -177,18 +180,19 @@ test('platformSync still owns repository, service, and Games feature dependencie
 test('public sync API keys and platform-sync IPC channels remain unchanged', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const expectedKeys = [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);

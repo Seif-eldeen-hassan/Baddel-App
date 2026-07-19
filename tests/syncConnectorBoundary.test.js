@@ -113,6 +113,7 @@ function makeFakePlatformSyncApi() {
         registerPlatformSyncHandlers() {},
         epicConnector: Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, function epicMethod() {}])),
         steamConnector: Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, function steamMethod() {}])),
+        gogConnector: Object.fromEntries(CONNECTOR_KEYS.map((key) => [key, function gogMethod() {}])),
         enrichProfilesWithSyncData() {},
         registerPlatformSyncAssetDownloader() {},
         autoSyncOnStartup() {},
@@ -125,14 +126,16 @@ function makeFakePlatformSyncApi() {
     };
 }
 
-test('platformSync exports Steam and Epic connector objects with stable method shapes', () => {
+test('platformSync exports Steam, Epic, and GOG connector objects with stable method shapes', () => {
     const sync = loadPlatformSyncShapeOnly();
 
     assert.deepEqual(Object.keys(sync.steamConnector), CONNECTOR_KEYS);
     assert.deepEqual(Object.keys(sync.epicConnector), CONNECTOR_KEYS);
+    assert.deepEqual(Object.keys(sync.gogConnector), CONNECTOR_KEYS);
     for (const key of CONNECTOR_KEYS) {
         assert.equal(typeof sync.steamConnector[key], 'function', `steamConnector.${key} must remain a function`);
         assert.equal(typeof sync.epicConnector[key], 'function', `epicConnector.${key} must remain a function`);
+        assert.equal(typeof sync.gogConnector[key], 'function', `gogConnector.${key} must remain a function`);
     }
 });
 
@@ -143,6 +146,7 @@ test('createPlatformSyncFeature preserves real connector object identity', () =>
 
     assert.equal(feature.steamConnector, sync.steamConnector);
     assert.equal(feature.epicConnector, sync.epicConnector);
+    assert.equal(feature.gogConnector, sync.gogConnector);
 });
 
 test('SyncContainer preserves injected connector object identity', () => {
@@ -153,6 +157,7 @@ test('SyncContainer preserves injected connector object identity', () => {
 
     assert.equal(feature.steamConnector, platformSyncApi.steamConnector);
     assert.equal(feature.epicConnector, platformSyncApi.epicConnector);
+    assert.equal(feature.gogConnector, platformSyncApi.gogConnector);
 });
 
 test('getSyncFeature singleton preserves connector object identity', () => {
@@ -163,6 +168,7 @@ test('getSyncFeature singleton preserves connector object identity', () => {
 
     assert.equal(feature.steamConnector, platformSyncApi.steamConnector);
     assert.equal(feature.epicConnector, platformSyncApi.epicConnector);
+    assert.equal(feature.gogConnector, platformSyncApi.gogConnector);
     assert.equal(getSyncFeature({ platformSyncApi: makeFakePlatformSyncApi() }), feature);
 });
 
@@ -197,6 +203,7 @@ test('platformSync still owns connector method implementations and current platf
 
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+gogConnectorMethods\s*=\s*\{/);
     assert.match(source, /ALL_CONNECTORS/);
     for (const channel of channels) {
         assert.match(source, new RegExp(`['"]${channel}['"]`));

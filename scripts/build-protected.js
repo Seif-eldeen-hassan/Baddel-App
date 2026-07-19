@@ -342,6 +342,7 @@ async function main() {
     console.log('2. Copying runtime assets ...');
     copyDir(path.join(ROOT, 'assets'), path.join(DEST, 'assets'));
     copyDir(path.join(ROOT, 'bin'),    path.join(DEST, 'bin'));
+    copyDir(path.join(ROOT, 'gog-runtime'), path.join(DEST, 'gog-runtime'));
     fs.copyFileSync(path.join(ROOT, 'Logo.ico'), path.join(DEST, 'Logo.ico'));
 
     // 3 – Main-process bundle

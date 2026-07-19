@@ -417,18 +417,19 @@ test('runtime events and IPC channels remain on their current payload channels',
 test('connectors and public sync API shapes remain stable while runtime state is characterized', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const expectedKeys = [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);

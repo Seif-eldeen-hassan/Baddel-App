@@ -174,6 +174,7 @@ test('createSyncConnectors factory exists and platformSync delegates connector a
     assert.match(source, /createSyncConnectors/);
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
+    assert.match(source, /const\s+gogConnectorMethods\s*=\s*\{/);
     assert.match(source, /ALL_CONNECTORS/);
     assert.doesNotMatch(source, /SyncContainer/);
     assert.doesNotMatch(factorySource, /platformSync|SyncContainer|electron|steamBridge|legendary|execFile|ipcMain/);
@@ -184,6 +185,7 @@ test('Steam and Epic connector method shapes are exact and ordered for the futur
 
     assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'steamConnectorMethods')), CONNECTOR_METHODS);
     assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'epicConnectorMethods')), CONNECTOR_METHODS);
+    assert.deepEqual(getTopLevelMethodNames(extractObjectLiteral(source, 'gogConnectorMethods')), CONNECTOR_METHODS);
 });
 
 test('factory input candidates already backed by repositories, adapters, or services remain wired in platformSync', () => {
@@ -249,7 +251,7 @@ test('platformSync still owns Steam bridge, Legendary, and Electron runtime boun
     assert.match(source, /runLegendary\(\['list',\s*'--json'\]/);
     assert.match(source, /getLegendaryConfPath/);
 
-    assert.match(source, /const\s+\{\s*app,\s*BrowserWindow,\s*Notification\s*\}\s*=\s*require\(['"]electron['"]\)/);
+    assert.match(source, /const\s+\{\s*app,\s*BrowserWindow,\s*Notification,\s*session\s*\}\s*=\s*require\(['"]electron['"]\)/);
     assert.match(source, /app\.getPath\(['"]userData['"]\)/);
     assert.match(source, /BrowserWindow\.fromWebContents/);
     assert.match(source, /BrowserWindow\.getFocusedWindow/);
@@ -266,18 +268,19 @@ test('public API, IPC channels, and production entrypoint remain on the platform
     const source = readSource(PLATFORM_SYNC_PATH);
     const mainSource = readSource(MAIN_JS_PATH);
     const expectedKeys = [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);

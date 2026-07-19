@@ -34,28 +34,33 @@ test('createSyncConnectors exists and exposes the current connector method contr
     ]);
 });
 
-test('createSyncConnectors returns Steam, Epic, and ALL_CONNECTORS in the current order', () => {
+test('createSyncConnectors returns Steam, Epic, GOG, and ALL_CONNECTORS in the current order', () => {
     const result = createSyncConnectors({
         steam: createMethods('steam'),
         epic: createMethods('epic'),
+        gog: createMethods('gog'),
     });
 
-    assert.deepEqual(Object.keys(result), ['steamConnector', 'epicConnector', 'ALL_CONNECTORS']);
+    assert.deepEqual(Object.keys(result), ['steamConnector', 'epicConnector', 'gogConnector', 'ALL_CONNECTORS']);
     assert.deepEqual(Object.keys(result.steamConnector), CONNECTOR_METHODS);
     assert.deepEqual(Object.keys(result.epicConnector), CONNECTOR_METHODS);
-    assert.deepEqual(Object.keys(result.ALL_CONNECTORS), ['epic', 'steam']);
+    assert.deepEqual(Object.keys(result.gogConnector), CONNECTOR_METHODS);
+    assert.deepEqual(Object.keys(result.ALL_CONNECTORS), ['epic', 'steam', 'gog']);
     assert.equal(result.ALL_CONNECTORS.steam, result.steamConnector);
     assert.equal(result.ALL_CONNECTORS.epic, result.epicConnector);
+    assert.equal(result.ALL_CONNECTORS.gog, result.gogConnector);
 });
 
 test('connector methods are forwarded exactly and keep object method this binding', () => {
     const steam = createMethods('steam');
     const epic = createMethods('epic');
-    const { steamConnector, epicConnector } = createSyncConnectors({ steam, epic });
+    const gog = createMethods('gog');
+    const { steamConnector, epicConnector, gogConnector } = createSyncConnectors({ steam, epic, gog });
 
     for (const method of CONNECTOR_METHODS) {
         assert.equal(steamConnector[method], steam[method]);
         assert.equal(epicConnector[method], epic[method]);
+        assert.equal(gogConnector[method], gog[method]);
     }
 
     const steamResult = steamConnector.syncLibrary('target');
@@ -80,12 +85,16 @@ test('createSyncConnectors rejects missing connector objects and methods with us
         () => createSyncConnectors({ steam: createMethods('steam') }),
         /epic connector must be an object/
     );
+    assert.throws(
+        () => createSyncConnectors({ steam: createMethods('steam'), epic: createMethods('epic') }),
+        /gog connector must be an object/
+    );
 
     const incompleteSteam = createMethods('steam');
     delete incompleteSteam.unlink;
 
     assert.throws(
-        () => createSyncConnectors({ steam: incompleteSteam, epic: createMethods('epic') }),
+        () => createSyncConnectors({ steam: incompleteSteam, epic: createMethods('epic'), gog: createMethods('gog') }),
         /steam connector missing unlink/
     );
 });

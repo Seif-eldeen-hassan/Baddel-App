@@ -56,6 +56,7 @@ function canonicalPlatforms(game) {
     // 3. Structured metadata fields that prove platform membership
     if (game.allIds?.steam != null) s.add('steam');
     if (game.allIds?.epic  != null) s.add('epic');
+    if (game.allIds?.gog   != null) s.add('gog');
     if (game.riotProduct)           s.add('riot');
 
     // 4. Protocol / marker detection in the command string — unambiguous patterns only

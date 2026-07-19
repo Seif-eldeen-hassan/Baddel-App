@@ -8,7 +8,7 @@ const path        = require('path');
 const fs          = require('fs').promises;
 const fsSync      = require('fs');
 const { execFile } = require('child_process');
-const { app, BrowserWindow, Notification } = require('electron');
+const { app, BrowserWindow, Notification, session } = require('electron');
 const { getGamesFeature } = require('./src/features/games/infrastructure/composition/GamesContainer');
 const { GamesSyncAdapter } = require('./src/features/sync/infrastructure/adapters/GamesSyncAdapter');
 const {
@@ -68,6 +68,21 @@ const {
 const {
     createSyncConnectors,
 } = require('./src/features/sync/infrastructure/composition/createSyncConnectors');
+const {
+    GogRuntime,
+    redactGogSecrets,
+} = require('./src/features/sync/infrastructure/integrations/gog/GogRuntime');
+const {
+    GogAuthService,
+} = require('./src/features/sync/infrastructure/integrations/gog/GogAuthService');
+const {
+    GogApiClient,
+} = require('./src/features/sync/infrastructure/integrations/gog/GogApiClient');
+const {
+    normalizeGogRelease,
+    mergeGogGames,
+} = require('./src/features/sync/infrastructure/integrations/gog/GogLibraryNormalizer');
+const gogRuntimeVersion = require('./gog-runtime/version.json');
 const baddelApi = require('./services/baddelApi');
 const { redactSecrets } = require('./services/credentialValidator');
 const analytics = require('./analytics');
@@ -109,6 +124,24 @@ const EPIC_MERGED_CACHE            = syncCacheRepository.epicMergedCacheFile;
 
 // Steam Paths
 const STEAM_MERGED_CACHE  = syncCacheRepository.steamMergedCacheFile;
+const GOG_MERGED_CACHE    = syncCacheRepository.gogMergedCacheFile;
+const gogRuntime = new GogRuntime({
+    projectRoot: __dirname,
+    resourcesPath: process.resourcesPath,
+    isPackaged: app.isPackaged,
+    versionInfo: gogRuntimeVersion,
+});
+const gogApiClient = new GogApiClient();
+const gogAuthService = new GogAuthService({
+    runtime: gogRuntime,
+    userDataDir: app.getPath('userData'),
+    BrowserWindow,
+    session,
+    profileResolver: (credentials) => gogApiClient.fetchUserDetails({
+        userId: credentials.userId,
+        accessToken: credentials.accessToken,
+    }),
+});
 let _libraryWriteQueue = Promise.resolve();
 let _enrichRequestQueue = Promise.resolve();
 
@@ -260,6 +293,7 @@ const stateChangedEmitter = new StateChangedEmitter({
 const _platformSyncState = {
     steam: null,
     epic: null,
+    gog: null,
 };
 
 function _clonePlain(value) {
@@ -2462,13 +2496,495 @@ const epicConnectorMethods = {
     },
 };
 
+// ============================================================
+// ─── GOG CONNECTOR ──────────────────────────────────────────
+// ============================================================
+
+async function getGogAccountsList() {
+    return syncCacheRepository.readGogAccounts();
+}
+
+async function saveGogAccountsList(accounts) {
+    await syncCacheRepository.writeGogAccountsAtomic(accounts);
+}
+
+function resolveGogDisplayName(credentials, existingAccount = null) {
+    const candidates = [
+        credentials?.displayName,
+        credentials?.username,
+        credentials?.user?.username,
+        credentials?.user?.displayName,
+        existingAccount?.displayName,
+    ].map(v => String(v || '').trim()).filter(Boolean);
+    if (candidates.length > 0) return candidates[0];
+    const id = String(credentials?.userId || credentials?.id || '');
+    return id ? `GOG ${id.slice(-6)}` : 'GOG Account';
+}
+
+function resolveGogStorePageUrl(product, release) {
+    const candidates = [
+        product?.url,
+        product?.storeUrl,
+        product?.store_url,
+        product?.links?.product,
+        product?.links?.store,
+        product?.links?.self,
+        product?._links?.product?.href,
+        product?._links?.store?.href,
+    ].map(v => String(v || '').trim()).filter(Boolean);
+    const absolute = candidates.find(v => /^https?:\/\/(?:www\.)?gog\.com\/game\//i.test(v));
+    if (absolute) return absolute;
+
+    const slug = String(
+        product?.slug ||
+        product?.productSlug ||
+        product?.product_slug ||
+        release?.slug ||
+        release?.product_slug ||
+        ''
+    ).trim();
+    if (!slug || /[\/\\]/.test(slug)) return null;
+    return `https://www.gog.com/game/${encodeURIComponent(slug)}`;
+}
+
+function normalizeGogCatalogTitle(value) {
+    return String(value || '')
+        .toLowerCase()
+        .replace(/[^\p{L}\p{N}]+/gu, ' ')
+        .trim()
+        .replace(/\s+/g, ' ');
+}
+
+function pickGogCatalogProduct(catalog, release) {
+    const products = Array.isArray(catalog?.products) ? catalog.products : [];
+    if (!products.length) return null;
+    const title = normalizeGogCatalogTitle(release?.title?.['*'] || release?.title || release?.name);
+    if (!title) return null;
+    const exact = products.find(product => normalizeGogCatalogTitle(product?.title) === title);
+    if (exact) return exact;
+    return null;
+}
+
+function isGogAmazonPrimeRelease(release) {
+    const values = [
+        release?.title?.['*'],
+        release?.title,
+        release?.name,
+        release?.game?.title?.['*'],
+        release?.game?.title,
+    ];
+    return values.some((value) => /\bamazon\s+prime\b/i.test(String(value || '')));
+}
+
+function hasGogStoreDescription(product) {
+    return !!(
+        product?.description?.full ||
+        product?.description?.lead ||
+        product?.summary ||
+        product?.short_description ||
+        product?.shortDescription
+    );
+}
+
+function hasGogStoreReleaseDate(product) {
+    return !!(
+        product?.release_date ||
+        product?.releaseDate ||
+        product?.globalReleaseDate ||
+        product?._catalogProduct?.releaseDate ||
+        product?._catalogProduct?.release_date
+    );
+}
+
+function hasGogStoreRequirements(product) {
+    return !!(
+        product?.requirements ||
+        product?.system_requirements ||
+        product?.systemRequirements ||
+        product?.content_system_compatibility?.requirements
+    );
+}
+
+function shouldFetchGogStorePage(product) {
+    if (!product) return true;
+    return !hasGogStoreDescription(product) ||
+        !hasGogStoreReleaseDate(product) ||
+        !hasGogStoreRequirements(product);
+}
+
+async function fetchGogStoreMetadata(release, credentials = {}) {
+    let storeProduct = null;
+    try {
+        storeProduct = await gogApiClient.fetchStoreProductData({
+            productId: release.external_id,
+            accessToken: credentials.accessToken,
+        });
+    } catch (err) {
+        syncWarn(`[GogSync] Failed to fetch store product by external id ${release?.external_id}: ${redactGogSecrets(err?.message || err)}`);
+    }
+
+    if (!resolveGogStorePageUrl(storeProduct, release)) {
+        const query = release?.title?.['*'] || release?.title || release?.name;
+        if (query) {
+            try {
+                const catalog = await gogApiClient.searchStoreCatalog({ query });
+                const catalogProduct = pickGogCatalogProduct(catalog, release);
+                if (catalogProduct) {
+                    storeProduct = {
+                        ...(storeProduct || {}),
+                        ...catalogProduct,
+                        _catalogProduct: catalogProduct,
+                    };
+                }
+            } catch (catalogErr) {
+                syncWarn(`[GogSync] Failed to search GOG catalog for ${release?.external_id}: ${redactGogSecrets(catalogErr?.message || catalogErr)}`);
+            }
+        }
+    }
+
+    let storePage = null;
+    const pageUrl = resolveGogStorePageUrl(storeProduct, release);
+    if (pageUrl && shouldFetchGogStorePage(storeProduct)) {
+        try {
+            storePage = await gogApiClient.fetchStorePageData({ url: pageUrl });
+        } catch (pageErr) {
+            syncWarn(`[GogSync] Failed to fetch store page metadata for ${release?.external_id}: ${redactGogSecrets(pageErr?.message || pageErr)}`);
+        }
+    }
+    return { storeProduct, storePage };
+}
+
+async function buildGogOwnedGameEntries(account, releases = [], credentials = {}) {
+    return mapWithConcurrency(releases, 6, async (release) => {
+        if (String(release?.platform_id || '').toLowerCase() !== 'gog') return null;
+        if (isGogAmazonPrimeRelease(release)) return null;
+        try {
+            const details = await gogApiClient.fetchGamesDbData({
+                platform: 'gog',
+                externalId: release.external_id,
+                certificate: release.certificate,
+                accessToken: credentials.accessToken,
+            });
+            let storeProduct = null;
+            let storePage = null;
+            try {
+                ({ storeProduct, storePage } = await fetchGogStoreMetadata({
+                    ...release,
+                    title: details?.title || release?.title,
+                    name: details?.title?.['*'] || details?.title || release?.name,
+                }, credentials));
+            } catch (storeErr) {
+                syncWarn(`[GogSync] Failed to fetch store metadata for ${release?.external_id}: ${redactGogSecrets(storeErr?.message || storeErr)}`);
+            }
+            return normalizeGogRelease({ ...details, _storeProduct: storeProduct, _storePage: storePage, _libraryEntry: release }, account);
+        } catch (err) {
+            syncWarn(`[GogSync] Failed to fetch game details for ${release?.external_id}: ${redactGogSecrets(err?.message || err)}`);
+            try {
+                const { storeProduct, storePage } = await fetchGogStoreMetadata(release, credentials);
+                return normalizeGogRelease({ ...release, _storeProduct: storeProduct, _storePage: storePage }, account);
+            } catch (storeErr) {
+                syncWarn(`[GogSync] Failed to fetch store metadata for ${release?.external_id}: ${redactGogSecrets(storeErr?.message || storeErr)}`);
+                return normalizeGogRelease(release, account);
+            }
+        }
+    }).then((games) => games.filter(Boolean));
+}
+
+async function syncSingleGogAccount(account, previousGames) {
+    const aid = String(account.id);
+    const previousCount = countGamesForAccount('gog', previousGames, aid);
+    try {
+        _updatePlatformSyncAccount('gog', aid, {
+            status: 'syncing',
+            startedAt: new Date().toISOString(),
+            message: 'Refreshing GOG credentials',
+        });
+
+        const credentials = await gogAuthService.refreshCredentials(aid);
+        try {
+            const profile = await gogApiClient.fetchUserDetails({
+                userId: credentials.userId || aid,
+                accessToken: credentials.accessToken,
+            });
+            account.displayName = resolveGogDisplayName({ ...credentials, user: profile, ...profile }, account);
+        } catch (err) {
+            syncWarn(`[GogSync] Could not refresh account profile for ${aid}: ${redactGogSecrets(err?.message || err)}`);
+        }
+        _updatePlatformSyncAccount('gog', aid, { message: 'Reading GOG library' });
+        const releases = await gogApiClient.fetchLibraryReleases({
+            userId: credentials.userId || aid,
+            accessToken: credentials.accessToken,
+            refreshAuth: () => gogAuthService.refreshCredentials(aid),
+        });
+        const games = await buildGogOwnedGameEntries(account, releases, credentials);
+
+        _updatePlatformSyncAccount('gog', aid, {
+            status: 'synced',
+            finishedAt: new Date().toISOString(),
+            gamesCount: games.length,
+            gameTitles: summarizeGameTitles(games),
+            message: `Synced ${games.length} games`,
+        });
+        return {
+            aid,
+            games,
+            result: {
+                status: 'success',
+                rawGamesCount: releases.length,
+                allowZeroGames: true,
+                displayName: account.displayName,
+            },
+        };
+    } catch (err) {
+        const code = err?.code || 'GOG_LIBRARY_REQUEST_FAILED';
+        const message = redactGogSecrets(err?.message || 'GOG sync failed.');
+        const isAuth = code === 'GOG_AUTH_EXPIRED' || code === 'GOG_AUTH_FAILED' || /auth/i.test(message);
+        if (isAuth) {
+            const accounts = await getGogAccountsList();
+            const nextAccounts = accounts.map((acc) => String(acc.id) === aid
+                ? { ...acc, needsReauth: true, credentialStatus: 'invalid' }
+                : acc);
+            await saveGogAccountsList(nextAccounts);
+        }
+        _updatePlatformSyncAccount('gog', aid, {
+            status: isAuth ? 'needs_reauth' : 'error',
+            finishedAt: new Date().toISOString(),
+            gamesCount: previousCount,
+            message: isAuth ? 'Reconnect required' : message,
+        });
+        _pushPlatformSyncLog('gog', isAuth ? 'warn' : 'error', `Failed to sync ${account.displayName}: ${message}`, {
+            accountId: aid,
+            accountName: account.displayName,
+        });
+        return {
+            aid,
+            games: [],
+            result: {
+                status: isAuth ? 'needs_reauth' : 'error',
+                rawGamesCount: 0,
+                validationFailed: true,
+            },
+        };
+    }
+}
+
+const gogConnectorMethods = {
+    isLinked() {
+        return syncCacheRepository.isGogLinked();
+    },
+    getAccounts() {
+        const raw = syncCacheRepository.readGogAccountsSync();
+        if (!Array.isArray(raw)) return [];
+        return raw.filter(a => a?.id).map(a => ({ ...a, id: String(a.id) }));
+    },
+    async link(parentWindow, emitState = () => {}) {
+        await ensureDirs();
+        emitState('authenticating', 'Waiting for GOG authorization...');
+        const credentials = await gogAuthService.link(parentWindow, emitState);
+        const accountId = String(credentials.userId);
+        const now = new Date().toISOString();
+        const accounts = await getGogAccountsList();
+        const existingIndex = accounts.findIndex(a => String(a.id) === accountId);
+        const displayName = resolveGogDisplayName(credentials, existingIndex >= 0 ? accounts[existingIndex] : null);
+        const accountEntry = {
+            id: accountId,
+            displayName,
+            status: 'linked',
+            credentialStatus: 'ok',
+            needsReauth: false,
+            lastLinkedAt: now,
+            ...(existingIndex >= 0
+                ? {
+                    lastSyncedAt: accounts[existingIndex].lastSyncedAt,
+                    gamesCount: accounts[existingIndex].gamesCount,
+                }
+                : {}),
+        };
+        if (existingIndex >= 0) accounts[existingIndex] = { ...accounts[existingIndex], ...accountEntry };
+        else accounts.push(accountEntry);
+        await saveGogAccountsList(accounts);
+        emitState('linked', `GOG account linked as ${displayName}.`, { displayName, accountId, userId: accountId });
+        analytics.logPlatformLinked('gog').catch(() => {});
+        return { displayName, accountId, userId: accountId };
+    },
+    async syncLibrary(targetAccountId = null) {
+        await ensureDirs();
+        const allAccounts = await getGogAccountsList();
+        if (allAccounts.length === 0) throw new Error('No GOG accounts linked.');
+
+        const previousGames = await this.getCachedLibrary();
+        const accountsToSync = targetAccountId
+            ? allAccounts.filter(a => String(a.id) === String(targetAccountId))
+            : allAccounts;
+        if (accountsToSync.length === 0 && targetAccountId) {
+            syncWarn(`[GogSync] Target account ${targetAccountId} not found.`);
+        }
+
+        const mergedLibrary = new Map(previousGames.map((g) => [g.id, JSON.parse(JSON.stringify(g))]));
+        const accountResults = {};
+        let completedAccounts = 0;
+
+        _startPlatformSync('gog', accountsToSync, `Syncing GOG library for ${accountsToSync.length} account(s)`);
+        for (const account of accountsToSync) {
+            _updatePlatformSyncAccount('gog', account.id, {
+                gamesCount: countGamesForAccount('gog', previousGames, account.id),
+                message: 'Queued for sync',
+            });
+        }
+
+        try {
+            const syncResults = await mapWithConcurrency(accountsToSync, 2, async (account) => {
+                _updatePlatformSyncProgress('gog', {
+                    completedAccounts,
+                    totalAccounts: accountsToSync.length,
+                    currentAccountId: String(account.id),
+                    currentAccountName: account.displayName,
+                });
+                const result = await syncSingleGogAccount(account, previousGames);
+                completedAccounts += 1;
+                _updatePlatformSyncProgress('gog', {
+                    completedAccounts,
+                    totalAccounts: accountsToSync.length,
+                    currentAccountId: String(account.id),
+                    currentAccountName: account.displayName,
+                });
+                return { account, ...result };
+            });
+
+            for (const item of syncResults) {
+                accountResults[item.aid] = item.result;
+                if (item.result.status === 'success') {
+                    for (const cached of previousGames) {
+                        const ownsTarget = Array.isArray(cached.ownedByAccountIds)
+                            && cached.ownedByAccountIds.map(String).includes(String(item.aid));
+                        if (!ownsTarget) continue;
+                        const freshStillOwns = item.games.some((game) => game.id === cached.id);
+                        if (!freshStillOwns) {
+                            const existing = mergedLibrary.get(cached.id);
+                            if (existing) {
+                                existing.ownedByAccountIds = (existing.ownedByAccountIds || []).filter((id) => String(id) !== String(item.aid));
+                                existing.ownedBy = (existing.ownedBy || []).filter((name) => String(name) !== String(item.account.displayName));
+                                if ((existing.ownedByAccountIds || []).length === 0 && existing.installOnly !== true) {
+                                    mergedLibrary.delete(cached.id);
+                                }
+                            }
+                        }
+                    }
+                    mergeGogGames(mergedLibrary, item.games, item.account);
+                }
+            }
+
+            const finalized = finalizeLibraryForAccounts({
+                platform: 'gog',
+                previousGames,
+                nextGames: Array.from(mergedLibrary.values()),
+                accounts: accountsToSync,
+                accountResults,
+            });
+            const finalGames = finalized.games;
+            await syncCacheRepository.writeGogMergedLibrary(finalGames);
+
+            const accounts = await getGogAccountsList();
+            const now = new Date().toISOString();
+            await saveGogAccountsList(accounts.map((account) => {
+                if (!accountsToSync.some((target) => String(target.id) === String(account.id))) return account;
+                const result = accountResults[String(account.id)];
+                if (result?.status !== 'success') return account;
+                return {
+                    ...account,
+                    displayName: result.displayName || account.displayName,
+                    credentialStatus: 'ok',
+                    needsReauth: false,
+                    lastSyncedAt: now,
+                    gamesCount: countGamesForAccount('gog', finalGames, account.id),
+                };
+            }));
+
+            if (_platformSyncAssetDownloader) {
+                const _cfWin = _platformSyncWindowGetter?.();
+                _scheduleLibraryArtworkWarmup({
+                    platform: 'gog',
+                    entries: finalGames,
+                    cacheFile: GOG_MERGED_CACHE,
+                    matchFn: (lib, e) => lib.findIndex(lg =>
+                        String(lg.productId || lg.appName || lg.allIds?.gog || '') === String(e.productId || e.appName || e.allIds?.gog || '')
+                    ),
+                    coverCachedEmitter: (payload) => {
+                        if (_cfWin && !_cfWin.isDestroyed()) {
+                            _cfWin.webContents.send('all-games-cover-cached', payload);
+                        }
+                    },
+                });
+            }
+
+            _pushPlatformSyncLog('gog', 'info', 'GOG server enrichment is not enabled yet; local sync completed without server import.');
+            _updatePlatformSyncProgress('gog', {
+                completedAccounts: accountsToSync.length,
+                totalAccounts: accountsToSync.length,
+                currentAccountId: null,
+                currentAccountName: null,
+            });
+            _finishPlatformSync('gog', {
+                phase: finalized.validation.issues.length > 0 ? 'done' : 'done',
+                statusText: finalized.validation.issues.length > 0
+                    ? `GOG sync completed with recovery checks. ${finalGames.length} games ready.`
+                    : `GOG sync completed. ${finalGames.length} games ready.`,
+                validation: finalized.validation,
+                summary: {
+                    totalGames: finalGames.length,
+                    installOnlyGames: 0,
+                },
+            });
+            analytics.logSyncCompleted('gog', finalGames.length, accountsToSync.length).catch(() => {});
+            return finalGames;
+        } catch (err) {
+            const message = redactGogSecrets(err?.message || 'GOG sync failed.');
+            _finishPlatformSync('gog', {
+                phase: 'error',
+                statusText: `GOG sync failed: ${message}`,
+                lastError: message,
+            });
+            _pushPlatformSyncLog('gog', 'error', `GOG sync crashed: ${message}`);
+            analytics.logSyncFailed('gog', message).catch(() => {});
+            throw err;
+        }
+    },
+    async getCachedLibrary() {
+        return syncCacheRepository.readGogMergedLibrary();
+    },
+    async unlink(accountId) {
+        let accounts = await getGogAccountsList();
+        const removedAccount = accountId
+            ? accounts.find((account) => String(account.id) === String(accountId)) || null
+            : null;
+        if (accountId) {
+            await gogAuthService.unlink(accountId);
+            accounts = accounts.filter(a => String(a.id) !== String(accountId));
+        } else {
+            for (const acc of accounts) await gogAuthService.unlink(acc.id);
+            accounts = [];
+        }
+        await saveGogAccountsList(accounts);
+        if (accounts.length === 0) {
+            await syncCacheRepository.deleteGogMergedLibrary();
+        } else if (removedAccount) {
+            const cachedGames = await this.getCachedLibrary();
+            const filteredGames = removeAccountFromLibrary('gog', cachedGames, removedAccount);
+            await syncCacheRepository.writeGogMergedLibrary(filteredGames);
+        }
+        analytics.logPlatformUnlinked('gog').catch(() => {});
+    },
+};
+
 const {
     steamConnector,
     epicConnector,
+    gogConnector,
     ALL_CONNECTORS,
 } = createSyncConnectors({
     steam: steamConnectorMethods,
     epic: epicConnectorMethods,
+    gog: gogConnectorMethods,
 });
 
 // ─── IPC Handler Registry ────────────────────────────────────
@@ -2495,10 +3011,7 @@ function registerPlatformSyncHandlers(ipcMainRef, getMainWindow) {
     // Clean up any orphaned legendary tmp config dirs from interrupted link flows
     _cleanupEpicTmpConfigs().catch(() => {});
 
-    const connectors = {
-        epic: epicConnector,
-        steam: steamConnector
-    };
+    const connectors = ALL_CONNECTORS;
 
     function safeHandle(fn) {
         return async (...args) => {
@@ -2692,6 +3205,7 @@ module.exports = createPlatformSyncFeature({
     registerPlatformSyncHandlers,
     epicConnector,
     steamConnector,
+    gogConnector,
     enrichProfilesWithSyncData,
     registerPlatformSyncAssetDownloader,
     autoSyncOnStartup,

@@ -6888,6 +6888,17 @@ body.ag-ready-mode .ag-installed-toggle { display: none !important; }
     box-sizing: border-box;
 }
 
+#allGamesGrid.ag-ready-empty-grid {
+    grid-template-columns: 1fr;
+    min-height: clamp(260px, 52dvh, 350px);
+    align-items: center;
+}
+
+#allGamesGrid.ag-ready-empty-grid .ag-inline-empty {
+    min-height: min(350px, 52dvh);
+    margin-top: 0;
+}
+
 @keyframes betaFeedbackIn {
     from { opacity: 0; transform: translateY(14px) scale(0.985); }
     to   { opacity: 1; transform: translateY(0)    scale(1);     }

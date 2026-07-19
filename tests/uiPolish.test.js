@@ -61,6 +61,151 @@ test('Ready to Install empty state uses the centered inline empty class', () => 
         'RTI empty state should not rely on the cramped inline padding style'
     );
     assert.doesNotMatch(ACC_JS, /ag-inline-empty-web/, 'RTI empty renderer should not use the custom web motif');
+    assert.match(ACC_JS, /ag-ready-empty-grid/, 'RTI empty renderer should mark the grid for no-scroll empty sizing');
+    assert.match(CSS, /#allGamesGrid\.ag-ready-empty-grid/, 'dashboard.css should scope no-scroll sizing to RTI empty grid');
+    assert.match(CSS, /#allGamesGrid\.ag-ready-empty-grid \.ag-inline-empty[\s\S]{0,160}min-height:\s*min\(350px,\s*52dvh\)/,
+        'RTI empty panel should cap itself to viewport space instead of forcing scroll');
+});
+
+test('Game Details hides automatic GOG platform logo artwork but allows Baddel metadata logos', () => {
+    assert.match(GD_JS, /function _gdShouldRenderLogoImage/, 'Game Details should centralize logo render decisions');
+    assert.match(GD_JS, /_gdIsGogGame\(game\) && source !== 'metadata'/,
+        'GOG automatic platform/cache logo artwork should render as title text unless Baddel metadata or user supplied it');
+    assert.match(GD_JS, /source === 'creator' \|\| source === 'settings'/,
+        'Creator and Settings logos should still be allowed');
+});
+
+test('Game Details asks Baddel API to backfill missing rich metadata fields', () => {
+    assert.match(GD_JS, /function _gdHasUsefulMetadataValue/, 'Game Details should accept partial server backfill payloads');
+    assert.match(GD_JS, /!hasLogo/, 'missing logo should trigger metadata backfill');
+    assert.match(GD_JS, /!hasTrailers/, 'missing trailers should trigger metadata backfill');
+    assert.match(GD_JS, /productId:\s*game\.productId \|\| game\.allIds\?\.gog/,
+        'GOG product id should be passed to getMetadata hints');
+    assert.match(GD_JS, /platform === 'gog' && cleanedId[\s\S]{0,80}`gog_\$\{cleanedId\}`/,
+        'GOG full metadata cache should use the stable product id');
+});
+
+test('Game Details never shows the creator-empty metadata card for cached GOG games', () => {
+    assert.match(GD_JS, /function _gdBuildMinimumGogMeta/, 'GOG should have a minimum metadata fallback');
+    assert.match(GD_JS, /const minimumGogMeta = _gdBuildMinimumGogMeta\(game\)/,
+        'creator empty state should first try the GOG minimum metadata fallback');
+    assert.match(GD_JS, /synced from your GOG library/,
+        'minimum GOG metadata should provide useful text for old cached entries');
+});
+
+test('Game Details preserves GOG text metadata from the All Games cache projection', () => {
+    const cacheProjectionStart = GD_JS.indexOf('const cachedGame = window._allGamesCache.find');
+    const cacheProjection = GD_JS.slice(cacheProjectionStart, cacheProjectionStart + 2300);
+    assert.match(cacheProjection, /short_description:\s*cachedGame\.short_description/);
+    assert.match(cacheProjection, /description:\s*cachedGame\.description/);
+    assert.match(cacheProjection, /genres:\s*cachedGame\.genres/);
+    assert.match(cacheProjection, /developer:\s*cachedGame\.developer/);
+    assert.match(cacheProjection, /publisher:\s*cachedGame\.publisher/);
+    assert.match(cacheProjection, /releaseDate:\s*cachedGame\.releaseDate/);
+    assert.match(cacheProjection, /info:\s*cachedGame\.info/);
+    assert.match(cacheProjection, /productId:\s*cachedGame\.productId/);
+});
+
+test('Game Details renders GOG media and ratings in stable UI slots', () => {
+    assert.match(GD_JS, /gog:\s*\{\s*group:\s*'GOG'/,
+        'GOG ratings should be recognized as a first-class ratings source');
+    assert.match(GD_JS, /function _gdRenderMediaTrailerCards/,
+        'Media tab should render trailer cards instead of hiding trailer data in Overview only');
+    assert.match(GD_JS, /gdMediaTrailersSection/,
+        'Media tab should get a stable trailers section');
+    assert.match(GD_JS, /_gdRenderMediaTrailerCards\(allTrailers,\s*game\)/,
+        'Game Details should populate the Media trailer section from normalized trailers');
+    assert.match(GD_JS, /function _gdHydrateTrailerThumbnails/,
+        'trailer thumbnails should be hydrated before rendering the main player and Media cards');
+    assert.match(GD_JS, /function _gdTrailerDisplayTitle/,
+        'trailer labels should be able to show the platform source, including GOG');
+    assert.match(GD_JS, /GOG \$\{baseTitle\}/,
+        'GOG trailers should render with a GOG-prefixed title');
+    assert.match(GD_JS, /srcKey\.includes\('gog'\)[\s\S]{0,90}assets\/gog\.png/,
+        'GOG sidebar rating pill should render the GOG icon');
+    assert.match(GD_JS, /_gdRenderYouTubeWebviewPlayer\(container,\s*_ytIdEarly,\s*t\)/,
+        'YouTube trailer placeholders should prefer the trailer or game thumbnail');
+    assert.match(GD_JS, /function _gdHydrateGogRichRecordForDetails/,
+        'Game Details should fetch GOG cache directly for cross-platform records that were opened from stale projections');
+    assert.match(GD_JS, /window\.electronAPI\.platformSyncGetCached\('gog'\)/,
+        'Game Details GOG fallback should read the local synced GOG library');
+    assert.doesNotMatch(GD_JS, /if \(!_gdIsGogGame\(game\) \|\| !window\.electronAPI\?\.platformSyncGetCached\) return game/,
+        'Game Details should also try GOG cache for Epic/Steam records with the same exact title');
+    assert.match(GD_JS, /_gdIsGogGame\(game = \{\}\)[\s\S]{0,260}game\.platforms/,
+        'GOG detection should include multi-platform records');
+    assert.match(GD_JS, /function _gdMergeUniqueTrailers/,
+        'server trailers and GOG trailers should be combined instead of replacing each other');
+    assert.match(GD_JS, /_gdMarkTrailerSource\(gogInfo\.allTrailers,\s*'gog'\)/,
+        'old cached GOG trailers without source should be marked before merge');
+    assert.match(GD_JS, /function _gdMergeUniqueRatings/,
+        'server ratings and GOG ratings should be combined instead of replacing each other');
+    assert.match(GD_JS, /base\._isGameInfoBackfill[\s\S]{0,140}merged\.info\.releaseDate = baseInfo\.releaseDate/,
+        'GOG game.info release dates should win over conflicting server dates');
+    assert.match(GD_JS, /meta\?\.releaseDate \|\| meta\?\.info\?\.releaseDate \|\| game\.releaseDate \|\| game\.info\?\.releaseDate/,
+        'Game Details display should read the merged info release date');
+    assert.match(GD_JS, /function _gdBuildGameInfoMeta/,
+        'Game Details should be able to backfill renderer metadata from the synced game record');
+    assert.match(GD_JS, /if \(_gdIsGogGame\(game\)\)[\s\S]{0,220}_gdMergeMetaSafe\(gameInfoMeta,\s*metaData \|\| \{\}\)/,
+        'GOG details should merge rich game.info before deciding media, requirements, and ratings visibility');
+});
+
+test('Game Details screenshot fallback gallery recovers from failed large image loads', () => {
+    assert.match(GD_JS, /window\._gdSsShow = function\(idx\)/,
+        'fallback screenshot gallery should have direct preview navigation');
+    assert.match(GD_JS, /mainImg\.style\.display = 'block'[\s\S]{0,80}mainImg\.src = imgs\[window\._gdSsCurrentIdx\]/,
+        'large screenshot preview should become visible again when navigating after a failed image');
+    assert.match(GD_JS, /data-gd-ss-idx="\$\{i\}" onclick="window\._gdSsShow\?\.\(\$\{i\}\)"/,
+        'screenshot thumbnails should update the large preview instead of only opening the lightbox');
+    assert.match(GD_JS, /gd-ss-main-fallback/,
+        'failed large screenshots should show a fallback state rather than a permanently black pane');
+});
+
+test('GOG platform icon uses the png asset everywhere visible', () => {
+    assert.doesNotMatch(HTML, /gog\.svg/);
+    assert.doesNotMatch(ACC_JS, /gog\.svg/);
+    assert.doesNotMatch(GD_JS, /gog\.svg/);
+    assert.match(HTML, /assets\/gog\.png/);
+    assert.match(ACC_JS, /gog:\s*\{\s*color:[\s\S]{0,90}assets\/gog\.png/);
+    assert.match(GD_JS, /assets\/gog\.png/);
+});
+
+test('GOG sync skips Prime entitlements early and avoids unnecessary store pages', () => {
+    assert.match(SYNC_JS, /function isGogAmazonPrimeRelease/,
+        'GOG sync should detect Prime Gaming entitlement duplicates before enrichment');
+    assert.match(SYNC_JS, /if \(isGogAmazonPrimeRelease\(release\)\) return null;[\s\S]{0,260}fetchGamesDbData/,
+        'Prime Gaming GOG releases should be skipped before GamesDB/store metadata requests');
+    assert.match(SYNC_JS, /function shouldFetchGogStorePage/,
+        'GOG store page HTML fetches should be gated behind missing rich product metadata');
+    assert.match(SYNC_JS, /pageUrl && shouldFetchGogStorePage\(storeProduct\)/,
+        'GOG sync should not fetch every store page when product metadata is already useful');
+});
+
+test('Game Details shows GOG platform and account ownership for merged games', () => {
+    assert.match(GD_JS, /gog:\s*\{\s*img:\s*'\.\.\/assets\/gog\.png'[\s\S]{0,90}name:\s*'GOG'/,
+        'Game Details platform badges should include GOG');
+    assert.match(GD_JS, /if \(_gdIsGogGame\(game\)\) platforms\.add\('gog'\)/,
+        'GOG should be added to detected platforms from allIds/source metadata');
+    assert.match(GD_JS, /\['steam', 'epic', 'gog'\]\.filter\(k => detectedPlatforms\.includes\(k\)\)/,
+        'Accounts tab should compare ownership for GOG as well as Steam and Epic');
+    assert.match(GD_JS, /plats\.includes\('steam'\) \|\| plats\.includes\('epic'\) \|\| plats\.includes\('gog'\)/,
+        'Accounts tab should be visible for GOG games');
+    assert.match(GD_JS, /Steam, Epic, and GOG games only/,
+        'Accounts empty message should mention GOG support');
+});
+
+test('All Games merge preserves GOG rich media on cross-platform duplicates', () => {
+    assert.match(ACC_JS, /function _agMergeRichSyncedGameMeta/,
+        'cross-platform title merges should preserve rich platform metadata');
+    assert.match(ACC_JS, /targetGame\.info\.allTrailers = _agMergeTrailerLists\(targetInfo\.allTrailers,\s*sourceInfo\.allTrailers\)/,
+        'GOG trailers should be added to the merged All Games record');
+    assert.match(ACC_JS, /targetGame\.info\.ratings = _agMergeRatingLists\(targetInfo\.ratings,\s*sourceInfo\.ratings\)/,
+        'GOG ratings should be added to the merged All Games record');
+    assert.match(ACC_JS, /isGogSource[\s\S]{0,120}targetGame\.releaseDate = sourceInfo\.releaseDate/,
+        'GOG release date should win when a duplicate title includes a GOG source record');
+    assert.match(ACC_JS, /existingGame\.allIds\[game\.platform\] = _agPlatformIdentityValue\(game\)/,
+        'merged records should retain platform-specific product identities, including GOG product ids');
+    assert.match(ACC_JS, /_agMergeRichSyncedGameMeta\(existingGame,\s*game\)/,
+        'duplicate merge path should call the rich metadata merge');
 });
 
 test('Task D: applyFilters uses _normPlatform via _gameMatchesPlatformFilter helper', () => {
@@ -507,7 +652,7 @@ test('accounts.js: linkNewPlatformAccount normalizes activePlatformView to lower
     const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
     const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 400);
     assert.match(fn, /\.toLowerCase\(\)/, 'platform must be lowercased');
-    assert.match(fn, /\['steam', 'epic'\]\.includes\(platform\)/, "platform validated against ['steam','epic']");
+    assert.match(fn, /\['steam', 'epic', 'gog'\]\.includes\(platform\)/, "platform validated against ['steam','epic','gog']");
 });
 
 test('accounts.js: linkNewPlatformAccount catch block uses actual error message not hardcoded string', () => {
@@ -533,7 +678,7 @@ test('accounts.js: invalid activePlatformView shows error without calling platfo
     const fnStart = PLATFORM_PANELS_JS.indexOf('async function linkNewPlatformAccount');
     const fn = PLATFORM_PANELS_JS.slice(fnStart, fnStart + 400);
     // The guard must throw/return before the IPC call which appears later in the function
-    const guardIdx = fn.indexOf("!['steam', 'epic'].includes(platform)");
+    const guardIdx = fn.indexOf("!['steam', 'epic', 'gog'].includes(platform)");
     const ipcIdx   = fn.indexOf('platformSyncLink');
     assert.ok(guardIdx !== -1, "platform guard must exist");
     // Guard is before the IPC call (or IPC call isn't in the guard window at all)
@@ -600,8 +745,8 @@ test('accounts.js: _agIsUserLibraryGame accepts steam and epic with synced evide
     assert.match(fn, /platform === 'steam'/, "steam platform check must exist");
     assert.match(fn, /platform === 'epic'/,  "epic platform check must exist");
     // Must be gated on hasSyncedAccountEvidence (not an unconditional return true)
-    assert.match(fn, /isSteamOrEpic.*hasSyncedAccountEvidence|hasSyncedAccountEvidence.*isSteamOrEpic/s,
-        'Steam/Epic must require hasSyncedAccountEvidence');
+    assert.match(fn, /isSyncedLibraryPlatform.*hasSyncedAccountEvidence|hasSyncedAccountEvidence.*isSyncedLibraryPlatform/s,
+        'Steam/Epic/GOG must require hasSyncedAccountEvidence');
 });
 
 test('accounts.js: _agGetUserLibraryGames filters using _agIsUserLibraryGame', () => {
@@ -872,7 +1017,7 @@ test('DeleteGamePermanentlyUseCase: calls metadataCacheStore.deleteEntry', () =>
 
 test('gameMetadataHandlers.js: get-game-metadata passes force/bypassTtl to mrm.resolve when hints.force is true', () => {
     const handlerIdx = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
-    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 9000);
+    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 12000);
     assert.match(handler, /forceMetadata/, 'must compute forceMetadata');
     assert.match(handler, /hints\.force\s*===\s*true/, 'must check hints.force');
     assert.match(handler, /force:\s*forceMetadata/, 'must pass force to mrm.resolve');
@@ -882,7 +1027,7 @@ test('gameMetadataHandlers.js: get-game-metadata passes force/bypassTtl to mrm.r
 
 test('gameMetadataHandlers.js: get-game-metadata bypasses cooldown when source is manual-add-readd', () => {
     const handlerIdx = GAME_METADATA_HANDLERS_JS.indexOf("ipcMain.handle('get-game-metadata'");
-    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 6000);
+    const handler = GAME_METADATA_HANDLERS_JS.slice(handlerIdx, handlerIdx + 8000);
     assert.match(handler, /manual-add-readd/, 'must include manual-add-readd source in forceMetadata check');
 });
 
@@ -969,8 +1114,8 @@ test('accounts.js: _agIsUserLibraryGame requires synced-account evidence for Ste
     const fnStart = ACC_JS.indexOf('function _agIsUserLibraryGame');
     const fn = ACC_JS.slice(fnStart, fnStart + 3500);
     assert.match(fn, /hasSyncedAccountEvidence/, 'must use hasSyncedAccountEvidence');
-    assert.match(fn, /isSteamOrEpic.*hasSyncedAccountEvidence|hasSyncedAccountEvidence.*isSteamOrEpic/s,
-        'must gate Steam/Epic on hasSyncedAccountEvidence');
+    assert.match(fn, /isSyncedLibraryPlatform.*hasSyncedAccountEvidence|hasSyncedAccountEvidence.*isSyncedLibraryPlatform/s,
+        'must gate Steam/Epic/GOG on hasSyncedAccountEvidence');
 });
 
 test('accounts.js: _agIsUserLibraryGame rejects Xbox installed-only (no synced evidence)', () => {

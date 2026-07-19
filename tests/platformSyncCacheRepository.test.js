@@ -221,6 +221,26 @@ test('epic classification report repository preserves default and pretty write/r
     }
 });
 
+test('gog merged library repository filters Amazon Prime entitlement duplicates', async () => {
+    const userData = makeTempUserData();
+    try {
+        const repo = new PlatformSyncCacheRepository({ userDataDir: userData });
+        const library = [
+            { id: 'gog_1', title: 'A Plague Tale: Innocence' },
+            { id: 'gog_2', title: 'A Plague Tale: Innocence - Amazon Prime' },
+            { id: 'gog_3', name: 'Arcade Paradise - Amazon Prime' },
+        ];
+
+        writeText(repo.gogMergedCacheFile, JSON.stringify(library, null, 2));
+        assert.deepEqual(await repo.readGogMergedLibrary(), [{ id: 'gog_1', title: 'A Plague Tale: Innocence' }]);
+
+        await repo.writeGogMergedLibrary(library);
+        assert.deepEqual(JSON.parse(readText(repo.gogMergedCacheFile)), [{ id: 'gog_1', title: 'A Plague Tale: Innocence' }]);
+    } finally {
+        rmDir(userData);
+    }
+});
+
 test('generic merged library helpers route by platform', async () => {
     const userData = makeTempUserData();
     try {

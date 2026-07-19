@@ -4,6 +4,19 @@ const defaultFs = require('fs').promises;
 const defaultFsSync = require('fs');
 const defaultPath = require('path');
 
+function isGogAmazonPrimeEntitlement(game) {
+    const values = [
+        game?.title,
+        game?.name,
+        game?.originalTitle,
+        game?.originalName,
+        game?.info?.title,
+        game?.info?.name,
+    ];
+
+    return values.some((value) => /\bamazon\s+prime\b/i.test(String(value || '')));
+}
+
 class PlatformSyncCacheRepository {
     constructor({ userDataDir, fs = defaultFs, fsSync = defaultFsSync, path = defaultPath } = {}) {
         if (!userDataDir) {
@@ -23,6 +36,9 @@ class PlatformSyncCacheRepository {
 
         this.steamAccountsFile = path.join(this.syncCacheDir, 'steam_accounts.json');
         this.steamMergedCacheFile = path.join(this.syncCacheDir, 'steam_library_merged.json');
+
+        this.gogAccountsFile = path.join(this.syncCacheDir, 'gog_accounts.json');
+        this.gogMergedCacheFile = path.join(this.syncCacheDir, 'gog_library_merged.json');
     }
 
     async ensureDirs() {
@@ -125,6 +141,46 @@ class PlatformSyncCacheRepository {
         try { await this.fs.unlink(this.epicMergedCacheFile); } catch {}
     }
 
+    async writeEpicAccountsAtomic(accounts) {
+        await this._writeJsonAtomic(this.epicAccountsFile, accounts);
+    }
+
+    async readGogAccounts() {
+        const accounts = await this._readJson(this.gogAccountsFile, []);
+        return Array.isArray(accounts) ? accounts : [];
+    }
+
+    readGogAccountsSync() {
+        const accounts = this._readJsonSync(this.gogAccountsFile, []);
+        return Array.isArray(accounts) ? accounts : [];
+    }
+
+    isGogLinked() {
+        return this.readGogAccountsSync().length > 0;
+    }
+
+    async writeGogAccounts(accounts) {
+        await this._writeJson(this.gogAccountsFile, accounts);
+    }
+
+    async writeGogAccountsAtomic(accounts) {
+        await this._writeJsonAtomic(this.gogAccountsFile, accounts);
+    }
+
+    async readGogMergedLibrary() {
+        const library = await this._readJson(this.gogMergedCacheFile, []);
+        return Array.isArray(library) ? library.filter((game) => !isGogAmazonPrimeEntitlement(game)) : [];
+    }
+
+    async writeGogMergedLibrary(library) {
+        const filtered = Array.isArray(library) ? library.filter((game) => !isGogAmazonPrimeEntitlement(game)) : [];
+        await this._writeJson(this.gogMergedCacheFile, filtered);
+    }
+
+    async deleteGogMergedLibrary() {
+        try { await this.fs.unlink(this.gogMergedCacheFile); } catch {}
+    }
+
     async readEpicClassificationReport() {
         return this._readJson(this.epicClassificationReportFile, null);
     }
@@ -134,24 +190,41 @@ class PlatformSyncCacheRepository {
     }
 
     getMergedCacheFile(platform) {
-        return platform === 'steam' ? this.steamMergedCacheFile : this.epicMergedCacheFile;
+        switch (platform) {
+            case 'steam': return this.steamMergedCacheFile;
+            case 'epic': return this.epicMergedCacheFile;
+            case 'gog': return this.gogMergedCacheFile;
+            default: throw new Error(`Unsupported platform cache: ${platform}`);
+        }
     }
 
     async readMergedLibrary(platform) {
-        return platform === 'steam'
-            ? this.readSteamMergedLibrary()
-            : this.readEpicMergedLibrary();
+        switch (platform) {
+            case 'steam': return this.readSteamMergedLibrary();
+            case 'epic': return this.readEpicMergedLibrary();
+            case 'gog': return this.readGogMergedLibrary();
+            default: throw new Error(`Unsupported platform library: ${platform}`);
+        }
     }
 
     async writeMergedLibrary(platform, library) {
-        if (platform === 'steam') {
-            await this.writeSteamMergedLibrary(library);
-            return;
+        switch (platform) {
+            case 'steam':
+                await this.writeSteamMergedLibrary(library);
+                return;
+            case 'epic':
+                await this.writeEpicMergedLibrary(library);
+                return;
+            case 'gog':
+                await this.writeGogMergedLibrary(library);
+                return;
+            default:
+                throw new Error(`Unsupported platform library: ${platform}`);
         }
-        await this.writeEpicMergedLibrary(library);
     }
 }
 
 module.exports = {
     PlatformSyncCacheRepository,
+    isGogAmazonPrimeEntitlement,
 };

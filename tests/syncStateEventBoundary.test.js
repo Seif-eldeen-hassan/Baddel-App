@@ -286,7 +286,7 @@ test('runtime state default shape and cloning boundaries remain source-visible',
     const emitSource = extractFunctionSource(source, '_emitPlatformSyncState');
     const finishSource = extractFunctionSource(source, '_finishPlatformSync');
 
-    assert.match(source, /const\s+_platformSyncState\s*=\s*\{\s*steam:\s*null,\s*epic:\s*null,\s*\}/s);
+    assert.match(source, /const\s+_platformSyncState\s*=\s*\{\s*steam:\s*null,\s*epic:\s*null,\s*gog:\s*null,\s*\}/s);
     assert.match(createSource, /platform,\s*isSyncing:\s*false,\s*phase:\s*['"]idle['"]/s);
     for (const field of [
         'statusText',
@@ -364,18 +364,19 @@ test('platformSync still owns cover notifications and connector method implement
 test('public platform sync API keys remain stable', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const expectedKeys = [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ];
 
     assert.deepEqual(SYNC_FEATURE_API_KEYS, expectedKeys);

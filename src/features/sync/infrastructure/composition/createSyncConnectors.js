@@ -32,20 +32,24 @@ function createConnector(methods) {
     };
 }
 
-function createSyncConnectors({ steam, epic } = {}) {
+function createSyncConnectors({ steam, epic, gog } = {}) {
     assertConnector('steam', steam);
     assertConnector('epic', epic);
+    assertConnector('gog', gog);
 
     const steamConnector = createConnector(steam);
     const epicConnector = createConnector(epic);
+    const gogConnector = createConnector(gog);
     const ALL_CONNECTORS = {
         epic: epicConnector,
         steam: steamConnector,
+        gog: gogConnector,
     };
 
     return {
         steamConnector,
         epicConnector,
+        gogConnector,
         ALL_CONNECTORS,
     };
 }

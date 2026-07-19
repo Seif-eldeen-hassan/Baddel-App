@@ -58,6 +58,16 @@ const PLATFORM_CONFIG = {
         saveFn:   saveEpicAccount,
         addFn:    addNewEpicAccount
     },
+    gog: {
+        name:   'GOG',
+        color:  '#8638e5',
+        accent: '#a970ff',
+        logoImg: '../assets/gog.png',
+        syncOnly: true,
+        switchFn: null,
+        saveFn:   null,
+        addFn:    null
+    },
     ea: {
         name:   'EA App',
         color:  '#ff4500',
@@ -1409,7 +1419,7 @@ function promptAccountName(message, accent = '#ff4655') {
 // ============================================================
 
 async function updateAllAccountCounts() {
-    const platforms = ['steam', 'epic', 'ea', 'riot', 'ubisoft', 'discord', 'rockstar'];
+    const platforms = ['steam', 'epic', 'gog', 'ea', 'riot', 'ubisoft', 'discord', 'rockstar'];
 
     for (const platform of platforms) {
         try {
@@ -1418,6 +1428,9 @@ async function updateAllAccountCounts() {
             if (platform === 'steam') {
                 const steamAccounts = await window.electronAPI.getSteamAccounts?.() || [];
                 count = Array.isArray(steamAccounts) ? steamAccounts.length : 0;
+            } else if (platform === 'gog') {
+                const res = await window.electronAPI.platformSyncGetAccounts?.('gog').catch(() => ({}));
+                count = Array.isArray(res?.accounts) ? res.accounts.length : 0;
             } else {
                 const ipcFn = {
                     epic:    () => window.electronAPI.getEpicProfiles?.()    || ipcInvoke('get-epic-profiles'),
@@ -1582,7 +1595,7 @@ function _summarizePlatformGameTitles(games, limit = 4) {
 }
 
 function _buildFriendlyPlatformSyncCopy(platform, state, mode = 'panel') {
-    const platformName = platform === 'steam' ? 'Steam' : 'library';
+    const platformName = PLATFORM_CONFIG[platform]?.name || (platform === 'steam' ? 'Steam' : 'library');
     if (state?.lastError) {
         return {
             title: 'Sync stopped',
@@ -1819,7 +1832,7 @@ function _ensurePlatformSyncListener() {
         window.electronAPI.onPlatformSyncCompleted((state) => {
             if (!state?.platform) return;
             platformSyncStateCache[state.platform] = state;
-            const platformName = state.platform === 'steam' ? 'Steam' : 'Epic Games';
+            const platformName = PLATFORM_CONFIG[state.platform]?.name || (state.platform === 'steam' ? 'Steam' : 'Epic Games');
             const syncedCount = state.summary?.totalGames ||
                 Object.values(state.accounts || {}).reduce((sum, a) => sum + (a.gamesCount || 0), 0);
             const msg = state.statusText ||
@@ -1837,7 +1850,7 @@ function _ensurePlatformSyncListener() {
         window.electronAPI.onPlatformSyncFailed((state) => {
             if (!state?.platform) return;
             platformSyncStateCache[state.platform] = state;
-            const platformName = state.platform === 'steam' ? 'Steam' : 'Epic Games';
+            const platformName = PLATFORM_CONFIG[state.platform]?.name || (state.platform === 'steam' ? 'Steam' : 'Epic Games');
             showToast(`${platformName} sync failed: ${state.lastError || 'Unknown error'}`, 'error');
             if (activePlatformView === state.platform) {
                 _renderPlatformSyncStatusPanel(state.platform, state);
@@ -1848,7 +1861,7 @@ function _ensurePlatformSyncListener() {
 }
 
 function _runPlatformSync(platform, options = {}) {
-    const platformName    = platform === 'steam' ? 'Steam' : 'Epic Games';
+    const platformName    = PLATFORM_CONFIG[platform]?.name || (platform === 'steam' ? 'Steam' : 'Epic Games');
     const targetAccountId = options.targetAccountId || null;
 
     // Client-side duplicate guard — server will also check, but this gives instant feedback
@@ -1883,7 +1896,7 @@ if (document.readyState === 'loading') {
 }
 
 function openPlatformsModal(platform = 'epic') {
-    const targetPlatform = platform === 'steam' ? 'steam' : 'epic';
+    const targetPlatform = ['steam', 'epic', 'gog'].includes(platform) ? platform : 'epic';
     const modal = document.getElementById('platformsModal');
     if (modal) modal.classList.add('active');
     if (typeof updatePlatformsOverview === 'function') updatePlatformsOverview();
@@ -1903,16 +1916,14 @@ function backToPlatformsList() {
 }
 
 async function updatePlatformsOverview() {
-    try {
-        const epicRes  = await window.electronAPI.platformSyncGetAccounts('epic');
-        const epicCount = epicRes.accounts ? epicRes.accounts.length : 0;
-        document.getElementById('epicAccountsCount').innerText = `${epicCount} Linked`;
-    } catch (e) {}
-    try {
-        const steamRes  = await window.electronAPI.platformSyncGetAccounts('steam');
-        const steamCount = steamRes.accounts ? steamRes.accounts.length : 0;
-        document.getElementById('steamAccountsCount').innerText = `${steamCount} Linked`;
-    } catch (e) {}
+    for (const platform of ['epic', 'steam', 'gog']) {
+        try {
+            const res = await window.electronAPI.platformSyncGetAccounts(platform);
+            const count = res.accounts ? res.accounts.length : 0;
+            const el = document.getElementById(`${platform}AccountsCount`);
+            if (el) el.innerText = `${count} Linked`;
+        } catch (e) {}
+    }
 }
 
 async function openPlatformDetails(platform) {
@@ -1921,7 +1932,7 @@ async function openPlatformDetails(platform) {
     const activeItem = document.getElementById(`plat-nav-${platform}`);
     if (activeItem) activeItem.classList.add('active');
 
-    const titles = { 'epic': 'Epic Games', 'steam': 'Steam' };
+    const titles = { 'epic': 'Epic Games', 'steam': 'Steam', 'gog': 'GOG' };
     document.getElementById('currentPlatformTitle').innerText = titles[platform] || platform;
 
     await _refreshPlatformSyncState(platform).catch(() => null);
@@ -2012,12 +2023,13 @@ async function linkNewPlatformAccount() {
     if (!activePlatformView) return;
 
     const platform = String(activePlatformView || '').toLowerCase();
-    if (!['steam', 'epic'].includes(platform)) {
+    if (!['steam', 'epic', 'gog'].includes(platform)) {
         console.error('[PlatformLink] Invalid activePlatformView:', activePlatformView);
         showToast(`Invalid platform: ${activePlatformView}`, 'error');
         return;
     }
     const isEpic = platform === 'epic';
+    const platformLabel = PLATFORM_CONFIG[platform]?.name || platform;
 
     const linkBtn = document.getElementById('linkPlatformBtn');
     const syncBtn = document.getElementById('syncPlatformBtn');
@@ -2032,11 +2044,11 @@ async function linkNewPlatformAccount() {
     const stageMessages = {
         waiting_for_signin: isEpic
             ? 'Waiting for Epic authorization...'
-            : 'Finish the sign-in in the Steam window.',
+            : (platform === 'gog' ? 'Waiting for GOG authorization...' : 'Finish the sign-in in the Steam window.'),
         resolving_identity: 'Reading account profile...',
         saving_account:     'Saving account...',
         linked:             'Account linked. Starting library sync...',
-        starting_sync:      'Epic sync started in the background. You can keep using Baddel.',
+        starting_sync:      `${platformLabel} sync started in the background. You can keep using Baddel.`,
         failed:             'Linking failed.',
     };
 
@@ -2054,7 +2066,7 @@ async function linkNewPlatformAccount() {
             if (!overlay?.classList.contains('visible')) return;
             const subtitleEl = document.getElementById('platformSyncSimpleSubtitle');
             if (subtitleEl) subtitleEl.textContent =
-                'Still working. Epic can take a little while to finish authorization.';
+                `Still working. ${platformLabel} can take a little while to finish authorization.`;
         }, 10_000);
         timeoutHandle30s = setTimeout(() => {
             const overlay    = document.getElementById('platformSyncSimpleOverlay');
@@ -2073,10 +2085,12 @@ async function linkNewPlatformAccount() {
     };
 
     try {
-        const initialTitle    = isEpic ? 'Connecting Epic account' : 'Connecting Steam account';
+        const initialTitle    = `Connecting ${platformLabel} account`;
         const initialSubtitle = isEpic
             ? 'Waiting for Epic authorization...'
-            : 'Finish the sign-in in the Steam window, then we will sync your games automatically.';
+            : (platform === 'gog'
+                ? 'Finish the sign-in in the GOG window, then we will sync your games automatically.'
+                : 'Finish the sign-in in the Steam window, then we will sync your games automatically.');
         updateOverlay(initialTitle, initialSubtitle);
 
         if (window.electronAPI.onPlatformLinkStateChanged) {
@@ -2094,17 +2108,17 @@ async function linkNewPlatformAccount() {
             });
         }
 
-        if (isEpic) startTimeoutWarnings();
+        if (isEpic || platform === 'gog') startTimeoutWarnings();
 
         const res = await window.electronAPI.platformSyncLink(platform);
 
         if (res?.status === 'error') throw new Error(res.message || 'Failed to link account');
         if (res.status === 'success') {
             const _linkedName = res.displayName || res.accountName || res.name
-                || (platform === 'steam' ? 'Steam account' : 'Epic account');
+                || `${platformLabel} account`;
             const _linkedAccountId = platform === 'steam'
                 ? (res.steamId || res.accountId || res.id || null)
-                : (res.accountId || res.epicAccountId || res.id || null);
+                : (res.accountId || res.epicAccountId || res.userId || res.id || null);
 
             await updatePlatformsOverview();
             await renderPlatformAccounts(platform);
@@ -2112,7 +2126,7 @@ async function linkNewPlatformAccount() {
                 'Account linked!',
                 isEpic
                     ? 'Epic sync started in the background. You can close this tab or keep using Baddel.'
-                    : `Steam account linked. Syncing library now...`,
+                    : `${platformLabel} account linked. Syncing library now...`,
             );
             showToast(`Account "${_linkedName}" linked! Syncing library automatically...`, 'info');
             _runPlatformSync(platform, { targetAccountId: _linkedAccountId, silent: true });
@@ -2123,7 +2137,7 @@ async function linkNewPlatformAccount() {
         console.error('[PlatformLink] Link Error:', { platform, message: err?.message, error: err });
         _hidePlatformSyncOverlay();
         const msg = err?.message || err?.details?.message || err?.error || 'Unknown error';
-        showToast(`Failed to link ${platform === 'steam' ? 'Steam' : 'Epic'} account: ${msg}`, 'error');
+        showToast(`Failed to link ${platformLabel} account: ${msg}`, 'error');
     } finally {
         cleanup();
     }

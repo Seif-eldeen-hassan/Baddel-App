@@ -213,6 +213,14 @@ function _poFindLibraryGame(syncedLibrary, game, platform) {
             const m = syncedLibrary.find(lg => lg.catalogItemId === game.catalogItemId);
             if (m) return m;
         }
+    } else if (platform === 'gog') {
+        const gogId = game.productId || game.allIds?.gog || game.appName || String(game.id || '').replace(/^gog[-_]/i, '');
+        if (gogId) {
+            const m = syncedLibrary.find(lg =>
+                String(lg.productId || lg.allIds?.gog || lg.appName || '').trim() === String(gogId).trim()
+            );
+            if (m) return m;
+        }
     }
 
     // Title fallback (any platform)
@@ -452,7 +460,7 @@ const _poLastGoodSyncSnapshot = new Map();
 
 // ── Async wrapper — fetches data then calls pure core ──────────
 async function buildPlatformAccountOptions({ game, platform, mode = 'play' }) {
-    const hasSyncSupport = platform === 'steam' || platform === 'epic';
+    const hasSyncSupport = platform === 'steam' || platform === 'epic' || platform === 'gog';
 
     const [switcherRaw, accRes, libRes] = await Promise.all([
         _poFetchSwitcherProfiles(platform).catch(() => []),

@@ -125,6 +125,9 @@ const REQUIRED_FILES = [
     'quick-switcher.html',
     'package.json',
     'Logo.ico',
+    'gog-runtime/gogdl.exe',
+    'gog-runtime/version.json',
+    'gog-runtime/LICENSE-GPL-3.0.txt',
 ];
 for (const f of REQUIRED_FILES) {
     if (fs.existsSync(path.join(DEST, f))) pass(`Required file present: ${f}`);

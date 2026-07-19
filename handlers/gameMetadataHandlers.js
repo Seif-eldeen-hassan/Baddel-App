@@ -110,6 +110,23 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
             // The early STEAM_EPIC check above is skipped because platform !== 'epic'.
             // Try a direct platform/id lookup using allIds, namespace, or launcherGameId before MRM.
             {
+                const gogId = hints.allIds?.gog
+                    || hints.productId
+                    || hints.appName
+                    || (typeof (hints.id || '') === 'string' && /^gog[-_]/i.test(hints.id || '') ? String(hints.id).replace(/^gog[-_]/i, '') : null);
+                if (gogId && /^\d+$/.test(String(gogId))) {
+                    const cleanGogId = String(gogId);
+                    console.log(`[get-game-metadata] trying platform/id lookup: gog/${cleanGogId}`);
+                    try {
+                        const hit = await baddelApi.lookupGame({ platform: 'gog', id: cleanGogId });
+                        if (hit) {
+                            console.log(`[get-game-metadata] platform/id hit: gog/${cleanGogId}`);
+                            return baddelApi.normalizeServerData(hit);
+                        }
+                        console.log(`[get-game-metadata] platform/id miss: gog/${cleanGogId}`);
+                    } catch (_e) { /* continue to MRM */ }
+                }
+
                 const epicId = hints.allIds?.epic
                     || hints.namespace
                     || (typeof (hints.id || '') === 'string' && /^epic[-_]/i.test(hints.id || '') ? String(hints.id).replace(/^epic[-_]/i, '') : null);

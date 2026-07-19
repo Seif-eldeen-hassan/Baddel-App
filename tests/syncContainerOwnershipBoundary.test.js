@@ -82,7 +82,8 @@ test('platformSync still owns connector methods and delegates construction to cr
     assert.match(source, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/createSyncConnectors['"]\)/);
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
-    assert.match(source, /createSyncConnectors\(\{\s*steam:\s*steamConnectorMethods,\s*epic:\s*epicConnectorMethods,\s*\}\)/);
+    assert.match(source, /const\s+gogConnectorMethods\s*=\s*\{/);
+    assert.match(source, /createSyncConnectors\(\{\s*steam:\s*steamConnectorMethods,\s*epic:\s*epicConnectorMethods,\s*gog:\s*gogConnectorMethods,\s*\}\)/);
     assert.match(source, /function\s+registerPlatformSyncHandlers\s*\(/);
     assert.doesNotMatch(source, /require\([^)]*SyncContainer/);
 });
@@ -97,18 +98,19 @@ test('composition modules keep the current dependency direction before ownership
     assert.match(platformFeatureSource, /createSyncFeatureApi/);
     assert.match(apiContractSource, /SYNC_FEATURE_API_KEYS/);
     assert.deepEqual(SYNC_FEATURE_API_KEYS, [
-        'registerPlatformSyncHandlers',
-        'epicConnector',
-        'steamConnector',
-        'enrichProfilesWithSyncData',
-        'registerPlatformSyncAssetDownloader',
-        'autoSyncOnStartup',
-        '_mobileApprovalPollStep',
-        '_startQrLoginFlow',
-        'cacheLibraryCoversFirst',
-        '_withConcurrency',
-        '_writeSyncLinkToExistingSwitcherProfile',
-        '_findMatchingEpicSwitcherProfile',
+    'registerPlatformSyncHandlers',
+    'epicConnector',
+    'steamConnector',
+    'gogConnector',
+    'enrichProfilesWithSyncData',
+    'registerPlatformSyncAssetDownloader',
+    'autoSyncOnStartup',
+    '_mobileApprovalPollStep',
+    '_startQrLoginFlow',
+    'cacheLibraryCoversFirst',
+    '_withConcurrency',
+    '_writeSyncLinkToExistingSwitcherProfile',
+    '_findMatchingEpicSwitcherProfile',
     ]);
 
     assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
