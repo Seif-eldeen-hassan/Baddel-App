@@ -1090,7 +1090,7 @@ test('game-details openGameDetails step 4 tries window._agFindInstalledLocalMatc
 test('step 4 merge includes allIds field from installedMatch', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
     const mergeIdx   = js.indexOf('window._agFindInstalledLocalMatch');
-    const mergeBlock = js.slice(mergeIdx, mergeIdx + 1400);
+    const mergeBlock = js.slice(mergeIdx, mergeIdx + 1800);
     assert.match(mergeBlock, /allIds/);
 });
 

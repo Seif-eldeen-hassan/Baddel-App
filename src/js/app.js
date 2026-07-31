@@ -1056,6 +1056,7 @@ function _hideAllViews() {
     const gdView   = document.getElementById('gameDetailsView');
     const allGmsView  = document.getElementById('allGamesView');
     const collView = document.getElementById('collectionsView');
+    const downloadsView = document.getElementById('downloadsView');
 
     // Stop any playing trailer/video before hiding Game Details
     if (gdView && gdView.style.display !== 'none') {
@@ -1068,6 +1069,7 @@ function _hideAllViews() {
     if (heroSec)  heroSec.style.display  = 'none';
     if (gdView)   gdView.style.display   = 'none';
     if (collView) collView.style.display = 'none';
+    if (downloadsView) downloadsView.style.display = 'none';
     if (typeof _agExitEmptyPageMode === 'function') _agExitEmptyPageMode();
     if (allGmsView) allGmsView.style.display = 'none';
 }

@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // BADDEL LAUNCHER - ACCOUNTS VIEW (accounts.js)
 // Sidebar navigation, library view, tutorial modal, Epic library
 // window exports, All Games view, and Installed Games view.
@@ -3596,7 +3596,7 @@ function _agBuildInstalledMap() {
     };
 
     local.forEach(g => {
-        const installed = !!(g.path || g.command);
+        const installed = !!(g.path || g.command || g.launchCommand || g.executablePath || g.installVerified || g.isInstalled);
 
         set(g.id, installed);
 
@@ -3633,7 +3633,7 @@ function _agBuildInstalledMap() {
 
 /**
  * Returns true when an All-Games entry matches any truly-installed local entry.
- * "Installed" = local entry has `path` or `command` (same rule as Game Details).
+ * "Installed" = local entry has a launch target or verified installed marker (same rule as Game Details).
  */
 function _agIsInstalled(game) {
     const map = _agBuildInstalledMap();

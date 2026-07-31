@@ -1,0 +1,7 @@
+Preparing download manifest
+[PROGRESS INFO]: = Progress: 12.50 134217728/1073741824, Running for: 00:00:24, ETA: 00:02:44
+[PROGRESS INFO]: + Download - 5.50 MiB/s (raw) / 6.20 MiB/s (decompressed)
+[PROGRESS INFO]: = Progress: 50.00 536870912/1073741824, Running for: 00:01:05, ETA: 00:01:04
+[PROGRESS INFO]: + Download - 8.00 MiB/s (raw) / 9.00 MiB/s (decompressed)
+Verifying downloaded files 100%
+Download complete

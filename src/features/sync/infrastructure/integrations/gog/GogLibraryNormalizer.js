@@ -611,13 +611,51 @@ function pickRatings(entry) {
     return [];
 }
 
+function getRawLibraryEntry(entry) {
+    return entry?._libraryEntry && typeof entry._libraryEntry === 'object' ? entry._libraryEntry : {};
+}
+
+function getGogIdentity(entry) {
+    const raw = getRawLibraryEntry(entry);
+    const galaxyExternalId = firstString(raw.external_id, raw.product_id, raw.productId);
+    const gamesDbExternalId = firstString(entry?.external_id);
+    const releasePerPlatformId = firstString(
+        entry?.release_per_platform_id,
+        entry?.releasePerPlatformId,
+        raw.release_per_platform_id,
+        raw.releasePerPlatformId
+    );
+    return {
+        localGameId: firstString(entry?.localGameId),
+        canonicalGameId: firstString(entry?.canonicalGameId),
+        galaxyLibraryEntryId: firstString(raw.id),
+        galaxyExternalId,
+        galaxyCertificatePresent: Boolean(raw.certificate),
+        gamesDbReleaseId: firstString(entry?.id),
+        gamesDbGameId: firstString(entry?.game_id, entry?.gameId),
+        gamesDbExternalId,
+        releasePerPlatformId,
+        gogProductId: firstString(entry?.gogProductId),
+        contentSystemProductId: firstString(entry?.contentSystemProductId),
+        gogdlAppName: firstString(entry?.gogdlAppName),
+        storeSlug: firstString(
+            entry?._storeProduct?.slug,
+            entry?._storeProduct?._catalogProduct?.slug,
+            raw.slug,
+            entry?.slug,
+            entry?.product_slug
+        ),
+        identitySource: raw.external_id ? 'gog-library-external-id' : (gamesDbExternalId ? 'gamesdb-external-id' : 'unknown'),
+    };
+}
+
 function getProductId(entry) {
+    const identity = getGogIdentity(entry);
     return firstString(
+        identity.galaxyExternalId,
+        identity.gamesDbExternalId,
         entry?.product_id,
         entry?.productId,
-        entry?.id,
-        entry?.external_id,
-        entry?._libraryEntry?.external_id,
         entry?.game_id,
         entry?._embedded?.product?.id,
         entry?.product?.id
@@ -662,6 +700,7 @@ function normalizeGogRelease(entry, account, { now = () => new Date().toISOStrin
     if (!entry || typeof entry !== 'object') return null;
     if (isConfidentNonGame(entry)) return null;
 
+    const identity = getGogIdentity(entry);
     const productId = getProductId(entry);
     if (!productId) return null;
 
@@ -696,6 +735,10 @@ function normalizeGogRelease(entry, account, { now = () => new Date().toISOStrin
         source: 'gog',
         appName: String(productId),
         productId: String(productId),
+        gogProductId: identity.gogProductId || null,
+        contentSystemProductId: identity.contentSystemProductId || null,
+        gogdlAppName: identity.gogdlAppName || null,
+        gogIdentity: identity,
         allIds: { gog: String(productId) },
         coverUrl: pickArtwork(entry, 'cover'),
         heroUrl: pickArtwork(entry, 'hero'),

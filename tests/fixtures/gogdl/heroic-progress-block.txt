@@ -1,0 +1,4 @@
+[PROGRESS INFO]: = Progress: 21.10 69206016/327962160, Running for: 00:00:20, ETA: 00:01:15
+[PROGRESS INFO]: = Downloaded: 64.00 MiB, Written: 66.00 MiB
+[PROGRESS INFO]: + Download - 3.30 MiB/s (raw) / 4.10 MiB/s (decompressed)
+[PROGRESS INFO]: + Disk - 4.20 MiB/s (write) / 0.00 MiB/s (read)

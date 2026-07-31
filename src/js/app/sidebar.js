@@ -404,6 +404,7 @@ function getSidebarActionContext() {
     const accountsVisible  = document.getElementById('accountsView')?.style.display !== 'none';
     const installedVisible = document.getElementById('installedGamesView')?.style.display !== 'none';
     const allGamesVisible  = document.getElementById('allGamesView')?.style.display !== 'none';
+    const downloadsVisible = _sbIsDownloadsVisible();
     const isFavorites      = currentView === 'collection' && currentFilters.collectionId === 'fav_system_default';
     // customCollVisible: installedGamesView is shown for collections too, so also require currentView
     const customCollVisible = currentView === 'collection' && !!currentFilters.collectionId && !isFavorites;
@@ -411,6 +412,7 @@ function getSidebarActionContext() {
     if (accountsVisible && currentAccountPlatform)     return 'accounts';
     // installed: DOM visible AND currentView confirms it (collection pages also show installedGamesView)
     if ((installedVisible && currentView === 'installed') || currentView === 'installed') return 'installed';
+    if (downloadsVisible || currentView === 'downloads') return 'downloads';
     if (isFavorites)                                   return 'favorites';
     if (customCollVisible)                             return 'collection';
     if (currentView === 'collections')                 return 'collections';
@@ -436,6 +438,7 @@ function syncSidebarActionButton() {
         favorites:  { text: 'Browse Installed Games',  plus: false },
         'all-games':{ text: 'Link Accounts',           plus: true  },
         ready:      { text: 'Link Accounts',           plus: true  },
+        downloads:  { text: 'Browse Ready Games',       plus: false },
         home:       { text: 'Link Accounts',           plus: true  },
         library:    { text: 'Link Accounts',           plus: true  },
     };
@@ -577,6 +580,10 @@ function handleSidebarContextBtn() {
         if (typeof navigateToInstalled === 'function') navigateToInstalled();
         return;
     }
+    if (ctx === 'downloads') {
+        if (typeof navigateToReadyToInstall === 'function') navigateToReadyToInstall();
+        return;
+    }
     // all-games / ready / home / library — open accounts linking modal
     if (typeof openPlatformsModal === 'function') openPlatformsModal();
 }
@@ -593,11 +600,17 @@ function clearSidebarActiveState() {
         .forEach(el => el.classList.remove('active'));
 }
 
+function _sbIsDownloadsVisible() {
+    const el = document.getElementById('downloadsView');
+    return !!el && el.style.display !== 'none';
+}
+
 function updateSidebarActiveState() {
     clearSidebarActiveState();
 
     const accountsVisible  = document.getElementById('accountsView')?.style.display !== 'none';
     const allGamesVisible  = document.getElementById('allGamesView')?.style.display !== 'none';
+    const downloadsVisible = _sbIsDownloadsVisible();
 
     // Only one branch wins — order from most-specific to most-general.
     if (accountsVisible && currentAccountPlatform) {
@@ -607,6 +620,8 @@ function updateSidebarActiveState() {
         document.getElementById('nav-ready')?.classList.add('active');
     } else if (allGamesVisible) {
         document.getElementById('nav-all-games')?.classList.add('active');
+    } else if (downloadsVisible || currentView === 'downloads') {
+        document.getElementById('nav-downloads')?.classList.add('active');
     } else if (currentView === 'installed') {
         document.getElementById('nav-installed')?.classList.add('active');
     } else if (currentView === 'collections') {

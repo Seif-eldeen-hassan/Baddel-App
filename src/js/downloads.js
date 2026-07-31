@@ -6,6 +6,22 @@
     const downloadsPendingActions = new Set();
     const downloadsChartBuffers = new Map();
     const DOWNLOAD_CHART_LIMIT = 90;
+    const downloadPresentationStates = new Map();
+    let downloadsPresentationTimer = null;
+
+    const DOWNLOAD_PRESENTATION_TICK_MS = 250;
+    const DOWNLOAD_PRESENTATION_FRESH_MS = 1500;
+    const DOWNLOAD_PRESENTATION_STOP_MS = 4000;
+    const DOWNLOAD_PRESENTATION_LEAD_BUFFER_SECONDS = 3;
+    const DOWNLOAD_PRESENTATION_MAX_PROJECTION_SECONDS = 120;
+    const DOWNLOAD_PRESENTATION_MIN_LEAD_BYTES = 2 * 1024 * 1024;
+
+    const DOWNLOAD_PRESENTATION_ACTIVE_STATUSES = new Set([
+        'preparing',
+        'downloading',
+        'verifying',
+        'installing',
+    ]);
 
     function dlEsc(value) {
         if (typeof escapeHtml === 'function') return escapeHtml(value);
@@ -23,8 +39,8 @@
         const units = ['B', 'KB', 'MB', 'GB', 'TB'];
         let value = n;
         let idx = 0;
-        while (value >= 1024 && idx < units.length - 1) {
-            value /= 1024;
+        while (value >= 1000 && idx < units.length - 1) {
+            value /= 1000;
             idx += 1;
         }
         return `${value >= 10 || idx === 0 ? value.toFixed(0) : value.toFixed(1)} ${units[idx]}`;
@@ -53,6 +69,718 @@
         return `${secs}s left`;
     }
 
+    function getDisplayDownloadedBytes(task = {}) {
+        const authoritativeBytes = Number(task.downloadedBytes);
+        const writtenBytes = Number(task.writtenBytes);
+        const totalBytes = Number(task.totalBytes);
+
+        const authoritative = Number.isFinite(authoritativeBytes)
+            ? Math.max(0, authoritativeBytes)
+            : 0;
+
+        const written = Number.isFinite(writtenBytes)
+            ? Math.max(0, writtenBytes)
+            : 0;
+
+        let displayedBytes = Math.max(authoritative, written);
+
+        if (Number.isFinite(totalBytes) && totalBytes > 0) {
+            displayedBytes = Math.min(displayedBytes, totalBytes);
+        }
+
+        return displayedBytes;
+    }
+
+    function dlPresentationNow() {
+    if (
+        typeof performance !== 'undefined' &&
+        typeof performance.now === 'function'
+    ) {
+        return performance.now();
+    }
+
+    return Date.now();
+}
+
+    function dlHasOwn(object, key) {
+        return Boolean(
+            object &&
+            Object.prototype.hasOwnProperty.call(object, key)
+        );
+    }
+
+    function dlFinitePositive(value) {
+        const number = Number(value);
+
+        return Number.isFinite(number) && number > 0
+            ? number
+            : 0;
+    }
+
+    function dlPresentationSessionId(task = {}) {
+        return String(
+            task.progressSessionId ||
+            task.sessionId ||
+            ''
+        );
+    }
+
+    function dlBestPresentationRate(source = {}) {
+        const candidates = [
+            dlFinitePositive(source.decompressionSpeedBps),
+            dlFinitePositive(source.downloadSpeedBps),
+            dlFinitePositive(source.rawDownloadSpeedBps),
+            dlFinitePositive(source.diskWriteSpeedBps),
+        ];
+
+        return candidates.find(value => value > 0) || 0;
+    }
+
+    function dlCreatePresentationState(task = {}, now = dlPresentationNow()) {
+        const confirmedBytes = getDisplayDownloadedBytes(task);
+        const totalBytes = Number(task.totalBytes);
+        const safeConfirmedBytes = Number.isFinite(totalBytes) && totalBytes > 0
+            ? Math.min(confirmedBytes, totalBytes)
+            : confirmedBytes;
+        const initialRate = dlBestPresentationRate(task);
+        const initialEta = Number(task.etaSeconds);
+
+        return {
+            sessionId: dlPresentationSessionId(task),
+
+            displayedBytes: safeConfirmedBytes,
+            targetBytes: safeConfirmedBytes,
+            lastConfirmedBytes: safeConfirmedBytes,
+            preserveDisplayAcrossResume: false,
+            lastConfirmedAt: now,
+
+            displayedRateBps: initialRate,
+            displayedEtaSeconds:
+                Number.isFinite(initialEta) && initialEta > 0
+                    ? initialEta
+                    : null,
+
+            lastTickAt: now,
+            lastActivityAt: initialRate > 0 ? now : 0,
+
+            lastRawDownloadedBytes:
+                Number.isFinite(Number(task.rawDownloadedBytes))
+                    ? Number(task.rawDownloadedBytes)
+                    : null,
+
+            lastWrittenBytes:
+                Number.isFinite(Number(task.writtenBytes))
+                    ? Number(task.writtenBytes)
+                    : null,
+        };
+    }
+
+    function dlSyncPresentationState(task = {}, incomingPatch = null) {
+        const taskId = String(task.id || '');
+
+        if (!taskId) {
+            return null;
+        }
+
+        const now = dlPresentationNow();
+        const sessionId = dlPresentationSessionId(task);
+
+        let state = downloadPresentationStates.get(taskId);
+
+        if (!state) {
+            state = dlCreatePresentationState(task, now);
+            downloadPresentationStates.set(taskId, state);
+        } else {
+            const sessionChanged =
+                Boolean(
+                    sessionId &&
+                    state.sessionId &&
+                    sessionId !== state.sessionId
+                );
+
+            if (sessionChanged) {
+                const shouldPreserveDisplay =
+                    state.preserveDisplayAcrossResume === true;
+
+                const carriedDisplayedBytes =
+                    Number(state.displayedBytes) || 0;
+
+                const carriedEtaSeconds =
+                    Number.isFinite(Number(state.displayedEtaSeconds))
+                        ? Number(state.displayedEtaSeconds)
+                        : null;
+
+                const nextState =
+                    dlCreatePresentationState(task, now);
+
+                if (shouldPreserveDisplay) {
+                    const canonicalBytes = getDisplayDownloadedBytes(task);
+                    const canonicalTotal = Number(task.totalBytes);
+                    const safeCarriedBytes = Number.isFinite(canonicalTotal) && canonicalTotal > 0
+                        ? Math.min(carriedDisplayedBytes, canonicalTotal)
+                        : Math.min(carriedDisplayedBytes, canonicalBytes);
+                    nextState.displayedBytes = Math.max(
+                        nextState.displayedBytes,
+                        safeCarriedBytes
+                    );
+
+                    nextState.targetBytes = Math.max(
+                        nextState.targetBytes,
+                        nextState.displayedBytes
+                    );
+
+                    if (carriedEtaSeconds !== null) {
+                        nextState.displayedEtaSeconds =
+                            carriedEtaSeconds;
+                    }
+                }
+
+                nextState.preserveDisplayAcrossResume = false;
+
+                state = nextState;
+
+                downloadPresentationStates.set(
+                    taskId,
+                    state
+                );
+            }
+        }
+
+        if (sessionId) {
+            state.sessionId = sessionId;
+        }
+
+        const confirmedBytes = getDisplayDownloadedBytes(task);
+        const canonicalTotal = Number(task.totalBytes);
+        const safeConfirmedBytes = Number.isFinite(canonicalTotal) && canonicalTotal > 0
+            ? Math.min(confirmedBytes, canonicalTotal)
+            : confirmedBytes;
+        const rawDownloadedBytes = Number(task.rawDownloadedBytes);
+        const writtenBytes = Number(task.writtenBytes);
+
+        const confirmedAdvanced =
+            safeConfirmedBytes > state.lastConfirmedBytes;
+        if (confirmedAdvanced) {
+            state.lastConfirmedAt = now;
+        }
+        const rawAdvanced =
+            Number.isFinite(rawDownloadedBytes) &&
+            (
+                state.lastRawDownloadedBytes == null ||
+                rawDownloadedBytes > state.lastRawDownloadedBytes
+            );
+
+        const writtenAdvanced =
+            Number.isFinite(writtenBytes) &&
+            (
+                state.lastWrittenBytes == null ||
+                writtenBytes > state.lastWrittenBytes
+            );
+
+        if (
+            confirmedAdvanced ||
+            rawAdvanced ||
+            writtenAdvanced
+        ) {
+            state.lastActivityAt = now;
+        }
+
+        state.lastConfirmedBytes = Math.max(
+            state.lastConfirmedBytes,
+            safeConfirmedBytes
+        );
+
+        state.targetBytes = Math.max(
+            state.targetBytes,
+            safeConfirmedBytes
+        );
+
+        if (Number.isFinite(rawDownloadedBytes)) {
+            state.lastRawDownloadedBytes = rawDownloadedBytes;
+        }
+
+        if (Number.isFinite(writtenBytes)) {
+            state.lastWrittenBytes = writtenBytes;
+        }
+
+        let patchRate = incomingPatch
+            ? dlBestPresentationRate(incomingPatch)
+            : 0;
+
+        if (
+            patchRate <= 0 &&
+            Array.isArray(incomingPatch?.speedHistory) &&
+            incomingPatch.speedHistory.length
+        ) {
+            const latestSample =
+                incomingPatch.speedHistory[
+                    incomingPatch.speedHistory.length - 1
+                ];
+
+            patchRate = dlBestPresentationRate({
+                downloadSpeedBps:
+                    latestSample?.downloadSpeedBps,
+
+                diskWriteSpeedBps:
+                    latestSample?.diskUsageBps,
+            });
+        }
+
+        if (patchRate > 0) {
+            state.lastActivityAt = now;
+
+            state.displayedRateBps =
+                state.displayedRateBps > 0
+                    ? Math.round(
+                        state.displayedRateBps * 0.65 +
+                        patchRate * 0.35
+                    )
+                    : Math.round(patchRate);
+        }
+
+        const status = String(task.status || '');
+
+        if (status === 'completed') {
+            const totalBytes = Number(task.totalBytes);
+
+            if (Number.isFinite(totalBytes) && totalBytes > 0) {
+                state.displayedBytes = totalBytes;
+                state.targetBytes = totalBytes;
+            } else {
+                state.displayedBytes = Math.max(
+                    state.displayedBytes,
+                    safeConfirmedBytes
+                );
+            }
+
+            state.displayedRateBps = 0;
+            state.displayedEtaSeconds = 0;
+            state.lastTickAt = now;
+        } else if (
+            ['paused', 'failed', 'cancelled'].includes(status)
+        ) {
+            state.displayedRateBps = 0;
+            state.lastTickAt = now;
+
+            if (status !== 'paused') {
+                state.preserveDisplayAcrossResume = false;
+            }
+        }
+
+        return state;
+    }
+
+    function dlFreshPresentationRate(state, now) {
+        const rate = Number(state?.displayedRateBps);
+
+        if (!Number.isFinite(rate) || rate <= 0) {
+            return 0;
+        }
+
+        if (!state.lastActivityAt) {
+            return 0;
+        }
+
+        const age = Math.max(
+            0,
+            now - state.lastActivityAt
+        );
+
+        if (age <= DOWNLOAD_PRESENTATION_FRESH_MS) {
+            return rate;
+        }
+
+        if (age >= DOWNLOAD_PRESENTATION_STOP_MS) {
+            return 0;
+        }
+
+        const fadeDuration =
+            DOWNLOAD_PRESENTATION_STOP_MS -
+            DOWNLOAD_PRESENTATION_FRESH_MS;
+
+        const fadeProgress =
+            (age - DOWNLOAD_PRESENTATION_FRESH_MS) /
+            fadeDuration;
+
+        return Math.max(
+            0,
+            rate * (1 - fadeProgress)
+        );
+    }
+
+    function dlAdvancePresentationState(task, state, now) {
+        if (!task || !state) {
+            return false;
+        }
+
+        const status = String(task.status || '');
+
+        if (!DOWNLOAD_PRESENTATION_ACTIVE_STATUSES.has(status)) {
+            state.lastTickAt = now;
+            return false;
+        }
+
+        const elapsedSeconds = Math.min(
+            1,
+            Math.max(
+                0,
+                (now - state.lastTickAt) / 1000
+            )
+        );
+
+        state.lastTickAt = now;
+
+        if (elapsedSeconds <= 0) {
+            return false;
+        }
+
+        const rate = dlFreshPresentationRate(state, now);
+        const confirmedBytes = getDisplayDownloadedBytes(task);
+        const canonicalTotal = Number(task.totalBytes);
+        const safeConfirmedBytes = Number.isFinite(canonicalTotal) && canonicalTotal > 0
+            ? Math.min(confirmedBytes, canonicalTotal)
+            : confirmedBytes;
+
+        state.targetBytes = Math.max(
+            state.targetBytes,
+            safeConfirmedBytes
+        );
+
+        const targetGap = Math.max(
+            0,
+            state.targetBytes - state.displayedBytes
+        );
+
+        const normalStep = rate * elapsedSeconds;
+
+        const catchUpFactor = Math.min(
+            0.35,
+            elapsedSeconds * 2.4
+        );
+
+        const catchUpStep =
+            targetGap > 0
+                ? Math.min(
+                    targetGap,
+                    Math.max(
+                        normalStep,
+                        targetGap * catchUpFactor
+                    )
+                )
+                : 0;
+
+        let nextBytes =
+            state.displayedBytes +
+            normalStep +
+            catchUpStep;
+
+        const confirmedAgeSeconds = Math.max(
+            0,
+            (
+                now -
+                (
+                    state.lastConfirmedAt ||
+                    now
+                )
+            ) / 1000
+        );
+
+        const projectionSeconds = Math.min(
+            DOWNLOAD_PRESENTATION_MAX_PROJECTION_SECONDS,
+            confirmedAgeSeconds +
+                DOWNLOAD_PRESENTATION_LEAD_BUFFER_SECONDS
+        );
+
+        const maximumLeadBytes = Math.max(
+            DOWNLOAD_PRESENTATION_MIN_LEAD_BYTES,
+            rate * projectionSeconds
+        );
+
+        const leadCeiling =
+            Math.max(
+                safeConfirmedBytes,
+                state.targetBytes
+            ) + maximumLeadBytes;
+
+        nextBytes = Math.min(
+            nextBytes,
+            leadCeiling
+        );
+
+        const totalBytes = Number(task.totalBytes);
+
+        if (Number.isFinite(totalBytes) && totalBytes > 0) {
+            const completionCap =
+                status === 'completed'
+                    ? totalBytes
+                    : totalBytes * 0.995;
+
+            nextBytes = Math.min(
+                nextBytes,
+                completionCap
+            );
+        }
+
+        nextBytes = Math.max(
+            state.displayedBytes,
+            safeConfirmedBytes,
+            nextBytes
+        );
+
+        const changed =
+            nextBytes - state.displayedBytes >= 1;
+
+        state.displayedBytes = nextBytes;
+
+        if (
+            rate >= 1024 &&
+            Number.isFinite(totalBytes) &&
+            totalBytes > state.displayedBytes
+        ) {
+            const nextEta =
+                (totalBytes - state.displayedBytes) /
+                rate;
+
+            state.displayedEtaSeconds =
+                state.displayedEtaSeconds == null
+                    ? nextEta
+                    : (
+                        state.displayedEtaSeconds * 0.8 +
+                        nextEta * 0.2
+                    );
+        }
+
+        return changed;
+    }
+
+    function dlPresentedBytes(task = {}) {
+        const state = dlSyncPresentationState(task);
+
+        return state
+            ? state.displayedBytes
+            : getDisplayDownloadedBytes(task);
+    }
+
+    function dlPresentedPercent(task = {}) {
+        const displayedBytes = dlPresentedBytes(task);
+        const totalBytes = Number(task.totalBytes);
+
+        if (
+            Number.isFinite(displayedBytes) &&
+            Number.isFinite(totalBytes) &&
+            displayedBytes >= 0 &&
+            totalBytes > 0
+        ) {
+            return Math.max(
+                0,
+                Math.min(
+                    100,
+                    (displayedBytes / totalBytes) * 100
+                )
+            );
+        }
+
+        const progressPercent = Number(task.progressPercent);
+
+        return Number.isFinite(progressPercent)
+            ? Math.max(0, Math.min(100, progressPercent))
+            : null;
+    }
+
+    function dlPresentedRate(task = {}) {
+        const state = dlSyncPresentationState(task);
+
+        if (!state) {
+            return Number(task.downloadSpeedBps) || 0;
+        }
+
+        return dlFreshPresentationRate(
+            state,
+            dlPresentationNow()
+        );
+    }
+
+    function dlPresentedEta(task = {}) {
+        const state = dlSyncPresentationState(task);
+
+        if (
+            state &&
+            Number.isFinite(Number(state.displayedEtaSeconds))
+        ) {
+            return Math.max(
+                0,
+                Number(state.displayedEtaSeconds)
+            );
+        }
+
+        const taskEta = Number(task.etaSeconds);
+
+        return Number.isFinite(taskEta)
+            ? taskEta
+            : null;
+    }
+
+    function dlCleanupPresentationStates(tasks = []) {
+        const currentIds = new Set(
+            tasks.map(task => String(task.id || ''))
+        );
+
+        for (const taskId of downloadPresentationStates.keys()) {
+            if (!currentIds.has(taskId)) {
+                downloadPresentationStates.delete(taskId);
+            }
+        }
+    }
+
+    function dlPatchPresentationDom(task, state) {
+        if (!task || !state) {
+            return;
+        }
+
+        const card = document.querySelector(
+            `[data-download-task-id="${dlCssEscape(task.id)}"]`
+        );
+
+        if (!card) {
+            return;
+        }
+
+        const percent = dlPresentedPercent(task);
+        const fill = card.querySelector(
+            '.download-progress-fill'
+        );
+
+        const label = card.querySelector(
+            '.download-progress-percent'
+        );
+
+        if (fill && percent !== null) {
+            fill.style.width =
+                `${Math.max(0, Math.min(100, percent))}%`;
+
+            fill.style.opacity = '';
+        }
+
+        if (label && percent !== null) {
+            label.textContent = `${percent.toFixed(1)}%`;
+        }
+
+        setText(
+            card,
+            'downloaded',
+            `${dlFormatBytes(state.displayedBytes)}${
+                task.totalBytes
+                    ? ` / ${dlFormatBytes(task.totalBytes)}`
+                    : ''
+            }`
+        );
+
+        const visibleRate = dlFreshPresentationRate(
+            state,
+            dlPresentationNow()
+        );
+
+        setText(
+            card,
+            'speed',
+            dlFormatRate(
+                visibleRate || task.downloadSpeedBps,
+                task
+            )
+        );
+
+        const etaSeconds = dlPresentedEta(task);
+
+        const etaText =
+            Number.isFinite(Number(etaSeconds)) &&
+            Number(etaSeconds) > 0
+                ? dlFormatDuration(etaSeconds)
+                : 'Calculating';
+
+        setText(card, 'eta', etaText);
+        setText(card, 'eta-top', etaText);
+    }
+
+    function dlFreezePresentationForPause(taskId) {
+        const task = Array.isArray(downloadsSnapshot?.tasks)
+            ? downloadsSnapshot.tasks.find(
+                item => String(item.id) === String(taskId)
+            )
+            : null;
+
+        if (!task) {
+            return;
+        }
+
+        const state =
+            dlSyncPresentationState(task);
+
+        if (!state) {
+            return;
+        }
+
+        const now =
+            dlPresentationNow();
+
+        // حدّث الرقم حتى لحظة الضغط نفسها.
+        dlAdvancePresentationState(
+            task,
+            state,
+            now
+        );
+
+        state.displayedBytes = Math.max(
+            Number(state.displayedBytes) || 0,
+            getDisplayDownloadedBytes(task)
+        );
+
+        state.targetBytes = Math.max(
+            Number(state.targetBytes) || 0,
+            state.displayedBytes
+        );
+
+        state.preserveDisplayAcrossResume = true;
+        state.displayedRateBps = 0;
+        state.lastTickAt = now;
+    }
+
+    function tickDownloadPresentations() {
+        const tasks = Array.isArray(downloadsSnapshot?.tasks)
+            ? downloadsSnapshot.tasks
+            : [];
+
+        const now = dlPresentationNow();
+
+        for (const task of tasks) {
+            const state = dlSyncPresentationState(task);
+
+            if (!state) {
+                continue;
+            }
+
+            const changed = dlAdvancePresentationState(
+                task,
+                state,
+                now
+            );
+
+            if (changed) {
+                dlPatchPresentationDom(task, state);
+            }
+        }
+    }
+
+    function startDownloadPresentationTimer() {
+        if (downloadsPresentationTimer) {
+            return;
+        }
+
+        downloadsPresentationTimer = setInterval(
+            tickDownloadPresentations,
+            DOWNLOAD_PRESENTATION_TICK_MS
+        );
+    }
+
     function dlPlatformLabel(platform) {
         const p = String(platform || '').toLowerCase();
         if (p === 'gog') return 'GOG';
@@ -61,7 +789,7 @@
     }
 
     function getEffectiveTransferPercent(task) {
-        const downloadedBytes = Number(task?.downloadedBytes);
+        const downloadedBytes = dlPresentedBytes(task);
         const totalBytes = Number(task?.totalBytes);
         if (
             Number.isFinite(downloadedBytes) &&
@@ -104,7 +832,13 @@
     }
 
     function dlDownloadedText(task) {
-        return `${dlFormatBytes(task.downloadedBytes)}${task.totalBytes ? ` / ${dlFormatBytes(task.totalBytes)}` : ''}`;
+        const displayedBytes = dlPresentedBytes(task);
+
+        return `${dlFormatBytes(displayedBytes)}${
+            task.totalBytes
+                ? ` / ${dlFormatBytes(task.totalBytes)}`
+                : ''
+        }`;
     }
 
     function dlTaskChartSamples(task = {}) {
@@ -130,32 +864,146 @@
         return existing;
     }
 
+    function dlBuildSmoothChartPath(
+        samples,
+        key,
+        width,
+        height,
+        maxValue
+    ) {
+        if (!Array.isArray(samples) || samples.length < 2) {
+            return '';
+        }
+
+        const points = samples.map((sample, index) => {
+            const x =
+                samples.length <= 1
+                    ? 0
+                    : (
+                        index /
+                        (samples.length - 1)
+                    ) * width;
+
+            const value = Math.max(
+                0,
+                Number(sample[key]) || 0
+            );
+
+            const y =
+                height -
+                (
+                    Math.min(value, maxValue) /
+                    maxValue
+                ) * (height - 8) -
+                4;
+
+            return { x, y };
+        });
+
+        let path =
+            `M ${points[0].x.toFixed(1)} ` +
+            `${points[0].y.toFixed(1)}`;
+
+        for (let index = 1; index < points.length; index += 1) {
+            const previous = points[index - 1];
+            const current = points[index];
+
+            const controlX =
+                (previous.x + current.x) / 2;
+
+            path +=
+                ` C ${controlX.toFixed(1)} ` +
+                `${previous.y.toFixed(1)}, ` +
+                `${controlX.toFixed(1)} ` +
+                `${current.y.toFixed(1)}, ` +
+                `${current.x.toFixed(1)} ` +
+                `${current.y.toFixed(1)}`;
+        }
+
+        return path;
+    }
+
     function dlRenderSpeedChart(task = {}) {
         const samples = dlTaskChartSamples(task);
+
         const width = 420;
         const height = 72;
-        const max = Math.max(1, ...samples.flatMap(s => [Number(s.downloadSpeedBps) || 0, Number(s.diskUsageBps) || 0]));
-        const points = (key) => samples.map((sample, index) => {
-            const x = samples.length <= 1 ? 0 : (index / (samples.length - 1)) * width;
-            const y = height - ((Math.max(0, Number(sample[key]) || 0) / max) * (height - 8)) - 4;
-            return `${x.toFixed(1)},${y.toFixed(1)}`;
-        }).join(' ');
-        const empty = samples.length < 2 || max <= 1;
+
+        const values = samples.flatMap(sample => [
+            Math.max(
+                0,
+                Number(sample.downloadSpeedBps) || 0
+            ),
+            Math.max(
+                0,
+                Number(sample.diskUsageBps) || 0
+            ),
+        ]);
+
+        const peak = Math.max(1, ...values);
+
+        const downloadPath =
+            dlBuildSmoothChartPath(
+                samples,
+                'downloadSpeedBps',
+                width,
+                height,
+                peak
+            );
+
+        const diskPath =
+            dlBuildSmoothChartPath(
+                samples,
+                'diskUsageBps',
+                width,
+                height,
+                peak
+            );
+
+        const empty =
+            samples.length < 2 ||
+            peak <= 1;
+
         return `
             <div class="download-speed-chart" data-download-field="chart">
                 <div class="download-speed-chart-head">
                     <span>Transfer Activity</span>
-                    <span>${empty ? 'Measuring' : `Peak ${dlEsc(dlFormatRate(max))}`}</span>
+                    <span>${
+                        empty
+                            ? 'Measuring'
+                            : `Peak ${dlEsc(dlFormatRate(peak))}`
+                    }</span>
                 </div>
-                <svg viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true">
-                    <polyline class="download-chart-line download-chart-line-disk" points="${empty ? '' : points('diskUsageBps')}"></polyline>
-                    <polyline class="download-chart-line download-chart-line-download" points="${empty ? '' : points('downloadSpeedBps')}"></polyline>
+
+                <svg
+                    viewBox="0 0 ${width} ${height}"
+                    preserveAspectRatio="none"
+                    aria-hidden="true"
+                >
+                    <path
+                        class="download-chart-line download-chart-line-disk"
+                        d="${empty ? '' : diskPath}"
+                    ></path>
+
+                    <path
+                        class="download-chart-line download-chart-line-download"
+                        d="${empty ? '' : downloadPath}"
+                    ></path>
                 </svg>
+
                 <div class="download-speed-chart-legend">
-                    <span><i class="download-legend-download"></i>Download</span>
-                    <span><i class="download-legend-disk"></i>Disk</span>
+                    <span>
+                        <i class="download-legend-download"></i>
+                        Download
+                    </span>
+
+                    <span>
+                        <i class="download-legend-disk"></i>
+                        Disk
+                    </span>
                 </div>
-            </div>`;
+            </div>
+        `;
     }
 
 
@@ -202,27 +1050,109 @@
             </details>`;
     }
 
+    window.__baddelDownloadsFormatters = {
+        formatBytes: dlFormatBytes,
+        formatRate: dlFormatRate,
+        formatDuration: dlFormatDuration,
+        downloadedText: dlDownloadedText,
+        percent: getEffectiveTransferPercent,
+    };
+
     function dlButton({ label, action, taskId, tone = 'secondary', disabled = false }) {
         return `<button class="download-btn download-btn-${tone}" ${disabled ? 'disabled' : ''} onclick="${action}('${dlEsc(taskId)}')">${dlEsc(label)}</button>`;
     }
 
-    function dlTaskCard(task, active = false, index = 0) {
+   function dlTaskCard(task, active = false, index = 0) {
         const pct = getEffectiveTransferPercent(task);
-        const progressStyle = pct === null ? 'width:35%;opacity:.45' : `width:${pct}%`;
-        const cover = task.coverUrl || task.heroUrl || '';
-        const isBusy = downloadsPendingActions.has(task.id);
-        const statusText = isBusy ? 'Stopping download...' : dlCleanStatus(task);
-        const etaText = Number.isFinite(Number(task.etaSeconds)) ? dlFormatDuration(task.etaSeconds) : 'Calculating';
-        const showDetails = active || task.status === 'paused' || task.status === 'failed';
-        const isActiveTask = ['preparing','downloading','verifying','installing'].includes(task.status);
-        const isTerminalTask = ['completed','failed','cancelled'].includes(task.status);
-        const canDeletePartial = task.partialDeletionEligible && task.status !== 'completed';
-        const diskUsage = Number(task.diskUsageBps) || 0;
-        const speedText = task.status === 'paused' ? 'Paused' : dlFormatRate(task.downloadSpeedBps, task);
-        const diskText = task.status === 'paused' ? 'Paused' : (diskUsage > 0 ? dlFormatRate(diskUsage, task) : 'Measuring');
+
+        const presentationState =
+            dlSyncPresentationState(task);
+
+        const presentedRate =
+            presentationState
+                ? dlFreshPresentationRate(
+                    presentationState,
+                    dlPresentationNow()
+                )
+                : Number(task.downloadSpeedBps) || 0;
+
+        const presentedEta =
+            presentationState?.displayedEtaSeconds ??
+            task.etaSeconds;
+
+        const progressStyle =
+            pct === null
+                ? 'width:35%;opacity:.45'
+                : `width:${pct}%`;
+
+        const cover =
+            task.coverUrl ||
+            task.heroUrl ||
+            '';
+
+        const isBusy =
+            downloadsPendingActions.has(task.id);
+
+        const statusText =
+            isBusy
+                ? 'Stopping download...'
+                : dlCleanStatus(task);
+
+        const etaText =
+            Number.isFinite(Number(presentedEta)) &&
+            Number(presentedEta) > 0
+                ? dlFormatDuration(presentedEta)
+                : 'Calculating';
+
+        const showDetails =
+            active ||
+            task.status === 'paused' ||
+            task.status === 'failed';
+
+        const isActiveTask = [
+            'preparing',
+            'resuming',
+            'downloading',
+            'pausing',
+            'verifying',
+            'installing',
+        ].includes(task.status);
+
+        const isTerminalTask = [
+            'completed',
+            'failed',
+            'cancelled',
+        ].includes(task.status);
+
+        const canDeletePartial =
+            task.partialDeletionEligible &&
+            task.status !== 'completed';
+
+        const diskUsage =
+            Number(task.diskUsageBps) || 0;
+
+        const speedText =
+            task.status === 'paused'
+                ? 'Paused'
+                : dlFormatRate(
+                    presentedRate || task.downloadSpeedBps,
+                    task
+                );
+
+        const diskText =
+            task.status === 'paused'
+                ? 'Paused'
+                : (
+                    diskUsage > 0
+                        ? dlFormatRate(diskUsage, task)
+                        : 'Measuring'
+                );
         const actionButtons = [
+            task.status === 'completed' ? dlButton({ label: 'Play', action: 'downloadsPlay', taskId: task.id, tone: 'primary', disabled: isBusy }) : '',
             task.status === 'paused' ? dlButton({ label: 'Resume', action: 'downloadsResume', taskId: task.id, tone: 'primary', disabled: isBusy }) : '',
-            isActiveTask ? dlButton({ label: isBusy ? 'Pausing...' : 'Pause', action: 'downloadsPause', taskId: task.id, disabled: isBusy }) : '',
+            task.status === 'resuming' ? dlButton({ label: 'Resuming...', action: 'downloadsPause', taskId: task.id, disabled: true }) : '',
+            task.status === 'pausing' ? dlButton({ label: 'Pausing...', action: 'downloadsPause', taskId: task.id, disabled: true }) : '',
+            isActiveTask && !['resuming', 'pausing'].includes(task.status) ? dlButton({ label: isBusy ? 'Pausing...' : 'Pause', action: 'downloadsPause', taskId: task.id, disabled: isBusy }) : '',
             task.status === 'pending' ? dlButton({ label: 'Start Now', action: 'downloadsStartNow', taskId: task.id, tone: 'primary', disabled: isBusy }) : '',
             task.status === 'failed' ? dlButton({ label: 'Retry', action: 'downloadsRetry', taskId: task.id, tone: 'primary', disabled: isBusy }) : '',
             task.installPath ? dlButton({ label: 'Open Folder', action: 'downloadsOpenFolder', taskId: task.id }) : '',
@@ -232,7 +1162,7 @@
         ].filter(Boolean).join('');
 
         return `
-                <div class="${active ? 'download-card' : 'download-row'}" data-download-task-id="${dlEsc(task.id)}" data-task-revision="${Number(task.taskRevision) || 0}">
+                <div class="${active ? 'download-card' : 'download-row'}" data-download-task-id="${dlEsc(task.id)}" data-task-revision="${Number(task.taskRevision) || 0}" data-task-status="${dlEsc(task.status || '')}">
                 ${active ? '' : `<div class="download-row-index">${index + 1}</div>`}
                 ${cover ? `<img class="${active ? 'download-cover' : 'download-thumb'}" src="${dlEsc(cover)}" alt="">` : `<div class="${active ? 'download-cover' : 'download-thumb'}"></div>`}
                 <div class="download-info">
@@ -274,6 +1204,10 @@
         const pendingCount = document.getElementById('downloadsPendingCount');
         const clearBtn = document.getElementById('downloadsClearCompleted');
         const tasks = Array.isArray(downloadsSnapshot.tasks) ? downloadsSnapshot.tasks : [];
+        dlCleanupPresentationStates(tasks);
+        for (const task of tasks) {
+            dlSyncPresentationState(task);
+        }
 
         if (badge) {
             badge.textContent = downloadsSnapshot.badgeCount > 0 ? String(downloadsSnapshot.badgeCount) : '';
@@ -302,7 +1236,14 @@
             return;
         }
 
-        const activeStatuses = new Set(['preparing', 'downloading', 'verifying', 'installing']);
+        const activeStatuses = new Set([
+            'preparing',
+            'resuming',
+            'downloading',
+            'pausing',
+            'verifying',
+            'installing',
+        ]);
         const active = tasks.find(t => activeStatuses.has(t.status));
         const pending = tasks.filter(t => t.status === 'pending');
         const paused = tasks.filter(t => t.status === 'paused');
@@ -329,6 +1270,7 @@
         const patch = update.patch && typeof update.patch === 'object' ? update.patch : update;
         const next = { ...current, ...patch, taskRevision: Number.isFinite(incomingRevision) ? incomingRevision : currentRevision };
         downloadsSnapshot.tasks[idx] = next;
+        dlSyncPresentationState(next, patch);
         downloadsSnapshot.aggregateSpeedBps = downloadsSnapshot.tasks.reduce((sum, task) => sum + (Number(task.downloadSpeedBps) || 0), 0);
         return next;
     }
@@ -346,12 +1288,27 @@
             renderDownloads(downloadsSnapshot);
             return;
         }
-        if (['completed', 'failed', 'cancelled'].includes(String(task.status))) {
+        if (card.dataset.taskStatus !== String(task.status || '') || ['completed', 'failed', 'cancelled'].includes(String(task.status))) {
             renderDownloads(downloadsSnapshot);
             return;
         }
         card.dataset.taskRevision = String(Number(task.taskRevision) || 0);
+        card.dataset.taskStatus = String(task.status || '');
         const pct = getEffectiveTransferPercent(task);
+        const presentationState =
+            dlSyncPresentationState(task);
+
+        const presentedRate =
+            presentationState
+                ? dlFreshPresentationRate(
+                    presentationState,
+                    dlPresentationNow()
+                )
+                : Number(task.downloadSpeedBps) || 0;
+
+        const presentedEta =
+            presentationState?.displayedEtaSeconds ??
+            task.etaSeconds;
         const fill = card.querySelector('.download-progress-fill');
         const label = card.querySelector('.download-progress-percent');
         if (fill) {
@@ -361,9 +1318,20 @@
         if (label) label.textContent = pct === null ? 'Preparing' : `${pct.toFixed(1)}%`;
         setText(card, 'status', dlCleanStatus(task));
         setText(card, 'downloaded', dlDownloadedText(task));
-        setText(card, 'speed', dlFormatRate(task.downloadSpeedBps, task));
+        setText(
+            card,
+            'speed',
+            dlFormatRate(
+                presentedRate || task.downloadSpeedBps,
+                task
+            )
+        );
         setText(card, 'disk', Number(task.diskUsageBps) > 0 ? dlFormatRate(task.diskUsageBps, task) : 'Measuring');
-        const etaText = Number.isFinite(Number(task.etaSeconds)) ? dlFormatDuration(task.etaSeconds) : 'Calculating';
+        const etaText =
+            Number.isFinite(Number(presentedEta)) &&
+            Number(presentedEta) > 0
+                ? dlFormatDuration(presentedEta)
+                : 'Calculating';
         setText(card, 'eta', etaText);
         setText(card, 'eta-top', etaText);
         const chart = card.querySelector('[data-download-field="chart"]');
@@ -411,23 +1379,194 @@
     }
 
     window.downloadsPause = taskId => {
+        dlFreezePresentationForPause(taskId);
+
         downloadsPendingActions.add(taskId);
         renderDownloads();
-        return dlAction('Pause', () => window.electronAPI.downloads.pause(taskId)).finally(() => {
+
+        return dlAction(
+            'Pause',
+            () => window.electronAPI.downloads.pause(taskId)
+        ).finally(() => {
             downloadsPendingActions.delete(taskId);
             renderDownloads();
         });
     };
     window.downloadsResume = taskId => dlAction('Resume', () => window.electronAPI.downloads.resume(taskId));
     window.downloadsRetry = taskId => dlAction('Retry', () => window.electronAPI.downloads.retry(taskId));
+    function dlFindTask(taskId, predicate = null) {
+        const matches = (downloadsSnapshot?.tasks || []).filter(task => String(task.id) === String(taskId));
+        if (!matches.length) return null;
+        if (typeof predicate === 'function') {
+            const matched = matches.find(predicate);
+            if (matched) return matched;
+        }
+        return matches.find(task => task.status === 'completed') || matches[matches.length - 1];
+    }
+
+    function dlTaskIdentityValues(task = {}) {
+        const allIds = task.allIds && typeof task.allIds === 'object' ? task.allIds : {};
+        return [
+            task.providerProductId,
+            task.contentSystemProductId,
+            task.gogProductId,
+            task.gogdlAppName,
+            task.providerAppName,
+            task.gameId,
+            task.canonicalGameId,
+            allIds.gog,
+            allIds.gogProductId,
+            allIds.contentSystemProductId,
+            allIds.gogdlAppName,
+            allIds[task.platform],
+        ].map(value => String(value || '').trim()).filter(Boolean);
+    }
+
+    function dlGameIdentityValues(game = {}) {
+        const allIds = game.allIds && typeof game.allIds === 'object' ? game.allIds : {};
+        return [
+            game.providerProductId,
+            game.contentSystemProductId,
+            game.gogProductId,
+            game.gogdlAppName,
+            game.providerAppName,
+            game.appName,
+            game.launcherGameId,
+            game.gameId,
+            game.canonicalGameId,
+            allIds.gog,
+            allIds.gogProductId,
+            allIds.contentSystemProductId,
+            allIds.gogdlAppName,
+            allIds[game.platform],
+        ].map(value => String(value || '').trim()).filter(Boolean);
+    }
+
+    function dlPathKey(value) {
+        return String(value || '').trim().toLowerCase().replace(/^"|"$/g, '').replace(/\\/g, '/');
+    }
+
+    function dlInstalledGameCanLaunch(game = {}) {
+        return Boolean(game && (game.command || game.launchCommand || game.executablePath || game.path));
+    }
+
+    function dlFindInstalledGameByTask(task = {}, games = window.allGamesData) {
+        const list = Array.isArray(games) ? games : [];
+        const wantedIds = new Set(dlTaskIdentityValues(task));
+        const wantedInstallPath = dlPathKey(task.installPath);
+        const wantedExe = dlPathKey(task.resolvedExecutablePath || task.verificationExecutablePath || task.executablePath);
+        const platform = String(task.platform || '').trim().toLowerCase();
+        const title = String(task.title || '').trim().toLowerCase();
+        return list.find(game => task.installedGameId && String(game.id) === String(task.installedGameId) && dlInstalledGameCanLaunch(game)) ||
+            list.find(game => dlInstalledGameCanLaunch(game) && dlGameIdentityValues(game).some(id => wantedIds.has(id))) ||
+            list.find(game => {
+                if (!dlInstalledGameCanLaunch(game)) return false;
+                const paths = [game.installPath, game.path, game.executablePath, game.command, game.launchCommand].map(dlPathKey).filter(Boolean);
+                return (wantedExe && paths.some(p => p === wantedExe || p.includes(wantedExe) || wantedExe.includes(p))) ||
+                    (wantedInstallPath && paths.some(p => p === wantedInstallPath || p.startsWith(`${wantedInstallPath}/`) || wantedInstallPath.startsWith(`${p}/`)));
+            }) ||
+            list.find(game => dlInstalledGameCanLaunch(game) && platform && String(game.platform || game.scannerPlatform || '').trim().toLowerCase() === platform && title && String(game.name || game.title || '').trim().toLowerCase() === title) ||
+            null;
+    }
+
+    async function dlResolveInstalledGameForTask(task = {}) {
+        let game = dlFindInstalledGameByTask(task);
+        if (game) return game;
+        if (window.electronAPI?.getGames) {
+            try {
+                const fresh = await window.electronAPI.getGames();
+                if (Array.isArray(fresh)) {
+                    window.allGamesData = fresh;
+                    try { if (typeof allGamesData !== 'undefined') allGamesData = fresh; } catch (_) {}
+                    game = dlFindInstalledGameByTask(task, fresh);
+                }
+            } catch (_) {}
+        }
+        if (game && !task.installedGameId) task.installedGameId = game.id || task.installedGameId;
+        return game;
+    }
+
+    function dlBuildLaunchGameFromTask(task = {}) {
+        const executablePath = task.resolvedExecutablePath || task.verificationExecutablePath || task.executablePath || null;
+        if (!executablePath && !task.command && !task.launchCommand && !task.path) return null;
+        return {
+            id: task.installedGameId || task.canonicalGameId || task.gameId || task.id,
+            name: task.title || 'Downloaded Game',
+            title: task.title || 'Downloaded Game',
+            platform: task.platform,
+            path: task.path || task.installPath || executablePath,
+            executablePath,
+            command: task.command || (executablePath ? `"${executablePath}"` : ''),
+            launchCommand: task.launchCommand || task.command || (executablePath ? `"${executablePath}"` : ''),
+        };
+    }
+    async function dlFindInstalledGame(installedGameId) {
+        const id = String(installedGameId || '');
+        if (!id) return null;
+        const local = Array.isArray(window.allGamesData) ? window.allGamesData : [];
+        let game = local.find(g => String(g.id) === id) || null;
+        if (game) return game;
+        if (window.electronAPI?.getGames) {
+            try {
+                const fresh = await window.electronAPI.getGames();
+                if (Array.isArray(fresh)) {
+                    window.allGamesData = fresh;
+                    try { if (typeof allGamesData !== 'undefined') allGamesData = fresh; } catch (_) {}
+                    game = fresh.find(g => String(g.id) === id) || null;
+                }
+            } catch (_) {}
+        }
+        return game;
+    }
+
+    async function dlLaunchInstalledGame(game) {
+        if (!game) return false;
+        if (typeof window.openPlayLauncher === 'function') {
+            window.openPlayLauncher(game);
+            return true;
+        }
+        if (typeof window.triggerLaunchSequence === 'function') {
+            window.triggerLaunchSequence(game.id);
+            return true;
+        }
+        return false;
+    }
+
+    window.downloadsPlay = async taskId => {
+        const task = dlFindTask(taskId, t => t.status === 'completed');
+        if (!task || task.status !== 'completed') {
+            if (typeof showToast === 'function') showToast('This download is not ready to play yet.', 'error');
+            return;
+        }
+        const game = await dlResolveInstalledGameForTask(task) || dlBuildLaunchGameFromTask(task);
+        if (!game || !dlInstalledGameCanLaunch(game)) {
+            if (typeof showToast === 'function') showToast('Baddel could not find the installed launch target.', 'error');
+            return;
+        }
+        if (!task.installedGameId && game.id) {
+            task.installedGameId = game.id;
+            renderDownloads(downloadsSnapshot);
+        }
+        const launched = await dlLaunchInstalledGame(game);
+        if (!launched && typeof showToast === 'function') showToast('Play launcher is not available right now.', 'error');
+    };
+
     window.downloadsRemove = taskId => dlAction('Remove', () => window.electronAPI.downloads.remove(taskId));
     window.downloadsStartNow = taskId => dlAction('Start', () => window.electronAPI.downloads.startNow(taskId));
     window.downloadsClearCompleted = () => dlAction('Clear', () => window.electronAPI.downloads.clearCompleted());
     window.downloadsOpenFolder = taskId => dlAction('Open folder', () => window.electronAPI.downloads.openInstallDirectory(taskId));
     window.downloadsCancel = taskId => {
-        const run = () => dlAction('Cancel', () => window.electronAPI.downloads.cancel({ taskId, deletePartial: false }));
+        const run = () => {
+            downloadsPendingActions.add(taskId);
+            renderDownloads();
+            return dlAction('Cancel', () => window.electronAPI.downloads.cancel({ taskId, deletePartial: false }))
+                .finally(() => {
+                    downloadsPendingActions.delete(taskId);
+                    renderDownloads();
+                });
+        };
         if (typeof openConfirmModal === 'function') {
-            openConfirmModal('Cancel download?', 'This will stop the provider process and keep partial files for resume when available.', 'Cancel Download', run);
+            openConfirmModal('Cancel download?', 'This will stop the provider process and remove the download from this list. Partial files are preserved.', 'Cancel Download', run);
         } else {
             run();
         }
@@ -454,6 +1593,7 @@
 
     function initDownloads() {
         if (!window.electronAPI?.downloads) return;
+        startDownloadPresentationTimer();
         downloadsUnsubscribers.forEach(fn => { try { fn(); } catch (_) {} });
         downloadsUnsubscribers = [
             window.electronAPI.downloads.onSnapshot(renderDownloads),

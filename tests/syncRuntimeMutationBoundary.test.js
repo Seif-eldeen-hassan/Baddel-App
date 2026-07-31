@@ -116,7 +116,7 @@ test('default runtime state shape remains source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const createSource = extractFunctionSource(source, '_createPlatformSyncState');
 
-    assert.match(source, /const\s+_platformSyncState\s*=\s*\{\s*steam:\s*null,\s*epic:\s*null,\s*\}/s);
+    assert.match(source, /const\s+_platformSyncState\s*=\s*\{\s*steam:\s*null,\s*epic:\s*null,\s*gog:\s*null,\s*\}/s);
     assert.match(createSource, /platform,\s*isSyncing:\s*false,\s*phase:\s*['"]idle['"]/s);
     assert.match(createSource, /statusText:\s*['"]/);
     assert.match(createSource, /startedAt:\s*null/);

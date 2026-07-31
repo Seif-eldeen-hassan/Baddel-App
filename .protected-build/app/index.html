@@ -113,6 +113,13 @@
                         <span class="nav-text">Ready to Install</span>
                         <span class="sidebar-nav-badge" id="sbNavReady">—</span>
                     </div>
+                    <div class="nav-item sb-sub-item" id="nav-downloads" onclick="navigateToDownloads()">
+                        <div class="nav-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path></svg>
+                        </div>
+                        <span class="nav-text">Downloads</span>
+                        <span class="sidebar-nav-badge" id="downloadsBadge"></span>
+                    </div>
                     <div class="nav-item sb-sub-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
                         <div class="nav-icon fav-heart">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
@@ -151,6 +158,13 @@
                         </div>
                         <span class="nav-text">Epic Games</span>
                         <span class="platform-count" id="epicCount">—</span>
+                    </div>
+                    <div class="nav-item sb-sub-item platform-item" id="nav-gog" onclick="selectAccountPlatform('gog')">
+                        <div class="nav-icon platform-icon gog-icon">
+                            <img src="assets/gog.png" alt="GOG" style="width:16px;height:16px;object-fit:contain;">
+                        </div>
+                        <span class="nav-text">GOG</span>
+                        <span class="platform-count" id="gogCount">â€”</span>
                     </div>
                     <div class="nav-item sb-sub-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
                         <div class="nav-icon platform-icon ea-icon">
@@ -223,7 +237,7 @@
                 <div class="hero-vignette"></div>
                 <div class="hero-content">
                     <img id="heroLogo" class="hero-game-logo" src="" alt="Game Logo" style="display: none;">
-                    <h1 id="heroTitle" class="hero-game-title">Welcome to Baddel</h1>
+                    <h1 id="heroTitle" class="hero-game-title" style="display: none;"></h1>
                     <div class="hero-stats" id="heroStats" style="display: none;">
                         <span class="stat-badge playtime-stat"><span id="heroPlaytime">0h</span></span>
                         <span class="stat-badge">Last Played: <span id="heroLastPlayed">Never</span></span>
@@ -553,6 +567,33 @@
 
             <div id="accountsView" style="display:none;"></div>
 
+            <div id="downloadsView" style="display:none;">
+                <section class="downloads-page">
+                    <header class="downloads-header">
+                        <div>
+                            <h2 class="section-title">Downloads</h2>
+                            <p class="downloads-subtitle">Manage direct game installations from GOG.</p>
+                        </div>
+                        <div class="downloads-header-metrics">
+                            <div class="downloads-metric">
+                                <span>Speed</span>
+                                <strong id="downloadsSpeed">0 B/s</strong>
+                            </div>
+                            <div class="downloads-metric">
+                                <span>Active</span>
+                                <strong id="downloadsActiveCount">0</strong>
+                            </div>
+                            <div class="downloads-metric">
+                                <span>Queued</span>
+                                <strong id="downloadsPendingCount">0</strong>
+                            </div>
+                            <button class="download-btn download-btn-secondary" id="downloadsClearCompleted" onclick="downloadsClearCompleted()" style="display:none;">Clear Completed</button>
+                        </div>
+                    </header>
+                    <div id="downloadsRoot" class="downloads-root"></div>
+                </section>
+            </div>
+
             <div id="allGamesView" style="display:none;">
                 <section class="library-section" style="padding-top: 20px;">
                     <header class="library-header">
@@ -650,6 +691,9 @@
                                     </button>
                                     <button class="ag-pill" data-platform="epic" onclick="setAgPlatformFilter('epic', this)">
                                         <img src="assets/epic.svg" alt="Epic" class="ag-pill-icon ag-pill-icon-invert">Epic
+                                    </button>
+                                    <button class="ag-pill" data-platform="gog" onclick="setAgPlatformFilter('gog', this)">
+                                        <img src="assets/gog.png" alt="GOG" class="ag-pill-icon">GOG
                                     </button>
 
                                     <!-- All Accounts dropdown — inline with pills -->
@@ -1013,87 +1057,26 @@
         
         <button class="gd-lightbox-nav next" onclick="gdNavLightbox(1)">&#10095;</button>
     </div>
-    <!-- ══════════════════════════════════════════
-         BADDEL SPLASH SCREEN LOADER — LETTERBOXED CINEMATIC
-    ══════════════════════════════════════════ -->
-    <div id="mainLoader" class="loader-container active">
-
-        <!-- Particle canvas -->
-        <canvas class="splash-canvas" id="splashCanvas"></canvas>
-
-        <!-- Scan line sweep -->
-        <div class="splash-scan" id="splashScan"></div>
-
-        <!-- Vignette -->
-        <div class="splash-vignette"></div>
-
-        <!-- Corner brackets -->
-        <div class="splash-corner splash-corner-tl"></div>
-        <div class="splash-corner splash-corner-tr"></div>
-        <div class="splash-corner splash-corner-bl"></div>
-        <div class="splash-corner splash-corner-br"></div>
-
-        <!-- Top HUD -->
-        <div class="splash-hud-top" id="splashHudTop">
-            <span class="splash-hud-text">BADDEL LAUNCHER · v2.0</span>
-            <div class="splash-hud-dot"></div>
-            <span class="splash-hud-text" id="splashHudClock">00:00:00</span>
-        </div>
-
-        <!-- Bottom HUD -->
-        <div class="splash-hud-bot" id="splashHudBot">
-            <span class="splash-hud-text">ALL LAUNCHERS · ONE HOME</span>
-            <span class="splash-hud-text" id="splashFrameCounter">00</span>
-        </div>
-
-        <!-- Center stage -->
+    <!-- BADDEL STARTUP LOADER -->
+    <div id="mainLoader" class="loader-container active" role="status" aria-live="polite" aria-busy="true">
         <div class="splash-center" id="splashCenter">
-
-            <!-- Logo with spinning rings -->
             <div class="splash-logo-wrap" id="splashLogoImg">
-                <div class="splash-ring-outer"></div>
-                <div class="splash-ring-inner"></div>
-
-                <!-- Premium SVG arc spinner -->
-                <svg class="splash-arc-svg" viewBox="0 0 116 116" xmlns="http://www.w3.org/2000/svg">
-                    <!-- Outer orbit track -->
-                    <circle class="splash-arc-track" cx="58" cy="58" r="55"/>
-                    <!-- Tick marks at 0°, 90°, 180°, 270° -->
-                    <line class="splash-arc-tick" x1="58" y1="3"  x2="58" y2="7"  />
-                    <line class="splash-arc-tick" x1="113" y1="58" x2="109" y2="58"/>
-                    <line class="splash-arc-tick" x1="58" y1="113" x2="58" y2="109"/>
-                    <line class="splash-arc-tick" x1="3"  y1="58" x2="7"  y2="58" />
-                    <!-- Primary chasing arc -->
-                    <circle class="splash-arc-primary" cx="58" cy="58" r="55"/>
-                    <!-- Secondary trailing arc -->
-                    <circle class="splash-arc-secondary" cx="58" cy="58" r="55"/>
-                    <!-- Inner counter-spin arc (tighter radius) -->
-                    <circle class="splash-arc-inner" cx="58" cy="58" r="46"/>
-                </svg>
-                <div class="splash-logo-box">
-                    <img src="assets/app_icon.png" class="splash-logo-img" alt="BADDEL">
-                </div>
+                <img src="assets/app_icon.png" class="splash-logo-img" alt="Baddel app logo">
             </div>
 
-            <!-- Wordmark -->
             <div class="splash-wordstack">
-                <div class="splash-name" id="splashName">BADDEL</div>
-                <div class="splash-sub"  id="splashSub">Every launcher · One place</div>
+                <div class="splash-name" id="splashName">Baddel</div>
+                <div class="splash-sub" id="splashSub">Every launcher. One place.</div>
             </div>
 
-            <!-- Status row -->
             <div class="splash-status" id="splashStatus">
-                <div class="splash-status-dash"></div>
-                <div class="splash-status-text" id="splashStatusText">INITIALIZING</div>
-                <div class="splash-status-cursor"></div>
-                <div class="splash-status-dash"></div>
+                <div class="splash-status-text" id="splashStatusText">Preparing your library</div>
             </div>
+            <div class="splash-status-note" id="splashStatusNote"></div>
 
-        </div>
-
-        <!-- Progress bar -->
-        <div class="splash-progress-track">
-            <div class="splash-progress-bar" id="splashProgressBar"></div>
+            <div class="splash-progress-track" aria-hidden="true">
+                <div class="splash-progress-bar" id="splashProgressBar"></div>
+            </div>
         </div>
     </div>
     
@@ -1996,6 +1979,15 @@
                     <div style="display: flex; flex-direction: column;">
                         <span style="font-weight: 600; font-size: 0.9rem;">Steam</span>
                         <span id="steamAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
+                    </div>
+                </div>
+                <div class="platform-nav-item" id="plat-nav-gog" onclick="openPlatformDetails('gog')">
+                    <div style="width: 24px; height: 24px; display: flex; align-items: center; justify-content: center; background: #8638e5; border-radius: 6px;">
+                        <img src="assets/gog.png" alt="GOG" style="width: 16px; height: 16px; object-fit: contain;">
+                    </div>
+                    <div style="display: flex; flex-direction: column;">
+                        <span style="font-weight: 600; font-size: 0.9rem;">GOG</span>
+                        <span id="gogAccountsCount" style="font-size: 0.7rem; color: #888;">0 Linked</span>
                     </div>
                 </div>
                 

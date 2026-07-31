@@ -1305,414 +1305,181 @@ input[type="checkbox"].custom-checkbox-input,
 .toast-error { border-left-color: var(--danger); }
 
 /* ========================================= */
-/* MAIN APP LOADER (CINEMATIC ENTRY)         */
+/* MAIN APP LOADER                           */
 /* ========================================= */
-/* ═══════════════════════════════════════════════════════
-   BADDEL SPLASH SCREEN — JS-driven, no CSS auto-play
-═══════════════════════════════════════════════════════ */
-
-/* ── Container ─────────────────────────────────────── */
 .loader-container {
-    position: fixed; top: 0; left: 0; width: 100%; height: 100%;
-    background: #060608;
+    position: fixed;
+    inset: 0;
     z-index: 99999;
-    display: flex; align-items: center; justify-content: center;
-    opacity: 0; pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 0;
+    min-height: 0;
+    overflow: hidden;
+    background:
+        radial-gradient(circle at 50% 46%, rgba(18, 206, 24, 0.10), rgba(18, 206, 24, 0.035) 18%, transparent 42%),
+        radial-gradient(circle at 50% 52%, rgba(255, 255, 255, 0.045), transparent 36%),
+        #050706;
+    opacity: 0;
     visibility: hidden;
-    transition: opacity 0.5s ease, visibility 0.5s;
-    overflow: hidden;
+    pointer-events: none;
+    transition: opacity 180ms ease, visibility 180ms ease;
 }
+
 .loader-container.active {
-    opacity: 1; pointer-events: all;
+    opacity: 1;
     visibility: visible;
+    pointer-events: all;
 }
 
-/* ── Particle canvas ────────────────────────────────── */
-.splash-canvas {
-    position: absolute;
-    inset: 0;
-    width: 100%; height: 100%;
-    opacity: 0;
-    transition: opacity 1.6s ease;
-    pointer-events: none;
-}
-.splash-canvas.visible { opacity: 1; }
-
-/* ── Scan line sweep ────────────────────────────────── */
-.splash-scan {
-    position: absolute;
-    left: 0; right: 0;
-    height: 1px;
-    background: linear-gradient(90deg,
-        transparent 0%,
-        rgba(255,255,255,0.0) 10%,
-        rgba(255,255,255,0.55) 50%,
-        rgba(255,255,255,0.0) 90%,
-        transparent 100%
-    );
-    top: -2px;
-    opacity: 0;
-    z-index: 10;
-    pointer-events: none;
-}
-
-/* ── Corner brackets — tech UI ──────────────────────── */
-.splash-corner {
-    position: absolute;
-    width: 26px; height: 26px;
-    opacity: 0;
-    transition: opacity 0.5s ease, transform 0.7s cubic-bezier(.16,1,.3,1);
-    z-index: 8;
-    pointer-events: none;
-}
-.splash-corner::before,
-.splash-corner::after {
-    content: '';
-    position: absolute;
-    background: rgba(255,255,255,0.4);
-}
-.splash-corner::before { width: 100%; height: 1.5px; top: 0; }
-.splash-corner::after  { width: 1.5px; height: 100%; top: 0; }
-
-.splash-corner-tl { top: 24px; left: 28px; transform: translate(-6px,-6px); }
-.splash-corner-tr { top: 24px; right: 28px; transform: translate(6px,-6px); transform-origin: right top; }
-.splash-corner-bl { bottom: 24px; left: 28px; transform: translate(-6px,6px); transform-origin: left bottom; }
-.splash-corner-br { bottom: 24px; right: 28px; transform: translate(6px,6px); transform-origin: right bottom; }
-
-.splash-corner-tr::before { right: 0; }
-.splash-corner-tr::after  { right: 0; left: auto; }
-.splash-corner-bl::before { bottom: 0; top: auto; }
-.splash-corner-bl::after  { bottom: 0; top: auto; }
-.splash-corner-br::before { bottom: 0; top: auto; right: 0; }
-.splash-corner-br::after  { right: 0; left: auto; bottom: 0; top: auto; }
-
-.splash-corner.visible {
-    opacity: 1;
-    transform: translate(0,0) !important;
-}
-
-/* ── Top HUD bar ────────────────────────────────────── */
-.splash-hud-top {
-    position: absolute;
-    top: 24px; left: 58px; right: 58px;
-    display: flex; justify-content: space-between; align-items: center;
-    z-index: 9;
-    opacity: 0;
-    transform: translateY(-8px);
-    transition: opacity 0.5s ease 0.2s, transform 0.6s cubic-bezier(.16,1,.3,1) 0.2s;
-    pointer-events: none;
-}
-.splash-hud-top.visible { opacity: 1; transform: translateY(0); }
-
-/* ── Bottom HUD bar ─────────────────────────────────── */
-.splash-hud-bot {
-    position: absolute;
-    bottom: 24px; left: 58px; right: 58px;
-    display: flex; justify-content: space-between; align-items: center;
-    z-index: 9;
-    opacity: 0;
-    transform: translateY(8px);
-    transition: opacity 0.5s ease 0.3s, transform 0.6s cubic-bezier(.16,1,.3,1) 0.3s;
-    pointer-events: none;
-}
-.splash-hud-bot.visible { opacity: 1; transform: translateY(0); }
-
-.splash-hud-text {
-    font-family: var(--font-code);
-    font-size: 8.5px;
-    letter-spacing: 0.3em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.18);
-}
-.splash-hud-dot {
-    width: 4px; height: 4px; border-radius: 50%;
-    background: rgba(255,255,255,0.5);
-    animation: splashHudPulse 2s ease-in-out infinite;
-}
-
-/* ── Vignette ───────────────────────────────────────── */
-.splash-vignette {
-    position: absolute; inset: 0;
-    background: radial-gradient(ellipse 75% 70% at 50% 50%, transparent 25%, rgba(0,0,0,0.75) 100%);
-    pointer-events: none;
-    z-index: 5;
-}
-
-/* ── Center stage ───────────────────────────────────── */
 .splash-center {
-    position: relative; z-index: 6;
-    display: flex; flex-direction: column; align-items: center;
-    gap: 0;
-    opacity: 1;
-}
-
-/* ── Logo ring system ───────────────────────────────── */
-.splash-logo-wrap {
     position: relative;
-    width: 96px; height: 96px;
-    display: flex; align-items: center; justify-content: center;
-    margin-bottom: 32px;
-    opacity: 0;
-    transform: scale(0.72);
-    transition: opacity 0.7s cubic-bezier(.16,1,.3,1),
-                transform 0.9s cubic-bezier(.16,1,.3,1);
-}
-.splash-logo-wrap.visible {
-    opacity: 1; transform: scale(1);
-}
-
-/* ── Premium arc loader ─────────────────────────────── */
-
-/* Static orbit baseline */
-.splash-ring-outer {
-    position: absolute;
-    inset: -10px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.05);
-    opacity: 0;
-    transition: opacity 0.5s ease 0.6s;
-    pointer-events: none;
-}
-.splash-logo-wrap.visible .splash-ring-outer { opacity: 1; }
-
-/* SVG arc spinner — sits as a pseudo-element via a wrapper div */
-.splash-ring-inner {
-    position: absolute;
-    inset: -10px;
-    border-radius: 50%;
-    opacity: 0;
-    transition: opacity 0.5s ease 0.8s;
-    pointer-events: none;
-    /* SVG drawn via the ring canvas below */
-}
-.splash-logo-wrap.visible .splash-ring-inner { opacity: 1; }
-
-/* Arc canvas — the actual animated element */
-.splash-arc-svg {
-    position: absolute;
-    inset: -10px;
-    width: calc(100% + 20px);
-    height: calc(100% + 20px);
-    opacity: 0;
-    transition: opacity 0.5s ease 0.7s;
-    pointer-events: none;
-    overflow: visible;
-}
-.splash-logo-wrap.visible .splash-arc-svg { opacity: 1; }
-
-/* Outer arc track (static faint circle) */
-.splash-arc-track {
-    fill: none;
-    stroke: rgba(255,255,255,0.06);
-    stroke-width: 1.2;
-}
-
-/* Primary chasing arc */
-.splash-arc-primary {
-    fill: none;
-    stroke: rgba(255,255,255,0.85);
-    stroke-width: 1.4;
-    stroke-linecap: round;
-    stroke-dasharray: 52 136;   /* arc length, gap to complete the circle */
-    stroke-dashoffset: 0;
-    transform-origin: center;
-    animation: splashArcSpin 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-    filter: drop-shadow(0 0 4px rgba(255,255,255,0.5));
-}
-
-/* Secondary trailing arc, smaller & dimmer */
-.splash-arc-secondary {
-    fill: none;
-    stroke: rgba(255,255,255,0.22);
-    stroke-width: 1.2;
-    stroke-linecap: round;
-    stroke-dasharray: 28 160;
-    stroke-dashoffset: 60;
-    transform-origin: center;
-    animation: splashArcSpin 1.8s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-    animation-delay: -0.45s;
-}
-
-/* Inner micro-arc (tighter radius, counter-spin) */
-.splash-arc-inner {
-    fill: none;
-    stroke: rgba(255,255,255,0.18);
-    stroke-width: 1px;
-    stroke-linecap: round;
-    stroke-dasharray: 18 94;
-    stroke-dashoffset: 0;
-    transform-origin: center;
-    animation: splashArcSpinReverse 2.6s cubic-bezier(0.4, 0, 0.2, 1) infinite;
-}
-
-/* Four static tick marks on the orbit ring */
-.splash-arc-tick {
-    fill: none;
-    stroke: rgba(255,255,255,0.18);
-    stroke-width: 2.5;
-    stroke-linecap: round;
-}
-
-/* Logo image box */
-.splash-logo-box {
-    position: relative;
-    width: 64px; height: 64px;
-    border-radius: 18px;
-    overflow: hidden;
-    box-shadow:
-        0 0 0 1px rgba(255,255,255,0.07),
-        0 20px 48px rgba(0,0,0,0.7),
-        inset 0 1px 0 rgba(255,255,255,0.08);
-}
-/* Glint sweep */
-.splash-logo-box::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(
-        115deg,
-        transparent 0%,
-        rgba(255,255,255,0.12) 45%,
-        rgba(255,255,255,0.18) 50%,
-        transparent 55%
-    );
-    transform: translateX(-200%);
-    animation: splashLogoGlint 3.5s ease-in-out 1.2s infinite;
-    z-index: 2;
-}
-.splash-logo-img {
-    width: 100%; height: 100%;
-    display: block;
-    object-fit: cover;
-    filter: brightness(0.92);
-}
-
-/* ── Wordmark ───────────────────────────────────────── */
-.splash-wordstack {
+    z-index: 1;
+    width: min(86vw, 360px);
     display: flex;
     flex-direction: column;
     align-items: center;
     justify-content: center;
-    gap: 8px;
-    overflow: hidden;
-    width: 100%;
     text-align: center;
+    transform: translateY(8px);
+    opacity: 0;
+    transition: opacity 320ms ease, transform 360ms cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.loader-container.active .splash-center,
+.loader-container.splash-running .splash-center {
+    opacity: 1;
+    transform: translateY(0);
+}
+
+.splash-logo-wrap {
+    width: clamp(62px, 9vw, 82px);
+    height: clamp(62px, 9vw, 82px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: clamp(18px, 3vw, 26px);
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.025);
+    box-shadow:
+        0 0 0 1px rgba(255, 255, 255, 0.065),
+        0 22px 58px rgba(0, 0, 0, 0.54),
+        0 0 48px rgba(18, 206, 24, 0.10);
+    animation: splashLogoBreathe 3.8s ease-in-out infinite;
+}
+
+.splash-logo-img {
+    width: 74%;
+    height: 74%;
+    display: block;
+    object-fit: contain;
+}
+
+.splash-wordstack {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
 }
 
 .splash-name {
     font-family: var(--font-heading);
-    font-weight: 700;
-    font-size: clamp(20px, 2.2vw, 26px);
-    letter-spacing: 0.52em;
-    color: rgba(255,255,255,0.92);
-
-    display: block;
-    width: max-content;
-    margin: 0 auto;
-    text-align: center;
-    padding-left: 0.52em;
-    padding-right: 0;
-
-    clip-path: inset(0 100% 0 0);
-    transition: clip-path 0.8s cubic-bezier(.16,1,.3,1);
+    font-size: clamp(24px, 4.4vw, 34px);
+    font-weight: 760;
+    line-height: 1.05;
+    color: rgba(246, 248, 247, 0.94);
+    letter-spacing: 0;
 }
-.splash-name.visible { clip-path: inset(0 0% 0 0); }
 
 .splash-sub {
-    font-family: var(--font-code);
-    font-size: 8.5px; letter-spacing: 0.28em; text-transform: uppercase;
-    color: rgba(255,255,255,0.22);
+    font-family: var(--font-body);
+    font-size: clamp(12px, 1.8vw, 14px);
+    font-weight: 560;
+    line-height: 1.4;
+    color: rgba(226, 231, 228, 0.52);
+    letter-spacing: 0;
+}
+
+.splash-status {
+    margin-top: clamp(30px, 5vw, 42px);
+    min-height: 20px;
+}
+
+.splash-status-text {
+    font-family: var(--font-body);
+    font-size: clamp(13px, 1.9vw, 15px);
+    font-weight: 650;
+    line-height: 1.35;
+    color: rgba(238, 243, 240, 0.78);
+    letter-spacing: 0;
+}
+
+.splash-status-note {
+    max-width: min(78vw, 420px);
+    min-height: 18px;
+    margin-top: 10px;
+    font-family: var(--font-body);
+    font-size: clamp(11px, 1.7vw, 13px);
+    font-weight: 520;
+    line-height: 1.45;
+    color: rgba(206, 213, 209, 0.48);
     opacity: 0;
     transform: translateY(4px);
-    transition: opacity 0.5s ease, transform 0.6s cubic-bezier(.16,1,.3,1);
-}
-.splash-sub.visible { opacity: 1; transform: translateY(0); }
-
-/* ── Status row ─────────────────────────────────────── */
-.splash-status {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    margin-top: 28px;
-    opacity: 0;
-    transition: opacity 0.4s ease;
-}
-.splash-status.visible { opacity: 1; }
-
-.splash-status-dash {
-    width: 18px; height: 1px;
-    background: rgba(255,255,255,0.28);
-}
-.splash-status-text {
-    font-family: var(--font-code);
-    font-size: 8px;
-    letter-spacing: 0.25em;
-    text-transform: uppercase;
-    color: rgba(255,255,255,0.28);
-    transition: opacity 0.18s ease;
-}
-.splash-status-cursor {
-    width: 1px; height: 10px;
-    background: rgba(255,255,255,0.4);
-    animation: splashCursorBlink 0.9s step-end infinite;
+    transition: opacity 220ms ease, transform 220ms ease;
 }
 
-/* ── Progress hairline ──────────────────────────────── */
+.splash-status-note.visible {
+    opacity: 1;
+    transform: translateY(0);
+}
+
 .splash-progress-track {
-    position: fixed;
-    bottom: 0; left: 0; right: 0;
+    width: min(70vw, 280px);
     height: 2px;
-    background: rgba(255,255,255,0.04);
-    z-index: 3;
+    margin-top: clamp(22px, 4vw, 30px);
+    border-radius: 999px;
     overflow: hidden;
+    background: rgba(255, 255, 255, 0.085);
 }
+
 .splash-progress-bar {
+    width: 45%;
     height: 100%;
-    width: 0%;
-    background: linear-gradient(90deg,
-        rgba(255,255,255,0.0) 0%,
-        rgba(255,255,255,0.85) 60%,
-        rgba(255,255,255,1.0) 100%
-    );
-    position: relative;
-    will-change: width;
-}
-.splash-progress-bar::after {
-    content: '';
-    position: absolute;
-    right: 0; top: -3px;
-    width: 4px; height: 8px;
-    background: #fff;
-    border-radius: 2px;
-    box-shadow: 0 0 12px 3px rgba(255,255,255,0.65);
+    border-radius: inherit;
+    background: linear-gradient(90deg, transparent, rgba(18, 206, 24, 0.92), rgba(245, 255, 246, 0.92), transparent);
+    transform: translateX(-120%);
+    animation: splashProgressSweep 1.9s ease-in-out infinite;
 }
 
-/* ════════════════════════════════════════════════════
-   KEYFRAMES
-   ════════════════════════════════════════════════════ */
-
-@keyframes splashArcSpin {
-    0%   { transform: rotate(-90deg); }
-    100% { transform: rotate(270deg); }
-}
-@keyframes splashArcSpinReverse {
-    0%   { transform: rotate(90deg); }
-    100% { transform: rotate(-270deg); }
-}
-@keyframes splashLogoGlint {
-    0%  { transform: translateX(-200%); }
-    40% { transform: translateX(200%); }
-    100%{ transform: translateX(200%); }
-}
-@keyframes splashHudPulse {
-    0%,100% { opacity: 0.5; transform: scale(1); }
-    50%     { opacity: 1;   transform: scale(1.5); }
-}
-@keyframes splashCursorBlink {
-    0%,100% { opacity: 1; }
-    50%     { opacity: 0; }
+@keyframes splashProgressSweep {
+    0% { transform: translateX(-125%); }
+    55%, 100% { transform: translateX(245%); }
 }
 
+@keyframes splashLogoBreathe {
+    0%, 100% { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.065), 0 22px 58px rgba(0, 0, 0, 0.54), 0 0 38px rgba(18, 206, 24, 0.08); }
+    50% { box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.075), 0 22px 58px rgba(0, 0, 0, 0.54), 0 0 54px rgba(18, 206, 24, 0.14); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .loader-container,
+    .splash-center,
+    .splash-status-note {
+        transition-duration: 1ms;
+    }
+
+    .splash-logo-wrap,
+    .splash-progress-bar {
+        animation: none;
+    }
+
+    .splash-progress-bar {
+        width: 100%;
+        transform: none;
+        opacity: 0.48;
+    }
+}
 /* ========================================= */
 /* 🚀 AAA CINEMATIC LAUNCH OVERLAY           */
 /* ========================================= */
@@ -7396,6 +7163,26 @@ body.ag-ready-mode .ag-installed-toggle { display: none !important; }
 }
 
 /* ── Beta Feedback Banner ──────────────────────────────────────────────────── */
+.ag-inline-empty {
+    grid-column: 1 / -1;
+    justify-self: stretch;
+    width: 100%;
+    min-height: 350px;
+    padding: 0 18px;
+    box-sizing: border-box;
+}
+
+#allGamesGrid.ag-ready-empty-grid {
+    grid-template-columns: 1fr;
+    min-height: clamp(260px, 52dvh, 350px);
+    align-items: center;
+}
+
+#allGamesGrid.ag-ready-empty-grid .ag-inline-empty {
+    min-height: min(350px, 52dvh);
+    margin-top: 0;
+}
+
 @keyframes betaFeedbackIn {
     from { opacity: 0; transform: translateY(14px) scale(0.985); }
     to   { opacity: 1; transform: translateY(0)    scale(1);     }
@@ -11502,6 +11289,65 @@ body:has(.sidebar.collapsed) .beta-feedback-banner {
 }
 .gd-screenshot img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.4s ease; }
 .gd-screenshot:hover img { transform: scale(1.05); }
+
+.gd-media-trailer-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+    gap: 16px;
+}
+.gd-media-trailer-card {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    padding: 0;
+    border: 1px solid var(--gd-border);
+    border-radius: var(--gd-radius-sm);
+    background: var(--gd-surface);
+    color: #fff;
+    font: inherit;
+    text-align: left;
+    cursor: pointer;
+    overflow: hidden;
+    transition: all 0.25s var(--gd-bezier);
+}
+.gd-media-trailer-card:hover {
+    transform: translateY(-4px);
+    border-color: rgba(255,255,255,0.22);
+    box-shadow: 0 14px 30px rgba(0,0,0,0.45);
+}
+.gd-media-trailer-thumb {
+    position: relative;
+    display: block;
+    aspect-ratio: 16 / 9;
+    background: #111;
+}
+.gd-media-trailer-thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+.gd-media-trailer-play {
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    transform: translate(-50%, -50%);
+    width: 54px;
+    height: 54px;
+    border-radius: 999px;
+    display: grid;
+    place-items: center;
+    color: #fff;
+    background: rgba(0,0,0,0.64);
+    border: 1px solid rgba(255,255,255,0.2);
+    backdrop-filter: blur(8px);
+}
+.gd-media-trailer-title {
+    padding: 0 14px 14px;
+    color: var(--gd-text);
+    font-size: 0.9rem;
+    font-weight: 700;
+}
 
 /* ============================================================
    SIDEBAR (RIGHT)

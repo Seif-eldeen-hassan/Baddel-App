@@ -275,6 +275,7 @@ test('safe IPC handlers preserve empty-cache response payload shapes', async () 
         assert.deepEqual(await ipcMain.handles.get('platform-sync:status')(fakeEvent), {
             steam: false,
             epic: false,
+            gog: false,
         });
 
         assert.deepEqual(await ipcMain.handles.get('platform-sync:get-accounts')(fakeEvent, 'steam'), {

@@ -330,12 +330,12 @@ describe('Phase 2.11B: platform panels — DOM IDs referenced in platform-panels
         'platformDetailsView',
         'currentPlatformTitle',
         'linkedAccountsList',
-        'epicAccountsCount',
-        'steamAccountsCount',
+        '${platform}AccountsCount',
     ];
     for (const id of domIds) {
         it(`platform-panels.js references DOM id #${id}`, () => {
-            assert.match(PLATFORM_PANELS_JS, new RegExp(`['"\`]${id}['"\`]`));
+            const escapedId = id.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            assert.match(PLATFORM_PANELS_JS, new RegExp(`['"\`]${escapedId}['"\`]`));
         });
     }
 });

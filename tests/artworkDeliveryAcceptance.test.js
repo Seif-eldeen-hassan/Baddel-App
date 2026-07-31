@@ -246,7 +246,7 @@ test('normal renderer artwork paths keep remote URLs behind cache manager IPC', 
     assert.match(GAME_CARD_JS, /function _jbiCacheBackedArtworkValue\s*\(/);
     assert.match(GAME_CARD_JS, /function _gcCacheBackedArtworkValue\s*\(/);
     assert.match(GAME_CARD_JS, /_gcCacheBackedArtworkValue\(displayImg\) \|\| transparentPixel/);
-    assert.match(GAME_CARD_JS, /_jbiCacheBackedArtworkValue\(selection\.selectedValue\)/);
+    assert.match(GAME_CARD_JS, /_jbiDisplayArtworkValue\(selection\.selectedValue\)/);
     assert.match(IMAGE_HANDLERS_JS, /artworkDownloadManager\.downloadAsset\(/);
     assert.match(IMAGE_HANDLERS_JS, /artworkDownloadManager\.downloadAssets\(/);
 

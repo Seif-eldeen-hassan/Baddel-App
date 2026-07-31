@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="css/addGameModal.css">
     <link rel="stylesheet" href="css/game-details.css">
     <link rel="stylesheet" href="css/play-launcher.css">
+    <link rel="stylesheet" href="css/downloads.css">
     <link rel="stylesheet" href="../node_modules/driver.js/dist/driver.css"/>
     <script src="../node_modules/sortablejs/Sortable.min.js"></script>
 </head>
@@ -119,6 +120,13 @@
                         </div>
                         <span class="nav-text">Ready to Install</span>
                         <span class="sidebar-nav-badge" id="sbNavReady">—</span>
+                    </div>
+                    <div class="nav-item sb-sub-item" id="nav-downloads" onclick="navigateToDownloads()">
+                        <div class="nav-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"></path><polyline points="7 10 12 15 17 10"></polyline><path d="M5 21h14"></path></svg>
+                        </div>
+                        <span class="nav-text">Downloads</span>
+                        <span class="sidebar-nav-badge" id="downloadsBadge"></span>
                     </div>
                     <div class="nav-item sb-sub-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
                         <div class="nav-icon fav-heart">
@@ -566,6 +574,33 @@
             </div>
 
             <div id="accountsView" style="display:none;"></div>
+
+            <div id="downloadsView" style="display:none;">
+                <section class="downloads-page">
+                    <header class="downloads-header">
+                        <div>
+                            <h2 class="section-title">Downloads</h2>
+                            <p class="downloads-subtitle">Manage direct game installations from GOG.</p>
+                        </div>
+                        <div class="downloads-header-metrics">
+                            <div class="downloads-metric">
+                                <span>Speed</span>
+                                <strong id="downloadsSpeed">0 B/s</strong>
+                            </div>
+                            <div class="downloads-metric">
+                                <span>Active</span>
+                                <strong id="downloadsActiveCount">0</strong>
+                            </div>
+                            <div class="downloads-metric">
+                                <span>Queued</span>
+                                <strong id="downloadsPendingCount">0</strong>
+                            </div>
+                            <button class="download-btn download-btn-secondary" id="downloadsClearCompleted" onclick="downloadsClearCompleted()" style="display:none;">Clear Completed</button>
+                        </div>
+                    </header>
+                    <div id="downloadsRoot" class="downloads-root"></div>
+                </section>
+            </div>
 
             <div id="allGamesView" style="display:none;">
                 <section class="library-section" style="padding-top: 20px;">
@@ -1949,6 +1984,7 @@
     <script src="js/app/system-stats.js"></script>
     <script src="js/app/settings-quick-switcher.js"></script>
     <script src="js/app/sidebar.js"></script>
+    <script src="js/downloads.js"></script>
     <script src="js/app/collections.js"></script>
     <script src="js/app/game-context-actions.js"></script>
     <script src="js/app/suggestions.js"></script>

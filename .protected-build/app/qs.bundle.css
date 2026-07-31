@@ -418,6 +418,41 @@ html, body {
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.55), 0 0 0 3px rgba(18, 206, 24, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.06);
 }
 
+.qs-mode-tabs {
+    display: inline-flex;
+    gap: 3px;
+    padding: 3px;
+    border-radius: 10px;
+    background: rgba(255, 255, 255, 0.045);
+    border: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.qs-mode-tab {
+    min-width: 78px;
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.42);
+    font-size: 11px;
+    font-weight: 650;
+    cursor: pointer;
+}
+
+.qs-mode-tab:hover {
+    color: rgba(255, 255, 255, 0.74);
+}
+
+.qs-mode-tab.is-active {
+    background: rgba(18, 206, 24, 0.14);
+    color: rgba(255, 255, 255, 0.92);
+}
+
+.qs-mode-tab:focus-visible {
+    outline: 2px solid rgba(18, 206, 24, 0.55);
+    outline-offset: 2px;
+}
+
 .qs-search-icon {
     color: rgba(255, 255, 255, 0.26);
     flex-shrink: 0;
@@ -699,6 +734,99 @@ html, body {
     user-select: none;
 }
 
+.qs-game-avatar {
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.045);
+}
+
+.qs-game-art {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+}
+
+.qs-game-card.is-running .qs-card-avatar {
+    border-color: rgba(18, 206, 24, 0.55);
+    box-shadow:
+        0 0 0 5px rgba(18, 206, 24, 0.12),
+        0 0 40px rgba(18, 206, 24, 0.24),
+        0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.qs-running-pill {
+    color: rgba(255, 255, 255, 0.92);
+    background: rgba(18, 206, 24, 0.16);
+}
+
+.qs-end-game {
+    margin-left: 4px;
+    min-width: 44px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 9px;
+    color: rgba(255, 255, 255, 0.86);
+    background: rgba(255, 76, 96, 0.13);
+    border: 1px solid rgba(255, 76, 96, 0.26);
+    font-size: 11px;
+    font-weight: 700;
+    opacity: 0;
+    pointer-events: auto;
+}
+
+.qs-play-glyph {
+    width: 32px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    color: var(--qs-green);
+    background: rgba(18, 206, 24, 0.12);
+    border: 1px solid rgba(18, 206, 24, 0.20);
+    opacity: 0;
+    transform: translateY(2px);
+    transition: opacity 0.12s, transform 0.12s, background 0.12s;
+}
+
+.qs-card:hover .qs-play-glyph,
+.qs-card.is-selected .qs-play-glyph {
+    opacity: 0.9;
+    transform: translateY(0);
+}
+
+.qs-play-glyph svg {
+    display: block;
+}
+
+.qs-card:hover .qs-end-game,
+.qs-card.is-selected .qs-end-game {
+    opacity: 1;
+}
+
+.qs-game-card .qs-card-state {
+    gap: 6px;
+    min-height: 30px;
+    margin-top: 4px;
+}
+
+.qs-card.is-end-focused .qs-play-glyph {
+    opacity: 0.35;
+    background: rgba(18, 206, 24, 0.06);
+}
+
+.qs-card.is-end-focused .qs-end-game {
+    opacity: 1;
+    color: #ffffff;
+    background: rgba(255, 76, 96, 0.28);
+    border-color: rgba(255, 76, 96, 0.58);
+    box-shadow:
+        0 0 0 3px rgba(255, 76, 96, 0.12),
+        0 8px 22px rgba(255, 76, 96, 0.16);
+}
+
 /* Epic icon inversion */
 .qs-card[data-platform="epic"] .qs-card-icon {
     filter: brightness(0) invert(1);
@@ -860,6 +988,7 @@ html, body {
     .qs-close              { transition: none; }
     .qs-searchbar          { transition: none; }
     .qs-enter-glyph        { transition: none; }
+    .qs-play-glyph         { transition: none; }
 }
 
 /* ── Legacy compatibility stubs (required by test suite) ─────────────────────── */

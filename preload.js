@@ -279,6 +279,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
     openCommunityUrl:  (url)     => ipcRenderer.invoke('open-community-url', url),
     openInstallUrl:    (payload) => ipcRenderer.invoke('launcher:open-install-url', payload),
 
+    // ---- Downloads ----
+    downloads: {
+        getSnapshot:            ()        => ipcRenderer.invoke('downloads:get-snapshot'),
+        queueInstall:           (payload) => ipcRenderer.invoke('downloads:queue-install', payload),
+        pause:                  (taskId)  => ipcRenderer.invoke('downloads:pause', taskId),
+        resume:                 (taskId)  => ipcRenderer.invoke('downloads:resume', taskId),
+        cancel:                 (payload) => ipcRenderer.invoke('downloads:cancel', payload),
+        retry:                  (taskId)  => ipcRenderer.invoke('downloads:retry', taskId),
+        remove:                 (taskId)  => ipcRenderer.invoke('downloads:remove', taskId),
+        startNow:               (taskId)  => ipcRenderer.invoke('downloads:start-now', taskId),
+        reorder:                (ids)     => ipcRenderer.invoke('downloads:reorder', ids),
+        clearCompleted:         ()        => ipcRenderer.invoke('downloads:clear-completed'),
+        selectInstallDirectory: (options) => ipcRenderer.invoke('downloads:select-install-directory', options || {}),
+        openInstallDirectory:   (taskId)  => ipcRenderer.invoke('downloads:open-install-directory', taskId),
+        getSettings:            ()        => ipcRenderer.invoke('downloads:get-settings'),
+        updateSettings:         (patch)   => ipcRenderer.invoke('downloads:update-settings', patch || {}),
+        getCapabilities:        ()        => ipcRenderer.invoke('downloads:get-capabilities'),
+        onSnapshot: (cb) => {
+            const handler = (_, payload) => cb(payload);
+            ipcRenderer.on('downloads:snapshot', handler);
+            return () => ipcRenderer.removeListener('downloads:snapshot', handler);
+        },
+        onTaskUpdated: (cb) => {
+            const handler = (_, payload) => cb(payload);
+            ipcRenderer.on('downloads:task-updated', handler);
+            return () => ipcRenderer.removeListener('downloads:task-updated', handler);
+        },
+        onQueueChanged: (cb) => {
+            const handler = (_, payload) => cb(payload);
+            ipcRenderer.on('downloads:queue-changed', handler);
+            return () => ipcRenderer.removeListener('downloads:queue-changed', handler);
+        },
+    },
+
     // ---- Named event subscriptions (allowlisted — no generic channel access) ----
     onGameEnriched: (cb) => {
         const handler = (_, payload) => cb(payload);

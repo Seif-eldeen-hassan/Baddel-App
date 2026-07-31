@@ -7,6 +7,7 @@ const path = require('node:path');
 
 const ROOT = path.resolve(__dirname, '..');
 const MAIN_JS = fs.readFileSync(path.join(ROOT, 'main.js'), 'utf8');
+const ACCOUNTS_JS = fs.readFileSync(path.join(ROOT, 'src', 'js', 'accounts.js'), 'utf8');
 const INSTALLED_GAMES_HANDLERS_JS = fs.readFileSync(
     path.join(ROOT, 'handlers', 'installedGamesHandlers.js'),
     'utf8'
@@ -79,4 +80,9 @@ test('background pipeline remains deferred after scan resolves', () => {
     assert.ok(setTimeoutIdx !== -1, 'setTimeout must defer metadata pipeline');
     assert.ok(pipelineAfterIdx !== -1, 'metadata pipeline must run inside deferred callback');
     assert.match(HANDLER_SRC, /2000/);
+});
+
+test('installed filter treats downloaded launch records as installed', () => {
+    assert.match(ACCOUNTS_JS, /g\.path \|\| g\.command \|\| g\.launchCommand \|\| g\.executablePath \|\| g\.installVerified \|\| g\.isInstalled/);
+    assert.match(ACCOUNTS_JS, /local entry has a launch target or verified installed marker/);
 });

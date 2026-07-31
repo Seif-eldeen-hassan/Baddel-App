@@ -17,6 +17,7 @@ const {
     updateGameMetadata, saveFullMetadata, loadFullMetadata,
     updatePlaytime, setTimeTrackingEnabled, getTimeTrackingEnabled,
     refetchMissingImages, runBackgroundMetadataPipeline, getJsonGameRepository,
+    getAllGames, upsertGame, saveDatabase, flushDatabase, generateStableId,
 } = gamesApi;
 const colHandler      = require('./collectionsHandler');
 const baddelApi       = require('./services/baddelApi');
@@ -42,6 +43,9 @@ const { fileURLToPath } = require('url');
 const safeLauncher  = require('./services/safeLauncher');
 const ipcValidation = require('./services/ipcValidation');
 const gamesIpc = require('./src/features/games/infrastructure/ipc/games.ipc');
+const { createDownloadsContainer } = require('./src/features/downloads/infrastructure/composition/DownloadsContainer');
+const { registerDownloadsIpc } = require('./src/features/downloads/infrastructure/ipc/downloads.ipc');
+const { GogRuntime } = require('./src/features/sync/infrastructure/integrations/gog/GogRuntime');
 
 const _startupPerf = {
     processStart: Date.now(),
@@ -2220,6 +2224,30 @@ const allAchievements = allSchemaAchievements.length
     createTray();
     registerAccountHandlers(ipcMain);
     registerPlatformSyncHandlers(ipcMain, () => mainWindow);
+    const downloadsContainer = createDownloadsContainer({
+        app,
+        GogRuntimeClass: GogRuntime,
+        gamesApi: {
+            getSavedGames,
+            getAllGames,
+            upsertGame,
+            saveDatabase,
+            flushDatabase,
+            generateStableId,
+        },
+        notifyLibraryUpdated: (games) => {
+            try { mainWindow?.webContents?.send('library-updated', games || getSavedGames()); } catch {}
+        },
+    });
+    registerDownloadsIpc(ipcMain, {
+        container: downloadsContainer,
+        dialog,
+        shell,
+        getMainWindow: () => mainWindow,
+    });
+    downloadsContainer.queueManager.load().catch(err => {
+        console.warn('[Downloads] queue recovery failed:', err && err.message);
+    });
 
     // -- Account Shortcuts IPC (moved to handlers/accountShortcutHandlers.js) --
     require('./handlers/accountShortcutHandlers').register(ipcMain, { accountShortcuts });
