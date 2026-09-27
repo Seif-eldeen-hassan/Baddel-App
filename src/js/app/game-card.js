@@ -81,7 +81,7 @@ function getRecentGames() {
 // Keep a ref to all recent games for filter functionality
 let _currentRecentGames = [];
 
-function filterRecentCards(btn, filter) {
+async function filterRecentCards(btn, filter) {
     // Update active button
     document.querySelectorAll('.jbi-filter').forEach(b => b.classList.remove('jbi-filter--active'));
     btn.classList.add('jbi-filter--active');
@@ -102,11 +102,12 @@ function filterRecentCards(btn, filter) {
     // 'unfinished' — show all (no completion data available); kept as UI affordance
     // If you add a game.completed field later, filter here.
 
+    await window.__baddelResolveArtworkCacheBulk?.(filtered, { types: ['cover', 'hero', 'logo'], surface: 'home-jump-back-in-filter' }).catch(() => null);
     grid.innerHTML = '';
     filtered.forEach((game, i) => grid.appendChild(createRecentCard(game, i === 0)));
 }
 
-function renderRecentlyPlayed() {
+async function renderRecentlyPlayed() {
     const grid = document.getElementById('recentGrid');
     const section = document.getElementById('recentlyPlayedSection');
     if (!grid || !section) return;
@@ -118,6 +119,8 @@ function renderRecentlyPlayed() {
         section.style.display = 'none';
         return;
     }
+
+    await window.__baddelResolveArtworkCacheBulk?.(recent, { types: ['cover', 'hero', 'logo'], surface: 'home-jump-back-in' }).catch(() => null);
 
     section.style.display = 'block';
     grid.innerHTML = '';
@@ -133,6 +136,37 @@ function renderRecentlyPlayed() {
 function _agFieldGameId(game) {
     return String(game?.id || game?.gameId || game?.slug || game?.title || '');
 }
+
+function _gameCardHasActionableUpdate(game) {
+    const state = window.__baddelGetManagedMaintenanceState?.(game);
+    return state?.updateAvailable === true && !(state.isMaintenanceActive && state.operationKind === 'update');
+}
+
+function _gameCardUpdateIndicatorHtml(game, className = '') {
+    return `<span class="game-update-indicator${className ? ` ${className}` : ''}"${_gameCardHasActionableUpdate(game) ? '' : ' hidden'}>UPDATE</span>`;
+}
+
+function _refreshVisibleMaintenanceIndicators() {
+    document.querySelectorAll('.game-card[data-id], .jbi-card[data-id]').forEach(card => {
+        const id = String(card.dataset.id || '');
+        const game = (typeof allGamesData !== 'undefined' ? allGamesData : []).find(item => String(item.id) === id) ||
+            _currentRecentGames.find(item => String(item.id) === id);
+        if (!game) return;
+        const host = card.querySelector('.gc-info, .game-card-info, .jbi-body');
+        if (!host) return;
+        let indicator = host.querySelector('.game-update-indicator');
+        if (!indicator) {
+            indicator = document.createElement('span');
+            indicator.className = `game-update-indicator${card.classList.contains('jbi-card') ? ' jbi-update-indicator' : ''}`;
+            indicator.textContent = 'UPDATE';
+            host.insertBefore(indicator, host.firstChild);
+        }
+        indicator.hidden = !_gameCardHasActionableUpdate(game);
+    });
+}
+
+window.__baddelRefreshMaintenanceIndicators = _refreshVisibleMaintenanceIndicators;
+window.addEventListener('baddel-maintenance-state-changed', _refreshVisibleMaintenanceIndicators);
 
 // Cross-ID playtime resolver. All Games synced entries have a platform-sync ID
 // (e.g. Epic appName, Steam appid string) that may differ from the local installed
@@ -192,12 +226,65 @@ function _agFieldPlaytimeMinutes(game) {
     ) || 0;
 }
 
+function _agFieldPlaytimeMinutesFromResolved(game, _pResolved) {
+    const _pMinutes = _pResolved.data?.totalMinutes;
+
+    return Number(
+        game?.playtime ||
+        game?.totalPlaytime ||
+        _pMinutes ||
+        0
+    ) || 0;
+}
+
 // Canonical last-played resolver. Returns the best available timestamp for a
 // game using a priority chain that handles pre-fix data where lastPlayed was
 // never written despite counted playtime existing. Uses the cross-ID resolver
 // so synced All Games entries fall through to the local installed record.
 function _agResolveLastPlayedTimestamp(game) {
     const _pResolved = _agResolvePlaytimeRecordForGame(game);
+    const d = _pResolved.data || {};
+    const localGame = _pResolved.localGame;
+
+    if (d.lastQualifiedPlayed) return d.lastQualifiedPlayed;
+    if (game?.lastQualifiedPlayed) return game.lastQualifiedPlayed;
+    if (localGame?.lastQualifiedPlayed) return localGame.lastQualifiedPlayed;
+    if (d.lastPlayed) return d.lastPlayed;
+    if (game?.lastPlayed) return game.lastPlayed;
+    if (localGame?.lastPlayed) return localGame.lastPlayed;
+
+    const totalMinutes = Number(d.totalMinutes || game?.totalPlaytime || 0);
+    const sessions = Array.isArray(d.playSessions) ? d.playSessions
+                   : Array.isArray(game?.playSessions) ? game.playSessions
+                   : [];
+
+    const latestCounted = sessions
+        .filter(s => s && (s.countedMinutes > 0 || s.minutes > 0) && (s.endedAt || s.endTime))
+        .reduce((best, s) => {
+            if (!best) return s;
+            const ts = s.endedAt || s.endTime;
+            const bestTs = best.endedAt || best.endTime;
+            return ts > bestTs ? s : best;
+        }, null);
+    if (latestCounted) return latestCounted.endedAt || latestCounted.endTime;
+
+    if (totalMinutes > 0) {
+        const latestAny = sessions
+            .filter(s => s != null)
+            .reduce((best, s) => {
+                const ts = s.endedAt || s.endTime;
+                if (!ts) return best;
+                if (!best) return s;
+                const bestTs = best.endedAt || best.endTime;
+                return ts > bestTs ? s : best;
+            }, null);
+        if (latestAny) return latestAny.endedAt || latestAny.endTime;
+    }
+
+    return null;
+}
+
+function _agResolveLastPlayedTimestampFromResolved(game, _pResolved) {
     const d = _pResolved.data || {};
     const localGame = _pResolved.localGame;
 
@@ -239,6 +326,14 @@ function _agResolveLastPlayedTimestamp(game) {
     }
 
     return null;
+}
+
+function _agPlaytimeSortMetrics(game) {
+    const resolved = _agResolvePlaytimeRecordForGame(game);
+    return {
+        playtime: _agFieldPlaytimeMinutesFromResolved(game, resolved),
+        lastPlayed: Number(_agResolveLastPlayedTimestampFromResolved(game, resolved)) || 0,
+    };
 }
 
 function _agFieldLastPlayed(game) {
@@ -338,10 +433,6 @@ function _surfaceArtwork(game, surface, fallback = {}) {
 function _agDecorateAllGamesCardFields(card, game) {
     if (!card || !game) return;
 
-    // This createGameCard variant has no .game-card-img-wrap
-    // so the overlay is attached directly to the card element.
-    card.querySelector('.ag-card-display-overlay')?.remove();
-
     const title = game.title || game.name || 'Untitled';
 
     const playtimeMinutes = _agFieldPlaytimeMinutes(game);
@@ -354,33 +445,62 @@ function _agDecorateAllGamesCardFields(card, game) {
 
     const lastPlayedText = _agFormatLastPlayedShort(lastPlayed);
 
-    const overlay = document.createElement('div');
-    overlay.className = 'ag-card-display-overlay';
-
-    overlay.innerHTML = `
-        <div class="ag-card-display-title" title="${String(title).replace(/"/g, '&quot;')}">
-            ${title}
-        </div>
-
-        <div class="ag-card-display-fields">
-            <div class="ag-card-field ag-card-field-playtime" title="Playtime">
-                <span class="ag-card-field-dot"></span>
-                <span>${playtimeText}</span>
+    let refs = card._agDisplayRefs;
+    let overlay = refs?.overlay || card.querySelector('.ag-card-display-overlay');
+    if (!overlay) {
+        overlay = document.createElement('div');
+        overlay.className = 'ag-card-display-overlay';
+        overlay.innerHTML = `
+            <div class="ag-card-display-title"></div>
+            <div class="ag-card-display-fields">
+                <div class="ag-card-field ag-card-field-playtime" title="Playtime">
+                    <span class="ag-card-field-dot"></span>
+                    <span class="ag-card-field-value"></span>
+                </div>
+                <div class="ag-card-field ag-card-field-lastPlayed" title="Last played">
+                    <span class="ag-card-field-dot"></span>
+                    <span class="ag-card-field-value"></span>
+                </div>
+                <div class="ag-card-field ag-card-field-installed" title="Installed">
+                    <span class="ag-card-field-dot"></span>
+                    <span class="ag-card-field-value"></span>
+                </div>
             </div>
+        `;
+        card.appendChild(overlay);
+    }
+    if (!refs || refs.overlay !== overlay) {
+        refs = card._agDisplayRefs = {
+            overlay,
+            title: overlay.querySelector('.ag-card-display-title'),
+            playtime: overlay.querySelector('.ag-card-field-playtime .ag-card-field-value'),
+            lastPlayed: overlay.querySelector('.ag-card-field-lastPlayed .ag-card-field-value'),
+            installedField: overlay.querySelector('.ag-card-field-installed'),
+            installedValue: overlay.querySelector('.ag-card-field-installed .ag-card-field-value'),
+        };
+    }
 
-            <div class="ag-card-field ag-card-field-lastPlayed" title="Last played">
-                <span class="ag-card-field-dot"></span>
-                <span>${lastPlayedText}</span>
-            </div>
+    const titleEl = refs.title;
+    if (titleEl) {
+        titleEl.textContent = title;
+        titleEl.title = title;
+    }
 
-            <div class="ag-card-field ag-card-field-installed ${isInstalled ? 'is-installed' : 'is-not-installed'}" title="${isInstalled ? 'Installed' : 'Not installed'}">
-                <span class="ag-card-field-dot"></span>
-                <span>${isInstalled ? 'Installed' : 'Not installed'}</span>
-            </div>
-        </div>
-    `;
+    const playtimeEl = refs.playtime;
+    if (playtimeEl && playtimeEl.textContent !== playtimeText) playtimeEl.textContent = playtimeText;
 
-    card.appendChild(overlay);
+    const lastPlayedEl = refs.lastPlayed;
+    if (lastPlayedEl && lastPlayedEl.textContent !== lastPlayedText) lastPlayedEl.textContent = lastPlayedText;
+
+    const installedField = refs.installedField;
+    const installedText = isInstalled ? 'Installed' : 'Not installed';
+    if (installedField) {
+        installedField.classList.toggle('is-installed', !!isInstalled);
+        installedField.classList.toggle('is-not-installed', !isInstalled);
+        installedField.title = installedText;
+        const installedEl = refs.installedValue;
+        if (installedEl && installedEl.textContent !== installedText) installedEl.textContent = installedText;
+    }
 }
 
 function createGameCard(game, isRecent = false, options) {
@@ -498,7 +618,8 @@ function createGameCard(game, isRecent = false, options) {
     // from the card visual — they are used only by the hero section and game
     // details page.  Using hero art here causes the broken hero+logo composition
     // after a rescan because hero survives even when the cover is not yet loaded.
-    const legacyDisplayImg = game.image || game.defaultImage || game.coverUrl || transparentPixel;
+    const bulkResolvedMiss = game.__baddelBulkArtworkResolved === true && Array.isArray(game.__baddelBulkArtworkMissTypes) && game.__baddelBulkArtworkMissTypes.includes('cover');
+    const legacyDisplayImg = game.__baddelResolvedLocalCover || game.image || game.defaultImage || game.coverUrl || transparentPixel;
     const cardArtwork = _surfaceArtwork(game, 'home-card', { cover: legacyDisplayImg, placeholder: transparentPixel });
     const displayImg = cardArtwork.cover?.value || transparentPixel;
     const hasRealPoster = displayImg !== transparentPixel;
@@ -530,6 +651,7 @@ function createGameCard(game, isRecent = false, options) {
             </svg>
         </div>
         <div class="gc-info">
+            ${_gameCardUpdateIndicatorHtml(game)}
             <div class="gc-name">${_eName}</div>
             <div class="gc-time ${playedClass}">${clockIcon} ${timeStr}</div>
             <div class="gc-lastplayed">${escapeHtml(lastPlayedStr) || 'Never'}</div>
@@ -587,7 +709,7 @@ function createGameCard(game, isRecent = false, options) {
     } else if (!exploreHydrationOwned) {
         // No image, or image is a remote http:// URL that may be blocked/expired
         // — go through fetchMetadata which handles disk cache + API fallback
-        fetchMetadata(imgEl, game);
+        if (!bulkResolvedMiss) fetchMetadata(imgEl, game);
     } else {
         window.__baddelExploreCoverHydrationController?.reconcile?.('card-created');
     }
@@ -647,7 +769,7 @@ function _jbiCacheBackedArtworkValue(value) {
 }
 
 function _jbiDisplayArtworkValue(value) {
-    return _jbiSafeArtworkValue(value);
+    return _jbiCacheBackedArtworkValue(value);
 }
 
 function _gcCacheBackedArtworkValue(value) {
@@ -729,13 +851,44 @@ function _jbiResolveArtworkSelection(displayGame) {
     return { game: canonicalGame, cover, hero, candidates, selectedType, selectedValue };
 }
 
+async function _jbiFirstLoadableArtworkCandidate(candidates = []) {
+    const placeholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+    for (const candidate of candidates) {
+        const value = _jbiDisplayArtworkValue(candidate);
+        if (!value || value === placeholder) continue;
+        if (String(value).startsWith('file://') && window.electronAPI?.probeLocalImage) {
+            try {
+                if (await window.electronAPI.probeLocalImage(value)) return value;
+            } catch {}
+            continue;
+        }
+        return value;
+    }
+    return placeholder;
+}
+
 // hydrateRecentHeroArtwork lives in src/js/app/artwork-sync.js
 
 function createRecentCard(game, isFeatured = false) {
     const displayGame = game;
     const selection = _jbiResolveArtworkSelection(displayGame);
     game = selection.game;
+    const localJbiCandidates = [
+        game.heroImage,
+        game.defaultHero,
+        game.heroUrl,
+        game.hero,
+        game.__baddelResolvedLocalHero,
+        game.__baddelResolvedLocalCover,
+        game.image,
+        game.defaultImage,
+        game.coverUrl,
+        game.cover,
+    ].map(_jbiCacheBackedArtworkValue).filter(Boolean);
+    selection.candidates = _jbiUniqueUsableCandidates([...localJbiCandidates, ...(selection.candidates || [])]);
+    const localSelectedCandidate = selection.candidates[0] || null;
     const displayImg = _jbiDisplayArtworkValue(selection.selectedValue) ||
+        _jbiDisplayArtworkValue(localSelectedCandidate) ||
         'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
     const card = document.createElement('div');
     card.className = `jbi-card${isFeatured ? ' jbi-card--featured' : ''}`;
@@ -757,13 +910,15 @@ function createRecentCard(game, isFeatured = false) {
     const progressWidth = isFeatured ? 'width:240px;max-width:100%' : 'width:100%';
 
     const _jbiName = escapeHtml(game.name);
-    const _jbiImg  = safeImageUrl(displayImg);
+    const _jbiPlaceholder = 'data:image/gif;base64,R0lGODlhAQABAAD/ACwAAAAAAQABAAACADs=';
+    const _jbiImg  = _jbiPlaceholder;
     card.innerHTML = `
         <div class="jbi-cover">
             <div class="jbi-cover-placeholder"></div>
             <img class="jbi-cover-img" src="${_jbiImg}" alt="${_jbiName}">
         </div>
         <div class="jbi-body">
+            ${_gameCardUpdateIndicatorHtml(game, 'jbi-update-indicator')}
             <span class="jbi-last-played">LAST PLAYED · ${escapeHtml(lastPlayedLabel)}</span>
             <div class="jbi-info-row">
                 <div class="jbi-text">
@@ -795,22 +950,29 @@ function createRecentCard(game, isFeatured = false) {
     imgEl.addEventListener('load', () => imgEl.classList.add('img-loaded'), { once: true });
     if (imgEl.complete && imgEl.naturalWidth > 0) imgEl.classList.add('img-loaded');
 
-    imgEl.src = displayImg;
-    if (selection.selectedType === 'hero') {
-        checkBackgroundAssets?.(game);
-    } else {
-        hydrateRecentHeroArtwork(game, imgEl).catch(err => {
-            console.warn('[JumpBackIn] hero hydration failed:', err);
-        }).then(() => {
-            if (card.getAttribute('data-id') !== String(game.id)) return;
-            const refreshed = _jbiResolveArtworkSelection(displayGame);
-            const refreshedValue = _jbiDisplayArtworkValue(refreshed.selectedValue);
-            if (refreshed.selectedType === 'hero' && refreshedValue && refreshedValue !== imgEl.src) {
-                imgEl.src = refreshedValue;
-                imgEl.style.opacity = '';
-            }
-        });
-    }
+    _jbiFirstLoadableArtworkCandidate(selection.candidates).then((initialSrc) => {
+        if (card.getAttribute('data-id') !== String(game.id)) return;
+        if (initialSrc && initialSrc !== imgEl.src) imgEl.src = initialSrc;
+        if (selection.selectedType === 'hero' && initialSrc !== _jbiPlaceholder) {
+            checkBackgroundAssets?.(game);
+        } else {
+            hydrateRecentHeroArtwork(game, imgEl).catch(err => {
+                console.warn('[JumpBackIn] hero hydration failed:', err);
+            }).then(() => {
+                if (card.getAttribute('data-id') !== String(game.id)) return;
+                const refreshed = _jbiResolveArtworkSelection(displayGame);
+                _jbiFirstLoadableArtworkCandidate(refreshed.candidates).then((refreshedValue) => {
+                    if (card.getAttribute('data-id') !== String(game.id)) return;
+                    if (refreshed.selectedType === 'hero' && refreshedValue && refreshedValue !== imgEl.src) {
+                        imgEl.src = refreshedValue;
+                        imgEl.style.opacity = '';
+                    }
+                }).catch(() => {});
+            });
+        }
+    }).catch(() => {
+        if (card.getAttribute('data-id') === String(game.id)) imgEl.src = _jbiPlaceholder;
+    });
 
     let jbiCandidateIndex = 0;
     imgEl.onerror = () => {
@@ -869,4 +1031,5 @@ window._getRecentDisplayImage          = _getRecentDisplayImage;
 window._agResolveLastPlayedTimestamp      = _agResolveLastPlayedTimestamp;
 window._agResolvePlaytimeRecordForGame    = _agResolvePlaytimeRecordForGame;
 window._agFieldPlaytimeMinutes            = _agFieldPlaytimeMinutes;
+window._agPlaytimeSortMetrics             = _agPlaytimeSortMetrics;
 window._agFieldLastPlayed                 = _agFieldLastPlayed;

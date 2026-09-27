@@ -44,16 +44,45 @@ function showContextMenu(x, y, id, name) {
         ? `<div class="menu-item" onclick="toggleTimeTracking('${id}', false)">Disable Time Tracking</div>`
         : `<div class="menu-item" onclick="toggleTimeTracking('${id}', true)">Enable Time Tracking</div>`;
 
+    const maintenanceState = _ctxGame ? window.__baddelGetManagedMaintenanceState?.(_ctxGame) : null;
+    const maintenancePresentation = maintenanceState?.maintenancePresentation || window.__baddelMaintenancePresentation?.(maintenanceState);
+    const maintenanceBusy = Boolean(maintenancePresentation);
+    const checkingForUpdate = maintenanceState?.checkingForUpdate === true;
+    const updateItem = maintenanceState?.supportsUpdate === true && maintenanceState.updateAvailable === true && !maintenanceBusy
+        ? `<div class="menu-item" onclick="runContextMaintenance('${id}', 'update')">Update</div>`
+        : '';
+    const checkUpdateItem = maintenanceState?.supportsUpdate === true && !maintenanceBusy && !checkingForUpdate
+        ? `<div class="menu-item" onclick="runContextMaintenance('${id}', 'check')">Check for Updates</div>`
+        : '';
+    const repairItem = maintenanceState?.supportsRepair === true && !maintenanceBusy && !checkingForUpdate
+        ? `<div class="menu-item" onclick="runContextMaintenance('${id}', 'repair')">Verify / Repair</div>`
+        : '';
+    const maintenanceItems = maintenanceBusy
+        ? `<div class="menu-item menu-item-status" aria-disabled="true">${maintenancePresentation.label}</div><div class="menu-item" onclick="viewContextMaintenanceDownloads()">View in Downloads</div>`
+        : checkingForUpdate
+            ? '<div class="menu-item menu-item-status" aria-disabled="true">Checking for updates&hellip;</div>'
+            : `${updateItem}${checkUpdateItem}${repairItem}`;
+    const openFolderItem = maintenanceState ? `<div class="menu-item" onclick="openContextManagedFolder('${maintenanceState.taskId}')">Open Folder</div>` : '';
+    const uninstallItem = maintenanceState?.uninstallEligible === true ? (maintenanceBusy
+        ? '<div class="menu-item delete menu-item-disabled" aria-disabled="true">Uninstall</div>'
+        : `<div class="menu-item delete" onclick="uninstallContextManagedGame('${maintenanceState.taskId}')">Uninstall</div>`) : '';
+
     m.innerHTML = `
         <div class="menu-item" onclick="triggerPlay()">Play</div>
-        ${favAction} <hr>
+        <hr>
+        ${favAction}
         <div class="menu-item" style="position:relative" onmouseenter="fixSubmenuPosition(this)">
             <span>Add to Collection <span class="submenu-icon">&#9654;</span></span>
             <div class="submenu">${o}</div>
         </div>
         ${removeFromCollAction}
-        ${trackingItem}
+        ${maintenanceItems ? `<hr>${maintenanceItems}` : ''}
+        <hr>
         <div class="menu-item" onclick="hideContextMenu(); openGameSettings('${id}')">Game Settings</div>
+        ${trackingItem}
+        ${openFolderItem}
+        <hr>
+        ${uninstallItem}
         <div class="menu-item delete" onclick="triggerRemove('${id}')">Remove from Library</div>
     `;
 
@@ -63,7 +92,45 @@ function showContextMenu(x, y, id, name) {
     m.style.left = `${fx}px`; m.style.top = `${fy}px`;
 }
 
+function runContextMaintenance(gameId, action) {
+    hideContextMenu();
+    const game = allGamesData.find(item => String(item.id) === String(gameId));
+    if (!game) return;
+    const run = () => window.__baddelRunMaintenanceAction?.(game, action);
+    if (action === 'repair' && typeof openConfirmModal === 'function') {
+        openConfirmModal('Verify / Repair game?', 'The provider will verify this installation and download only missing or damaged content.', 'Verify / Repair', run);
+        return;
+    }
+    run();
+}
+
+function viewContextMaintenanceDownloads() {
+    hideContextMenu();
+    if (typeof window.navigateToDownloads === 'function') window.navigateToDownloads();
+}
+
+function openContextManagedFolder(taskId) {
+    hideContextMenu();
+    window.downloadsOpenFolder?.(taskId);
+}
+
+function uninstallContextManagedGame(taskId) {
+    hideContextMenu();
+    window.downloadsUninstall?.(taskId);
+}
+
 function hideContextMenu() { document.getElementById('contextMenu').style.display = 'none'; fixSubmenuPosition.reset(); }
+
+window.addEventListener?.('baddel-maintenance-state-changed', () => {
+    const menu = document.getElementById('contextMenu');
+    if (!menu || menu.style.display !== 'block' || !selectedGameId) return;
+    showContextMenu(
+        Number.parseFloat(menu.style.left) || 0,
+        Number.parseFloat(menu.style.top) || 0,
+        selectedGameId,
+        menu.getAttribute('data-current-name') || ''
+    );
+});
 
 // ── Submenu positioning ───────────────────────────────────────────────────────
 
@@ -264,6 +331,10 @@ async function restoreSelectedGames() {
 // ── Window exports ────────────────────────────────────────────────────────────
 
 window.showContextMenu     = showContextMenu;
+window.runContextMaintenance = runContextMaintenance;
+window.viewContextMaintenanceDownloads = viewContextMaintenanceDownloads;
+window.openContextManagedFolder = openContextManagedFolder;
+window.uninstallContextManagedGame = uninstallContextManagedGame;
 window.hideContextMenu     = hideContextMenu;
 window.fixSubmenuPosition  = fixSubmenuPosition;
 window.triggerRemove       = triggerRemove;

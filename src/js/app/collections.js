@@ -13,6 +13,7 @@ let currentEditingCollectionId = null;
 
 // ── Navigation ────────────────────────────────────────────────────────────────
 function navigateToCollections() {
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'collections', view: 'collections' }).catch?.(() => {});
     window.agReadyOnly = false;
     currentView = 'collections';
     currentFilters.collectionId = null;
@@ -27,6 +28,7 @@ function navigateToCollections() {
 }
 
 function filterByCollection(collId) {
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'collections', view: 'collection' }).catch?.(() => {});
     window.agReadyOnly = false;
     currentView = 'collection';
     _hideAllViews();

@@ -33,6 +33,21 @@ function isCacheBackedArtworkUrl(url) {
     return safe;
 }
 
+function _isManagedArtworkCacheUrl(url) {
+    const value = String(url || '').trim();
+    return value.startsWith('file://') && /artwork-cache-v2(?:%5C|[\\/])/i.test(value);
+}
+
+function _bulkArtworkCandidateManagedUrls(game, type) {
+    if (!game) return [];
+    const values = type === 'cover'
+        ? [game.__baddelResolvedLocalCover, game.image, game.defaultImage, game.coverUrl, game.cover]
+        : type === 'hero'
+            ? [game.__baddelResolvedLocalHero, game.heroImage, game.defaultHero, game.heroUrl, game.hero]
+            : [game.__baddelResolvedLocalLogo, game.logo, game.defaultLogo, game.logoUrl];
+    return [...new Set(values.map(value => String(value || '').trim()).filter(_isManagedArtworkCacheUrl))];
+}
+
 function _preferLocalImage(candidates) {
     const usable = candidates.map(isUsableImageUrl).filter(Boolean);
     return usable.find(u => u.startsWith('file://')) || usable[0] || null;
@@ -48,7 +63,7 @@ function getPosterUrl(game) {
         game.boxArt,
         game.grid,
     ]);
-    return poster || _preferLocalImage([game.heroImage, game.defaultHero]);
+    return poster;
 }
 
 function getPosterUrlInstalled(game) {
@@ -339,6 +354,204 @@ window.__baddelLoadCachedArtworkForGame = function __baddelLoadCachedArtworkForG
     return promise;
 };
 
+
+function _bulkArtworkGameId(game) {
+    return String(game?.id || game?.gameId || game?.localGameId || game?.installedId || game?.appName || game?.name || '').trim();
+}
+
+function _bulkArtworkCanonicalGameFor(displayGame, canonicalGames) {
+    const list = Array.isArray(canonicalGames) ? canonicalGames
+        : (Array.isArray(window.__baddelCanonicalGames) ? window.__baddelCanonicalGames : []);
+    if (window.BaddelCanonicalArtworkProjection?.projectFromRecords && list.length) {
+        try {
+            const projected = window.BaddelCanonicalArtworkProjection.projectFromRecords(displayGame, list);
+            if (projected?._artworkIdentityMatchReason) return projected;
+        } catch (_) {}
+    }
+    return displayGame || null;
+}
+
+function _bulkArtworkCacheKeys(displayGame, canonicalGame) {
+    const out = new Set();
+    const add = (value) => {
+        if (value == null) return;
+        const key = String(value).trim();
+        if (key) out.add(key);
+    };
+    try {
+        const resolved = window.BaddelGameArtworkReadModel?.resolveArtworkCacheKeys
+            ? window.BaddelGameArtworkReadModel.resolveArtworkCacheKeys(displayGame, canonicalGame)
+            : [];
+        for (const key of Array.isArray(resolved) ? resolved : []) add(key);
+    } catch (_) {}
+    for (const game of [canonicalGame, displayGame]) {
+        add(game?.id);
+        add(game?.gameId);
+        add(game?.localGameId);
+        add(game?.installedId);
+        add(game?.appName);
+        add(game?.appid);
+        add(game?.appId);
+        add(game?.namespace);
+        add(game?.catalogItemId);
+        add(game?.offerId);
+        add(game?.productId);
+        if (game?.allIds && typeof game.allIds === 'object') {
+            for (const value of Object.values(game.allIds)) add(value);
+        }
+    }
+    return [...out];
+}
+
+function _bulkArtworkDirectValue(game, type) {
+    if (!game) return null;
+    let direct = null;
+    if (type === 'cover') direct = isCacheBackedArtworkUrl(game.__baddelResolvedLocalCover || game.image || game.defaultImage || game.coverUrl || game.cover);
+    if (type === 'hero') direct = isCacheBackedArtworkUrl(game.__baddelResolvedLocalHero || game.heroImage || game.defaultHero || game.heroUrl || game.hero);
+    if (type === 'logo') direct = isCacheBackedArtworkUrl(game.__baddelResolvedLocalLogo || game.logo || game.defaultLogo || game.logoUrl);
+    if (_isManagedArtworkCacheUrl(direct)) {
+        return window.__agVerifiedArtworkUrls instanceof Set && window.__agVerifiedArtworkUrls.has(direct) ? direct : null;
+    }
+    return direct;
+}
+
+function _bulkArtworkApply(game, resolved, { surface = 'unknown' } = {}) {
+    if (!game || !resolved) return false;
+    let changed = false;
+    const customLocked = game.customArtworkLocked === true && (game.artworkSource === 'settings' || game.artworkSource === 'creator');
+    const cover = isCacheBackedArtworkUrl(resolved.cover);
+    const hero = isCacheBackedArtworkUrl(resolved.hero);
+    const logo = isCacheBackedArtworkUrl(resolved.logo);
+    game.__baddelBulkArtworkResolved = true;
+    game.__baddelBulkArtworkSurface = surface;
+    game.__baddelBulkArtworkMissTypes = Array.isArray(resolved.missTypes) ? resolved.missTypes.slice() : [];
+    if (cover && !customLocked) {
+        game.__baddelResolvedLocalCover = cover;
+        game.__baddelArtworkAvailability = { ...(game.__baddelArtworkAvailability || {}), cover: { state: 'available', reason: surface } };
+        if (game.image !== cover) { game.image = cover; changed = true; }
+        if (game.defaultImage !== cover) { game.defaultImage = cover; changed = true; }
+        if (game.coverUrl !== cover) { game.coverUrl = cover; changed = true; }
+        const verifiedResult = resolved.cacheResults?.cover;
+        if (verifiedResult && typeof window.__baddelAcceptVerifiedBulkCover === 'function') {
+            window.__baddelAcceptVerifiedBulkCover(game, cover, verifiedResult.source || surface);
+        }
+    }
+    if (hero) {
+        game.__baddelResolvedLocalHero = hero;
+        game.__baddelArtworkAvailability = { ...(game.__baddelArtworkAvailability || {}), hero: { state: 'available', reason: surface } };
+        if (game.heroImage !== hero) { game.heroImage = hero; changed = true; }
+        if (game.defaultHero !== hero) { game.defaultHero = hero; changed = true; }
+        if (game.hero !== hero) { game.hero = hero; changed = true; }
+        if (game.heroUrl !== hero) { game.heroUrl = hero; changed = true; }
+    }
+    if (logo) {
+        game.__baddelResolvedLocalLogo = logo;
+        game.__baddelArtworkAvailability = { ...(game.__baddelArtworkAvailability || {}), logo: { state: 'available', reason: surface } };
+        if (game.logo !== logo) { game.logo = logo; changed = true; }
+        if (game.defaultLogo !== logo) { game.defaultLogo = logo; changed = true; }
+        if (game.logoUrl !== logo) { game.logoUrl = logo; changed = true; }
+    }
+    return changed;
+}
+
+window.__baddelApplyBulkResolvedArtworkToGame = _bulkArtworkApply;
+
+window.__baddelResolveBulkArtworkForGames = async function __baddelResolveBulkArtworkForGames(games, options = {}) {
+    const list = (Array.isArray(games) ? games : []).filter(Boolean);
+    const types = _normalizeArtworkLookupTypes(options.types || ['cover']);
+    const surface = options.surface || 'unknown';
+    const canonicalGames = options.canonicalGames || window.__baddelCanonicalGames || [];
+    const rows = [];
+    const identitiesByType = Object.fromEntries(types.map(type => [type, []]));
+    for (const game of list) {
+        const canonicalGame = _bulkArtworkCanonicalGameFor(game, canonicalGames);
+        const identity = window.BaddelGameArtworkReadModel?.resolveCanonicalArtworkIdentity
+            ? window.BaddelGameArtworkReadModel.resolveCanonicalArtworkIdentity(canonicalGame || game || {})
+            : null;
+        const keyList = _bulkArtworkCacheKeys(game, canonicalGame);
+        const primaryKey = identity?.canonicalGameId || keyList[0] || _bulkArtworkGameId(game);
+        window.BaddelArtworkDiagnostics?.record?.('bulk-cache-identity', {
+            canonicalIdentity: primaryKey,
+            provider: identity?.platform || game?.platform,
+            keyCount: keyList.length,
+            requestedTypes: types,
+            reason: surface,
+        });
+        const resolved = { cover: null, hero: null, logo: null, keys: keyList, matchedKeys: {}, missTypes: [], cacheResults: {} };
+        for (const type of types) {
+            const direct = _bulkArtworkDirectValue(game, type);
+            if (direct) {
+                resolved[type] = direct;
+                resolved.matchedKeys[type] = 'runtime';
+                continue;
+            }
+            if (primaryKey && keyList.length) identitiesByType[type].push({
+                key: primaryKey,
+                canonicalGameId: primaryKey,
+                ids: keyList,
+                strongAliases: identity?.strongAliases || [],
+                legacyAliases: identity?.legacyAliases || [],
+                candidateManagedLocalUrls: _bulkArtworkCandidateManagedUrls(game, type),
+                platform: identity?.platform || game?.platform || canonicalGame?.platform || null,
+            });
+        }
+        rows.push({ game, canonicalGame, primaryKey, resolved });
+    }
+
+    const responses = {};
+    if (window.electronAPI?.getCachedImagesBulk) {
+        for (const type of types) {
+            const identities = identitiesByType[type];
+            if (!identities.length) continue;
+            if (window.__baddelStartupMetrics) {
+                window.__baddelStartupMetrics.cacheIpcCount = Number(window.__baddelStartupMetrics.cacheIpcCount || 0) + 1;
+            }
+            responses[type] = await window.electronAPI.getCachedImagesBulk(identities, type).catch(err => ({ status: 'error', error: err?.message || String(err || 'lookup-failed'), images: {}, results: {} }));
+        }
+    }
+
+    let hits = 0;
+    let misses = 0;
+    let changed = 0;
+    const results = new Map();
+    for (const row of rows) {
+        for (const type of types) {
+            if (!row.resolved[type]) {
+                const images = responses[type]?.images || {};
+                const detailed = responses[type]?.results || {};
+                const hit = detailed[row.primaryKey] || images[row.primaryKey];
+                const local = isCacheBackedArtworkUrl(typeof hit === 'string' ? hit : (hit?.fileUrl || hit?.localUrl || hit?.url));
+                if (hit && typeof hit === 'object') row.resolved.cacheResults[type] = hit;
+                if (local) {
+                    row.resolved[type] = local;
+                    row.resolved.matchedKeys[type] = (hit && typeof hit === 'object' && hit.matchedAlias) ? hit.matchedAlias : row.primaryKey;
+                    window.BaddelArtworkDiagnostics?.record?.('bulk-cache-lookup', {
+                        canonicalIdentity: row.primaryKey,
+                        type,
+                        assetIdentity: hit?.assetHash || local,
+                        matchedAlias: hit?.matchedAlias || row.primaryKey,
+                        cacheHit: true,
+                        reason: surface,
+                    });
+                }
+            }
+            if (row.resolved[type]) hits += 1;
+            else {
+                misses += 1;
+                row.resolved.missTypes.push(type);
+            }
+        }
+        if (_bulkArtworkApply(row.game, row.resolved, { surface })) changed += 1;
+        results.set(_bulkArtworkGameId(row.game), _cloneArtworkCacheLookupResult(row.resolved));
+    }
+    try {
+        console.info('[ArtworkBulkResolver]', { surface, games: list.length, types, hits, misses, changed });
+    } catch (_) {}
+    return { status: 'success', surface, games: list.length, hits, misses, changed, results };
+};
+
+window.__baddelResolveArtworkCacheBulk = window.__baddelResolveBulkArtworkForGames;
+
 function _projectCanonicalOntoGame(game, canonicalGame) {
     if (!game || !canonicalGame) return game;
     const resolver = window.BaddelCanonicalGameIdentityResolver?.resolveCanonicalGameIdentity;
@@ -578,7 +791,22 @@ window.__baddelCommitCanonicalGameUpdate = function __baddelCommitCanonicalGameU
     if (Array.isArray(window.allGamesData)) window.allGamesData = patchArray(window.allGamesData);
     if (Array.isArray(window._allGamesCache)) window._allGamesCache = patchArray(window._allGamesCache);
     if (Array.isArray(window._allGamesRawCache)) window._allGamesRawCache = patchArray(window._allGamesRawCache);
+    if (Array.isArray(window._suggAllGames)) window._suggAllGames = patchArray(window._suggAllGames);
+    if (Array.isArray(window._suggPool)) window._suggPool = patchArray(window._suggPool);
     if (Array.isArray(window.allGamesData) && typeof allGamesData !== 'undefined') allGamesData = window.allGamesData;
+
+    if (typeof _suggReRenderOne === 'function') {
+        const suggestionGames = Array.isArray(window._suggPool) ? window._suggPool : [];
+        for (const suggestionGame of suggestionGames) {
+            if (matchedDisplayIds.has(String(suggestionGame?.id || ''))) {
+                try { _suggReRenderOne(suggestionGame, null, false); } catch (_) {}
+            }
+        }
+        if (typeof _suggFeaturedGame !== 'undefined' && _suggFeaturedGame &&
+            matchedDisplayIds.has(String(_suggFeaturedGame.id || ''))) {
+            try { _suggReRenderOne(_suggFeaturedGame, 'syncedFeatureWrap', true); } catch (_) {}
+        }
+    }
 
     if (appliedTypes.includes('cover')) {
         _patchVisibleGameCard(canonicalGame, [...matchedDisplayIds], {
@@ -925,9 +1153,10 @@ window.__baddelApplyGameCustomOverride = function(gameLike, patch = {}, options 
 // cache without triggering new downloads or broken images.
 const _RTIA_DISK_CONCURRENCY = 4;
 const _RTIA_HYDRATE_TIMEOUT  = 12_000;
-let   _rtia_running          = false;
+let   _rtia_running          = 0;
+const _rtiaWarmInFlightByCanonicalId = new Map();
 
-async function _rtia_warmOne(g) {
+async function _rtia_warmOneImpl(g) {
     const key    = _suggKey(g);
     const cached = _suggArtCacheGet(key) || {};
     const staleFields = [];
@@ -971,14 +1200,32 @@ async function _rtia_warmOne(g) {
     if (cached.hero   && !g.heroImage) g.heroImage = cached.hero;
     if (cached.logo   && !g.logo)      g.logo      = cached.logo;
 
-    // For any type still missing, try the on-disk image cache
+    // Resolve every cache alias through the shared canonical artwork path.
+    const canonicalGame = _bulkArtworkCanonicalGameFor(g);
+    const sharedCached = await window.__baddelLoadCachedArtworkForGame?.(g, canonicalGame, {
+        types: ['cover', 'hero', 'logo'],
+    }).catch(() => null);
+    if (sharedCached?.cover && !g.image) {
+        g.image = sharedCached.cover;
+        _suggArtCacheSet(key, { poster: sharedCached.cover });
+    }
+    if (sharedCached?.hero && !g.heroImage) {
+        g.heroImage = sharedCached.hero;
+        _suggArtCacheSet(key, { hero: sharedCached.hero });
+    }
+    if (sharedCached?.logo && !g.logo) {
+        g.logo = sharedCached.logo;
+        _suggArtCacheSet(key, { logo: sharedCached.logo });
+    }
+
+    // Compatibility fallback when the shared cache resolver is unavailable.
     const toFetch = [
         { gameField: 'image',     artField: 'poster', type: 'cover' },
         { gameField: 'heroImage', artField: 'hero',   type: 'hero'  },
         { gameField: 'logo',      artField: 'logo',   type: 'logo'  },
     ];
     for (const { gameField, artField, type } of toFetch) {
-        if (g[gameField] || !window.electronAPI.getCachedImage) continue;
+        if (g[gameField] || sharedCached || !window.electronAPI.getCachedImage) continue;
         const url = await window.electronAPI.getCachedImage(g.id, type).catch(() => null);
         if (url) {
             g[gameField] = url;
@@ -987,6 +1234,37 @@ async function _rtia_warmOne(g) {
     }
 
     _suggArtCachePopulate(g);
+    if (typeof _suggReRenderOne === 'function') {
+        try { _suggReRenderOne(g, null, false); } catch (_) {}
+        if (typeof _suggFeaturedGame !== 'undefined' && _suggFeaturedGame &&
+            _suggKey(_suggFeaturedGame) === key) {
+            try { _suggReRenderOne(g, 'syncedFeatureWrap', true); } catch (_) {}
+        }
+    }
+    return {
+        cover: g.image || g.defaultImage || g.coverUrl || null,
+        hero: g.heroImage || g.defaultHero || g.heroUrl || null,
+        logo: g.logo || g.defaultLogo || g.logoUrl || null,
+    };
+}
+
+async function _rtia_warmOne(g) {
+    const canonicalGame = _bulkArtworkCanonicalGameFor(g);
+    const key = String(canonicalGame?.id || _suggKey(g));
+    let promise = _rtiaWarmInFlightByCanonicalId.get(key);
+    if (!promise) {
+        promise = _rtia_warmOneImpl(g).finally(() => _rtiaWarmInFlightByCanonicalId.delete(key));
+        _rtiaWarmInFlightByCanonicalId.set(key, promise);
+    }
+    const artwork = await promise;
+    if (artwork?.cover && !g.image) g.image = artwork.cover;
+    if (artwork?.hero && !g.heroImage) g.heroImage = artwork.hero;
+    if (artwork?.logo && !g.logo) g.logo = artwork.logo;
+    _suggArtCachePopulate(g);
+    if (typeof _suggReRenderOne === 'function') {
+        try { _suggReRenderOne(g, null, false); } catch (_) {}
+    }
+    return artwork;
 }
 
 async function _rtia_warmBatch(games) {
@@ -1013,8 +1291,8 @@ function _rtia_awaitHydration(games, timeoutMs) {
 }
 
 async function _rtia_hydrateAll(games) {
-    if (_rtia_running || !games?.length) return;
-    _rtia_running = true;
+    if (!games?.length) return;
+    _rtia_running += 1;
     try {
         // Phase 1: fast disk warm — validate cached file:// URLs, pull from disk cache.
         // Awaited so g.image / g.heroImage are filled before the first render.
@@ -1024,12 +1302,18 @@ async function _rtia_hydrateAll(games) {
         // Fire-and-forget — _suggReRenderOne patches the DOM when art arrives.
         // Do NOT await; rendering must not block on network round-trips.
         for (const g of games) {
-            if (!g._heroHydrated && !g._heroHydrating) {
+            const availability = g.__baddelArtworkAvailability || {};
+            const missingArtwork = [
+                ['cover', g.image || g.defaultImage || g.coverUrl],
+                ['hero', g.heroImage || g.defaultHero || g.heroUrl],
+                ['logo', g.logo || g.defaultLogo || g.logoUrl],
+            ].some(([type, value]) => !value && availability[type]?.state !== 'terminal-miss');
+            if ((missingArtwork || !g._metaHydrated) && !g._heroHydrating) {
                 _suggHydrateArt(g, null, false);
             }
         }
     } finally {
-        _rtia_running = false;
+        _rtia_running = Math.max(0, _rtia_running - 1);
     }
 }
 

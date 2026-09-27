@@ -40,6 +40,7 @@ function task(root) {
         id: 'task-1',
         title: 'Nine Years of Shadows',
         platform: 'gog',
+        installProvider: 'gogdl',
         providerProductId: '12345',
         contentSystemProductId: 'gog-content-12345',
         gogdlAppName: 'nine_years_of_shadows',
@@ -65,6 +66,7 @@ test('completed download upserts one installed game with a launch target and emi
     assert.equal(result.installedGameId, gamesApi.games[0].id);
     assert.equal(gamesApi.games[0].isInstalled, true);
     assert.equal(gamesApi.games[0].installSource, 'download');
+    assert.equal(gamesApi.games[0].installProvider, 'gogdl');
     assert.equal(gamesApi.games[0].executablePath, exe);
     assert.match(gamesApi.games[0].command, /Game\.exe/);
     assert.equal(gamesApi.games[0].providerProductId, '12345');
@@ -256,4 +258,25 @@ test('completed task recovery is idempotent and creates no duplicate game record
     assert.equal(gamesApi.games[0].executablePath, exe);
     assert.equal(snapshot.tasks[0].installedGameId, gamesApi.games[0].id);
     assert.equal(snapshot.tasks[0].resolvedExecutablePath, exe);
+});
+
+
+test('completed task with saved IDs restores a lost central game registration on load', async () => {
+    const { root, exe } = makeNestedInstallDir();
+    const gamesApi = makeGamesApi();
+    const saved = { ...makeCompletedLegacyTask(root), installedGameId: 'gog_1207658991', resolvedExecutablePath: exe, libraryRegisteredAt: '2026-09-01T00:00:00.000Z' };
+    const repository = {
+        emptyState: () => ({ version: 1, tasks: [], settings: {} }),
+        state: { version: 1, settings: {}, tasks: [saved] },
+        async readState() { return JSON.parse(JSON.stringify(this.state)); },
+        async writeState(state) { this.state = JSON.parse(JSON.stringify(state)); return this.state; },
+    };
+    const registrar = new DownloadCompletionLibraryRegistrar({ gamesApi });
+    const manager = new DownloadQueueManager({ repository, preflight: {}, completionRegistrar: registrar });
+    const snapshot = await manager.load();
+    assert.equal(gamesApi.games.length, 1);
+    assert.equal(gamesApi.games[0].installSource, 'download');
+    assert.equal(gamesApi.games[0].isInstalled, true);
+    assert.equal(gamesApi.games[0].executablePath, exe);
+    assert.equal(snapshot.tasks[0].installedGameId, gamesApi.games[0].id);
 });

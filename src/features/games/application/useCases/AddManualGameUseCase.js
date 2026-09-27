@@ -2,6 +2,9 @@
 
 const path = require('path');
 
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function verboseLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
+
 /**
  * Adds a manually-specified game to the library.
  *
@@ -108,7 +111,7 @@ async function addManualGame({
             console.log(`[Manual Add] MRM cooldown active for "${primaryTitle}" — deferred`);
             validationDeferred = true;
         } else {
-            console.log(`[Manual Add] MRM candidates for "${primaryTitle}": ${mrmCandidates.map(c => c.title || c.slug).join(', ')}`);
+            verboseLog(`[Manual Add] MRM candidates for "${primaryTitle}": ${mrmCandidates.map(c => c.title || c.slug).join(', ')}`);
             const resolveResult = await metadataResolutionManager.resolve(tempId, {
                 candidates:  mrmCandidates,
                 title:       primaryTitle,

@@ -13,6 +13,18 @@ function openHelpModal(tab) {
 }
 function closeHelpModal() { document.getElementById('helpModal').classList.remove('active'); }
 
+function openVaultPlatformFeedback() {
+    const message = document.getElementById('feedbackMessage');
+    const prompt = 'Platform request: ';
+    if (message && !message.value.trim()) message.value = prompt;
+    openHelpModal('feedback');
+    message?.focus?.();
+    if (message?.setSelectionRange) {
+        const end = message.value.length;
+        message.setSelectionRange(end, end);
+    }
+}
+
 function _positionHelpDropdown() {
     const wrap = document.getElementById('helpDropdownWrap');
     const menu = document.getElementById('helpDropdownMenu');
@@ -676,7 +688,9 @@ async function closeUpdateNotesModal() {
         _tourKeyListener = null;
     }
     const dialog = document.querySelector('.update-notes-dialog');
-    if (dialog) dialog.classList.remove('tour-mode');
+    if (dialog) dialog.classList.remove('tour-mode', 'poster-tour-mode');
+    _clearTourSpotlight();
+    _removeTourResumeButton();
     const modal = document.getElementById('updateNotesModal');
     if (modal) modal.classList.remove('active');
     if (_pendingUpdateNotesVersion && window.electronAPI?.markUpdateNotesShown) {
@@ -695,6 +709,8 @@ async function closeUpdateNotesModal() {
     if (tourStaticIcon) tourStaticIcon.hidden = false;
     const tourPrimaryBtn = document.querySelector('.update-notes-primary-btn');
     if (tourPrimaryBtn) tourPrimaryBtn.hidden = false;
+    const listEl = document.getElementById('updateNotesList');
+    if (listEl) listEl.className = 'update-notes-list';
 }
 
 // ── Feature tour slider ────────────────────────────────────────────────────────
@@ -702,12 +718,16 @@ async function closeUpdateNotesModal() {
 let _tourCurrentSlide = 0;
 let _tourSlides = [];
 let _tourKeyListener = null;
+let _tourPosterOnly = false;
+let _tourSpotlightProxy = null;
+let _tourSpotlightExpandedBody = null;
+let _tourSpotlightPreviousDisplay = '';
+let _tourResumeButton = null;
 
 function _renderFeatureTour(notes) {
     _pendingUpdateNotesVersion = notes.version || null;
     _tourSlides = Array.isArray(notes.slides) ? notes.slides : [];
     _tourCurrentSlide = 0;
-
     const dialog = document.querySelector('.update-notes-dialog');
     if (dialog) dialog.classList.add('tour-mode');
 
@@ -726,6 +746,9 @@ function _renderFeatureTour(notes) {
     if (icon) icon.hidden = true;
     const primaryBtn = document.querySelector('.update-notes-primary-btn');
     if (primaryBtn) primaryBtn.hidden = true;
+
+    _tourPosterOnly = notes.posterOnly === true;
+    if (dialog) dialog.classList.toggle('poster-tour-mode', _tourPosterOnly);
 
     const listEl = document.getElementById('updateNotesList');
     if (!listEl) return;
@@ -802,7 +825,7 @@ function _renderFeatureTour(notes) {
 
 function _buildTourSlide(slide, index) {
     const el = document.createElement('div');
-    el.className = 'un-tour-slide';
+    el.className = 'un-tour-slide' + (_tourPosterOnly ? ' poster-only' : '');
     el.dataset.index = String(index);
 
     // Text column
@@ -860,9 +883,96 @@ function _buildTourSlide(slide, index) {
         imgColEl.appendChild(ph);
     }
 
-    el.appendChild(textEl);
+    if (!_tourPosterOnly) el.appendChild(textEl);
     el.appendChild(imgColEl);
     return el;
+}
+
+function _clearTourSpotlight() {
+    if (_tourSpotlightProxy) {
+        _tourSpotlightProxy.remove();
+        _tourSpotlightProxy = null;
+    }
+    if (_tourSpotlightExpandedBody) {
+        _tourSpotlightExpandedBody.style.display = _tourSpotlightPreviousDisplay;
+        _tourSpotlightExpandedBody = null;
+        _tourSpotlightPreviousDisplay = '';
+    }
+}
+
+function _removeTourResumeButton() {
+    if (_tourResumeButton) {
+        _tourResumeButton.remove();
+        _tourResumeButton = null;
+    }
+}
+
+function _resumeFeatureTour() {
+    _removeTourResumeButton();
+    const modal = document.getElementById('updateNotesModal');
+    if (modal) modal.classList.add('active');
+    _updateTourState(_tourCurrentSlide);
+}
+
+function _suspendFeatureTourForExplore(target) {
+    _clearTourSpotlight();
+    const modal = document.getElementById('updateNotesModal');
+    if (modal) modal.classList.remove('active');
+
+    _removeTourResumeButton();
+    const resume = document.createElement('button');
+    resume.type = 'button';
+    resume.className = 'update-tour-resume';
+    resume.textContent = 'Continue what\'s new';
+    resume.addEventListener('click', _resumeFeatureTour);
+    document.body.appendChild(resume);
+    _tourResumeButton = resume;
+
+    window.setTimeout(() => target?.click?.(), 0);
+}
+
+function _applyTourSpotlight(slide) {
+    _clearTourSpotlight();
+    if (!slide?.spotlight) return;
+
+    const target = document.querySelector(slide.spotlight);
+    if (!target) return;
+
+    const collapsedBody = target.closest('.sb-section-body');
+    if (collapsedBody && getComputedStyle(collapsedBody).display === 'none') {
+        _tourSpotlightExpandedBody = collapsedBody;
+        _tourSpotlightPreviousDisplay = collapsedBody.style.display;
+        collapsedBody.style.display = 'block';
+    }
+
+    const rect = target.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+
+    const proxy = target.cloneNode(true);
+    proxy.removeAttribute('id');
+    proxy.removeAttribute('onclick');
+    proxy.removeAttribute('onkeydown');
+    proxy.querySelectorAll('[id]').forEach((node) => node.removeAttribute('id'));
+    proxy.classList.add('update-tour-spotlight-proxy');
+    Object.assign(proxy.style, {
+        left: `${Math.round(rect.left)}px`,
+        top: `${Math.round(rect.top)}px`,
+        width: `${Math.round(rect.width)}px`,
+        height: `${Math.round(rect.height)}px`,
+    });
+    proxy.setAttribute('role', 'button');
+    proxy.setAttribute('tabindex', '0');
+    proxy.setAttribute('aria-label', `Open ${slide.feature || 'feature'} and continue the update tour later`);
+    const activate = (event) => {
+        if (event.type === 'keydown' && event.key !== 'Enter' && event.key !== ' ') return;
+        event.preventDefault();
+        event.stopPropagation();
+        _suspendFeatureTourForExplore(target);
+    };
+    proxy.addEventListener('click', activate);
+    proxy.addEventListener('keydown', activate);
+    document.body.appendChild(proxy);
+    _tourSpotlightProxy = proxy;
 }
 
 function _navigateTour(delta) {
@@ -884,6 +994,8 @@ function _updateTourState(index) {
 
     const nextBtn = document.getElementById('unTourNext');
     if (nextBtn) nextBtn.textContent = (index === total - 1) ? 'Continue' : 'Next';
+
+    _applyTourSpotlight(_tourSlides[index]);
 }
 
 // ── Community Hub ──────────────────────────────────────────────────────────────
@@ -923,6 +1035,7 @@ window._setSettingsUpdateRow = _setSettingsUpdateRow;
 window.toggleHelpDropdown        = toggleHelpDropdown;
 window.handleHelpDropdownAction  = handleHelpDropdownAction;
 window.openHelpModal             = openHelpModal;
+window.openVaultPlatformFeedback  = openVaultPlatformFeedback;
 window.closeHelpModal            = closeHelpModal;
 window.closeHelpDropdown         = closeHelpDropdown;
 window.switchHelpTab             = switchHelpTab;

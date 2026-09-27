@@ -696,6 +696,35 @@ function isAmazonPrimeEntitlement(entry, title = '') {
     return values.some((value) => /\bamazon\s+prime\b/i.test(asString(value)));
 }
 
+function isGogFallbackTitle(value, productId = null) {
+    const title = asString(value);
+    const match = title.match(/^GOG\s+(\d+)$/i);
+    return Boolean(match && (!productId || match[1] === String(productId)));
+}
+
+function resolveGogTitle(entry, productId) {
+    const candidates = [
+        ['gamesdb', entry?.title?.['*']],
+        ['gamesdb', entry?.game?.title?.['*']],
+        ['release', entry?.title],
+        ['release', entry?.name],
+        ['embedded-product', entry?._embedded?.product?.title],
+        ['product', entry?.product?.title],
+        ['store-product', entry?._storeProduct?.title?.['*']],
+        ['store-product', entry?._storeProduct?.title],
+        ['library', entry?._libraryEntry?.title?.['*']],
+        ['library', entry?._libraryEntry?.title],
+        ['library', entry?._libraryEntry?.name],
+    ];
+    for (const [sourceName, value] of candidates) {
+        const title = firstString(value);
+        if (title && !isGogFallbackTitle(title, productId)) {
+            return { title, source: sourceName, fallback: false };
+        }
+    }
+    return { title: `GOG ${productId}`, source: 'fallback-id', fallback: true };
+}
+
 function normalizeGogRelease(entry, account, { now = () => new Date().toISOString() } = {}) {
     if (!entry || typeof entry !== 'object') return null;
     if (isConfidentNonGame(entry)) return null;
@@ -704,15 +733,8 @@ function normalizeGogRelease(entry, account, { now = () => new Date().toISOStrin
     const productId = getProductId(entry);
     if (!productId) return null;
 
-    const title = firstString(
-        entry?.title?.['*'],
-        entry?.game?.title?.['*'],
-        entry?.title,
-        entry?.name,
-        entry?._embedded?.product?.title,
-        entry?.product?.title,
-        `GOG ${productId}`
-    );
+    const titleResolution = resolveGogTitle(entry, productId);
+    const title = titleResolution.title;
     if (isAmazonPrimeEntitlement(entry, title)) return null;
 
     const accountId = asString(account?.id);
@@ -731,6 +753,8 @@ function normalizeGogRelease(entry, account, { now = () => new Date().toISOStrin
     return {
         id: `gog_${productId}`,
         title,
+        titleSource: titleResolution.source,
+        needsMetadataEnrichment: titleResolution.fallback,
         platform: 'gog',
         source: 'gog',
         appName: String(productId),
@@ -778,6 +802,13 @@ function mergeGogGames(mergedLibrary, games, account) {
             mergedLibrary.set(game.id, JSON.parse(JSON.stringify(game)));
             continue;
         }
+        const existingFallback = isGogFallbackTitle(existing.title, game.productId || game.allIds?.gog);
+        const incomingFallback = isGogFallbackTitle(game.title, game.productId || game.allIds?.gog);
+        if (existingFallback && !incomingFallback) {
+            existing.title = game.title;
+            existing.titleSource = game.titleSource || 'enrichment';
+        }
+        existing.needsMetadataEnrichment = isGogFallbackTitle(existing.title, game.productId || game.allIds?.gog);
         if (!Array.isArray(existing.ownedBy)) existing.ownedBy = [];
         if (!Array.isArray(existing.ownedByAccountIds)) existing.ownedByAccountIds = [];
         if (displayName && !existing.ownedBy.includes(displayName)) existing.ownedBy.push(displayName);
@@ -818,5 +849,7 @@ function mergeGogGames(mergedLibrary, games, account) {
 module.exports = {
     normalizeGogRelease,
     mergeGogGames,
+    isGogFallbackTitle,
+    resolveGogTitle,
     isConfidentNonGame,
 };

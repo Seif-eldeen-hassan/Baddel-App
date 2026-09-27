@@ -98,7 +98,21 @@ function makeFakeSteamBridge(options = {}) {
         },
         async getOwnedGames() {
             calls.getOwnedGames++;
-            return ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            const response = ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            if (response.status !== 'success') return response;
+            const steamAccountId = String(
+                response.steamAccountId
+                || options.lastSessionSteamId
+                || response.games?.[0]?.ownedByAccountIds?.[0]
+                || 's1'
+            );
+            return {
+                ...response,
+                complete: response.complete ?? true,
+                steamAccountId,
+                sessionGeneration: response.sessionGeneration ?? 1,
+                completeness: response.completeness || { complete: response.complete ?? true, terminal: true },
+            };
         },
         deleteCredentialsForAccount() {},
         async waitForCredentials() {
@@ -288,7 +302,7 @@ function loadPlatformSync(userData, overrides = {}) {
             };
         }
         if (request === 'fs') return { ...fs, promises: fsPromises };
-        if (request === 'child_process') return { execFile };
+        if (request === 'child_process') return { execFile, spawn: execFile };
         if (request === './steamBridge') return steamBridge;
         if (request === './services/baddelApi') return baddelApi;
         if (request === './analytics') return analytics;
@@ -487,11 +501,11 @@ test('steam sync emits failed payload shape when final cache write fails', async
         });
         const fsPromises = {
             ...fs.promises,
-            async writeFile(filePath, ...args) {
-                if (String(filePath).endsWith('steam_library_merged.json')) {
+            async rename(sourcePath, destinationPath) {
+                if (String(destinationPath).endsWith('steam_library_merged.json')) {
                     throw new Error('merged cache write failed');
                 }
-                return fs.promises.writeFile(filePath, ...args);
+                return fs.promises.rename(sourcePath, destinationPath);
             },
         };
         const { sync, analytics } = loadPlatformSync(userData, { steamBridge, fsPromises });
@@ -513,7 +527,7 @@ test('steam sync emits failed payload shape when final cache write fails', async
         assert.equal(failed.payload.progress.completedAccounts, 1);
         assert.equal(failed.payload.progress.totalAccounts, 1);
         assert.equal(failed.payload.progress.percent, 100);
-        assert.equal(failed.payload.accounts.s1.status, 'synced');
+        assert.equal(failed.payload.accounts.s1.status, 'finalizing');
         assert.equal(failed.payload.accounts.s1.gamesCount, 1);
         assert.deepEqual(analytics.calls.failed, [['steam', 'merged cache write failed']]);
     } finally {
@@ -560,9 +574,9 @@ test('library-updated payload uses saved games after server import debounce', as
         await waitFor(() => {
             assert.deepEqual(baddelApi.calls.lookupGame, [{ platform: 'steam', id: '10' }]);
             const cached = readJson(steamCacheFile(userData))[0];
-            assert.equal(cached.coverUrl, 'file:///image-cache/steam_10-cover.webp');
-            assert.equal(cached.heroUrl, 'file:///image-cache/steam_10-hero.webp');
-            assert.equal(cached.logoUrl, 'file:///image-cache/steam_10-logo.webp');
+            assert.equal(cached.coverUrl, 'https://cdn.example/portal-cover.jpg');
+            assert.equal(cached.heroUrl, 'https://cdn.example/portal-hero.jpg');
+            assert.equal(cached.logoUrl, 'https://cdn.example/portal-logo.png');
             assert.equal(cached.releaseYear, '2007-10-10');
         });
 

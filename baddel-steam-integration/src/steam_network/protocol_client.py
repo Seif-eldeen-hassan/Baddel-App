@@ -95,6 +95,7 @@ class ProtocolClient:
         self._qr_login_future = None
 
         self._used_server_cell_id : int = used_server_cell_id
+        self._latest_licenses_by_package_id: Dict[str, SteamLicense] = {}
         self._local_machine_cache : LocalMachineCache = local_machine_cache
         if not self._local_machine_cache.machine_id:
             self._local_machine_cache.machine_id = self._generate_machine_id()
@@ -417,6 +418,9 @@ class ProtocolClient:
 
     async def _license_import_handler(self, steam_licenses: List[SteamLicense]):
         logger.info('Handling %d user licenses', len(steam_licenses))
+        self._latest_licenses_by_package_id = {
+            str(item.license.package_id): item for item in steam_licenses
+        }
         not_resolved_licenses = []
 
         resolved_packages = self._games_cache.get_resolved_packages()
@@ -446,14 +450,46 @@ class ProtocolClient:
         self._games_cache.start_packages_import(not_resolved_licenses)
         await self._protobuf_client.get_packages_info(not_resolved_licenses)
 
-    def _app_info_handler(self, appid, package_id=None, title=None, type=None, parent=None):
+    async def retry_game_collection(self, expected_generation=None):
+        status = self._games_cache.collection_status()
+        if expected_generation is not None and int(expected_generation) != int(status['generation']):
+            return {'status': 'stale_generation', 'completeness': status}
+        package_ids, app_ids = self._games_cache.recovery_candidates()
+        licenses = [self._latest_licenses_by_package_id[item] for item in package_ids if item in self._latest_licenses_by_package_id]
+        missing_license_ids = [item for item in package_ids if item not in self._latest_licenses_by_package_id]
+        self._games_cache.record_recovery_request(
+            [str(item.license.package_id) for item in licenses], app_ids
+        )
+        logger.warning(
+            'Retrying Steam collection generation=%s packages=%d apps=%d missingLicenseTokens=%d',
+            status['generation'], len(licenses), len(app_ids), len(missing_license_ids)
+        )
+        if licenses:
+            await self._protobuf_client.get_packages_info(licenses)
+        if app_ids:
+            await self._protobuf_client.get_apps_info([int(item) for item in app_ids])
+        return {
+            'status': 'requested' if licenses or app_ids else 'nothing_to_retry',
+            'requestedPackageIds': [str(item.license.package_id) for item in licenses],
+            'requestedAppIds': app_ids,
+            'missingLicenseTokenPackageIds': missing_license_ids,
+            'completeness': self._games_cache.collection_status(),
+        }
+
+    def _app_info_handler(self, appid, package_id=None, title=None, type=None, parent=None,
+                          unavailable_reason=None):
         if package_id:
             self._games_cache.update_license_apps(package_id, appid)
-        if title and type:
+        if unavailable_reason:
+            self._games_cache.update_app_unavailable(appid, unavailable_reason)
+        elif title and type:
             self._games_cache.update_app_title(appid, title, type, parent)
 
-    def _package_info_handler(self):
-        self._games_cache.update_packages()
+    def _package_info_handler(self, package_id=None, failed=False):
+        if failed:
+            self._games_cache.record_package_failure(package_id)
+        else:
+            self._games_cache.update_packages(package_id)
 
     async def _translations_handler(self, appid, translations=None):
         if appid and translations:

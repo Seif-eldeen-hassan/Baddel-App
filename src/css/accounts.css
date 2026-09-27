@@ -813,6 +813,9 @@
 #nav-epic.active .platform-icon { color: #000 !important; }
 #nav-epic.active img { filter: brightness(0) saturate(100%) !important; }
 
+#nav-gog.active     { background: #8638e5 !important; color: #fff !important; }
+#nav-gog.active .platform-icon { color: #fff !important; }
+
 #nav-ea.active      { background: #ff4545 !important; color: #fff !important; }
 #nav-ea.active .platform-icon { color: #fff !important; }
 
@@ -828,6 +831,7 @@
 #nav-steam.active   .platform-count,
 #nav-epic.active    .platform-count { background: rgba(0,0,0,0.12); color: rgba(0,0,0,0.4); }
 
+#nav-gog.active     .platform-count,
 #nav-ea.active      .platform-count,
 #nav-riot.active    .platform-count,
 #nav-ubisoft.active .platform-count,
@@ -920,9 +924,7 @@
     position: sticky;
     top: 0;
     z-index: 50;
-    background: rgba(8, 8, 8, 0.94);
-    backdrop-filter: blur(14px);
-    -webkit-backdrop-filter: blur(14px);
+    background: rgba(8, 8, 8, 0.98);
     border-bottom: 1px solid transparent;
     padding: 12px 0 10px;
     margin-bottom: 16px;
@@ -1169,11 +1171,9 @@
     --bc: #ffffff;
     width: 24px; height: 24px;
     border-radius: 7px;
-    background: rgba(0, 0, 0, 0.7);
+    background: rgba(8, 8, 8, 0.86);
     border: 1px solid color-mix(in srgb, var(--bc) 26%, transparent);
     display: flex; align-items: center; justify-content: center;
-    backdrop-filter: blur(8px);
-    -webkit-backdrop-filter: blur(8px);
     box-shadow: 0 2px 6px rgba(0,0,0,0.4);
     transition: border-color 0.2s, box-shadow 0.2s, transform 0.2s;
     flex-shrink: 0;
@@ -1580,6 +1580,11 @@
 .platform-sync-simple-spinner {
     width: 34px;
     height: 34px;
+    animation-play-state: paused;
+}
+
+.platform-sync-simple-overlay.visible .platform-sync-simple-spinner {
+    animation-play-state: running;
 }
 
 .platform-sync-simple-title {
@@ -1834,7 +1839,6 @@
     object-position: center bottom;
     width: 100%;
     height: 100%;
-    will-change: opacity, transform;
 }
 
 #allGamesGrid .game-card:hover .native-lazy-load {
@@ -1852,7 +1856,7 @@
     z-index: 0;
 }
 
-#allGamesGrid .game-card-img-wrap:has(.native-lazy-load.loaded) .agc-img-fallback {
+#allGamesGrid .game-card-img-wrap.cover-ready .agc-img-fallback {
     display: none;
 }
 
@@ -2677,4 +2681,150 @@
     opacity: 0.45;
     cursor: not-allowed;
     filter: grayscale(0.2);
+}
+
+
+/* Epic sync options */
+.epic-sync-options-modal {
+    position: fixed;
+    inset: 0;
+    z-index: 99999;
+    background: rgba(0,0,0,0.62);
+    display: grid;
+    place-items: center;
+    padding: 18px;
+    backdrop-filter: blur(10px);
+}
+
+.epic-sync-options-card {
+    width: min(460px, 100%);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 10px;
+    background: #101110;
+    box-shadow: 0 28px 90px rgba(0,0,0,0.5);
+    padding: 18px;
+    color: #fff;
+}
+
+.epic-sync-options-head {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    margin-bottom: 14px;
+}
+
+.epic-sync-options-head img {
+    width: 38px;
+    height: 38px;
+    filter: brightness(0) invert(1);
+}
+
+.epic-sync-options-head strong {
+    display: block;
+    font-size: 1rem;
+}
+
+.epic-sync-options-head span,
+.epic-sync-option small {
+    display: block;
+    color: rgba(255,255,255,0.52);
+    font-size: 0.78rem;
+    line-height: 1.45;
+}
+
+.epic-sync-option {
+    min-height: 68px;
+    display: flex;
+    gap: 12px;
+    align-items: flex-start;
+    padding: 12px;
+    border: 1px solid rgba(255,255,255,0.075);
+    border-radius: 8px;
+    background: rgba(255,255,255,0.035);
+    margin-top: 9px;
+    cursor: pointer;
+}
+
+.epic-sync-option.locked {
+    cursor: default;
+    opacity: 0.72;
+}
+
+.epic-sync-option.sensitive {
+    border-color: rgba(255,193,7,0.24);
+    background: rgba(255,193,7,0.045);
+}
+
+.epic-sync-option input {
+    margin-top: 3px;
+    accent-color: var(--accent);
+}
+
+.epic-sync-option strong {
+    display: block;
+    font-size: 0.88rem;
+    margin-bottom: 3px;
+}
+
+.epic-sync-options-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-top: 16px;
+}
+
+.epic-sync-options-actions button {
+    height: 34px;
+    padding: 0 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255,255,255,0.1);
+    background: rgba(255,255,255,0.06);
+    color: #fff;
+    cursor: pointer;
+    font-weight: 800;
+}
+
+#epicSyncOptionsContinue {
+    background: var(--accent);
+    color: #050505;
+    border-color: var(--accent);
+}
+
+
+/* All Games active scroll: keep compositor work quiet until scrolling settles. */
+#allGamesGrid.ag-is-scrolling .game-card,
+#allGamesView.ag-is-scrolling #allGamesGrid .game-card {
+    transition: none !important;
+}
+
+#allGamesGrid.ag-is-scrolling .game-card:hover,
+#allGamesView.ag-is-scrolling #allGamesGrid .game-card:hover {
+    transform: none !important;
+    box-shadow: none !important;
+}
+
+#allGamesGrid.ag-is-scrolling .native-lazy-load,
+#allGamesView.ag-is-scrolling #allGamesGrid .native-lazy-load,
+#allGamesGrid.ag-is-scrolling .game-card:hover .native-lazy-load,
+#allGamesView.ag-is-scrolling #allGamesGrid .game-card:hover .native-lazy-load {
+    transition: opacity 120ms linear !important;
+    transform: none !important;
+    filter: none !important;
+}
+
+#allGamesGrid.ag-is-scrolling .agc-badges-strip,
+#allGamesGrid.ag-is-scrolling .agc-badge,
+#allGamesGrid.ag-is-scrolling .agc-badge-img,
+#allGamesView.ag-is-scrolling #allGamesGrid .agc-badges-strip,
+#allGamesView.ag-is-scrolling #allGamesGrid .agc-badge,
+#allGamesView.ag-is-scrolling #allGamesGrid .agc-badge-img {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+}
+
+#allGamesGrid.ag-is-scrolling .agc-card:hover .agc-badge,
+#allGamesView.ag-is-scrolling #allGamesGrid .agc-card:hover .agc-badge {
+    box-shadow: 0 2px 6px rgba(0,0,0,0.4) !important;
+    transform: none !important;
 }

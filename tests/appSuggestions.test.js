@@ -500,32 +500,58 @@ test('suggestions.js: suggViewDetails uses _suggBuildGame to convert the synced 
 // ── 17. _suggHydrateArt behaviour ────────────────────────────────────────────
 
 test('suggestions.js: _suggHydrateArt calls electronAPI.getMetadata for art enrichment', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 1300);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 9000);
     assert.match(fn, /electronAPI\.getMetadata\s*\(/);
 });
 
 test('suggestions.js: _suggHydrateArt guards against duplicate in-flight requests via hydratingGameIds', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 450);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 2500);
     assert.match(fn, /hydratingGameIds\.has\s*\(/);
-    assert.match(fn, /hydratedGameIds\.has\s*\(/);
+    assert.doesNotMatch(fn, /hydratedGameIds\.has\s*\(/, 'a prior partial hydration must not suppress missing artwork types');
+});
+
+test('suggestions.js: a visible alias waits for prewarm and retries missing artwork instead of being dropped', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 18000);
+    assert.match(SUGGESTIONS_JS, /const _suggVisibleHydrationWaiters = new Map\(\)/);
+    assert.match(fn, /if \(g\._heroHydrating \|\| hydratingGameIds\.has\(hydrateKey\)\)/);
+    assert.match(fn, /_suggVisibleHydrationWaiters\.set\(hydrateKey, waiters\)/);
+    assert.match(fn, /const visibleWaiters = _suggVisibleHydrationWaiters\.get\(hydrateKey\)/);
+    assert.match(fn, /_suggHydrateArt\(target, waiter\.domId, waiter\.isFeature\)/);
 });
 
 test('suggestions.js: _suggHydrateArt respects _SUGG_HYDRATE_CONCURRENCY limit', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 600);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 2500);
     assert.match(fn, /_suggHydrateActive\s*>=\s*_SUGG_HYDRATE_CONCURRENCY/);
 });
 
 test('suggestions.js: _suggHydrateArt calls _suggReRenderOne after fetching art', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 6000);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 10000);
     assert.match(fn, /_suggReRenderOne\s*\(/);
 });
 
 test('suggestions.js: visible hydration prewarms artwork through the unified queue', () => {
-    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 6000);
-    assert.match(fn, /cacheAllAssets\(\s*\{\s*cover:\s*meta\.cover \|\| null,\s*hero:\s*incomingHero \|\| null,\s*logo:\s*incomingLogo \|\| null\s*\},\s*g\.id,\s*\{/s);
-    assert.match(fn, /priority:\s*'prewarm'/);
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 9000);
+    assert.match(fn, /cacheAllAssets\(\s*\{\s*cover:\s*meta\.cover \|\| null,\s*hero:\s*incomingHero \|\| null,\s*logo:\s*incomingLogo \|\| null\s*\},\s*canonicalGameId,\s*\{/s);
+    assert.match(fn, /const cachePriority = \(domId \|\| isFeature\) \? 'visible' : 'prewarm'/);
+    assert.match(fn, /priority:\s*cachePriority/);
     assert.match(fn, /sourceSubsystem:\s*'synced-suggestions-prewarm-ipc'/);
     assert.match(fn, /reason:\s*'visible-synced-suggestions-prewarm'/);
+});
+
+test('suggestions.js: remote metadata artwork stays pending until a managed cache path exists', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 12000);
+    assert.match(fn, /const hasManagedArtwork = value =>/);
+    assert.match(fn, /!hasManagedArtwork\(artworkFields\[type\]\)/);
+    assert.match(fn, /function'\s*\?\s*_isCacheBackedNormalArtworkUrl\(value\)/);
+    assert.match(fn, /if \(incoming \|\| value\) return 'pending'/);
+    assert.doesNotMatch(fn, /state:\s*\(g\.image \|\| meta\.cover\)\s*\?\s*'available'/);
+});
+
+test('suggestions.js: successful local cache writes persist and commit through the canonical coordinator', () => {
+    const fn = extractFn(SUGGESTIONS_JS, 'async function _suggHydrateArt(', 15000);
+    assert.match(fn, /electronAPI\.saveMetadata\(canonicalGameId,\s*localPatch/);
+    assert.match(fn, /__baddelCommitCanonicalGameUpdate\(\{\s*canonicalGame:\s*saved\.updatedGame,\s*changedTypes/s);
+    assert.match(fn, /reason:\s*'synced-suggestions-cache-commit'/);
 });
 
 // ── 18. _suggCarouselSlides behaviour ────────────────────────────────────────

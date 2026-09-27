@@ -327,3 +327,73 @@ test('stall policy ignores verifying and installing phases', () => {
     assert.equal(verifying.patch.errorCode, undefined);
     assert.notEqual(verifying.patch.stage, 'stalled');
 });
+
+
+test('transfer stage messages debounce ordinary network and disk phase changes', () => {
+    const agg = new DownloadTelemetryAggregator({ emitIntervalMs: 0, stallWarningMs: 30_000 });
+    const task = { id: 'dl_stage_messages', status: 'downloading', downloadedBytes: 10, totalBytes: 1000 };
+    agg.reset(task.id, { sessionId: 's1' });
+    const network = agg.apply(task, { sessionId: 's1', timestamp: 1000, status: 'downloading', rawDownloadSpeedBps: 1000, diskWriteSpeedBps: 0 });
+    assert.equal(network.patch.statusMessage, 'Downloading compressed data');
+    const diskPending = agg.apply(task, { sessionId: 's1', timestamp: 1200, status: 'downloading', rawDownloadSpeedBps: 0, diskWriteSpeedBps: 2000 });
+    assert.equal(diskPending.patch.statusMessage, 'Downloading compressed data');
+    assert.equal(diskPending.patch.statusTextBeforeDebounce, 'Downloading compressed data');
+    const diskCommitted = agg.apply(task, { sessionId: 's1', timestamp: 2800, status: 'downloading', rawDownloadSpeedBps: 0, diskWriteSpeedBps: 2000 });
+    assert.equal(diskCommitted.patch.statusMessage, 'Writing game files');
+    assert.equal(diskCommitted.patch.statusChangeReason, 'debounce-commit:disk-active');
+});
+
+test('written-byte advance reports unpacking even on a zero disk-speed sample', () => {
+    const agg = new DownloadTelemetryAggregator({ emitIntervalMs: 0 });
+    const task = { id: 'dl_written_stage', status: 'downloading', downloadedBytes: 10, totalBytes: 1000 };
+    agg.reset(task.id, { sessionId: 's1' });
+    agg.apply(task, { sessionId: 's1', timestamp: 1000, status: 'downloading', writtenBytes: 100, rawDownloadSpeedBps: 0, diskWriteSpeedBps: 0 });
+    const next = agg.apply(task, { sessionId: 's1', timestamp: 1200, status: 'downloading', writtenBytes: 200, rawDownloadSpeedBps: 0, diskWriteSpeedBps: 0 });
+    assert.equal(next.patch.statusMessage, 'Writing game files');
+});
+
+test('stale disk telemetry decays from the last sample and reaches zero within two grace windows', () => {
+    const agg = new DownloadTelemetryAggregator({ emitIntervalMs: 0, speedStaleGraceMs: 1000, stallWarningMs: 30_000 });
+    const task = { id: 'dl_disk_decay', status: 'downloading', downloadedBytes: 10, totalBytes: 1000 };
+    agg.reset(task.id, { sessionId: 's1' });
+    agg.apply(task, { sessionId: 's1', timestamp: 1000, status: 'downloading', diskWriteSpeedBps: 10_000 });
+    const decaying = agg.apply(task, { sessionId: 's1', timestamp: 2500, status: 'downloading', eventType: 'heartbeat' });
+    assert.equal(decaying.patch.telemetryState, 'stale');
+    assert.ok(decaying.patch.diskUsageBps > 0 && decaying.patch.diskUsageBps < 10_000);
+    const stopped = agg.apply(task, { sessionId: 's1', timestamp: 3000, status: 'downloading', eventType: 'heartbeat' });
+    assert.equal(stopped.patch.diskUsageBps, 0);
+    assert.equal(stopped.patch.statusMessage, 'Writing game files');
+});
+
+
+test('provider ETA is separate from status text and expires after freshness window', () => {
+    const agg = new DownloadTelemetryAggregator({ emitIntervalMs: 0, stallWarningMs: 30_000 });
+    const task = { id: 'dl_eta_fresh', status: 'downloading', downloadedBytes: 10, totalBytes: 1000 };
+    agg.reset(task.id, { sessionId: 's1' });
+    const fresh = agg.apply(task, {
+        sessionId: 's1', timestamp: 1000, status: 'downloading',
+        rawDownloadSpeedBps: 1000, etaSeconds: 5,
+    });
+    assert.equal(fresh.patch.etaSeconds, 5);
+    assert.equal(fresh.patch.etaSource, 'provider');
+    assert.doesNotMatch(fresh.patch.statusMessage, /left|eta/i);
+    const expired = agg.apply({ ...task, ...fresh.patch }, {
+        sessionId: 's1', timestamp: 6000, status: 'downloading', eventType: 'heartbeat',
+    });
+    assert.equal(expired.patch.etaSeconds, null);
+    assert.equal(expired.patch.etaSource, null);
+});
+
+test('confirmed provider completion reports finalizing immediately and clears ETA', () => {
+    const agg = new DownloadTelemetryAggregator({ emitIntervalMs: 0, stallWarningMs: 30_000 });
+    const task = { id: 'dl_confirmed_complete', status: 'downloading', downloadedBytes: 900, totalBytes: 1000 };
+    agg.reset(task.id, { sessionId: 's1' });
+    const result = agg.apply(task, {
+        sessionId: 's1', timestamp: 1000, status: 'downloading',
+        downloadedBytes: 1000, totalBytes: 1000, providerReportedPercent: 100, etaSeconds: 1,
+    });
+    assert.equal(result.patch.statusMessage, 'Finalizing installation');
+    assert.equal(result.patch.stage, 'finalizing');
+    assert.equal(result.patch.etaSeconds, null);
+    assert.equal(result.patch.etaSource, null);
+});

@@ -306,9 +306,10 @@ describe('Phase 2.12B: artwork-sync — RTIA asset hydrator in artwork-sync.js',
         assert.match(fn, /_RTIA_DISK_CONCURRENCY/);
         assert.match(fn, /Promise\.all/);
     });
-    it('_rtia_hydrateAll guards against concurrent runs via _rtia_running', () => {
+    it('_rtia_hydrateAll tracks concurrent runs without dropping a requested batch', () => {
         const fn = getFunctionBody(ARTWORK_SYNC_JS, '_rtia_hydrateAll');
-        assert.match(fn, /_rtia_running/);
+        assert.match(fn, /_rtia_running\s*\+=\s*1/);
+        assert.doesNotMatch(fn, /if\s*\([^)]*_rtia_running[^)]*\)\s*return/);
     });
     it('_rtia_hydrateAll awaits _rtia_warmBatch before kicking off network hydration', () => {
         const fn = getFunctionBody(ARTWORK_SYNC_JS, '_rtia_hydrateAll');

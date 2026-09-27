@@ -95,6 +95,8 @@ function loadPlatformSync(userData, overrides = {}) {
         Notification: overrides.Notification || fakeNotification,
         session: {
             fromPartition: () => ({
+                clearStorageData: async () => {},
+                clearCache: async () => {},
                 webRequest: {
                     onBeforeRequest() {},
                     onCompleted() {},
@@ -251,8 +253,12 @@ test('registerPlatformSyncHandlers registers current platform-sync IPC channels'
         assert.deepEqual([...ipcMain.handles.keys()].sort(), [
             'platform-sync:get-accounts',
             'platform-sync:get-cached',
+            'platform-sync:get-epic-progress-state',
+            'platform-sync:get-epic-vault',
             'platform-sync:get-state',
             'platform-sync:link',
+            'platform-sync:refresh-epic-purchase-history',
+            'platform-sync:retry-epic-phase',
             'platform-sync:status',
             'platform-sync:sync',
             'platform-sync:unlink',
@@ -293,11 +299,19 @@ test('safe IPC handlers preserve empty-cache response payload shapes', async () 
 
         assert.deepEqual(await ipcMain.handles.get('platform-sync:get-cached')(fakeEvent, 'steam'), {
             status: 'success',
+            platform: 'steam',
             games: [],
+            revision: 0,
+            stale: false,
+            authoritativeEmpty: true,
         });
         assert.deepEqual(await ipcMain.handles.get('platform-sync:get-cached')(fakeEvent, 'epic'), {
             status: 'success',
+            platform: 'epic',
             games: [],
+            revision: 0,
+            stale: false,
+            authoritativeEmpty: true,
         });
 
         const stateResult = await ipcMain.handles.get('platform-sync:get-state')(fakeEvent, 'steam');

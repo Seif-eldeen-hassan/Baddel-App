@@ -43,23 +43,35 @@ function _agSaveDisplayPrefs() {
 window._agDisplayPrefs = _agLoadDisplayPrefs();
 
 // ── Apply prefs to DOM ────────────────────────────────────────
-function _agApplyDisplayPrefs() {
+function _agApplyDisplayPrefs(options = {}) {
     const prefs = window._agDisplayPrefs;
-    console.log('[_agApplyDisplayPrefs] viewMode=', prefs.viewMode, 'gridDensity=', prefs.gridDensity, 'listDensity=', prefs.listDensity);
     const grid  = document.getElementById('allGamesGrid');
     const list  = document.getElementById('allGamesList');
+    const view  = document.getElementById('allGamesView');
     if (!grid || !list) return;
 
-    // ── Guard: do not touch layout if the empty onboarding state is active ──
+    const routeActive = options.routeActive ?? (
+        typeof currentView !== 'undefined'
+        && currentView === 'all-games'
+        && view?.style.display !== 'none'
+    );
+    if (!routeActive) {
+        grid.style.display = 'none';
+        list.style.display = 'none';
+        return;
+    }
+
+    // Empty-state layout remains owned by the empty-state renderer, but it may
+    // never make the list presentation visible at the same time.
     if (grid.classList.contains('ag-empty-mode')) {
         list.style.display = 'none';
         return;
     }
 
-    // --- View mode ---
+    // This is the sole owner of normal Grid/List presentation visibility.
     const isGrid = prefs.viewMode === 'grid';
-    grid.style.display = isGrid ? '' : 'none';
-    list.style.display = isGrid ? 'none' : '';
+    grid.style.display = isGrid ? 'block' : 'none';
+    list.style.display = isGrid ? 'none' : 'block';
 
     document.getElementById('agViewGrid')?.classList.toggle('active', isGrid);
     document.getElementById('agViewList')?.classList.toggle('active', !isGrid);
@@ -126,10 +138,11 @@ window.setAgViewMode = function(mode) {
         if (mode === 'list') {
             _renderAllGamesList(vs.items);
         } else {
-            // Grid mode: force remeasure with correct density
+            // Grid mode: measure only after the newly-visible surface has layout.
             vs.cols = 0;
+            vs.rowH = 0;
             vs._gridTopDirty = true;
-            _vsRender(true);
+            requestAnimationFrame(() => requestAnimationFrame(() => _vsRender(true, 'view-mode-grid')));
         }
     }
 };

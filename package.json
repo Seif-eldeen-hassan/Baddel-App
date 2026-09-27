@@ -1,6 +1,6 @@
 {
   "name": "baddel-launcher-beta",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "description": "Baddel Launcher Beta - Every Launcher You Need, All in One Place",
   "main": "main.js",
   "author": "Baddel Team",
@@ -15,13 +15,14 @@
     "smoke": "node --test tests/smoke/*.smoke.test.js",
     "lint": "eslint \"src/features/**/*.js\" \"src/shared/**/*.js\" \"src/main/**/*.js\" --no-error-on-unmatched-pattern",
     "build:steam": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-steam-bridge-exe.ps1",
-    "dist": "npm run build:steam && electron-builder && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-packaged-steam-runtime.ps1",
+    "dist": "npm run build:steam && electron-builder && powershell -NoProfile -ExecutionPolicy Bypass -File scripts/verify-packaged-steam-runtime.ps1 && npm run audit:dist",
     "start:quiet": "cross-env BADDEL_DISABLE_STARTUP_SYNC=1 BADDEL_QUIET_LOGS=1 BADDEL_STEAM_AUTH_DEBUG=1 electron .",
     "start:steam-debug": "cross-env BADDEL_DISABLE_STARTUP_SYNC=1 BADDEL_QUIET_LOGS=1 BADDEL_STEAM_AUTH_DEBUG=1 electron .",
-    "check": "node --check main.js && node --check preload.js && node --check accountsHandler.js && node --check analytics.js && node --check src/features/games/infrastructure/scanner/GameScannerCore.js && node --check platformSync.js && node --check steamBridge.js && node --check handlers/systemHandlers.js && node --check handlers/analyticsHandlers.js && node --check handlers/imageHandlers.js && node --check handlers/externalLinkHandlers.js && node --check handlers/collectionHandlers.js && node --check handlers/accountShortcutHandlers.js && node --check handlers/quickSwitcherHandlers.js && node --check handlers/updateNotesHandlers.js && node --check handlers/baddelApiHandlers.js && node --check handlers/gameLibraryHandlers.js && node --check handlers/localMetadataHandlers.js && node --check handlers/achievementHandlers.js && node --check handlers/playtimeHandlers.js && node --check handlers/launchHandlers.js && node --check handlers/autoUpdateHandlers.js && node --check handlers/windowHandlers.js && node --check handlers/creatorPageHandlers.js && node --check handlers/launcherPathHandlers.js && node --check handlers/installedGamesHandlers.js && node --check handlers/gameMetadataHandlers.js && node --check services/riotPathResolver.js && node --check services/baddelApi.js && node --check services/safeLauncher.js && node --check services/ipcValidation.js && node --check services/playtimeShared.js && node --check services/credentialEncryption.js && node --check src/js/domUtils.js && node --check src/js/accounts.js && node --check src/js/app.js && node --check src/js/game-details.js && node --check src/js/addGameModal.js && node --check src/js/play-launcher.js && node --check src/js/platformResolver.js && node --check src/js/platformOwnership.js && node --check src/js/analyticsConsent.js && node --check src/js/addAccountModal.js && node --check src/js/app/playtime.js && node --check src/js/app/help-feedback.js && node --check src/js/app/account-shortcuts.js && node --check src/js/app/artwork-sync.js && node --check src/js/app/toast-confirm.js && node --check src/js/app/launcher-actions.js && node --check src/js/app/hero.js && node --check src/js/app/system-stats.js && node --check src/js/app/settings-quick-switcher.js && node --check src/js/app/sidebar.js && node --check src/js/app/collections.js && node --check src/js/app/game-context-actions.js && node --check src/js/app/suggestions.js && node --check src/js/app/roulette.js && node --check src/js/app/game-card.js && node --check src/js/accounts/display-prefs.js && node --check src/js/accounts/platform-panels.js",
+    "check": "node --check main.js && node --check preload.js && node --check vault-export-preload.js && node --check handlers/vaultShowcaseHandlers.js && node --check src/features/vault/infrastructure/services/VaultShowcaseExportService.js && node --check src/js/vault-showcase-model.js && node --check src/js/vault-export-renderer.js && node --check scripts/protected-runtime-contract.js && node --check accountsHandler.js && node --check analytics.js && node --check src/features/games/infrastructure/scanner/GameScannerCore.js && node --check platformSync.js && node --check steamBridge.js && node --check handlers/systemHandlers.js && node --check handlers/analyticsHandlers.js && node --check handlers/imageHandlers.js && node --check handlers/externalLinkHandlers.js && node --check handlers/collectionHandlers.js && node --check handlers/accountShortcutHandlers.js && node --check handlers/quickSwitcherHandlers.js && node --check handlers/updateNotesHandlers.js && node --check handlers/baddelApiHandlers.js && node --check handlers/gameLibraryHandlers.js && node --check handlers/localMetadataHandlers.js && node --check handlers/achievementHandlers.js && node --check handlers/playtimeHandlers.js && node --check handlers/launchHandlers.js && node --check handlers/autoUpdateHandlers.js && node --check handlers/windowHandlers.js && node --check handlers/creatorPageHandlers.js && node --check handlers/launcherPathHandlers.js && node --check handlers/installedGamesHandlers.js && node --check handlers/gameMetadataHandlers.js && node --check services/riotPathResolver.js && node --check services/baddelApi.js && node --check services/safeLauncher.js && node --check services/ipcValidation.js && node --check services/playtimeShared.js && node --check services/credentialEncryption.js && node --check src/js/domUtils.js && node --check src/js/accounts.js && node --check src/js/app.js && node --check src/js/game-details.js && node --check src/js/addGameModal.js && node --check src/js/play-launcher.js && node --check src/js/platformResolver.js && node --check src/js/platformOwnership.js && node --check src/js/analyticsConsent.js && node --check src/js/addAccountModal.js && node --check src/js/app/playtime.js && node --check src/js/app/help-feedback.js && node --check src/js/app/account-shortcuts.js && node --check src/js/app/artwork-sync.js && node --check src/js/app/toast-confirm.js && node --check src/js/app/launcher-actions.js && node --check src/js/app/hero.js && node --check src/js/app/system-stats.js && node --check src/js/app/settings-quick-switcher.js && node --check src/js/app/sidebar.js && node --check src/js/app/collections.js && node --check src/js/app/game-context-actions.js && node --check src/js/app/suggestions.js && node --check src/js/app/roulette.js && node --check src/js/app/game-card.js && node --check src/js/accounts/display-prefs.js && node --check src/js/accounts/platform-panels.js",
     "build:protected": "node scripts/build-protected.js",
     "dist:protected": "npm run build:steam && node scripts/build-protected.js",
     "audit:protected": "node scripts/audit-protected-build.js",
+    "audit:dist": "node scripts/audit-packaged-runtime-resources.js",
     "release:verify": "npm run check && npm test"
   },
   "dependencies": {
@@ -32,11 +33,13 @@
     "electron-store": "^8.1.0",
     "electron-updater": "^6.7.3",
     "hls.js": "^1.6.16",
+    "ini": "^5.0.0",
     "keytar": "^7.9.0",
     "ps-list": "^7.2.0",
     "qrcode": "^1.5.4",
     "sharp": "^0.33.5",
     "sortablejs": "^1.15.7",
+    "sql.js": "^1.14.2",
     "steamgriddb": "^2.2.1",
     "systeminformation": "^5.31.5"
   },
@@ -78,6 +81,14 @@
           "version.json",
           "LICENSE-GPL-3.0.txt"
         ]
+      },
+      {
+        "from": "bin/legendary.exe",
+        "to": "bin/legendary.exe"
+      },
+      {
+        "from": "resources/gog-account-switcher-helper.ps1",
+        "to": "gog-account-switcher-helper.ps1"
       }
     ],
     "publish": [
@@ -124,6 +135,7 @@
       "!python_env/**/*",
       "!steam-runtime/**/*",
       "!gog-runtime/**/*",
+      "!bin/legendary.exe",
       "!build-venv/**/*",
       "!build-tmp/**/*",
       "!dist/**/*",
@@ -133,7 +145,9 @@
       "!tests/**/*",
       "!*.md",
       "!*.log",
-      "!docs/**/*"
+      "!docs/**/*",
+      "!acceptance-checkpoints/**/*",
+      "!artwork-migration-quarantine/**/*"
     ]
   }
 }

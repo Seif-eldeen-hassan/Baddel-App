@@ -331,10 +331,12 @@
 		}
 
 		function resendCode() {
-			const url = new URL(window.location.href);
-			url.searchParams.set('view', 'login');
-			url.searchParams.delete('errored');
-			window.location.href = url.href;
+			const link = document.querySelector('#steamGuardEmail .resend-link');
+			if (link) {
+				link.style.pointerEvents = 'none';
+				link.textContent = 'Requesting...';
+			}
+			window.location.href = 'baddel://auth/resend-email';
 		}
 
 		// --- MAIN LOGIC ---

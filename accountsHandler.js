@@ -13,7 +13,10 @@ const DiscordRPC    = require('discord-rpc');
 const analytics             = require('./analytics');
 const riotPathResolver      = require('./services/riotPathResolver');
 const launcherPathResolver  = require('./services/launcherPathResolver');
+const { getDefaultGogAccountSwitcher } = require('./services/gogAccountSwitcher');
 const { isRealEpicSwitcherProfile } = require('./platformSyncShared');
+const { createKeyedSingleFlight } = require('./services/keyedSingleFlight');
+const { createAccountSaveHandler } = require('./services/accountSaveContract');
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -59,6 +62,7 @@ function spawnExe(exePath, args = []) {
 const PLATFORM_DISPLAY_NAMES = {
     steam:    'Steam',
     epic:     'Epic Games Launcher',
+    gog:      'GOG Galaxy',
     ea:       'EA App',
     riot:     'Riot Client',
     ubisoft:  'Ubisoft Connect',
@@ -1815,29 +1819,49 @@ async function deleteProfile(platform, name) {
 // safeHandle() wraps every handler so thrown errors → { status:'error', message }
 // instead of crashing the main process.
 
+const _accountSwitches = createKeyedSingleFlight({
+    conflictResult: platformKey => ({ status: 'error', code: 'ACCOUNT_SWITCH_IN_PROGRESS', message: `A ${platformKey} account switch is already in progress.` }),
+});
+
+function _runAccountSwitchSingleFlight(platform, accountId, operation) {
+    const platformKey = String(platform || '').toLowerCase();
+    const actionKey = `${platformKey}:${String(accountId || '')}`;
+    return _accountSwitches.run(platformKey, actionKey, operation);
+}
+
 const IPC_HANDLERS = [
     // ── Steam ──────────────────────────────────────────────────────────────
     ['get-steam-accounts',    async () => require('./platformSync').enrichProfilesWithSyncData('steam', await getSteamAccounts().catch(() => []))],
     ['get-steam-image',       (_, id)      => getSteamAvatarUrl(id).catch(() => null)],
-    ['switch-steam',          (_, user)    => switchSteam(user)],
+    ['switch-steam',          (_, user)    => switchAccountByPlatform('steam', user)],
     ['add-new-steam-account', ()           => addNewSteamAccount()],
 
     // ── Epic Games ─────────────────────────────────────────────────────────
     ['get-epic-profiles',     async () => require('./platformSync').enrichProfilesWithSyncData('epic', await getEpicProfiles().catch(() => []))],
-    ['save-epic-account',     (_, name)    => saveEpicAccount(name)],
-    ['switch-epic',           (_, name)    => switchEpic(name)],
+    ['save-epic-account',     createAccountSaveHandler(saveEpicAccount)],
+    ['switch-epic',           (_, name)    => switchAccountByPlatform('epic', name)],
     ['add-new-epic-account',  ()           => addNewEpicAccount()],
+
+    // ── GOG Galaxy switcher profiles (separate from GOG Library Sync) ──────────
+    ['get-gog-profiles',          ()              => getDefaultGogAccountSwitcher().getProfiles()],
+    ['get-gog-add-state',         ()              => getDefaultGogAccountSwitcher().getAddState()],
+    ['add-new-gog-account',       (_, expectedId) => getDefaultGogAccountSwitcher().addNewAccount(expectedId)],
+    ['save-gog-account',          createAccountSaveHandler(name => getDefaultGogAccountSwitcher().saveCurrentAccount(name))],
+    ['cancel-add-gog-account',    ()              => getDefaultGogAccountSwitcher().cancelAdd()],
+    ['switch-gog-account',        (_, profileId)  => switchAccountByPlatform('gog', profileId)],
+    ['rename-gog-profile',        (_, id, name)   => getDefaultGogAccountSwitcher().renameProfile(id, name)],
+    ['delete-gog-profile',        (_, profileId)  => getDefaultGogAccountSwitcher().deleteProfile(profileId)],
 
     // ── EA ─────────────────────────────────────────────────────────────────
     ['get-ea-profiles',       async () => require('./platformSync').enrichProfilesWithSyncData('ea', await getEAProfiles().catch(() => []))],
-    ['save-ea-account',       (_, name)    => saveEAAccount(name)],
-    ['switch-ea',             (_, name)    => switchEA(name)],
+    ['save-ea-account',       createAccountSaveHandler(saveEAAccount)],
+    ['switch-ea',             (_, name)    => switchAccountByPlatform('ea', name)],
     ['add-new-ea-account',    ()           => addNewEAAccount()],
 
     // ── Riot ───────────────────────────────────────────────────────────────
     ['get-riot-profiles',     async () => require('./platformSync').enrichProfilesWithSyncData('riot', await getRiotProfiles().catch(() => []))],
-    ['save-riot-account',     (_, name)    => saveRiotAccount(name)],
-    ['switch-riot-account',   (_, name)    => switchRiotAccount(name)],
+    ['save-riot-account',     createAccountSaveHandler(saveRiotAccount)],
+    ['switch-riot-account',   (_, name)    => switchAccountByPlatform('riot', name)],
     ['add-new-riot-account',  ()           => addNewRiotAccount()],
     ['detect-riot-client',    async () => {
         const p = await riotPathResolver.findRiotClientExe();
@@ -1864,20 +1888,20 @@ const IPC_HANDLERS = [
 
     // ── Ubisoft ────────────────────────────────────────────────────────────
     ['get-ubisoft-profiles',    async () => require('./platformSync').enrichProfilesWithSyncData('ubisoft', await getUbisoftProfiles().catch(() => []))],
-    ['save-ubisoft-account',    (_, name)  => saveUbisoftAccount(name)],
-    ['switch-ubisoft-account',  (_, name)  => switchUbisoftAccount(name)],
+    ['save-ubisoft-account',    createAccountSaveHandler(saveUbisoftAccount)],
+    ['switch-ubisoft-account',  (_, name)  => switchAccountByPlatform('ubisoft', name)],
     ['add-new-ubisoft-account', ()         => addNewUbisoftAccount()],
 
     // ── Rockstar ───────────────────────────────────────────────────────────
     ['get-rockstar-profiles',    async () => require('./platformSync').enrichProfilesWithSyncData('rockstar', await getRockstarProfiles().catch(() => []))],
-    ['save-rockstar-account',    (_, name)  => saveRockstarAccount(name)],
-    ['switch-rockstar-account',  (_, name)  => switchRockstarAccount(name)],
+    ['save-rockstar-account',    createAccountSaveHandler(saveRockstarAccount)],
+    ['switch-rockstar-account',  (_, name)  => switchAccountByPlatform('rockstar', name)],
     ['add-new-rockstar-account', ()         => addNewRockstarAccount()],
 
     // ── Discord ────────────────────────────────────────────────────────────
     ['get-discord-profiles',    async () => require('./platformSync').enrichProfilesWithSyncData('discord', await getDiscordProfiles().catch(() => []))],
-    ['save-discord-account',    (_, name)  => saveDiscordAccount(name)],
-    ['switch-discord-account',  (_, name)  => switchDiscordAccount(name)],
+    ['save-discord-account',    createAccountSaveHandler(saveDiscordAccount)],
+    ['switch-discord-account',  (_, name)  => switchAccountByPlatform('discord', name)],
     ['add-new-discord-account', ()         => addNewDiscordAccount()],
 
     // ── Cross-platform ─────────────────────────────────────────────────────
@@ -1906,22 +1930,28 @@ function registerAccountHandlers(ipcMain) {
 // Used by the globalShortcut callback path in main.js so that account
 // shortcuts fired from tray/background reuse the same switch logic as the UI.
 async function switchAccountByPlatform(platform, accountId) {
-    switch (platform) {
-        case 'steam':    return switchSteam(accountId);
-        case 'epic':     return switchEpic(accountId);
-        case 'ea':       return switchEA(accountId);
-        case 'riot':     return switchRiotAccount(accountId);
-        case 'ubisoft':  return switchUbisoftAccount(accountId);
-        case 'discord':  return switchDiscordAccount(accountId);
-        case 'rockstar': return switchRockstarAccount(accountId);
-        default: throw new Error(`Unknown platform for shortcut switch: ${platform}`);
-    }
+    // Supported: steam, epic, gog, ea, riot, ubisoft, discord, rockstar.
+    const result = await _runAccountSwitchSingleFlight(platform, accountId, () => {
+        switch (platform) {
+            case 'steam': return switchSteam(accountId);
+            case 'epic': return switchEpic(accountId);
+            case 'gog': return getDefaultGogAccountSwitcher().switchAccount(accountId);
+            case 'ea': return switchEA(accountId);
+            case 'riot': return switchRiotAccount(accountId);
+            case 'ubisoft': return switchUbisoftAccount(accountId);
+            case 'discord': return switchDiscordAccount(accountId);
+            case 'rockstar': return switchRockstarAccount(accountId);
+            default: throw new Error(`Unknown platform for shortcut switch: ${platform}`);
+        }
+    });
+    if (result?.status === 'success') app.emit('baddel-account-switched', { platform });
+    return result;
 }
 
 // ── Quick Switcher account list (safe — no passwords/tokens) ─────────────────
 
 const _QS_PLATFORM_LABELS = {
-    steam: 'Steam', epic: 'Epic Games', ea: 'EA App',
+    steam: 'Steam', epic: 'Epic Games', gog: 'GOG Galaxy', ea: 'EA App',
     riot: 'Riot Games', ubisoft: 'Ubisoft Connect',
     discord: 'Discord', rockstar: 'Rockstar',
 };
@@ -1950,6 +1980,15 @@ async function getAllAccountsForQuickSwitcher() {
             accountId:   p.id,
             accountName: p.displayName || p.id,
             isActive:    p.id === active,
+        })));
+    } catch {}
+
+    try {
+        const profiles = await getDefaultGogAccountSwitcher().getProfiles();
+        _add('gog', profiles.map(profile => ({
+            accountId: profile.id,
+            accountName: profile.displayName,
+            isActive: profile.isActive === true,
         })));
     } catch {}
 
@@ -2006,4 +2045,4 @@ async function getAllAccountsForQuickSwitcher() {
     return groups;
 }
 
-module.exports = { registerAccountHandlers, clearEncryptionKeyCache, getEpicProfiles, switchAccountByPlatform, getAllAccountsForQuickSwitcher };
+module.exports = { registerAccountHandlers, clearEncryptionKeyCache, getEpicProfiles, switchAccountByPlatform, getAllAccountsForQuickSwitcher, _runAccountSwitchSingleFlight };

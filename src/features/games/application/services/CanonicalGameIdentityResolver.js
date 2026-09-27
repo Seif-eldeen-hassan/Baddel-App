@@ -236,6 +236,29 @@ function _resolveRiot(identity, records) {
     return null;
 }
 
+function _resolveGog(identity, records) {
+    const values = [
+        _allId(identity, 'gog'),
+        identity.gogProductId,
+        identity.providerProductId,
+        identity.productId,
+        _platformKey(identity) === 'gog' ? identity.launcherGameId : '',
+    ].map(_str).filter(value => /^\d+$/.test(value));
+    for (const value of values) {
+        const matches = records.filter(record => _platformCompatible(identity, record) && [
+            _allId(record, 'gog'), record.gogProductId, record.providerProductId,
+            _platformKey(record) === 'gog' ? record.launcherGameId : '',
+        ].map(_str).some(candidate => candidate === value));
+        if (matches.length === 1) return matches[0];
+        if (matches.length > 1) {
+            const byPath = ['executablePath', 'path'].map(field => _findByPath(matches, identity?.[field], field, identity)).find(Boolean);
+            if (byPath && !byPath.__identityError) return byPath;
+            return { __identityError: true, reason: 'ambiguous-gog-installation' };
+        }
+    }
+    return null;
+}
+
 function _resolveLauncherSpecific(identity, records) {
     const fieldsByPlatform = {
         ea: ['launcherGameId', 'appId', 'installedGameKey'],
@@ -266,6 +289,7 @@ function resolveCanonicalGameIdentity(identity, records = []) {
         ['epic', () => _resolveEpic(source, games)],
         ['xbox', () => _resolveXbox(source, games)],
         ['riot', () => _resolveRiot(source, games)],
+        ['gog', () => _resolveGog(source, games)],
         ['launcherSpecific', () => _resolveLauncherSpecific(source, games)],
         ['executablePath', () => _findByPath(games, source.executablePath, 'executablePath', source)],
         ['command', () => _findByPath(games, source.command, 'command', source)],

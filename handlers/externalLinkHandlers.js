@@ -22,6 +22,7 @@ const _COMMUNITY_ALLOWED_DOMAINS = new Set([
     'tiktok.com',
     'www.tiktok.com',
 ]);
+const BADDEL_SUPPORT_URL = 'https://ko-fi.com/baddel';
 
 module.exports.register = function registerExternalLinkHandlers(ipcMain, deps) {
     const { shell, ipcValidation, safeLauncher } = deps;
@@ -64,4 +65,16 @@ module.exports.register = function registerExternalLinkHandlers(ipcMain, deps) {
             return ipcValidation.sanitizeErrorForRenderer(err, 'URL not allowed.');
         }
     });
+
+    ipcMain.handle('open-baddel-support', async () => {
+        try {
+            await shell.openExternal(BADDEL_SUPPORT_URL);
+            return { status: 'success' };
+        } catch (err) {
+            console.warn('[Support] open-baddel-support failed:', err.message);
+            return ipcValidation.sanitizeErrorForRenderer(err, 'Could not open Baddel support.');
+        }
+    });
 };
+
+module.exports.BADDEL_SUPPORT_URL = BADDEL_SUPPORT_URL;

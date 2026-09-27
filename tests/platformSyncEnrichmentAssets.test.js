@@ -105,7 +105,21 @@ function makeFakeSteamBridge(options = {}) {
         },
         async getOwnedGames() {
             calls.getOwnedGames++;
-            return ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            const response = ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            if (response.status !== 'success') return response;
+            const steamAccountId = String(
+                response.steamAccountId
+                || options.lastSessionSteamId
+                || response.games?.[0]?.ownedByAccountIds?.[0]
+                || 's1'
+            );
+            return {
+                ...response,
+                complete: response.complete ?? true,
+                steamAccountId,
+                sessionGeneration: response.sessionGeneration ?? 1,
+                completeness: response.completeness || { complete: response.complete ?? true, terminal: true },
+            };
         },
         deleteCredentialsForAccount() {},
         async waitForCredentials() {
@@ -282,7 +296,7 @@ function loadPlatformSync(userData, overrides = {}) {
                 shell: { openExternal: async () => {} },
             };
         }
-        if (request === 'child_process') return { execFile };
+        if (request === 'child_process') return { execFile, spawn: execFile };
         if (request === './steamBridge') return steamBridge;
         if (request === './services/baddelApi') return baddelApi;
         if (request === './analytics') return analytics;
@@ -544,7 +558,7 @@ test('real cacheLibraryCoversFirst swallows downloader failures and keeps proces
     }
 });
 
-test('steam sync applies already_exists lookup metadata, downloads assets, writes file URLs, and emits library update', async () => {
+test('steam sync applies already_exists lookup metadata, downloads assets, and keeps managed cache URLs out of merged JSON', async () => {
     const userData = makeTempUserData();
     try {
         mkdirp(platformSyncDir(userData));
@@ -605,9 +619,9 @@ test('steam sync applies already_exists lookup metadata, downloads assets, write
 
         await waitFor(() => {
             const cached = readJson(steamCacheFile(userData))[0];
-            assert.equal(cached.coverUrl, 'file:///image-cache/steam_10-cover.webp');
-            assert.equal(cached.heroUrl, 'file:///image-cache/steam_10-hero.webp');
-            assert.equal(cached.logoUrl, 'file:///image-cache/steam_10-logo.webp');
+            assert.equal(cached.coverUrl, 'https://cdn.example/portal-cover.jpg');
+            assert.equal(cached.heroUrl, 'https://cdn.example/portal-hero.jpg');
+            assert.equal(cached.logoUrl, 'https://cdn.example/portal-logo.png');
             assert.equal(cached.releaseYear, '2007-10-10');
         });
 
@@ -676,7 +690,7 @@ test('steam sync completes before background artwork download resolves', async (
         }
 
         await waitFor(() => {
-            assert.equal(readJson(steamCacheFile(userData))[0].coverUrl, 'file:///image-cache/steam_10-cover.webp');
+            assert.equal(readJson(steamCacheFile(userData))[0].coverUrl, 'https://cdn.example/portal-cover.jpg');
         });
     } finally {
         rmDir(userData);

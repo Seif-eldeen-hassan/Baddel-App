@@ -73,3 +73,24 @@ test('completion validator returns an authoritative byte-based completion patch'
     assert.equal(patch.verificationExecutablePath, 'E:/Games/Test/Game.exe');
     assert.equal(patch.resolvedExecutablePath, 'E:/Games/Test/Game.exe');
 });
+
+test('completion patch preserves global checkpoint when resumed provider receipt is session-relative', () => {
+    const validated = validateDownloadCompletion({}, receipt({
+        transfer: { downloadedBytes: 29_162_311, totalBytes: 29_162_311, source: 'gogdl-overall-progress' },
+    }));
+    const patch = makeCompletionPatch(validated, {
+        resumeBaseDownloadedBytes: 1_659_344,
+        sessionDownloadedBytes: 29_162_311,
+        downloadedBytes: 30_821_655,
+        totalBytes: 30_821_655,
+        checkpointDownloadedBytes: 30_821_655,
+        checkpointTotalBytes: 30_821_655,
+        downloadedBytesSource: 'resume-base-plus-session',
+        progressMode: 'session-relative',
+    });
+
+    assert.equal(patch.downloadedBytes, 30_821_655);
+    assert.equal(patch.totalBytes, 30_821_655);
+    assert.equal(patch.transferDownloadedBytes, 30_821_655);
+    assert.equal(patch.providerCompletionReceipt.transfer.downloadedBytes, 29_162_311);
+});

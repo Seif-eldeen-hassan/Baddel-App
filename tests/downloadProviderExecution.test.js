@@ -100,7 +100,7 @@ test('Start Now runs provider and completes the existing queued task', async () 
     }
 });
 
-test('Epic direct downloads are rejected before entering the queue', async () => {
+test('Epic downloads require the explicit Legendary provider', async () => {
     const dir = tempDir();
     try {
         const manager = new DownloadQueueManager({
@@ -111,7 +111,7 @@ test('Epic direct downloads are rejected before entering the queue', async () =>
         await manager.load();
         await assert.rejects(
             () => manager.queueInstall({ ...payload('Epic Game', path.join(dir, 'installs')), platform: 'epic' }),
-            err => err.code === 'EPIC_DIRECT_DOWNLOAD_NOT_AVAILABLE'
+            err => err.code === 'DOWNLOAD_PROVIDER_UNAVAILABLE'
         );
         assert.equal(manager.getSnapshot().tasks.length, 0);
     } finally {

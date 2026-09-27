@@ -165,6 +165,58 @@ test('GOG resolver accepts an owned verified candidate and persists a safe mappi
     }
 });
 
+test('GOG resolver retries a transient transport failure without changing identity', async () => {
+    const dir = tempDir();
+    try {
+        writeNestedAuth(dir);
+        let buildAttempts = 0;
+        const fetchImpl = makeFetch(new Map([
+            [/catalog\.gog\.com/, () => response(200, { products: [] })],
+            [/products\/333\/os\/windows\/builds.*generation=2/, () => {
+                buildAttempts += 1;
+                if (buildAttempts === 1) throw Object.assign(new Error('socket reset'), { code: 'ECONNRESET' });
+                return response(200, { items: [{ build_id: 'build-333', product_id: '333' }] });
+            }],
+            [/products\/333\/secure_link/, () => response(200, { urls: [] })],
+        ]));
+        const resolver = new GogOwnedProductIdentityResolver({
+            userDataDir: dir,
+            fetchImpl,
+            sleep: async () => {},
+        });
+        const resolved = await resolver.resolveForQueue(basePayload({
+            providerProductId: null,
+            providerAppName: null,
+            gogIdentity: { galaxyExternalId: '333', gamesDbExternalId: '333' },
+        }));
+        assert.equal(buildAttempts, 2);
+        assert.equal(resolved.gogdlAppName, '333');
+        assert.equal(resolved.ownershipVerified, true);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
+test('GOG resolver reports exhausted transport failure instead of account verification failure', async () => {
+    const dir = tempDir();
+    try {
+        writeNestedAuth(dir);
+        const fetchImpl = async () => { throw new TypeError('fetch failed', { cause: Object.assign(new Error('connect timeout'), { code: 'UND_ERR_CONNECT_TIMEOUT' }) }); };
+        const resolver = new GogOwnedProductIdentityResolver({
+            userDataDir: dir,
+            fetchImpl,
+            maxNetworkRetries: 1,
+            sleep: async () => {},
+        });
+        await assert.rejects(
+            () => resolver.resolveForQueue(basePayload()),
+            err => err.code === 'GOG_NETWORK_ERROR' && /temporarily unavailable/i.test(err.message)
+        );
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test('GOG resolver refreshes expired gogdl auth once before rejecting an owned candidate', async () => {
     const dir = tempDir();
     try {
@@ -307,4 +359,26 @@ test('GOG resolver reuses verified cache only after revalidating build and secur
     } finally {
         fs.rmSync(dir, { recursive: true, force: true });
     }
+});
+
+test('GOG maintenance revalidates only a persisted exact verified identity', async () => {
+    const dir = tempDir();
+    try {
+        writeNestedAuth(dir);
+        const fetchImpl = makeFetch(new Map([
+            [/products\/333\/os\/windows\/builds.*generation=2/, () => response(200, { items: [{ build_id: 'current-build', product_id: '333' }] })],
+            [/products\/333\/secure_link/, () => response(200, { urls: [] })],
+        ]));
+        const resolver = new GogOwnedProductIdentityResolver({ userDataDir: dir, fetchImpl });
+        const resolved = await resolver.revalidateVerifiedTask(basePayload({
+            gogProductId: '333', contentSystemProductId: '333', gogdlAppName: '333',
+            ownershipVerified: true, secureLinkVerified: true,
+        }));
+        assert.equal(resolved.verifiedBuildId, 'current-build');
+        assert.equal(resolved.identitySource, 'persisted-verified-install');
+        await assert.rejects(() => resolver.revalidateVerifiedTask(basePayload({
+            gogProductId: '333', contentSystemProductId: '333', gogdlAppName: '444',
+            ownershipVerified: true, secureLinkVerified: true,
+        })), error => error.code === 'GOG_OWNED_IDENTITY_UNRESOLVED');
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
 });

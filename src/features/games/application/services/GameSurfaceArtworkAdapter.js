@@ -8,18 +8,20 @@ const _gameArtworkResolver = (typeof require === 'function')
 const _gameArtworkState = (typeof require === 'function')
     ? require('../../domain/services/GameArtworkState')
     : _surfaceArtworkRoot.BaddelGameArtworkState;
+const _artworkSchema = (typeof require === 'function')
+    ? require('./GameArtworkSchema')
+    : _surfaceArtworkRoot.BaddelGameArtworkSchema;
+const _readModel = (typeof require === 'function')
+    ? require('./GameArtworkReadModel')
+    : _surfaceArtworkRoot.BaddelGameArtworkReadModel;
 
 const { resolveGameArtwork } = _gameArtworkResolver;
 
-const COVER_ALIASES = Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage', 'coverImage', 'capsuleImage', 'boxArt', 'grid', 'poster']);
-const HERO_ALIASES = Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl', '_rouletteHeroUrl']);
-const LOGO_ALIASES = Object.freeze(['logo', 'logoUrl', 'defaultLogo', 'logoImage']);
+const COVER_ALIASES = _artworkSchema.TYPE_ALIASES.cover;
+const HERO_ALIASES = _artworkSchema.TYPE_ALIASES.hero;
+const LOGO_ALIASES = _artworkSchema.TYPE_ALIASES.logo;
 
-const LEGACY_SURFACE_ORDER = Object.freeze({
-    cover: Object.freeze(['image', 'defaultImage', 'coverUrl', 'cover', 'posterImage', 'coverImage', 'capsuleImage', 'boxArt', 'grid', 'poster', '_roulettePosterUrl']),
-    hero: Object.freeze(['heroImage', 'defaultHero', 'heroUrl', 'hero', 'background', 'backgroundUrl', '_rouletteHeroUrl', 'image', 'defaultImage', 'coverUrl', 'cover', 'capsuleImage']),
-    logo: Object.freeze(['logo', 'defaultLogo', 'logoUrl', 'logoImage']),
-});
+const LEGACY_SURFACE_ORDER = _artworkSchema.TYPE_ALIASES;
 
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -129,7 +131,6 @@ function legacyGameSurfaceArtwork({ game = {}, cacheArtwork = null, metadataArtw
     const hero = _first(game, LEGACY_SURFACE_ORDER.hero)
         || _typeValue(cache, 'hero')
         || _typeValue(meta, 'hero')
-        || cover
         || _typeValue(placeholders, 'hero');
     const logo = _first(game, LEGACY_SURFACE_ORDER.logo)
         || _typeValue(cache, 'logo')
@@ -172,7 +173,11 @@ function resolveGameSurfaceArtwork({
     placeholders = null,
     resolver = _safeResolve,
 } = {}) {
-    const normalizedCache = cacheArtworkFromSurfaceCache(cacheArtwork);
+    const normalizedCache = _readModel?.runtimeCacheArtwork?.(
+        game,
+        game,
+        cacheArtworkFromSurfaceCache(cacheArtwork),
+    ) || cacheArtworkFromSurfaceCache(cacheArtwork);
     const fallback = legacyGameSurfaceArtwork({ game, cacheArtwork, metadataArtwork, placeholders });
     let resolved = null;
     try {
@@ -190,11 +195,23 @@ function resolveGameSurfaceArtwork({
     }
 
     const output = { surface };
+    const canonicalModel = _readModel?.buildGameArtworkReadModel?.({
+        displayGame: game,
+        canonicalGame: game,
+        metadataArtwork,
+        platformArtwork,
+        cacheArtwork: normalizedCache,
+    }) || null;
     for (const type of ['cover', 'hero', 'logo']) {
         const item = resolved?.[type];
-        output[type] = _validResultItem(item)
-            ? Object.freeze({ ...item, usedFallback: false, fallbackValue: fallback[type].value })
-            : fallback[type];
+        const canonicalItem = canonicalModel?.[type] || null;
+        const remotePending = _validResultItem(item) && /^https?:\/\//i.test(item.value) && item.source !== 'settings' && item.source !== 'creator';
+        const rejectedGogScannerLogo = type === 'logo' && canonicalItem?.identity?.platform === 'gog' && canonicalItem?.originalSource === 'none';
+        output[type] = _validResultItem(item) && !remotePending && !rejectedGogScannerLogo
+            ? Object.freeze({ ...canonicalItem, ...item, effectiveValue: item.value, availability: 'available', pending: false, terminal: false, usedFallback: false, fallbackValue: fallback[type].value })
+            : (remotePending || rejectedGogScannerLogo) && canonicalItem
+                ? Object.freeze({ ...canonicalItem, value: canonicalItem.effectiveValue, usedFallback: false })
+                : fallback[type];
     }
     return Object.freeze(output);
 }

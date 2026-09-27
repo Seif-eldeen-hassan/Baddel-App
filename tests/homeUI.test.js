@@ -1850,78 +1850,54 @@ test('game-details: tracking toggle has no emoji', () => {
     assert.doesNotMatch(fn, /[⏱⏲⏰]/, 'timer emoji must not appear');
 });
 
-test('game-details: tracking toggle renders ON/OFF pill text', () => {
+test('game-details: management gear renders ON/OFF tracking state', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
+    const fnStart = js.indexOf('function _gdRenderGameManagement');
     const fn = js.slice(fnStart, fnStart + 2000);
     assert.match(fn, /\bON\b/, 'must contain ON status text');
     assert.match(fn, /\bOFF\b/, 'must contain OFF status text');
 });
 
-test('game-details: tracking toggle renders Enable/Disable button text', () => {
+test('game-details: management gear toggles tracking through existing action', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
+    const fnStart = js.indexOf('function _gdRenderGameManagement');
     const fn = js.slice(fnStart, fnStart + 2000);
-    assert.match(fn, /\bEnable\b/, 'must contain Enable button text');
-    assert.match(fn, /\bDisable\b/, 'must contain Disable button text');
+    assert.match(fn, /tracking-off/, 'must expose the disable action');
+    assert.match(fn, /tracking-on/, 'must expose the enable action');
 });
 
-test('game-details: tracking toggle renders Time Tracking label', () => {
+test('game-details: management gear renders Time Tracking label', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
+    const fnStart = js.indexOf('function _gdRenderGameManagement');
     const fn = js.slice(fnStart, fnStart + 2000);
     assert.match(fn, /Time Tracking/, 'must contain "Time Tracking" label text');
 });
 
-test('game-details: tracking toggle uses gdTimeTrackingRow container', () => {
+test('game-details: standalone tracking row is removed from the hero', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
-    const fn = js.slice(fnStart, fnStart + 2000);
-    assert.match(fn, /gdTimeTrackingRow/, 'must use gdTimeTrackingRow container');
-});
-
-test('game-details: tracking toggle uses inline SVG clock icon', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
-    const fn = js.slice(fnStart, fnStart + 2000);
-    assert.match(fn, /<svg/, 'must use inline SVG for clock icon');
-    assert.match(fn, /viewBox/, 'SVG must have viewBox attribute');
-});
-
-test('game-details: tracking toggle includes gd-tracking-icon div', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
-    const fn = js.slice(fnStart, fnStart + 2000);
-    assert.match(fn, /gd-tracking-icon/, 'must include gd-tracking-icon element');
-    assert.match(fn, /aria-hidden/, 'icon must be aria-hidden');
-});
-
-test('game-details: _gdRenderTimeTrackingToggle hides and clears row for non-installed games', () => {
-    const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
-    const fn = js.slice(fnStart, fnStart + 2000);
-    assert.match(fn, /innerHTML\s*=\s*['"]['"]/, 'must clear innerHTML for non-installed games');
-    assert.match(fn, /display.*none|none.*display/, 'must hide row for non-installed games');
+    const html = fs.readFileSync(path.join(ROOT, 'src', 'dashboard.html'), 'utf8');
+    assert.doesNotMatch(html, /gdTimeTrackingRow/);
+    assert.match(js, /_gdRenderGameManagement/);
 });
 
 test('game-details: installed detection uses _gdBuildLaunchOptions', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
+    const fnStart = js.indexOf('function _gdGameIsInstalled');
     const fn = js.slice(fnStart, fnStart + 2000);
     assert.match(fn, /_gdBuildLaunchOptions/, 'must call _gdBuildLaunchOptions for installed detection');
     assert.match(fn, /executablePath|installPath/, 'must check executablePath or installPath for installed detection');
 });
 
-test('game-details: tracking toggle has no subtitle text', () => {
+test('game-details: gear tracking control has no subtitle clutter', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('function _gdRenderTimeTrackingToggle');
+    const fnStart = js.indexOf('function _gdRenderGameManagement');
     const fn = js.slice(fnStart, fnStart + 2000);
     assert.doesNotMatch(fn, /gd-tracking-subtitle/, 'must not render subtitle element');
 });
 
 test('game-details: _gdToggleTimeTracking shows error toast on failure', () => {
     const js = fs.readFileSync(path.join(ROOT, 'src', 'js', 'game-details.js'), 'utf8');
-    const fnStart = js.indexOf('window._gdToggleTimeTracking');
+    const fnStart = js.indexOf('window._gdToggleTimeTracking = async');
     const fn = js.slice(fnStart, fnStart + 1400);
     assert.match(fn, /showToast.*error|error.*showToast/, 'must show error toast on failure');
 });

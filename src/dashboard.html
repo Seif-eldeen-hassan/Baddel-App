@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data: file:; img-src 'self' data: blob: file: http: https:; media-src 'self' data: blob: file: http: https:; frame-src https://www.youtube.com https://youtube.com https://www.youtube-nocookie.com; connect-src 'self' http: https:;">
     <title>Baddel Launcher</title>
+    <style id="critical-loader-layout">
+        html, body { width: 100%; height: 100%; margin: 0; }
+        #mainLoader { position: fixed; inset: 0; display: grid; place-items: center; }
+    </style>
     <link rel="stylesheet" href="css/dashboard.css">
+    <link rel="stylesheet" href="css/stores.css">
     <link rel="stylesheet" href="css/accounts.css">
     <link rel="stylesheet" href="css/addAccountModal.css">
     <link rel="stylesheet" href="css/addGameModal.css">
@@ -14,6 +19,7 @@
     <link rel="stylesheet" href="css/downloads.css">
     <link rel="stylesheet" href="../node_modules/driver.js/dist/driver.css"/>
     <script src="../node_modules/sortablejs/Sortable.min.js"></script>
+    <link rel="stylesheet" href="css/install-flow.css">
 </head>
 <body>
 
@@ -94,6 +100,13 @@
                     <span class="nav-text">Home</span>
                 </div>
 
+                <div class="nav-item" id="nav-stores" onclick="navigateToStores()" tabindex="0" role="button" aria-label="Stores" onkeydown="if(event.key==='Enter'||event.key===' '){event.preventDefault();navigateToStores()}">
+                    <div class="nav-icon">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2l1 4h10l1-4"></path><path d="M3 6h18l-1 16H4L3 6z"></path><path d="M9 10a3 3 0 0 0 6 0"></path></svg>
+                    </div>
+                    <span class="nav-text">Stores</span>
+                </div>
+
                 <!-- ── LIBRARY section ── -->
                 <div class="sb-section-header" id="sbSecLibrary" onclick="sbToggleSection('library')">
                     <span class="sb-sec-label">LIBRARY</span>
@@ -128,7 +141,13 @@
                         <span class="nav-text">Downloads</span>
                         <span class="sidebar-nav-badge" id="downloadsBadge"></span>
                     </div>
-                    <div class="nav-item sb-sub-item" id="nav-fav" onclick="filterByCollection('fav_system_default')">
+                    <div class="nav-item sb-sub-item" id="nav-collections" onclick="sbGoManageCollections()">
+                        <div class="nav-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        </div>
+                        <span class="nav-text">Collections</span>
+                    </div>
+                    <div class="nav-item sb-sub-item sb-hidden-fav-compat" id="nav-fav" onclick="filterByCollection('fav_system_default')" aria-hidden="true">
                         <div class="nav-icon fav-heart">
                             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
                         </div>
@@ -139,17 +158,31 @@
                 </div>
 
                 <!-- ── COLLECTIONS section ── -->
-                <div class="sb-section-header" id="sbSecCollections" onclick="sbToggleSection('collections')">
+                <div class="sb-section-header sb-hidden-collections-section" id="sbSecCollections" onclick="sbToggleSection('collections')" aria-hidden="true">
                     <span class="sb-sec-label">COLLECTIONS</span>
                     <svg class="sb-sec-chevron" id="sbChevronCollections" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </div>
-                <div class="sb-section-body" id="sbBodyCollections">
+                <div class="sb-section-body sb-hidden-collections-section" id="sbBodyCollections" aria-hidden="true">
                     <!-- Populated by renderSidebarCollectionsList() -->
+                </div>
+
+                <!-- Vault section -->
+                <div class="sb-section-header sb-sec-static" id="sbSecVault">
+                    <span class="sb-sec-label">VAULT</span>
+                </div>
+                <div class="sb-section-body" id="sbBodyVault">
+                    <div class="nav-item sb-sub-item vault-item vault-overview" id="nav-vault-overview" onclick="openVaultPlatform('overview')">
+                        <div class="nav-icon">
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="6" width="18" height="14" rx="2"></rect><path d="M7 10h10"></path><circle cx="12" cy="14" r="2"></circle><path d="M12 12v4"></path><path d="M5 6V4h14v2"></path></svg>
+                        </div>
+                        <span class="nav-text">Vault</span>
+                        <span class="sidebar-nav-badge">Spend &amp; skins</span>
+                    </div>
                 </div>
 
                 <!-- ── ACCOUNTS section ── -->
                 <div class="sb-section-header" id="sbSecAccounts" onclick="sbToggleSection('accounts')">
-                    <span class="sb-sec-label">ACCOUNTS</span>
+                    <span class="sb-sec-label">SWITCH PROFILES</span>
                     <svg class="sb-sec-chevron sb-chevron-closed" id="sbChevronAccounts" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
                 </div>
                 <div class="sb-section-body" id="sbBodyAccounts" style="display:none">
@@ -172,7 +205,7 @@
                             <img src="../assets/gog.png" alt="GOG" style="width:16px;height:16px;object-fit:contain;">
                         </div>
                         <span class="nav-text">GOG</span>
-                        <span class="platform-count" id="gogCount">â€”</span>
+                        <span class="platform-count" id="gogCount">—</span>
                     </div>
                     <div class="nav-item sb-sub-item platform-item" id="nav-ea" onclick="selectAccountPlatform('ea')">
                         <div class="nav-icon platform-icon ea-icon">
@@ -188,44 +221,48 @@
                         <span class="nav-text">Riot Games</span>
                         <span class="platform-count" id="riotCount">—</span>
                     </div>
-                    <div class="nav-item sb-sub-item platform-item" id="nav-rockstar" onclick="selectAccountPlatform('rockstar')">
+                    <div class="nav-item sb-sub-item platform-item sb-account-extra" id="nav-rockstar" onclick="selectAccountPlatform('rockstar')">
                         <div class="nav-icon platform-icon rockstar-icon">
                             <img src="../assets/Rockstar_Games_Logo.svg.png" alt="Rockstar" style="width:16px;height:16px;object-fit:contain;">
                         </div>
                         <span class="nav-text">Rockstar</span>
                         <span class="platform-count" id="rockstarCount">—</span>
                     </div>
-                    <div class="nav-item sb-sub-item platform-item" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
+                    <div class="nav-item sb-sub-item platform-item sb-account-extra" id="nav-ubisoft" onclick="selectAccountPlatform('ubisoft')">
                         <div class="nav-icon platform-icon ubisoft-icon">
                             <img src="../assets/Ubisoft_white.png" alt="Ubisoft" style="width:16px;height:16px;object-fit:contain;">
                         </div>
                         <span class="nav-text">Ubisoft</span>
                         <span class="platform-count" id="ubisoftCount">—</span>
                     </div>
-                    <div class="nav-item sb-sub-item platform-item" id="nav-discord" onclick="selectAccountPlatform('discord')">
+                    <div class="nav-item sb-sub-item platform-item sb-account-extra" id="nav-discord" onclick="selectAccountPlatform('discord')">
                         <div class="nav-icon platform-icon discord-icon">
-                            <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M20.317 4.3698a19.7913 19.7913 0 00-4.8851-1.5152.0741.0741 0 00-.0785.0371c-.211.3753-.4447.8648-.6083 1.2495-1.8447-.2762-3.68-.2762-5.4868 0-.1636-.3933-.4058-.8742-.6177-1.2495a.077.077 0 00-.0785-.037 19.7363 19.7363 0 00-4.8852 1.515.0699.0699 0 00-.0321.0277C.5334 9.0458-.319 13.5799.0992 18.0578a.0824.0824 0 00.0312.0561c2.0528 1.5076 4.0413 2.4228 5.9929 3.0294a.0777.0777 0 00.0842-.0276c.4616-.6304.8731-1.2952 1.226-1.9942a.076.076 0 00-.0416-.1057c-.6528-.2476-1.2743-.5495-1.8722-.8923a.077.077 0 01-.0076-.1277c.1258-.0943.2517-.1923.3718-.2914a.0743.0743 0 01.0776-.0105c3.9278 1.7933 8.18 1.7933 12.0614 0a.0739.0739 0 01.0785.0095c.1202.099.246.1981.3728.2924a.077.077 0 01-.0066.1276 12.2986 12.2986 0 01-1.873.8914.0766.0766 0 00-.0407.1067c.3604.698.7719 1.3628 1.225 1.9932a.076.076 0 00.0842.0286c1.961-.6067 3.9495-1.5219 6.0023-3.0294a.077.077 0 00.0313-.0552c.5004-5.177-.8382-9.6739-3.5485-13.6604a.061.061 0 00-.0312-.0286zM8.02 15.3312c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9555-2.4189 2.157-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.9555 2.4189-2.1569 2.4189zm7.9748 0c-1.1825 0-2.1569-1.0857-2.1569-2.419 0-1.3332.9554-2.4189 2.1569-2.4189 1.2108 0 2.1757 1.0952 2.1568 2.419 0 1.3332-.946 2.4189-2.1568 2.4189Z"/></svg>
+                            <img src="../assets/discord.webp" alt="Discord" style="width:16px;height:16px;object-fit:contain;">
                         </div>
                         <span class="nav-text">Discord</span>
                         <span class="platform-count" id="discordCount">—</span>
                     </div>
+                    <button class="sb-accounts-more nav-text" id="sbAccountsMoreBtn" onclick="sbToggleAccountsMore(event)">
+                        <span id="sbAccountsMoreText">More platforms</span>
+                        <svg id="sbAccountsMoreIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>
+                    </button>
                 </div>
 
                 <!-- ── MANAGE section ── -->
                 <div class="sb-section-header sb-sec-static" id="sbSecManage">
                     <span class="sb-sec-label">MANAGE</span>
                 </div>
-                <div class="nav-item sb-sub-item" id="nav-collections" onclick="sbGoManageCollections()">
-                    <div class="nav-icon">
-                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
-                    </div>
-                    <span class="nav-text">Collections</span>
-                </div>
                 <div class="nav-item sb-sub-item" id="nav-settings" onclick="openSettingsModal()">
                     <div class="nav-icon">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
                     </div>
                     <span class="nav-text">Settings</span>
+                </div>
+                <div class="nav-item sb-sub-item" id="nav-support" onclick="openSupportBaddel()">
+                    <div class="nav-icon">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1.1-1.1a5.5 5.5 0 0 0-7.8 7.8l1.1 1.1L12 21.2l7.8-7.8a5.5 5.5 0 0 0 0-7.8z"></path></svg>
+                    </div>
+                    <span class="nav-text">Support Baddel</span>
                 </div>
 
 
@@ -305,8 +342,9 @@
                         <!-- Filter row -->
                         <div class="synced-filters">
                             <button class="sugg-pill active" data-filter="all"   onclick="setSyncedFilter('all',this)">Recommended</button>
-                            <button class="sugg-pill"        data-filter="steam"  onclick="setSyncedFilter('steam',this)">From Steam</button>
-                            <button class="sugg-pill"        data-filter="epic"   onclick="setSyncedFilter('epic',this)">From Epic</button>
+                            <button class="sugg-pill"        data-filter="steam"  onclick="setSyncedFilter('steam',this)">Steam</button>
+                            <button class="sugg-pill"        data-filter="epic"   onclick="setSyncedFilter('epic',this)">Epic Games</button>
+                            <button class="sugg-pill"        data-filter="gog"    onclick="setSyncedFilter('gog',this)">GOG</button>
                         </div>
 
                         <!-- CTA: no linked accounts -->
@@ -482,6 +520,7 @@
                                     <div class="dropdown-item" onclick="igSelectPlatform('all','All Platforms')">All Platforms</div>
                                     <div class="dropdown-item" onclick="igSelectPlatform('steam','Steam')">Steam</div>
                                     <div class="dropdown-item" onclick="igSelectPlatform('epic','Epic Games')">Epic Games</div>
+                                    <div class="dropdown-item" onclick="igSelectPlatform('gog','GOG')">GOG</div>
                                     <div class="dropdown-item" onclick="igSelectPlatform('riot','Riot Games')">Riot Games</div>
                                     <div class="dropdown-item" onclick="igSelectPlatform('ubisoft','Ubisoft')">Ubisoft</div>
                                     <div class="dropdown-item" onclick="igSelectPlatform('ea','EA App')">EA App</div>
@@ -504,6 +543,11 @@
                                     <div class="dropdown-item ig-sort-item"        data-value="last_played"  onclick="igSelectSort('last_played','Recently Played',this)">Recently Played</div>
                                 </div>
                             </div>
+
+                            <button class="ig-favorites-filter" id="igFavoritesFilter" onclick="toggleInstalledFavoritesFilter()" title="Show favorites">
+                                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"></path></svg>
+                                <span>Favorites</span>
+                            </button>
 
                         </div><!-- /.ig-filter-group -->
 
@@ -573,6 +617,31 @@
                 </section>
             </div>
 
+            <div id="storesView" class="stores-view">
+                <header class="stores-header">
+                    <div class="stores-title"><h2>Stores</h2><p>Browse official storefronts in a protected Baddel session.</p></div>
+                    <div class="stores-providers" role="group" aria-label="Store provider">
+                        <button type="button" class="stores-provider active" data-store-provider="steam" aria-pressed="true"><img src="../assets/Steam.png" alt="">Steam</button>
+                        <button type="button" class="stores-provider" data-store-provider="epic" aria-pressed="false"><img src="../assets/epic.svg" alt="">Epic Games</button>
+                        <button type="button" class="stores-provider" data-store-provider="gog" aria-pressed="false"><img src="../assets/gog.svg" alt="">GOG</button>
+                    </div>
+                </header>
+                <div class="stores-toolbar" role="toolbar" aria-label="Store browser controls">
+                    <button type="button" class="store-tool" id="storeBack" title="Back" aria-label="Back" onclick="storeCommand('storeBack')" disabled><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5m7-7-7 7 7 7"/></svg></button>
+                    <button type="button" class="store-tool" id="storeForward" title="Forward" aria-label="Forward" onclick="storeCommand('storeForward')" disabled><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 12h14m-7-7 7 7-7 7"/></svg></button>
+                    <button type="button" class="store-tool store-refresh" id="storeRefresh" data-mode="reload" title="Refresh" aria-label="Refresh" onclick="storeRefreshOrStop()"><svg class="store-refresh-icon" data-refresh-icon width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 11a8 8 0 1 0-2.3 5.7"/><path d="M20 4v7h-7"/></svg><svg class="store-stop-icon" data-stop-icon hidden width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><rect x="5" y="5" width="14" height="14"/></svg></button>
+                    <button type="button" class="store-tool store-home" title="Store Home" aria-label="Store Home" onclick="storeCommand('storeHome')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 11l9-8 9 8"/><path d="M5 10v11h14V10"/></svg><span>Store Home</span></button>
+                    <div class="stores-address"><strong id="storeOrigin">https://store.steampowered.com</strong><input id="storeUrl" readonly aria-label="Current store URL" value="https://store.steampowered.com/"></div>
+                    <button type="button" class="store-tool store-copy" id="storeCopy" title="Copy URL" aria-label="Copy URL" onclick="storeCopyUrl()"><svg data-copy-icon width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="11" height="11" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg><svg data-copy-check hidden width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="m5 12 4 4L19 6"/></svg><span class="store-copy-status" id="storeCopyStatus" hidden role="status" aria-live="polite">URL copied</span></button>
+                    <button type="button" class="store-tool" title="Open in External Browser" aria-label="Open in External Browser" onclick="storeCommand('storeOpenExternal')"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 3h7v7"/><path d="M10 14 21 3"/><path d="M21 14v5a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5"/></svg></button>
+                </div>
+                <div class="stores-body">
+                    <div class="stores-loading" id="storeLoading"><span>Opening secure storefront...</span></div>
+                    <div class="stores-error" id="storeError" hidden><div class="stores-error-card"><h3>Store unavailable</h3><p id="storeErrorText">This storefront could not be loaded securely.</p><div class="stores-error-actions"><button class="primary" onclick="storeRetry()">Retry</button><button onclick="storeCommand('storeHome');storeRetry()">Return to Store Home</button><button onclick="storeCommand('storeOpenExternal')">Open Externally</button></div></div></div>
+                    <div class="stores-native-host" id="storeContentHost" aria-label="Embedded storefront"></div>
+                </div>
+            </div>
+
             <div id="accountsView" style="display:none;"></div>
 
             <div id="downloadsView" style="display:none;">
@@ -580,7 +649,7 @@
                     <header class="downloads-header">
                         <div>
                             <h2 class="section-title">Downloads</h2>
-                            <p class="downloads-subtitle">Manage direct game installations from GOG.</p>
+                            <p class="downloads-subtitle">Manage direct game installations from GOG and Epic.</p>
                         </div>
                         <div class="downloads-header-metrics">
                             <div class="downloads-metric">
@@ -595,10 +664,119 @@
                                 <span>Queued</span>
                                 <strong id="downloadsPendingCount">0</strong>
                             </div>
+                            <button class="download-btn download-btn-secondary" id="downloadsHistoryButton" onclick="downloadsOpenHistory()">History</button>
                             <button class="download-btn download-btn-secondary" id="downloadsClearCompleted" onclick="downloadsClearCompleted()" style="display:none;">Clear Completed</button>
                         </div>
                     </header>
+                    <div class="downloads-toolbar ag-toolbar" id="downloadsToolbar" aria-label="Download filters">
+                        <div class="ag-search-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.35-4.35"/></svg><input class="ag-search-input" id="downloadsSearch" type="search" placeholder="Search downloads..." aria-label="Search downloads" oninput="downloadsSetFilter('search', this.value)"></div>
+                        <div class="custom-dropdown ag-sort-dropdown" data-baddel-menu id="downloadsPlatform"><button type="button" class="dropdown-trigger ag-sort-trigger" data-menu-trigger aria-label="Platform" aria-haspopup="menu" aria-expanded="false" aria-controls="downloadsPlatformMenu"><span data-filter-label>Platform</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="dropdown-menu ag-sort-menu" role="menu" id="downloadsPlatformMenu" hidden></div></div>
+<div class="custom-dropdown ag-sort-dropdown" data-baddel-menu id="downloadsSize"><button type="button" class="dropdown-trigger ag-sort-trigger" data-menu-trigger aria-label="Size" aria-haspopup="menu" aria-expanded="false" aria-controls="downloadsSizeMenu"><span data-filter-label>Size</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="dropdown-menu ag-sort-menu" role="menu" id="downloadsSizeMenu" hidden></div></div>
+<div class="custom-dropdown ag-sort-dropdown" data-baddel-menu id="downloadsDate"><button type="button" class="dropdown-trigger ag-sort-trigger" data-menu-trigger aria-label="Date" aria-haspopup="menu" aria-expanded="false" aria-controls="downloadsDateMenu"><span data-filter-label>Date</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="dropdown-menu ag-sort-menu" role="menu" id="downloadsDateMenu" hidden></div></div>
+<div class="custom-dropdown ag-sort-dropdown" data-baddel-menu id="downloadsSort"><button type="button" class="dropdown-trigger ag-sort-trigger" data-menu-trigger aria-label="Sort" aria-haspopup="menu" aria-expanded="false" aria-controls="downloadsSortMenu"><span data-filter-label>Sort</span><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><div class="dropdown-menu ag-sort-menu" role="menu" id="downloadsSortMenu" hidden></div></div>
+                        <button class="download-btn downloads-reset" title="Reset filters" aria-label="Reset filters" onclick="downloadsResetFilters()"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 11a9 9 0 1 1 2.5 7M3 4v7h7"/></svg></button>
+                    </div>
                     <div id="downloadsRoot" class="downloads-root"></div>
+                </section>
+            </div>
+
+
+
+            <div id="vaultView" style="display:none;">
+                <section class="vault-page" id="vaultPage" data-vault-state="overview">
+                    <header class="vault-hero vault-compact-header">
+                        <button class="vault-back-btn vault-top-back" id="vaultTopBack" onclick="backToVaultPlatforms()" style="display:none;">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m15 18-6-6 6-6"></path></svg>
+                            <span>Vault</span>
+                        </button>
+                        <div class="vault-hero-copy">
+                            <span class="vault-kicker" id="vaultHeaderKicker">Vault overview</span>
+                            <h2 id="vaultHeaderTitle">Baddel Vault</h2>
+                            <p id="vaultHeaderText">A clear view of your connected accounts, owned games, library value, and real spending.</p>
+                        </div>
+                    </header>
+
+                    <div class="vault-core">
+                        <section class="vault-overview-panel" id="vaultOverviewPanel" aria-live="polite">
+                            <div class="vault-overview-status" id="vaultOverviewStatus" role="status"></div>
+                            <div class="vault-summary-grid" aria-label="Vault summary">
+                                <article class="vault-summary-card">
+                                    <span class="vault-summary-label">Total Games</span>
+                                    <strong id="vaultOverviewTotalGames">0</strong>
+                                    <small id="vaultOverviewGamesNote">Across connected accounts</small>
+                                </article>
+                                <article class="vault-summary-card">
+                                    <span class="vault-summary-label">Library Value</span>
+                                    <div class="vault-summary-money" id="vaultOverviewLibraryValue">Not available</div>
+                                    <small id="vaultOverviewLibraryCoverage">Waiting for price data</small>
+                                </article>
+                                <article class="vault-summary-card">
+                                    <span class="vault-summary-label">Real Spent</span>
+                                    <div class="vault-summary-money" id="vaultOverviewRealSpent">History not imported</div>
+                                    <small id="vaultOverviewHistoryStatus">Net purchases after refunds</small>
+                                </article>
+                                <article class="vault-summary-card">
+                                    <span class="vault-summary-label">Accounts &amp; Platforms</span>
+                                    <strong id="vaultOverviewAccountsPlatforms">0 / 0</strong>
+                                    <small id="vaultOverviewAccountsNote">Accounts / connected platforms</small>
+                                </article>
+                            </div>
+
+                            <div class="vault-section-heading">
+                                <div><span>Connected Platforms</span><h3>Your Vault sources</h3></div>
+                                <small id="vaultOverviewUpdatedAt">Reading saved data...</small>
+                            </div>
+                            <div class="vault-platform-grid" id="vaultPlatformGrid">
+                                <button class="vault-platform-card vault-platform-card-epic" id="vault-card-epic" data-vault-platform="epic" type="button">
+                                    <span class="vault-platform-card-head">
+                                        <span class="vault-platform-icon vault-epic"><img src="../assets/epic.svg" alt=""></span>
+                                        <span class="vault-platform-copy"><strong>Epic Games</strong><small id="vaultEpicCardConnection">Not connected</small></span>
+                                        <span class="vault-platform-badge" id="vaultEpicCardBadge">0 accounts</span>
+                                    </span>
+                                    <span class="vault-platform-metrics">
+                                        <span><small>Games</small><strong id="vaultEpicCardGames">0</strong></span>
+                                        <span><small>Library value</small><strong id="vaultEpicCardValue">Not available</strong></span>
+                                        <span><small>Real spent</small><strong id="vaultEpicCardSpent">Not imported</strong></span>
+                                    </span>
+                                    <span class="vault-platform-open">Open Epic Vault <span aria-hidden="true">›</span></span>
+                                </button>
+                                <button class="vault-platform-card is-coming-soon" id="vault-card-steam" type="button" disabled aria-disabled="true">
+                                    <span class="vault-platform-card-head"><span class="vault-platform-icon vault-steam"><img src="../assets/Steam.png" alt=""></span><span class="vault-platform-copy"><strong>Steam</strong><small>Support Baddel</small></span><span class="vault-platform-badge">Coming Soon</span></span>
+                                </button>
+                                <button class="vault-platform-card is-coming-soon" id="vault-card-valorant" type="button" disabled aria-disabled="true">
+                                    <span class="vault-platform-card-head"><span class="vault-platform-icon vault-valorant"><img src="../assets/valorant.webp" alt=""></span><span class="vault-platform-copy"><strong>Valorant</strong><small>Support Baddel</small></span><span class="vault-platform-badge">Coming Soon</span></span>
+                                </button>
+                                <button class="vault-platform-card is-coming-soon" id="vault-card-league" type="button" disabled aria-disabled="true">
+                                    <span class="vault-platform-card-head"><span class="vault-platform-icon vault-league"><img src="../assets/Lol.png" alt=""></span><span class="vault-platform-copy"><strong>League</strong><small>Support Baddel</small></span><span class="vault-platform-badge">Coming Soon</span></span>
+                                </button>
+                            </div>
+                            <section class="vault-platform-request" aria-labelledby="vaultPlatformRequestTitle">
+                                <div class="vault-platform-request-copy">
+                                    <span>Missing a platform?</span>
+                                    <h4 id="vaultPlatformRequestTitle">Connect more platforms</h4>
+                                    <p>Tell us which game library you want to see in Baddel Vault next.</p>
+                                </div>
+                                <button type="button" onclick="openVaultPlatformFeedback()">Request a platform</button>
+                            </section>
+                        </section>
+
+                        <div class="vault-console" id="vaultConsole">
+                            <div class="vault-console-main">
+                                <span class="vault-console-label" id="vaultConsoleLabel">Epic Games vault</span>
+                                <h3 id="vaultConsoleTitle">Purchases by game, account by account.</h3>
+                                <p id="vaultConsoleText">A focused ledger for total spend, game-level purchases, linked accounts, and notable library value signals.</p>
+                            </div>
+                            <div class="vault-console-readouts">
+                                <div><span id="vaultReadoutAccountsLabel">Accounts</span><strong id="vaultReadoutAccounts">Multi</strong></div>
+                                <div><span id="vaultReadoutSignalLabel">Signal</span><strong id="vaultReadoutSignal">Spend</strong></div>
+                                <div><span id="vaultReadoutStatusLabel">Status</span><strong id="vaultReadoutStatus">Ready</strong></div>
+                            </div>
+                            <div class="vault-epic-library" id="vaultEpicLibrary" style="display:none;"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="vault-back-to-top" id="vaultBackToTop" onclick="scrollVaultToTop()" aria-label="Back to top">
+                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path></svg>
+                    </button>
                 </section>
             </div>
 
@@ -607,6 +785,7 @@
                     <header class="library-header">
                         <h2 class="section-title" id="allGamesViewTitle">All Games</h2>
                         <div class="header-right">
+                            <span class="epic-enrichment-indicator" id="epicEnrichmentIndicator" role="status" aria-live="polite"></span>
                             <button class="add-game-btn" onclick="openPlatformsModal()" style="background: var(--accent); color: black; display: flex; align-items: center; gap: 6px;">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg>
                                 Manage Accounts
@@ -846,6 +1025,9 @@
                         </div>
 
                         <div class="gd-action-block">
+                            <div id="gdInstallControl" class="gd-install-control">
+                            <span class="gd-maintenance-status" id="gdMaintenanceStatus" hidden>UPDATE AVAILABLE</span>
+                            <div class="gd-primary-actions">
                             <button class="gd-play-btn" id="gdPlayBtn" onclick="gdHandleMainAction()">
                                 <span class="gd-play-icon">
                                     <svg viewBox="0 0 24 24" width="20" height="20" fill="currentColor">
@@ -854,7 +1036,13 @@
                                 </span>
                                 <span id="gdPlayBtnLabel">PLAY</span>
                             </button>
-
+                            <button class="gd-maintenance-btn gd-update-btn" id="gdUpdateBtn" onclick="gdRunMaintenance('update')" hidden>UPDATE</button>
+                            <div class="gd-management-menu custom-dropdown" id="gdManagementMenuRoot" data-baddel-menu data-menu-portal hidden>
+                                <button type="button" class="gd-management-trigger" id="gdManagementBtn" data-menu-trigger aria-label="Game management" title="Game management" aria-haspopup="menu" aria-expanded="false" aria-controls="gdManagementMenu">&#9881;</button>
+                                <div class="dropdown-menu gd-management-popover" id="gdManagementMenu" role="menu" hidden></div>
+                            </div>
+                            </div>
+                            </div>
                             <div class="gd-download-block" id="gdDownloadBlock" style="display:none">
                                 <div class="gd-dl-header">
                                     <span class="gd-dl-status" id="gdDlStatus">Downloading…</span>
@@ -884,7 +1072,6 @@
                                 </div>
                             </div>
 
-                            <div id="gdTimeTrackingRow" style="display:none"></div>
                         </div>
                     </div>
                 </div>
@@ -1055,8 +1242,12 @@
                         <div class="gd-detail-list" id="gdDetailList">
                             </div>          
 
-            </div></main>
+            </div>
+        </main>
     </div>
+    <button type="button" id="agBackToTop" class="ag-back-to-top" aria-label="Back to top" title="Back to top" hidden>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 19V5"></path><path d="M5 12l7-7 7 7"></path></svg>
+    </button>
     <div class="gd-lightbox" id="gdLightbox">
         <button class="gd-lightbox-close" onclick="gdCloseLightbox()">×</button>
         <button class="gd-lightbox-nav prev" onclick="gdNavLightbox(-1)">&#10094;</button>
@@ -1213,6 +1404,92 @@
             <div class="modal-actions centere-actions">
                 <button class="btn-cancel" onclick="closeConfirmModal()">Cancel</button>
                 <button class="btn-danger" id="confirmBtn" onclick="executeConfirm()">Yes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="downloadHistoryModal" class="modal-overlay download-history-overlay" role="dialog" aria-modal="true" aria-labelledby="downloadHistoryTitle" onclick="if(event.target===this)downloadsCloseHistory()">
+        <div class="modal-box download-history-modal">
+            <header class="download-history-header">
+                <div>
+                    <h2 class="modal-title" id="downloadHistoryTitle">Download History</h2>
+                    <p>Completed and unsuccessful Baddel-managed downloads.</p>
+                </div>
+                <button type="button" class="download-history-close" aria-label="Close Download History" onclick="downloadsCloseHistory()">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="m6 6 12 12M18 6 6 18"/></svg>
+                </button>
+            </header>
+            <div class="download-history-toolbar">
+                <label>Platform<select id="downloadHistoryPlatform" onchange="downloadsRenderHistory()"><option value="all">All platforms</option></select></label>
+                <label>Status<select id="downloadHistoryStatus" onchange="downloadsRenderHistory()"><option value="all">All statuses</option><option value="completed">Completed</option><option value="failed">Failed</option><option value="cancelled">Cancelled</option></select></label>
+                <button type="button" class="download-btn download-btn-danger" id="downloadHistoryClear" onclick="downloadsClearHistory()">Clear History</button>
+            </div>
+            <div class="download-history-list" id="downloadHistoryList"></div>
+        </div>
+    </div>
+
+    <div id="supportBaddelModal" class="modal-overlay support-baddel-overlay" role="dialog" aria-modal="true" aria-labelledby="supportBaddelTitle" onclick="if(event.target===this)closeSupportBaddel()">
+        <div class="modal-box support-baddel-modal">
+            <header class="support-baddel-header">
+                <div>
+                    <h2 class="modal-title" id="supportBaddelTitle">Support Baddel</h2>
+                    <p>Choose the support option that works for you.</p>
+                </div>
+                <button type="button" class="support-baddel-close" aria-label="Close Support Baddel" onclick="closeSupportBaddel()">&#x2715;</button>
+            </header>
+            <div id="supportBaddelChoices" class="support-baddel-choices">
+                <button type="button" onclick="openSupportWorldwide()"><strong>Worldwide Support</strong><span>Open Baddel on Ko-fi in your browser.</span></button>
+                <button type="button" onclick="showEgyptSupport()"><strong>Egypt Support</strong><span>View the InstaPay QR code.</span></button>
+            </div>
+            <div id="supportBaddelEgypt" class="support-baddel-egypt" hidden>
+                <img src="../assets/instapay-qr.jpg" alt="Baddel InstaPay support QR code">
+                <p>Scan with InstaPay to support Baddel from Egypt.</p>
+                <button type="button" class="btn-cancel" onclick="showSupportChoices()">Back</button>
+            </div>
+        </div>
+    </div>
+
+
+    <div id="vaultShowcaseModal" class="modal-overlay vault-showcase-overlay" role="dialog" aria-modal="true" aria-labelledby="vaultShowcaseTitle" onclick="if(event.target===this && !this.classList.contains('is-busy'))closeVaultShowcaseModal()">
+        <div class="modal-box vault-showcase-modal">
+            <header class="vault-showcase-modal-header">
+                <div>
+                    <h2 class="modal-title" id="vaultShowcaseTitle">Share Vault</h2>
+                    <p id="vaultShowcaseMessage">Choose which totals to include in the PNG.</p>
+                </div>
+                <button type="button" class="vault-showcase-close" aria-label="Close export" onclick="closeVaultShowcaseModal()">&#x2715;</button>
+            </header>
+            <div class="vault-showcase-options" id="vaultShowcaseOptions">
+                <div class="vault-showcase-eligibility" id="vaultShowcaseEligibility" aria-live="polite"></div>
+                <label><span><strong>Current Library Value</strong><small>Latest committed Epic Store prices</small></span><input type="checkbox" id="vaultShowcaseCurrentLibraryValue" checked></label>
+                <label><span><strong>Total Paid</strong><small>Imported purchase history</small></span><input type="checkbox" id="vaultShowcaseTotalPaid" checked></label>
+                <label><span><strong>Refunds</strong><small>Imported purchase history</small></span><input type="checkbox" id="vaultShowcaseTotalRefunded" checked></label>
+                <label><span><strong>Net Spent</strong><small>Imported purchase history</small></span><input type="checkbox" id="vaultShowcaseNetSpend" checked></label>
+                <p class="vault-showcase-history-note" id="vaultShowcaseHistoryNote" hidden>Purchase History has not been imported for this account.</p>
+            </div>
+            <div class="vault-showcase-progress" id="vaultShowcaseProgress" aria-live="polite" hidden>
+                <span class="vault-showcase-spinner" aria-hidden="true"></span>
+                <span id="vaultShowcaseProgressText">Preparing showcase...</span>
+            </div>
+            <div class="vault-showcase-result" id="vaultShowcaseResult" hidden></div>
+            <div class="modal-actions vault-showcase-actions">
+                <button type="button" class="btn-cancel" id="vaultShowcaseCloseButton" onclick="closeVaultShowcaseModal()">Close</button>
+                <button type="button" class="btn-primary" id="vaultShowcaseGenerateButton" onclick="generateVaultShowcase()">Generate PNG</button>
+                <button type="button" class="btn-primary" id="vaultShowcaseCopyButton" onclick="copyVaultShowcaseImage()" hidden>Copy Image</button>
+            </div>
+        </div>
+    </div>
+    <div id="vaultEpicAuthModal" class="modal-overlay vault-epic-auth-modal" role="dialog" aria-modal="true" aria-labelledby="vaultEpicAuthTitle">
+        <div class="modal-box vault-epic-auth-dialog">
+            <h2 class="modal-title" id="vaultEpicAuthTitle">Epic sign-in required</h2>
+            <p class="confirm-msg" id="vaultEpicAuthMessage"></p>
+            <div class="vault-epic-auth-waiting" id="vaultEpicAuthWaiting" hidden>
+                <span class="vault-epic-auth-spinner" aria-hidden="true"></span>
+                <span>Epic sign-in is open</span>
+            </div>
+            <div class="modal-actions vault-epic-auth-actions" id="vaultEpicAuthActions">
+                <button class="btn-cancel" type="button" onclick="resolveVaultEpicReauthPrompt(false)">Not now</button>
+                <button class="btn-primary" type="button" onclick="resolveVaultEpicReauthPrompt(true)">Continue to Epic</button>
             </div>
         </div>
     </div>
@@ -1956,25 +2233,35 @@
     </div>
 </div>
 
+    <script src="js/performance-diagnostics.js"></script>
     <script src="js/domUtils.js"></script>
     <script src="js/analyticsConsent.js"></script>
     <script src="../node_modules/driver.js/dist/driver.js.iife.js"></script>
-    <script src="../tour.js"></script>
     <script src="js/platformResolver.js"></script>
+    <style>
+        .gd-action-block { position: relative; display: flex; align-items: stretch; }
+        .gd-install-control { display: inline-flex; align-items: stretch; max-width: 100%; }
+    </style>
     <script src="js/platformOwnership.js"></script>
+    <script src="js/vault-overview-model.js"></script>
+    <script src="js/vault-showcase-model.js"></script>
+    <script src="js/vault-hydration-client.js"></script>
     <script src="js/app/playtime.js"></script>
     <script src="js/app/help-feedback.js"></script>
     <script src="js/app/account-shortcuts.js"></script>
+    <script src="features/games/application/services/GameArtworkSchema.js"></script>
+    <script src="features/games/application/services/ArtworkDiagnostics.js"></script>
     <script src="features/games/domain/services/ArtworkOwnershipPolicy.js"></script>
     <script src="features/games/domain/services/CanonicalProductIdentity.js"></script>
     <script src="features/games/domain/services/GameArtworkState.js"></script>
     <script src="features/games/application/services/GameArtworkResolver.js"></script>
+    <script src="features/games/application/services/CanonicalGameIdentityResolver.js"></script>
+    <script src="features/games/application/services/GameArtworkReadModel.js"></script>
+    <script src="features/games/application/services/HomeArtworkPresentation.js"></script>
     <script src="features/games/application/services/AllGamesArtworkAdapter.js"></script>
     <script src="features/games/application/services/GameDetailsArtworkAdapter.js"></script>
     <script src="features/games/application/services/PlayLauncherArtworkAdapter.js"></script>
     <script src="features/games/application/services/GameSurfaceArtworkAdapter.js"></script>
-    <script src="features/games/application/services/CanonicalGameIdentityResolver.js"></script>
-    <script src="features/games/application/services/GameArtworkReadModel.js"></script>
     <script src="features/games/application/services/CanonicalArtworkProjection.js"></script>
     <script src="features/games/application/services/ExploreSelection.js"></script>
     <script src="js/app/artwork-sync.js"></script>
@@ -1983,13 +2270,17 @@
     <script src="js/app/hero.js"></script>
     <script src="js/app/system-stats.js"></script>
     <script src="js/app/settings-quick-switcher.js"></script>
+    <script src="js/app/virtual-grid-controller.js"></script>
     <script src="js/app/sidebar.js"></script>
+    <script src="js/baddel-menus.js"></script>
     <script src="js/downloads.js"></script>
+    <script src="js/install-storage.js"></script>
     <script src="js/app/collections.js"></script>
     <script src="js/app/game-context-actions.js"></script>
     <script src="js/app/suggestions.js"></script>
     <script src="js/app/roulette.js"></script>
     <script src="js/app/game-card.js"></script>
+    <script src="js/stores.js"></script>
     <script src="js/app.js"></script>
     <script src="js/accounts/display-prefs.js"></script>
     <script src="js/accounts/platform-panels.js"></script>

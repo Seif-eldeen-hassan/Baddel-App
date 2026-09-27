@@ -1,0 +1,3495 @@
+{
+  "provenance": "Selected verbatim segments of the real Legendary 0.20.34 reproduction; unrelated lines removed, no synthetic provider lines.",
+  "sourceSha256": "3af71c9c9dff1cb0947fe4ca53eab208a6a3dc26c40c4f9b620a4d1d0a848d6b",
+  "chunks": [
+    {
+      "sourceChunkId": 7,
+      "timestamp": "2026-09-03T03:23:12.847Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[cli] INFO: Install size: 655.78 MiB\r"
+        },
+        {
+          "sourceOffset": 37,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 38,
+          "text": "[cli] INFO: Download size: 574.14 MiB (Compression savings: 12.5%)\r"
+        },
+        {
+          "sourceOffset": 105,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 11,
+      "timestamp": "2026-09-03T03:23:13.260Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: Starting file writing worker...\r"
+        },
+        {
+          "sourceOffset": 50,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 42,
+      "timestamp": "2026-09-03T03:23:14.442Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 0.00% (0/720), Running for 00:00:00, ETA: 00:00:00\r"
+        },
+        {
+          "sourceOffset": 81,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "[DLManager] INFO:  - Downloaded: 0.00 MiB, Written: 0.00 MiB\r"
+        },
+        {
+          "sourceOffset": 143,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 43,
+      "timestamp": "2026-09-03T03:23:14.444Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 51,
+      "timestamp": "2026-09-03T03:23:15.446Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 0.14% (1/720), Running for 00:00:02, ETA: 00:26:04\r"
+        },
+        {
+          "sourceOffset": 81,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "[DLManager] INFO:  - Downloaded: 1.21 MiB, Written: 1.00 MiB\r"
+        },
+        {
+          "sourceOffset": 143,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 52,
+      "timestamp": "2026-09-03T03:23:15.447Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 1.21 MiB/s (raw) / 3.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 1.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 69,
+      "timestamp": "2026-09-03T03:23:16.459Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 1.11% (8/720), Running for 00:00:03, ETA: 00:04:43\r"
+        },
+        {
+          "sourceOffset": 81,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "[DLManager] INFO:  - Downloaded: 2.60 MiB, Written: 4.00 MiB\r"
+        },
+        {
+          "sourceOffset": 143,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 70,
+      "timestamp": "2026-09-03T03:23:16.460Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.37 MiB/s (raw) / 5.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 2.96 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 75,
+      "timestamp": "2026-09-03T03:23:17.472Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 1.67% (12/720), Running for 00:00:04, ETA: 00:04:07\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 3.09 MiB, Written: 7.00 MiB\r"
+        },
+        {
+          "sourceOffset": 144,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 76,
+      "timestamp": "2026-09-03T03:23:17.473Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.49 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 2.96 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 80,
+      "timestamp": "2026-09-03T03:23:18.485Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 1.67% (12/720), Running for 00:00:05, ETA: 00:05:07\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 4.12 MiB, Written: 7.00 MiB\r"
+        },
+        {
+          "sourceOffset": 144,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 81,
+      "timestamp": "2026-09-03T03:23:18.486Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 1.02 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 96,
+      "timestamp": "2026-09-03T03:23:19.498Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 2.36% (17/720), Running for 00:00:06, ETA: 00:04:17\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 97,
+      "timestamp": "2026-09-03T03:23:19.499Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  - Downloaded: 8.90 MiB, Written: 9.00 MiB\r"
+        },
+        {
+          "sourceOffset": 61,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 125,
+          "text": "[DLManager] INFO:  + Download\t- 4.72 MiB/s (raw) / 6.91 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 202,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 203,
+          "text": "[DLManager] INFO:  + Disk\t- 1.97 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 270,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 101,
+      "timestamp": "2026-09-03T03:23:20.513Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 2.36% (17/720), Running for 00:00:07, ETA: 00:04:59\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 9.90 MiB, Written: 9.00 MiB\r"
+        },
+        {
+          "sourceOffset": 144,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 102,
+      "timestamp": "2026-09-03T03:23:20.515Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.99 MiB/s (raw) / 0.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 112,
+      "timestamp": "2026-09-03T03:23:21.528Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 2.36% (17/720), Running for 00:00:08, ETA: 00:05:41\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 14.33 MiB, Written: 9.00 MiB\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 113,
+      "timestamp": "2026-09-03T03:23:21.530Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 4.36 MiB/s (raw) / 4.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 115,
+      "timestamp": "2026-09-03T03:23:22.530Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 2.36% (17/720), Running for 00:00:09, ETA: 00:06:22\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 14.33 MiB, Written: 9.00 MiB\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 116,
+      "timestamp": "2026-09-03T03:23:22.532Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 118,
+      "timestamp": "2026-09-03T03:23:23.544Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 2.36% (17/720), Running for 00:00:10, ETA: 00:07:04\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 14.33 MiB, Written: 9.00 MiB\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 119,
+      "timestamp": "2026-09-03T03:23:23.545Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 131,
+      "timestamp": "2026-09-03T03:23:24.563Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.11% (44/720), Running for 00:00:11, ETA: 00:02:53\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 18.77 MiB, Written: 25.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 210,
+          "text": "[DLManager] INFO:  + Download\t- 4.37 MiB/s (raw) / 4.93 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 287,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 288,
+          "text": "[DLManager] INFO:  + Disk\t- 16.74 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 356,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 133,
+      "timestamp": "2026-09-03T03:23:25.575Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.11% (44/720), Running for 00:00:12, ETA: 00:03:09\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 19.77 MiB, Written: 25.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 134,
+      "timestamp": "2026-09-03T03:23:25.576Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.98 MiB/s (raw) / 0.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 139,
+      "timestamp": "2026-09-03T03:23:26.590Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.25% (45/720), Running for 00:00:13, ETA: 00:03:19\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 21.77 MiB, Written: 26.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 210,
+          "text": "[DLManager] INFO:  + Download\t- 1.97 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 287,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 288,
+          "text": "[DLManager] INFO:  + Disk\t- 0.99 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 355,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 143,
+      "timestamp": "2026-09-03T03:23:27.602Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.25% (45/720), Running for 00:00:14, ETA: 00:03:34\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 23.77 MiB, Written: 26.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 144,
+      "timestamp": "2026-09-03T03:23:27.603Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 1.97 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 149,
+      "timestamp": "2026-09-03T03:23:28.615Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.25% (45/720), Running for 00:00:15, ETA: 00:03:50\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 25.77 MiB, Written: 26.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 150,
+      "timestamp": "2026-09-03T03:23:28.616Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 1.97 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 154,
+      "timestamp": "2026-09-03T03:23:29.627Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.25% (45/720), Running for 00:00:16, ETA: 00:04:05\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 27.77 MiB, Written: 26.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 210,
+          "text": "[DLManager] INFO:  + Download\t- 1.98 MiB/s (raw) / 1.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 287,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 288,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 355,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 158,
+      "timestamp": "2026-09-03T03:23:30.641Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 6.67% (48/720), Running for 00:00:17, ETA: 00:04:03\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 28.77 MiB, Written: 29.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 159,
+      "timestamp": "2026-09-03T03:23:30.642Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.99 MiB/s (raw) / 0.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 2.96 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 166,
+      "timestamp": "2026-09-03T03:23:31.642Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.64% (55/720), Running for 00:00:18, ETA: 00:03:42\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 32.77 MiB, Written: 36.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 210,
+          "text": "[DLManager] INFO:  + Download\t- 4.00 MiB/s (raw) / 4.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 287,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 288,
+          "text": "[DLManager] INFO:  + Disk\t- 7.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 355,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 180,
+      "timestamp": "2026-09-03T03:23:32.673Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:19, ETA: 00:03:45\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 38.24 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 181,
+      "timestamp": "2026-09-03T03:23:32.675Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 5.30 MiB/s (raw) / 5.82 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 1.94 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 189,
+      "timestamp": "2026-09-03T03:23:33.688Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:20, ETA: 00:03:57\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 39.84 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 191,
+      "timestamp": "2026-09-03T03:23:33.691Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.58 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 193,
+      "timestamp": "2026-09-03T03:23:34.700Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:21, ETA: 00:04:09\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 39.84 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 194,
+      "timestamp": "2026-09-03T03:23:34.701Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 203,
+      "timestamp": "2026-09-03T03:23:35.711Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:22, ETA: 00:04:21\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 42.36 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 204,
+      "timestamp": "2026-09-03T03:23:35.713Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.49 MiB/s (raw) / 5.93 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 210,
+      "timestamp": "2026-09-03T03:23:36.716Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:23, ETA: 00:04:32\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 45.36 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 211,
+      "timestamp": "2026-09-03T03:23:36.718Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.00 MiB/s (raw) / 3.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 219,
+      "timestamp": "2026-09-03T03:23:37.730Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:24, ETA: 00:04:44\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 47.93 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 220,
+      "timestamp": "2026-09-03T03:23:37.731Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.53 MiB/s (raw) / 4.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 226,
+      "timestamp": "2026-09-03T03:23:38.896Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 939,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:25, ETA: 00:04:56\r"
+        },
+        {
+          "sourceOffset": 1021,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 1022,
+          "text": "[DLManager] INFO:  - Downloaded: 50.33 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 1085,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 1149,
+          "text": "[DLManager] INFO:  + Download\t- 2.36 MiB/s (raw) / 4.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 1226,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 1227,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 1294,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 229,
+      "timestamp": "2026-09-03T03:23:39.762Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 7.92% (57/720), Running for 00:00:26, ETA: 00:05:08\r"
+        },
+        {
+          "sourceOffset": 82,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "[DLManager] INFO:  - Downloaded: 50.75 MiB, Written: 38.99 MiB\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 230,
+      "timestamp": "2026-09-03T03:23:39.763Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.41 MiB/s (raw) / 0.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 258,
+      "timestamp": "2026-09-03T03:23:40.778Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 11.25% (81/720), Running for 00:00:27, ETA: 00:03:36\r"
+        },
+        {
+          "sourceOffset": 83,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 259,
+      "timestamp": "2026-09-03T03:23:40.780Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  - Downloaded: 57.69 MiB, Written: 59.48 MiB\r"
+        },
+        {
+          "sourceOffset": 63,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 127,
+          "text": "[DLManager] INFO:  + Download\t- 6.84 MiB/s (raw) / 12.81 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 205,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 206,
+          "text": "[DLManager] INFO:  + Disk\t- 20.19 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 274,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 261,
+      "timestamp": "2026-09-03T03:23:41.788Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:28, ETA: 00:02:50\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 57.69 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 212,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 289,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 290,
+          "text": "[DLManager] INFO:  + Disk\t- 21.28 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 358,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 264,
+      "timestamp": "2026-09-03T03:23:42.793Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:29, ETA: 00:02:56\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 57.88 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 212,
+          "text": "[DLManager] INFO:  + Download\t- 0.19 MiB/s (raw) / 1.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 289,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 290,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 357,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 266,
+      "timestamp": "2026-09-03T03:23:43.802Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:30, ETA: 00:03:02\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 57.88 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 267,
+      "timestamp": "2026-09-03T03:23:43.803Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 271,
+      "timestamp": "2026-09-03T03:23:44.806Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:31, ETA: 00:03:08\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 58.15 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 272,
+      "timestamp": "2026-09-03T03:23:44.807Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.27 MiB/s (raw) / 1.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 277,
+      "timestamp": "2026-09-03T03:23:45.820Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:32, ETA: 00:03:14\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 58.71 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 278,
+      "timestamp": "2026-09-03T03:23:45.821Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.56 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 296,
+      "timestamp": "2026-09-03T03:23:46.835Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 14.31% (103/720), Running for 00:00:33, ETA: 00:03:21\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 62.24 MiB, Written: 80.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 297,
+      "timestamp": "2026-09-03T03:23:46.837Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.47 MiB/s (raw) / 9.85 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 315,
+      "timestamp": "2026-09-03T03:23:47.848Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.25% (117/720), Running for 00:00:34, ETA: 00:02:58\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 65.78 MiB, Written: 94.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 316,
+      "timestamp": "2026-09-03T03:23:47.850Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.50 MiB/s (raw) / 7.90 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 13.82 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 324,
+      "timestamp": "2026-09-03T03:23:48.917Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 469,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:35, ETA: 00:02:54\r"
+        },
+        {
+          "sourceOffset": 553,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 554,
+          "text": "[DLManager] INFO:  - Downloaded: 68.56 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 617,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 681,
+          "text": "[DLManager] INFO:  + Download\t- 2.74 MiB/s (raw) / 4.93 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 758,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 759,
+          "text": "[DLManager] INFO:  + Disk\t- 4.93 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 826,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 331,
+      "timestamp": "2026-09-03T03:23:49.864Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:36, ETA: 00:02:59\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 332,
+      "timestamp": "2026-09-03T03:23:49.865Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  - Downloaded: 69.88 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 63,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 127,
+          "text": "[DLManager] INFO:  + Download\t- 1.33 MiB/s (raw) / 3.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 204,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 205,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 272,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 338,
+      "timestamp": "2026-09-03T03:23:50.877Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:37, ETA: 00:03:04\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 72.61 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 212,
+          "text": "[DLManager] INFO:  + Download\t- 2.69 MiB/s (raw) / 3.95 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 289,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 290,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 357,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 343,
+      "timestamp": "2026-09-03T03:23:51.892Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:38, ETA: 00:03:09\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 74.37 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 344,
+      "timestamp": "2026-09-03T03:23:51.893Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.73 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 353,
+      "timestamp": "2026-09-03T03:23:52.905Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:39, ETA: 00:03:14\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 78.09 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 354,
+      "timestamp": "2026-09-03T03:23:52.907Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.67 MiB/s (raw) / 4.93 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 359,
+      "timestamp": "2026-09-03T03:23:53.915Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:40, ETA: 00:03:19\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 79.45 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 360,
+      "timestamp": "2026-09-03T03:23:53.916Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.35 MiB/s (raw) / 1.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 368,
+      "timestamp": "2026-09-03T03:23:54.929Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 16.94% (122/720), Running for 00:00:41, ETA: 00:03:24\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 81.77 MiB, Written: 99.99 MiB\r"
+        },
+        {
+          "sourceOffset": 148,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 369,
+      "timestamp": "2026-09-03T03:23:54.930Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.28 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 376,
+      "timestamp": "2026-09-03T03:23:55.932Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 20.14% (145/720), Running for 00:00:42, ETA: 00:02:49\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 83.22 MiB, Written: 119.25 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 377,
+      "timestamp": "2026-09-03T03:23:55.934Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.45 MiB/s (raw) / 1.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 19.18 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 382,
+      "timestamp": "2026-09-03T03:23:56.943Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 20.14% (145/720), Running for 00:00:43, ETA: 00:02:53\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 84.98 MiB, Written: 119.25 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 383,
+      "timestamp": "2026-09-03T03:23:56.944Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.74 MiB/s (raw) / 1.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 398,
+      "timestamp": "2026-09-03T03:23:57.956Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:44, ETA: 00:02:37\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 90.24 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 399,
+      "timestamp": "2026-09-03T03:23:57.957Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 5.19 MiB/s (raw) / 5.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 12.16 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 146,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 406,
+      "timestamp": "2026-09-03T03:23:58.957Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:45, ETA: 00:02:41\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 93.04 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 407,
+      "timestamp": "2026-09-03T03:23:58.958Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 2.80 MiB/s (raw) / 3.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 412,
+      "timestamp": "2026-09-03T03:23:59.971Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:46, ETA: 00:02:44\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 96.02 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 413,
+      "timestamp": "2026-09-03T03:23:59.972Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.94 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 422,
+      "timestamp": "2026-09-03T03:24:00.982Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:47, ETA: 00:02:48\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 99.43 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 213,
+          "text": "[DLManager] INFO:  + Download\t- 3.37 MiB/s (raw) / 3.95 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 290,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 291,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 358,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 424,
+      "timestamp": "2026-09-03T03:24:01.993Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:48, ETA: 00:02:51\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 99.43 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 149,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 425,
+      "timestamp": "2026-09-03T03:24:01.995Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 430,
+      "timestamp": "2026-09-03T03:24:03.006Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:49, ETA: 00:02:55\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 102.09 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 431,
+      "timestamp": "2026-09-03T03:24:03.007Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.63 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 433,
+      "timestamp": "2026-09-03T03:24:04.010Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:50, ETA: 00:02:59\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 434,
+      "timestamp": "2026-09-03T03:24:04.011Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  - Downloaded: 103.06 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 65,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 129,
+          "text": "[DLManager] INFO:  + Download\t- 0.97 MiB/s (raw) / 1.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 206,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 207,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 274,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 448,
+      "timestamp": "2026-09-03T03:24:05.011Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:51, ETA: 00:03:02\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 449,
+      "timestamp": "2026-09-03T03:24:05.012Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  - Downloaded: 108.55 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 65,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 129,
+          "text": "[DLManager] INFO:  + Download\t- 5.49 MiB/s (raw) / 6.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 206,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 207,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 274,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 451,
+      "timestamp": "2026-09-03T03:24:06.023Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:52, ETA: 00:03:06\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 108.55 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 452,
+      "timestamp": "2026-09-03T03:24:06.024Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 454,
+      "timestamp": "2026-09-03T03:24:07.033Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:53, ETA: 00:03:09\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 108.55 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 455,
+      "timestamp": "2026-09-03T03:24:07.035Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.00 MiB/s (raw) / 0.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 465,
+      "timestamp": "2026-09-03T03:24:08.034Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:54, ETA: 00:03:13\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 111.92 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 466,
+      "timestamp": "2026-09-03T03:24:08.035Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 3.36 MiB/s (raw) / 4.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 473,
+      "timestamp": "2026-09-03T03:24:09.047Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:55, ETA: 00:03:16\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 114.46 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 474,
+      "timestamp": "2026-09-03T03:24:09.048Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.51 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 482,
+      "timestamp": "2026-09-03T03:24:10.047Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:56, ETA: 00:03:20\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 117.24 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 483,
+      "timestamp": "2026-09-03T03:24:10.048Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.78 MiB/s (raw) / 3.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 485,
+      "timestamp": "2026-09-03T03:24:11.061Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:57, ETA: 00:03:23\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 118.23 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 486,
+      "timestamp": "2026-09-03T03:24:11.062Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 0.98 MiB/s (raw) / 0.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 498,
+      "timestamp": "2026-09-03T03:24:12.077Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:58, ETA: 00:03:27\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 123.03 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 214,
+          "text": "[DLManager] INFO:  + Download\t- 4.72 MiB/s (raw) / 4.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 291,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 499,
+      "timestamp": "2026-09-03T03:24:12.079Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 67,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 508,
+      "timestamp": "2026-09-03T03:24:13.090Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:00:59, ETA: 00:03:31\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 126.75 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 509,
+      "timestamp": "2026-09-03T03:24:13.091Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.68 MiB/s (raw) / 3.95 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 517,
+      "timestamp": "2026-09-03T03:24:14.105Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:00, ETA: 00:03:34\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 130.63 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 518,
+      "timestamp": "2026-09-03T03:24:14.107Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 3.82 MiB/s (raw) / 3.94 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 531,
+      "timestamp": "2026-09-03T03:24:15.107Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:01, ETA: 00:03:38\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 136.07 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 532,
+      "timestamp": "2026-09-03T03:24:15.108Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 5.44 MiB/s (raw) / 5.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 539,
+      "timestamp": "2026-09-03T03:24:16.118Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:02, ETA: 00:03:41\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 140.04 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 540,
+      "timestamp": "2026-09-03T03:24:16.119Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.92 MiB/s (raw) / 3.95 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 545,
+      "timestamp": "2026-09-03T03:24:17.132Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:03, ETA: 00:03:45\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 141.91 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 546,
+      "timestamp": "2026-09-03T03:24:17.133Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 64,
+          "text": "[DLManager] INFO:  + Download\t- 1.84 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 142,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 553,
+      "timestamp": "2026-09-03T03:24:18.147Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:04, ETA: 00:03:48\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 144.77 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 215,
+          "text": "[DLManager] INFO:  + Download\t- 2.82 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 292,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 293,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 360,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 561,
+      "timestamp": "2026-09-03T03:24:19.147Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:05, ETA: 00:03:52\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 148.27 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 562,
+      "timestamp": "2026-09-03T03:24:19.148Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 64,
+          "text": "[DLManager] INFO:  + Download\t- 3.50 MiB/s (raw) / 4.00 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 142,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 567,
+      "timestamp": "2026-09-03T03:24:20.157Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:06, ETA: 00:03:55\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 150.07 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 215,
+          "text": "[DLManager] INFO:  + Download\t- 1.79 MiB/s (raw) / 1.98 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 292,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 293,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 360,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 574,
+      "timestamp": "2026-09-03T03:24:21.167Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:07, ETA: 00:03:59\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 153.75 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 575,
+      "timestamp": "2026-09-03T03:24:21.168Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 64,
+          "text": "[DLManager] INFO:  + Download\t- 3.63 MiB/s (raw) / 3.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 142,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 587,
+      "timestamp": "2026-09-03T03:24:22.181Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:08, ETA: 00:04:03\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 158.86 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 588,
+      "timestamp": "2026-09-03T03:24:22.182Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 64,
+          "text": "[DLManager] INFO:  + Download\t- 5.05 MiB/s (raw) / 5.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 142,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 593,
+      "timestamp": "2026-09-03T03:24:23.196Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:09, ETA: 00:04:06\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 161.35 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 594,
+      "timestamp": "2026-09-03T03:24:23.197Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 2.45 MiB/s (raw) / 2.96 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 599,
+      "timestamp": "2026-09-03T03:24:24.209Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 22.08% (159/720), Running for 00:01:10, ETA: 00:04:10\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 163.17 MiB, Written: 131.57 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 600,
+      "timestamp": "2026-09-03T03:24:24.210Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 64,
+          "text": "[DLManager] INFO:  + Download\t- 1.79 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 142,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 209,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 615,
+      "timestamp": "2026-09-03T03:24:25.223Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 32.50% (234/720), Running for 00:01:11, ETA: 00:02:29\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 168.81 MiB, Written: 199.12 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 214,
+          "text": "[DLManager] INFO:  + Download\t- 5.56 MiB/s (raw) / 5.92 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 291,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 616,
+      "timestamp": "2026-09-03T03:24:25.227Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Disk\t- 66.61 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 68,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 621,
+      "timestamp": "2026-09-03T03:24:26.237Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 32.50% (234/720), Running for 00:01:12, ETA: 00:02:31\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 170.68 MiB, Written: 199.12 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 622,
+      "timestamp": "2026-09-03T03:24:26.238Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 1.85 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 625,
+      "timestamp": "2026-09-03T03:24:27.243Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 32.50% (234/720), Running for 00:01:13, ETA: 00:02:33\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 171.66 MiB, Written: 199.12 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 626,
+      "timestamp": "2026-09-03T03:24:27.245Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 0.97 MiB/s (raw) / 0.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 637,
+      "timestamp": "2026-09-03T03:24:28.246Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 33.61% (242/720), Running for 00:01:14, ETA: 00:02:28\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 175.50 MiB, Written: 205.44 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 638,
+      "timestamp": "2026-09-03T03:24:28.248Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.83 MiB/s (raw) / 3.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 6.30 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 643,
+      "timestamp": "2026-09-03T03:24:29.260Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 33.61% (242/720), Running for 00:01:15, ETA: 00:02:30\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 177.31 MiB, Written: 205.44 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 644,
+      "timestamp": "2026-09-03T03:24:29.261Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO:  + Download\t- 1.79 MiB/s (raw) / 1.97 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 77,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 78,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 145,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 653,
+      "timestamp": "2026-09-03T03:24:30.273Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 33.61% (242/720), Running for 00:01:17, ETA: 00:02:32\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 181.17 MiB, Written: 205.44 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 654,
+      "timestamp": "2026-09-03T03:24:30.274Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 63,
+          "text": "[DLManager] INFO:  + Download\t- 3.81 MiB/s (raw) / 3.95 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 140,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 141,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 208,
+          "text": "\n"
+        }
+      ]
+    },
+    {
+      "sourceChunkId": 667,
+      "timestamp": "2026-09-03T03:24:31.274Z",
+      "stream": "stderr",
+      "segments": [
+        {
+          "sourceOffset": 0,
+          "text": "[DLManager] INFO: = Progress: 33.61% (242/720), Running for 00:01:18, ETA: 00:02:34\r"
+        },
+        {
+          "sourceOffset": 84,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 85,
+          "text": "[DLManager] INFO:  - Downloaded: 186.85 MiB, Written: 205.44 MiB\r"
+        },
+        {
+          "sourceOffset": 150,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 214,
+          "text": "[DLManager] INFO:  + Download\t- 5.68 MiB/s (raw) / 5.99 MiB/s (decompressed)\r"
+        },
+        {
+          "sourceOffset": 291,
+          "text": "\n"
+        },
+        {
+          "sourceOffset": 292,
+          "text": "[DLManager] INFO:  + Disk\t- 0.00 MiB/s (write) / 0.00 MiB/s (read)\r"
+        },
+        {
+          "sourceOffset": 359,
+          "text": "\n"
+        }
+      ]
+    }
+  ]
+}

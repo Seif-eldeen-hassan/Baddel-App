@@ -6,6 +6,12 @@ const { STATUS: MRM_STATUS } = require('../../../../../services/metadataResoluti
 const { generateMetadataCandidates } = require('../../../../../services/candidateGenerator');
 const { mapPlatformHint: _mapPlatformHint } = require('../../../../shared/platform/platformHints');
 
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function verboseLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
+function pipelineSummaryLog(message, stats = {}) {
+    if (VERBOSE_LOGS || Number(stats.resolved || 0) > 0 || Number(stats.recovered || 0) > 0) console.log(message);
+}
+
 /** Platforms that use the Steam/Epic server enrich flow — skip from this pipeline. */
 const _SERVER_ENRICH_PLATFORMS = new Set(['steam', 'Steam', 'epic', 'Epic Games', 'epic games']);
 
@@ -53,6 +59,20 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
     const _cache       = deps.metadataCacheStore;
     const _imgDownload = deps.imageDownloadFn    ?? null;
     const _imgNotifier = deps.gameImageUpdatedFn ?? null;
+    const notifyPersistedArtwork = (updatedGame, changedTypes, reason) => {
+        if (!_imgNotifier || !updatedGame) return;
+        const revisions = {};
+        for (const type of changedTypes) {
+            const revision = updatedGame?.artworkState?.[type]?.revision;
+            if (revision != null) revisions[type] = revision;
+        }
+        _imgNotifier({
+            canonicalGame: updatedGame,
+            changedTypes,
+            revisions,
+            operationId: `background-artwork-${updatedGame.id}-${reason}-${Date.now()}`,
+        });
+    };
 
     // Filter: only non-Steam/Epic installed games
     const targets = games.filter(g => {
@@ -61,11 +81,11 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
     });
 
     if (targets.length === 0) {
-        console.log(`${TAG} No non-Steam/Epic games to process. Pipeline skipped.`);
+        verboseLog(`${TAG} No non-Steam/Epic games to process. Pipeline skipped.`);
         return;
     }
 
-    console.log(`${TAG} ══════ Pipeline START — ${targets.length} game(s) to process ══════`);
+    verboseLog(`${TAG} ══════ Pipeline START — ${targets.length} game(s) to process ══════`);
 
     let resolved = 0, mrmSkipped = 0, skipped = 0, missed = 0, recovered = 0;
 
@@ -90,7 +110,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
         // behind the 7-day RESOLVED lock even though its card is blank.
         const mrmStatus = _mrm.getStatus(game.id);
         if (mrmStatus === MRM_STATUS.RESOLVED && !hasAnyArt) {
-            console.log(`${gameTag} ⚠ MRM RESOLVED but no usable art in DB/cache — resetting to IDLE`);
+            verboseLog(`${gameTag} ⚠ MRM RESOLVED but no usable art in DB/cache — resetting to IDLE`);
             _mrm.resetToIdle(game.id);
             await _cache.deleteEntry(game.id).catch(() => {});
             recovered++;
@@ -100,7 +120,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
         // Any missing visual asset must NOT trigger a skip — backfill runs instead.
         try {
             if (hasAnyArt && hasHero && hasLogo && await _cache.hasEntry(game.id)) {
-                console.log(`${gameTag} ↷ Has cached metadata + cover + hero + logo — skipping.`);
+                verboseLog(`${gameTag} ↷ Has cached metadata + cover + hero + logo — skipping.`);
                 skipped++;
                 continue;
             }
@@ -116,7 +136,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
             try {
                 const hasMeta = await _cache.hasEntry(game.id);
                 if (hasMeta) {
-                    console.log(`${gameTag} [HeroBackfill] missing hero but cover/logo present — retrying`);
+                    verboseLog(`${gameTag} [HeroBackfill] missing hero but cover/logo present — retrying`);
                     const cachedMeta   = await _cache.load(game.id);
                     const cachedHeroUrl = cachedMeta?.heroImage || cachedMeta?.hero || null;
                     if (cachedHeroUrl) {
@@ -125,7 +145,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                             try {
                                 const dl = await _imgDownload({ hero: cachedHeroUrl }, game.id);
                                 if (dl?.hero) finalHero = dl.hero;
-                                console.log(`${gameTag} [HeroBackfill] hero cached successfully (${finalHero})`);
+                                verboseLog(`${gameTag} [HeroBackfill] hero cached successfully (${finalHero})`);
                             } catch (e) {
                                 console.warn(`${gameTag} [HeroBackfill] download failed, using remote URL:`, e.message);
                             }
@@ -133,11 +153,8 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                         try {
                             await _engine.updateGameMetadata(game.id, { hero: finalHero }, { source: 'pipeline' });
                             _engine.saveDatabase();
-                            console.log(`${gameTag} [HeroBackfill] reused cached metadata hero — DB updated`);
-                            if (_imgNotifier) {
-                                const updatedGame = _engine.getGameById(game.id);
-                                if (updatedGame) _imgNotifier(updatedGame);
-                            }
+                            verboseLog(`${gameTag} [HeroBackfill] reused cached metadata hero — DB updated`);
+                            notifyPersistedArtwork(_engine.getGameById(game.id), ['hero'], 'hero-backfill');
                         } catch (e) {
                             console.warn(`${gameTag} [HeroBackfill] DB update failed:`, e.message);
                         }
@@ -145,7 +162,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                     } else {
                         // Cache entry exists but has no hero — treat as stale/incomplete.
                         // Delete it and reset MRM so the full pipeline re-resolves fresh data.
-                        console.log(`${gameTag} [IncompleteArtRecovery] cache has no hero/logo -> force refresh`);
+                        verboseLog(`${gameTag} [IncompleteArtRecovery] cache has no hero/logo -> force refresh`);
                         await _cache.deleteEntry(game.id).catch(() => {});
                         _mrm.resetToIdle(game.id);
                         // heroHandled stays false → falls through to full resolve below
@@ -175,11 +192,8 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                         const finalLogo = dl?.logo || cachedLogoUrl;
                         await _engine.updateGameMetadata(game.id, { logo: finalLogo }, { source: 'pipeline' });
                         _engine.saveDatabase();
-                        console.log(`${gameTag} [IncompleteArtRecovery] backfilled logo (${finalLogo})`);
-                        if (_imgNotifier) {
-                            const upd = _engine.getGameById(game.id);
-                            if (upd) _imgNotifier(upd);
-                        }
+                        verboseLog(`${gameTag} [IncompleteArtRecovery] backfilled logo (${finalLogo})`);
+                        notifyPersistedArtwork(_engine.getGameById(game.id), ['logo'], 'logo-backfill');
                     }
                     await new Promise(r => setTimeout(r, 300));
                     continue;
@@ -193,7 +207,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
         const effectiveMrmStatus = _mrm.getStatus(game.id); // re-read after potential reset
         if (effectiveMrmStatus === MRM_STATUS.COOLDOWN) {
             const job = _mrm.getJob(game.id);
-            console.log(`${gameTag} ↷ MRM cooldown until ${new Date(job?.cooldownUntil).toISOString()} — skipping.`);
+            verboseLog(`${gameTag} ↷ MRM cooldown until ${new Date(job?.cooldownUntil).toISOString()} — skipping.`);
             mrmSkipped++;
             continue;
         }
@@ -209,7 +223,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
             pathHint:   metadataPath || undefined,
         });
 
-        console.log(`${gameTag} MRM candidates: ${candidates.map(c => c.title || c.slug).join(', ')}`);
+        verboseLog(`${gameTag} MRM candidates: ${candidates.map(c => c.title || c.slug).join(', ')}`);
 
         // primary title = game.name (or first candidate's displayName)
         const primaryTitle = game.name || (candidates[0]?.title) || '';
@@ -233,7 +247,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
 
             try {
                 await _cache.save(game.id, game.name, game.platform, meta);
-                console.log(`${gameTag} ✓ Full metadata persisted to local cache`);
+                verboseLog(`${gameTag} ✓ Full metadata persisted to local cache`);
                 resolved++;
             } catch (err) {
                 console.warn(`${gameTag} Failed to persist metadata:`, err.message);
@@ -251,7 +265,7 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                     if (cached?.cover) finalCover = cached.cover;
                     if (cached?.hero)  finalHero  = cached.hero;
                     if (cached?.logo)  finalLogo  = cached.logo;
-                    console.log(`${gameTag} ✓ Assets cached locally (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
+                    verboseLog(`${gameTag} ✓ Assets cached locally (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
                 } catch (err) {
                     console.warn(`${gameTag} Asset caching error (non-fatal) — using remote URLs:`, err.message);
                 }
@@ -265,15 +279,15 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                         logo:  finalLogo,
                     }, { source: 'pipeline' });
                     _engine.saveDatabase();
-                    console.log(`${gameTag} ✓ DB entry backfilled (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
+                    verboseLog(`${gameTag} ✓ DB entry backfilled (cover=${!!finalCover} hero=${!!finalHero} logo=${!!finalLogo})`);
 
-                    if (_imgNotifier) {
-                        const updatedGame = _engine.getGameById(game.id);
-                        if (updatedGame) {
-                            _imgNotifier(updatedGame);
-                            console.log(`${gameTag} ✓ Renderer notified (game-image-updated)`);
-                        }
-                    }
+                    const changedTypes = [
+                        finalCover ? 'cover' : null,
+                        finalHero ? 'hero' : null,
+                        finalLogo ? 'logo' : null,
+                    ].filter(Boolean);
+                    notifyPersistedArtwork(_engine.getGameById(game.id), changedTypes, 'full-resolve');
+                    if (_imgNotifier) verboseLog(`${gameTag} ✓ Renderer notified (game-image-updated)`);
                 } catch (err) {
                     console.warn(`${gameTag} DB backfill error:`, err.message);
                 }
@@ -282,20 +296,20 @@ async function runBackgroundMetadataPipeline(games, deps = {}) {
                 // Reset MRM so the next pipeline pass retries image fetching;
                 // this keeps exception_keep_pending_art games in the retry loop.
                 _mrm.resetToIdle(game.id);
-                console.log(`${gameTag} ⚠ Resolved metadata has no images — MRM reset to IDLE for retry`);
+                verboseLog(`${gameTag} ⚠ Resolved metadata has no images — MRM reset to IDLE for retry`);
             }
         } else {
             missed++;
-            console.log(`${gameTag} ✗ No metadata found from any source`);
+            verboseLog(`${gameTag} ✗ No metadata found from any source`);
         }
 
         // Throttle: 300 ms between games to avoid hammering the server
         await new Promise(r => setTimeout(r, 300));
     }
 
-    console.log(
-        `${TAG} ══════ Pipeline END — resolved=${resolved} mrmSkipped=${mrmSkipped} ` +
-        `cached=${skipped} missed=${missed} recovered=${recovered} ══════`
+    pipelineSummaryLog(
+        `${TAG} Summary resolved=${resolved} mrmSkipped=${mrmSkipped} cached=${skipped} missed=${missed} recovered=${recovered}`,
+        { resolved, recovered }
     );
 }
 

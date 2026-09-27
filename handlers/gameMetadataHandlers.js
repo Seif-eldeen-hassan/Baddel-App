@@ -12,6 +12,8 @@ const { mapPlatformHint: _mapPlatformHint } = require('../src/shared/platform/pl
 
 module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
     const { baddelApi, mrm, generateMetadataCandidates } = deps;
+    const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+    const verboseLog = (...args) => { if (VERBOSE_LOGS) console.log(...args); };
 
     function _canonicalSteamEpicId(platform, hints = {}) {
         const p = String(platform || '').toLowerCase().trim();
@@ -72,7 +74,7 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
             });
 
             if (platform && canonicalId && STEAM_EPIC.has(platform)) {
-                console.log(`[get-game-metadata] Steam/Epic canonical lookup: ${platform}/${canonicalId}`);
+                verboseLog(`[get-game-metadata] Steam/Epic canonical lookup: ${platform}/${canonicalId}`);
 
                 let serverGame = await baddelApi.lookupGame({
                     platform,
@@ -80,7 +82,7 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                 });
 
                 if (!serverGame) {
-                    console.log(`[get-game-metadata] Steam/Epic miss — requesting enrich for ${platform} ID: ${canonicalId}`);
+                    verboseLog(`[get-game-metadata] Steam/Epic miss — requesting enrich for ${platform} ID: ${canonicalId}`);
 
                     baddelApi
                         .requestGameEnrich(platform, canonicalId, originalGameName)
@@ -101,7 +103,7 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                     };
                 }
 
-                console.log(`[get-game-metadata] Steam/Epic hit: ${platform}/${canonicalId}`);
+                verboseLog(`[get-game-metadata] Steam/Epic hit: ${platform}/${canonicalId}`);
                 return baddelApi.normalizeServerData(serverGame);
             }
 
@@ -116,14 +118,14 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                     || (typeof (hints.id || '') === 'string' && /^gog[-_]/i.test(hints.id || '') ? String(hints.id).replace(/^gog[-_]/i, '') : null);
                 if (gogId && /^\d+$/.test(String(gogId))) {
                     const cleanGogId = String(gogId);
-                    console.log(`[get-game-metadata] trying platform/id lookup: gog/${cleanGogId}`);
+                    verboseLog(`[get-game-metadata] trying platform/id lookup: gog/${cleanGogId}`);
                     try {
                         const hit = await baddelApi.lookupGame({ platform: 'gog', id: cleanGogId });
                         if (hit) {
-                            console.log(`[get-game-metadata] platform/id hit: gog/${cleanGogId}`);
+                            verboseLog(`[get-game-metadata] platform/id hit: gog/${cleanGogId}`);
                             return baddelApi.normalizeServerData(hit);
                         }
-                        console.log(`[get-game-metadata] platform/id miss: gog/${cleanGogId}`);
+                        verboseLog(`[get-game-metadata] platform/id miss: gog/${cleanGogId}`);
                     } catch (_e) { /* continue to MRM */ }
                 }
 
@@ -132,14 +134,14 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                     || (typeof (hints.id || '') === 'string' && /^epic[-_]/i.test(hints.id || '') ? String(hints.id).replace(/^epic[-_]/i, '') : null);
                 if (epicId) {
                     const cleanEpicId = String(epicId).replace(/^epic[-_]/i, '');
-                    console.log(`[get-game-metadata] trying platform/id lookup: epic/${cleanEpicId}`);
+                    verboseLog(`[get-game-metadata] trying platform/id lookup: epic/${cleanEpicId}`);
                     try {
                         const hit = await baddelApi.lookupGame({ platform: 'epic', id: cleanEpicId });
                         if (hit) {
-                            console.log(`[get-game-metadata] platform/id hit: epic/${cleanEpicId}`);
+                            verboseLog(`[get-game-metadata] platform/id hit: epic/${cleanEpicId}`);
                             return baddelApi.normalizeServerData(hit);
                         }
-                        console.log(`[get-game-metadata] platform/id miss: epic/${cleanEpicId}`);
+                        verboseLog(`[get-game-metadata] platform/id miss: epic/${cleanEpicId}`);
                     } catch (_e) { /* continue to MRM */ }
                 }
 
@@ -147,14 +149,14 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                     || (typeof (hints.id || '') === 'string' && /^steam[-_]/i.test(hints.id || '') ? String(hints.id).replace(/^steam[-_]/i, '') : null);
                 if (steamId) {
                     const cleanSteamId = String(steamId).replace(/^steam[-_]/i, '');
-                    console.log(`[get-game-metadata] trying platform/id lookup: steam/${cleanSteamId}`);
+                    verboseLog(`[get-game-metadata] trying platform/id lookup: steam/${cleanSteamId}`);
                     try {
                         const hit = await baddelApi.lookupGame({ platform: 'steam', id: cleanSteamId });
                         if (hit) {
-                            console.log(`[get-game-metadata] platform/id hit: steam/${cleanSteamId}`);
+                            verboseLog(`[get-game-metadata] platform/id hit: steam/${cleanSteamId}`);
                             return baddelApi.normalizeServerData(hit);
                         }
-                        console.log(`[get-game-metadata] platform/id miss: steam/${cleanSteamId}`);
+                        verboseLog(`[get-game-metadata] platform/id miss: steam/${cleanSteamId}`);
                     } catch (_e) { /* continue to MRM */ }
                 }
             }
@@ -186,7 +188,7 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                 const mrmStatus = mrm.getStatus(mrmKey);
                 if (!forceMetadata && mrmStatus === 'cooldown') {
                     const job = mrm.getJob(mrmKey);
-                    console.log(`[get-game-metadata] MRM cooldown for "${originalGameName}" until ${new Date(job?.cooldownUntil).toISOString()}`);
+                    verboseLog(`[get-game-metadata] MRM cooldown for "${originalGameName}" until ${new Date(job?.cooldownUntil).toISOString()}`);
                     return { _mrmStatus: 'cooldown', _cooldownUntil: job?.cooldownUntil };
                 }
                 // NOTE: NOT_FOUND / AMBIGUOUS are NOT blocked here — MRM.resolve() itself
@@ -209,9 +211,9 @@ module.exports.register = function registerGameMetadataHandlers(ipcMain, deps) {
                 .replace(/\s+/g, '-').replace(/-{2,}/g, '-').replace(/^-+|-+$/g, '');
 
             if (mrm) {
-                console.log(`[get-game-metadata] MRM candidates for "${originalGameName}": ${mrmCandidates.map(c => c.title || c.slug).join(', ')}`);
-                console.log(`[get-game-metadata] candidate aliases: ${mrmCandidates.map(c => `${c.title || ''}${c.slug ? ` (${c.slug})` : ''}`).join(' | ')}`);
-                console.log(`[get-game-metadata] Routing "${originalGameName}" through MRM (key=${mrmKey})`);
+                verboseLog(`[get-game-metadata] MRM candidates for "${originalGameName}": ${mrmCandidates.map(c => c.title || c.slug).join(', ')}`);
+                verboseLog(`[get-game-metadata] candidate aliases: ${mrmCandidates.map(c => `${c.title || ''}${c.slug ? ` (${c.slug})` : ''}`).join(' | ')}`);
+                verboseLog(`[get-game-metadata] Routing "${originalGameName}" through MRM (key=${mrmKey})`);
                 const resolveResult = await mrm.resolve(mrmKey, {
                     candidates:   mrmCandidates,
                     title:        originalGameName,

@@ -64,7 +64,7 @@ test('Settings cover persists ownership, lock, timestamp, and aliases across rep
     assert.equal(after.cover, 'file://settings-cover.webp');
     assert.equal(after.coverUrl, 'file://settings-cover.webp');
     assert.equal(after.defaultImage, 'file://settings-cover.webp');
-    assert.equal(after.posterImage, 'file://creator-poster.webp');
+    assert.equal(after.posterImage, 'file://settings-cover.webp');
 });
 
 test('Settings hero and logo persist with one operation timestamp and synchronized aliases', async () => {

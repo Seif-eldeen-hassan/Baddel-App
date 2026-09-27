@@ -4,6 +4,7 @@ const { BrowserWindow, globalShortcut, screen, ipcMain } = require('electron');
 const path = require('path');
 const quickSwitcherSettings = require('./quickSwitcherSettings');
 const accountShortcuts = require('./accountShortcuts');
+const analytics = require('../analytics');
 
 const QS_DEBUG = process.env.BADDEL_QS_DEBUG === '1';
 
@@ -298,6 +299,7 @@ async function _doShow() {
             _win.setIgnoreMouseEvents(false);
         }
         _win.focus();
+        analytics.track('quick_switcher_opened', { feature: 'quick_switcher', result: 'success' }).catch(() => {});
         debugLogQuickSwitcher('[QuickSwitcher] focused', { seq, visibleReady: vrOk });
     }
 }

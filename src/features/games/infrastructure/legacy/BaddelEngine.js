@@ -22,6 +22,9 @@ const app = (electronApp && typeof electronApp.getPath === 'function')
     };
 
 const baddelApi = require('../../../../../services/baddelApi');
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function scannerLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
+function scannerWarnVerbose(...args) { if (VERBOSE_LOGS) console.warn(...args); }
 const { MetadataResolutionManager, STATUS: MRM_STATUS } = require('../../../../../services/metadataResolutionManager');
 const { generateMetadataCandidates } = require('../../../../../services/candidateGenerator');
 const {
@@ -71,6 +74,7 @@ class BaddelEngine {
         this._skipMetadataServerSync = !!options.skipMetadataServerSync;
         this._testDriveRoots = options.driveRoots || null;
         this._riotSearchRoots = options.riotSearchRoots || null;
+        this._gogScanner = options.gogScanner || null;
         this._mrm = options.mrm || createFallbackMrm();
         this._metadataCacheStore = options.metadataCacheStore || new MetadataCacheStore(this.dbFolder);
         this.__core = null; // lazy - created on first scan
@@ -144,6 +148,7 @@ class BaddelEngine {
     getHiddenGames()           { return this._jsonGameRepository.getHiddenGames(); }
     getMissingInstalledGames() { return this._jsonGameRepository.getMissingInstalledGames(); }
     getGameById(gameId)        { return this._jsonGameRepository.getGameById(gameId); }
+    async reconcileManagedInstalledGames(tasks) { return this._jsonGameRepository.reconcileManagedInstalledGames(tasks); }
 
     async restoreSpecificGames(gameIds) { return this._jsonGameRepository.restoreSpecificGames(gameIds); }
 
@@ -244,6 +249,8 @@ class BaddelEngine {
                 api:             baddelApi,
                 mrm:             this._mrm,
                 MRM_STATUS,
+                gogScanner:       this._gogScanner,
+                getStoredGames:   () => this.getAllGames(),
             });
         }
         return this.__core;
@@ -253,6 +260,7 @@ class BaddelEngine {
     async getSteamGames()      { return this._getCore().getSteamGames(); }
     async getLocalSteamGames() { return this._getCore().getLocalSteamGames(); }
     async getEpicGames()       { return this._getCore().getEpicGames(); }
+    async getGogGames()        { return this._getCore().getGogGames(); }
     async getRiotGames()       { return this._getCore().getRiotGames(); }
     async getUbisoftGames()    { return this._getCore().getUbisoftGames(); }
     async getEAGames()         { return this._getCore().getEAGames(); }
@@ -345,6 +353,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
         const scannerDefs = [
             { platform: 'steam',   method: 'getSteamGames',   timeoutMs: 30000 },
             { platform: 'epic',    method: 'getEpicGames',    timeoutMs: 30000 },
+            { platform: 'gog',     method: 'getGogGames',     timeoutMs: 30000 },
             { platform: 'riot',    method: 'getRiotGames',    timeoutMs: 30000 },
             { platform: 'ubisoft', method: 'getUbisoftGames', timeoutMs: 30000 },
             { platform: 'ea',      method: 'getEAGames',      timeoutMs: 30000 },
@@ -352,7 +361,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
         ];
         const official = [];
         this._getCore().clearScanReports();
-        await Promise.all(scannerDefs.map(async ({ platform, method, timeoutMs }) => {
+        await Promise.allSettled(scannerDefs.map(async ({ platform, method, timeoutMs }) => {
             const started = Date.now();
             const report = this._platformReport(platform);
             try {
@@ -361,7 +370,8 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
                 const coreStats = this._getCore().getScanReports()[platform];
                 if (coreStats) Object.assign(report, coreStats);
                 report.durationMs = Date.now() - started;
-                scannedPlatforms.add(platform);
+                const deletionReady = platform !== 'gog' || report.deletionReady === true;
+                if (deletionReady) scannedPlatforms.add(platform);
                 official.push(...(Array.isArray(games) ? games : []));
             } catch (err) {
                 const coreStats = this._getCore().getScanReports()[platform];
@@ -415,6 +425,15 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
             const key = game.installedGameKey || makeInstalledGameKey(game);
             if (key && detectedKeys.has(key)) continue;
 
+            // A GOG source can disappear independently (Galaxy uninstalled,
+            // registry cleaned, database locked). An intact saved installation
+            // remains authoritative local evidence and must stay playable.
+            if (platform === 'gog') {
+                const savedDirExists = game.path && (() => { try { return fsSync.statSync(game.path).isDirectory(); } catch { return false; } })();
+                const savedExeExists = game.executablePath && (() => { try { return fsSync.statSync(game.executablePath).isFile(); } catch { return false; } })();
+                if (savedDirExists && savedExeExists) continue;
+            }
+
             const reason = this._missingReasonForStoredGame(game);
             const wasVisible = game.isInstalled !== false;
             game.installSource = 'scanner';
@@ -453,7 +472,7 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
     _logScanSummary() {
         for (const platform of Object.keys(this._currentScanReports)) {
             const r = this._currentScanReports[platform];
-            console.log(`[GameScanner] Summary platform=${platform} raw=${r.raw} valid=${r.valid} skipped=${r.skipped} staleRemoved=${r.staleRemoved} durationMs=${r.durationMs}`);
+            scannerLog(`[GameScanner] Summary platform=${platform} raw=${r.raw} valid=${r.valid} skipped=${r.skipped} staleRemoved=${r.staleRemoved} durationMs=${r.durationMs}`);
         }
     }
 
@@ -468,12 +487,12 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
                 .filter(g => /^\d+$/.test(g.id));
 
             if (steamGames.length > 0) {
-                console.log(`[GameScanner] Syncing ${steamGames.length} Steam games to metadata server`);
+                scannerLog(`[GameScanner] Syncing ${steamGames.length} Steam games to metadata server`);
                 baddelApi.importGames('steam', steamGames).catch(err =>
                     console.warn('[GameScanner] Failed to sync Steam games:', err.message)
                 );
             } else {
-                console.log('[GameScanner] No Steam games found to sync');
+                scannerLog('[GameScanner] No Steam games found to sync');
             }
 
             const epicGames = detectedGames
@@ -485,17 +504,17 @@ async addManualGame(launchPath, customName = null, notifyCallback = null, option
                 .filter(g => {
                     if (!g) return false;
                     const valid = g.id.length >= 10 && /^[a-f0-9\-]+$/i.test(g.id);
-                    if (!valid) console.warn(`[GameScanner] Epic game "${g.title}" - invalid namespace "${g.id}", skipping server sync`);
+                    if (!valid) scannerWarnVerbose(`[GameScanner] Epic game "${g.title}" - invalid namespace "${g.id}", skipping server sync`);
                     return valid;
                 });
 
             if (epicGames.length > 0) {
-                console.log(`[GameScanner] Syncing ${epicGames.length} Epic games to metadata server`);
+                scannerLog(`[GameScanner] Syncing ${epicGames.length} Epic games to metadata server`);
                 baddelApi.importGames('epic', epicGames).catch(err =>
                     console.warn('[GameScanner] Failed to sync Epic games:', err.message)
                 );
             } else {
-                console.log('[GameScanner] No Epic games with valid namespaces found to sync');
+                scannerLog('[GameScanner] No Epic games with valid namespaces found to sync');
             }
         } catch (err) {
             console.warn('[GameScanner] Metadata server sync error:', err.message);

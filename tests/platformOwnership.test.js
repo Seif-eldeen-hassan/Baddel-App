@@ -84,6 +84,82 @@ test('_poEpicOwnsGame: account not in list returns false', () => {
     assert.equal(_poEpicOwnsGame(lg, 'xyz'), false);
 });
 
+test('GOG ownership uses exact canonical account IDs', () => {
+    const { _poGogOwnsGame } = loadModule();
+    const game = { ownedByAccountIds: ['123', '456'] };
+    assert.equal(_poGogOwnsGame(game, '123'), true);
+    assert.equal(_poGogOwnsGame(game, '12'), false);
+});
+
+test('GOG synced owner plus exact linked switcher profile is ready', () => {
+    const { _buildAccountOptionsFromData } = loadModule();
+    const options = _buildAccountOptionsFromData({
+        game: { name: 'GOG Game', gogProductId: '42' }, platform: 'gog',
+        switcherProfiles: [{ id: 'profile-uuid', displayName: 'Local label', platformAccountId: 'acct-1' }],
+        syncAccounts: [{ id: 'acct-1', displayName: 'Remote label' }],
+        syncedLibrary: [{ title: 'GOG Game', productId: '42', ownedByAccountIds: ['acct-1'] }],
+    });
+    assert.equal(options.length, 1);
+    assert.equal(options[0].id, 'profile-uuid');
+    assert.equal(options[0].actionStatus, 'ready');
+});
+
+test('GOG synced owner missing from switcher stays a disabled add_to_switcher ghost', () => {
+    const { _buildAccountOptionsFromData } = loadModule();
+    const [option] = _buildAccountOptionsFromData({
+        game: { gogProductId: '42' }, platform: 'gog', switcherProfiles: [],
+        syncAccounts: [{ id: 'acct-1', displayName: 'Owner' }],
+        syncedLibrary: [{ productId: '42', ownedByAccountIds: ['acct-1'] }],
+    });
+    assert.equal(option.actionStatus, 'add_to_switcher');
+    assert.equal(option.enabled, false);
+    assert.equal(option.syncAccountId, 'acct-1');
+});
+
+test('GOG unlinked switcher profile never matches a sync owner by display name', () => {
+    const { _buildAccountOptionsFromData } = loadModule();
+    const options = _buildAccountOptionsFromData({
+        game: { gogProductId: '42' }, platform: 'gog',
+        switcherProfiles: [{ id: 'uuid', displayName: 'Same Name', platformAccountId: null }],
+        syncAccounts: [{ id: 'acct-1', displayName: 'Same Name' }],
+        syncedLibrary: [{ productId: '42', ownedByAccountIds: ['acct-1'] }],
+    });
+    assert.equal(options.find(option => option.id === 'uuid').actionStatus, 'sync_to_verify');
+    assert.equal(options.find(option => option.syncAccountId === 'acct-1').actionStatus, 'add_to_switcher');
+});
+
+test('GOG exact product ID wins and ambiguous title fallback grants no ownership', () => {
+    const { _poFindLibraryGame } = loadModule();
+    const library = [
+        { title: 'Same', productId: '41', ownedByAccountIds: ['a'] },
+        { title: 'Same', productId: '42', ownedByAccountIds: ['b'] },
+    ];
+    assert.equal(_poFindLibraryGame(library, { name: 'Same', gogProductId: '42' }, 'gog').productId, '42');
+    assert.equal(_poFindLibraryGame(library, { name: 'Same' }, 'gog'), null);
+});
+
+test('managed gogdl accounts come from synced owners and do not require Switcher membership', async () => {
+    const window = loadModule();
+    window.electronAPI.platformSyncGetAccounts = async () => ({ accounts: [{ id: 'owner', displayName: 'Owner' }, { id: 'other' }] });
+    window.electronAPI.platformSyncGetCached = async () => ({ games: [{ productId: '42', ownedByAccountIds: ['owner'] }] });
+    const options = await window.buildManagedProviderAccountOptions({ game: { gogProductId: '42' }, platform: 'gog', provider: 'gogdl' });
+    assert.equal(options.find(option => option.id === 'owner').actionStatus, 'ready');
+    assert.equal(options.find(option => option.id === 'owner').notInSwitcher, false);
+    assert.equal(options.find(option => option.id === 'other').actionStatus, 'does_not_own');
+});
+
+test('managed GOG resolver keeps its last-good snapshot across a transient empty fetch', async () => {
+    const window = loadModule();
+    let healthy = true;
+    window.electronAPI.platformSyncGetAccounts = async () => ({ accounts: healthy ? [{ id: 'owner' }] : [] });
+    window.electronAPI.platformSyncGetCached = async () => ({ games: healthy ? [{ productId: '42', ownedByAccountIds: ['owner'] }] : [] });
+    const first = await window.buildManagedProviderAccountOptions({ game: { gogProductId: '42' }, platform: 'gog', provider: 'gogdl' });
+    healthy = false;
+    const second = await window.buildManagedProviderAccountOptions({ game: { gogProductId: '42' }, platform: 'gog', provider: 'gogdl' });
+    assert.equal(first[0].actionStatus, 'ready');
+    assert.equal(second[0].actionStatus, 'ready');
+});
+
 // ── getEpicInstallUrl ──────────────────────────────────────────
 test('getEpicInstallUrl: uses action=install not action=launch', () => {
     const { getEpicInstallUrl } = loadModule();
@@ -472,6 +548,22 @@ test('_poFindLibraryGame: Epic matches by catalogItemId when appName absent', ()
     const result = _poFindLibraryGame(lib, game, 'epic');
     assert.ok(result, 'should find by catalogItemId');
     assert.equal(result.catalogItemId, 'cat-99');
+});
+
+test('_poRenderAccountRow: GOG subtitle hides canonical account IDs while other platforms are unchanged', () => {
+    const { _poRenderAccountRow } = loadModule();
+    const option = {
+        id: 'profile-uuid', displayName: 'PizzaSteve', username: '59300109479941381',
+        platformAccountId: '59300109479941381', syncAccountId: '59300109479941381',
+        enabled: true, actionStatus: 'ready',
+    };
+    const render = (platKey, platName) => _poRenderAccountRow(option, {
+        idPrefix: 'row-', makeOnClick: () => '', closeModalJs: '', platKey, platName, platAccent: '#fff',
+    });
+    const gogSubtitle = render('gog', 'GOG').match(/<div class="pl-account-sub">([^<]+)<\/div>/)?.[1];
+    const epicSubtitle = render('epic', 'Epic Games').match(/<div class="pl-account-sub">([^<]+)<\/div>/)?.[1];
+    assert.equal(gogSubtitle, 'GOG');
+    assert.equal(epicSubtitle, '59300109479941381');
 });
 
 // ── _poRenderAccountRow: disabled row rendering ───────────────

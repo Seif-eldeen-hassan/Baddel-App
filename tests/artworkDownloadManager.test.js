@@ -348,6 +348,39 @@ test('ArtworkDownloadManager Data Saver skips automatic hero/logo but keeps cove
     assert.ok(events.every(event => event.downloadedBytes === 0 || event.assetType === 'cover'));
 });
 
+test('ArtworkDownloadManager keeps visible secondary artwork interactive under Data Saver', async () => {
+    let httpCalls = 0;
+    const { manager, events } = createManager({
+        bandwidthPolicy: new ArtworkBandwidthPolicy({ dataSaver: true }),
+        httpClient: {
+            async fetchImage() {
+                httpCalls += 1;
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    const result = await manager.downloadAssets({
+        cover: 'https://cdn.example/visible-cover.png',
+        hero: 'https://cdn.example/visible-hero.png',
+        logo: 'https://cdn.example/visible-logo.png',
+    }, 'game-visible', {
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.VISIBLE,
+    });
+
+    assert.match(result.cover, /^file:\/\//);
+    assert.match(result.hero, /^file:\/\//);
+    assert.match(result.logo, /^file:\/\//);
+    assert.equal(httpCalls, 3);
+    assert.equal(events.filter(event => event.skipped).length, 0);
+});
+
 test('ArtworkDownloadManager automatic bandwidth budget skips future background downloads', async () => {
     let httpCalls = 0;
     const { manager, events } = createManager({
@@ -523,4 +556,37 @@ test('Game Details artwork requests use the highest download priority', () => {
     assert.match(gameDetails, /reason:\s*'game-details-cached-fallback'/);
     assert.match(gameDetails, /reason:\s*'game-details-metadata-fallback'/);
     assert.match(gameDetails, /reason:\s*'game-details-reset-assets'/);
+});
+
+
+test('ArtworkDownloadManager queues cover before secondary artwork and records timing telemetry', async () => {
+    const order = [];
+    const { manager, events } = createManager({
+        httpClient: {
+            async fetchImage({ url }) {
+                order.push(url);
+                return {
+                    status: 200,
+                    notModified: false,
+                    buffer: PNG_1X1,
+                    bytes: PNG_1X1.length,
+                    mime: 'image/png',
+                };
+            },
+        },
+    });
+
+    await manager.downloadAssets({
+        hero: 'https://cdn.example/hero.png',
+        logo: 'https://cdn.example/logo.png',
+        cover: 'https://cdn.example/cover.png',
+    }, 'game-order', {
+        priority: ARTWORK_DOWNLOAD_PRIORITIES.LIBRARY_COVER_HYDRATION,
+    });
+
+    assert.equal(order[0], 'https://cdn.example/cover.png');
+    assert.ok(events.some(event => event.assetType === 'cover' && Number.isFinite(event.queueWaitMs)));
+    assert.ok(events.some(event => event.assetType === 'cover' && Number.isFinite(event.httpDownloadMs)));
+    assert.ok(events.some(event => event.assetType === 'cover' && Number.isFinite(event.coverNormalizationMs)));
+    assert.ok(events.some(event => event.assetType === 'cover' && Number.isFinite(event.cacheStoreMs)));
 });

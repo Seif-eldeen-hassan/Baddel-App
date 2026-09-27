@@ -1,12 +1,12 @@
 'use strict';
 
+const _schema = typeof require === 'function'
+    ? require('../../application/services/GameArtworkSchema')
+    : window.BaddelGameArtworkSchema;
+
 const ARTWORK_TYPES = Object.freeze(['cover', 'hero', 'logo']);
 
-const TYPE_ALIASES = Object.freeze({
-    cover: Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage']),
-    hero: Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl']),
-    logo: Object.freeze(['logo', 'logoUrl', 'defaultLogo']),
-});
+const TYPE_ALIASES = _schema.TYPE_ALIASES;
 
 const FALLBACK_SOURCES = new Set(['scanner', 'platform', 'pipeline', 'server', 'server-details', 'addManual', 'jump-back-in', 'manual', 'metadata', 'sync', 'reset', 'cache-recovery']);
 const EXPLICIT_USER_SOURCES = new Set(['settings', 'creator']);
@@ -29,6 +29,12 @@ function _emptyTypeState() {
         fallbackValue: null,
         fallbackSource: null,
         fallbackUpdatedAt: null,
+        originalSource: null,
+        cacheRepresentation: null,
+        identity: null,
+        availability: 'unknown',
+        pending: false,
+        terminal: false,
     };
 }
 
@@ -52,9 +58,8 @@ function _readFirst(game, keys) {
 }
 
 function _legacyFallback(game, type) {
-    if (type === 'cover') return _readFirst(game, ['creatorOriginalCover', 'defaultImage', 'cover', 'coverUrl', 'image']);
-    if (type === 'hero') return _readFirst(game, ['creatorOriginalHero', 'defaultHero', 'hero', 'heroImage', 'heroUrl', 'background', 'backgroundUrl']);
-    return _readFirst(game, ['creatorOriginalLogo', 'defaultLogo', 'logo', 'logoUrl']);
+    const originals = type === 'cover' ? ['creatorOriginalCover'] : type === 'hero' ? ['creatorOriginalHero'] : ['creatorOriginalLogo'];
+    return _readFirst(game, [...originals, ...TYPE_ALIASES[type]]);
 }
 
 function _legacyVisible(game, type) {
@@ -92,11 +97,19 @@ function migrateLegacyArtworkState(game = {}) {
             typeState.fallbackValue = fallback && fallback !== visible ? fallback : null;
             typeState.fallbackSource = typeState.fallbackValue ? 'legacy' : null;
             typeState.fallbackUpdatedAt = typeState.fallbackValue ? updatedAt : null;
+            typeState.originalSource = source || 'legacy';
+            typeState.cacheRepresentation = String(visible).startsWith('file://') ? visible : null;
+            typeState.availability = String(visible).startsWith('http') ? 'pending' : 'available';
+            typeState.pending = typeState.availability === 'pending';
         } else if (_hasValue(visible)) {
             typeState.fallbackValue = visible;
             typeState.fallbackSource = source || 'legacy';
             typeState.fallbackUpdatedAt = updatedAt;
             typeState.revision = Math.max(1, typeState.revision || 0);
+            typeState.originalSource = source || 'legacy';
+            typeState.cacheRepresentation = String(visible).startsWith('file://') ? visible : null;
+            typeState.availability = String(visible).startsWith('http') ? 'pending' : 'available';
+            typeState.pending = typeState.availability === 'pending';
         }
     }
 
@@ -138,6 +151,11 @@ function applyExplicitOverride(stateLike, type, value, { source = 'settings', up
     item.locked = true;
     item.updatedAt = updatedAt;
     item.revision = (item.revision || 0) + 1;
+    item.originalSource = source;
+    item.cacheRepresentation = String(value).startsWith('file://') ? value : null;
+    item.availability = 'available';
+    item.pending = false;
+    item.terminal = false;
     return { state, applied: true, reason: previous.locked ? 'explicit-user-replaced' : 'explicit-user', previous };
 }
 
@@ -149,6 +167,11 @@ function applyFallback(stateLike, type, value, { source = 'server', updatedAt = 
     item.fallbackSource = source;
     item.fallbackUpdatedAt = updatedAt;
     item.revision = (item.revision || 0) + 1;
+    item.originalSource = source;
+    item.cacheRepresentation = String(value || '').startsWith('file://') ? value : null;
+    item.availability = _hasValue(value) ? (String(value).startsWith('http') ? 'pending' : 'available') : 'unknown';
+    item.pending = item.availability === 'pending';
+    item.terminal = false;
     return { state, applied: true, reason: 'fallback' };
 }
 
@@ -161,6 +184,10 @@ function clearExplicitOverride(stateLike, type, { updatedAt = Date.now() } = {})
     item.locked = false;
     item.updatedAt = updatedAt;
     item.revision = (item.revision || 0) + 1;
+    const fallbackAvailable = _hasValue(item.fallbackValue);
+    item.availability = fallbackAvailable ? (String(item.fallbackValue).startsWith('http') ? 'pending' : 'available') : 'unknown';
+    item.pending = item.availability === 'pending';
+    item.terminal = false;
     return { state, applied: true, reason: 'cleared' };
 }
 
@@ -202,7 +229,7 @@ function projectArtworkStateToLegacyAliases(game = {}) {
         const effective = getEffectiveArtwork(out.artworkState, type);
         const aliases = TYPE_ALIASES[type];
         for (const alias of aliases) {
-            if (alias === 'posterImage') continue;
+            if (alias.startsWith('_roulette')) continue;
             out[alias] = effective || null;
         }
     }

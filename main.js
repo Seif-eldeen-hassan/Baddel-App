@@ -1,4 +1,27 @@
-const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, session, protocol, Notification, screen } = require('electron');
+const electron = require('electron');
+const { app, BrowserWindow, ipcMain, shell, Tray, Menu, dialog, session, protocol, Notification, screen, clipboard, nativeImage } = electron;
+const quickSwitcher = require('./services/quickSwitcher');
+const quickSwitcherSettings = require('./services/quickSwitcherSettings');
+const { PerformanceDiagnostics } = require('./services/performanceDiagnostics');
+const { ArtworkStartupDiagnostics } = require('./services/artworkStartupDiagnostics');
+const artworkStartupDiagnostics = new ArtworkStartupDiagnostics();
+artworkStartupDiagnostics.install(ipcMain);
+app.whenReady().then(() => artworkStartupDiagnostics.start(app, () => mainWindow, () => ({
+    ...artworkDownloadManager?.getStats?.(), ...coldCoverBootstrapService?.getStats?.(),
+})));
+const performanceDiagnostics = new PerformanceDiagnostics();
+performanceDiagnostics.installIpcTiming(ipcMain);
+if (process.env.BADDEL_SCROLL_DIAG_PORT) {
+    app.commandLine.appendSwitch('remote-debugging-port', String(process.env.BADDEL_SCROLL_DIAG_PORT));
+}
+if (!process.__baddelEpipeGuardInstalled) {
+    process.__baddelEpipeGuardInstalled = true;
+    for (const stream of [process.stdout, process.stderr]) {
+        stream?.on?.('error', (err) => {
+            if (err?.code === 'EPIPE') return;
+        });
+    }
+}
 let autoUpdater = null; // lazy-loaded inside setupAutoUpdater() - never required at module load
 const path = require('path');
 const fs = require('fs').promises;
@@ -24,14 +47,21 @@ const baddelApi       = require('./services/baddelApi');
 const imageWebpCache  = require('./services/imageWebpCache');
 const { artworkNetworkTelemetry } = require('./src/features/games/infrastructure/services/ArtworkNetworkTelemetry');
 const { generateMetadataCandidates } = require('./services/candidateGenerator');
-const { registerAccountHandlers, switchAccountByPlatform } = require('./accountsHandler');
+const { registerAccountHandlers, switchAccountByPlatform, getAllAccountsForQuickSwitcher } = require('./accountsHandler');
+const { StoresViewManager } = require('./services/storesViewManager');
+const { registerStoresHandlers } = require('./handlers/storesHandlers');
+const { registerVaultShowcaseHandlers } = require('./handlers/vaultShowcaseHandlers');
+const { VaultShowcaseExportService } = require('./src/features/vault/infrastructure/services/VaultShowcaseExportService');
 const accountShortcuts = require('./services/accountShortcuts');
-const quickSwitcher = require('./services/quickSwitcher');
-const quickSwitcherSettings = require('./services/quickSwitcherSettings');
 const { ContentAddressedArtworkCache } = require('./src/features/games/infrastructure/services/ContentAddressedArtworkCache');
+artworkStartupDiagnostics.observe(ContentAddressedArtworkCache.prototype, '_assetFileStatus', 'file-verification');
+artworkStartupDiagnostics.observe(ContentAddressedArtworkCache.prototype, '_readManifestFile', 'manifest-read-parse');
+artworkStartupDiagnostics.observe(ContentAddressedArtworkCache.prototype, 'linkAlias', 'alias-link');
 const { ArtworkDownloadScheduler, ARTWORK_DOWNLOAD_PRIORITIES } = require('./src/features/games/infrastructure/services/ArtworkDownloadScheduler');
 const { ArtworkHttpClient } = require('./src/features/games/infrastructure/services/ArtworkHttpClient');
 const { ArtworkDownloadManager } = require('./src/features/games/infrastructure/services/ArtworkDownloadManager');
+const { ColdCoverBootstrapService } = require('./src/features/games/infrastructure/services/ColdCoverBootstrapService');
+const { GridArtworkThumbnailCache } = require('./src/features/games/infrastructure/services/GridArtworkThumbnailCache');
 const { ArtworkBandwidthPolicy } = require('./src/features/games/infrastructure/services/ArtworkBandwidthPolicy');
 const {
     getSyncFeature,
@@ -46,6 +76,8 @@ const gamesIpc = require('./src/features/games/infrastructure/ipc/games.ipc');
 const { createDownloadsContainer } = require('./src/features/downloads/infrastructure/composition/DownloadsContainer');
 const { registerDownloadsIpc } = require('./src/features/downloads/infrastructure/ipc/downloads.ipc');
 const { GogRuntime } = require('./src/features/sync/infrastructure/integrations/gog/GogRuntime');
+const { loadGogRuntimeVersionInfo } = require('./src/features/sync/infrastructure/integrations/gog/GogRuntimeResolver');
+const { defaultGogFetch } = require('./src/features/sync/infrastructure/integrations/gog/GogApiClient');
 
 const _startupPerf = {
     processStart: Date.now(),
@@ -76,6 +108,26 @@ function _startupPerfSummary() {
         });
     } catch (_) {}
 }
+
+
+ipcMain.handle('scroll-diagnostic:get-config', () => {
+    const enabled = process.env.BADDEL_SCROLL_DIAG_AUTORUN === '1';
+    const defaultOut = path.join(app.getPath('userData'), 'scroll-diagnostic-report.json');
+    return {
+        enabled,
+        durationMs: Number(process.env.BADDEL_SCROLL_DIAG_DURATION_MS || 20000),
+        scenarios: String(process.env.BADDEL_SCROLL_DIAG_SCENARIOS || 'A,B,C').split(',').map(s => s.trim()).filter(Boolean),
+        out: process.env.BADDEL_SCROLL_DIAG_OUT || defaultOut,
+    };
+});
+
+ipcMain.handle('scroll-diagnostic:write-report', async (_event, report) => {
+    if (process.env.BADDEL_SCROLL_DIAG_AUTORUN !== '1') return { ok: false, error: 'scroll diagnostic autorun is not enabled' };
+    const out = process.env.BADDEL_SCROLL_DIAG_OUT || path.join(app.getPath('userData'), 'scroll-diagnostic-report.json');
+    await fs.mkdir(path.dirname(out), { recursive: true });
+    await fs.writeFile(out, JSON.stringify(report, null, 2), 'utf8');
+    return { ok: true, out };
+});
 
 function startAnalyticsAfterWindowVisible() {
     if (startAnalyticsAfterWindowVisible.started) return;
@@ -252,6 +304,23 @@ function getUpdateNotesForVersion(version) {
                 },
             ],
             footer: 'Thanks for using Baddel — more improvements are on the way.',
+        },
+        '1.2.0': {
+            version:    '1.2.0',
+            type:       'feature-tour',
+            posterOnly: true,
+            title:      '',
+            subtitle:   '',
+            slides: [
+                { image: 'assets/update-notes/1.2.0/1-poster.png' },
+                { image: 'assets/update-notes/1.2.0/2-poster.png', spotlight: '#nav-downloads', feature: 'downloads' },
+                { image: 'assets/update-notes/1.2.0/3-poster.png', spotlight: '#nav-vault-overview', feature: 'vault' },
+                { image: 'assets/update-notes/1.2.0/4-poster.png', spotlight: '#nav-stores', feature: 'stores' },
+                { image: 'assets/update-notes/1.2.0/5-poster.png', spotlight: '#nav-gog', feature: 'gog' },
+                { image: 'assets/update-notes/1.2.0/6-poster.png' },
+                { image: 'assets/update-notes/1.2.0/7-poster.png' },
+            ],
+            footer: '',
         }
     };
 
@@ -470,6 +539,7 @@ require('./handlers/autoUpdateHandlers').register(ipcMain, {
     _clearAllUpdateTimers,
     readUpdateNotesState,
     markUpdateNotesPending,
+    analytics,
 });
 
 
@@ -480,6 +550,10 @@ require('./handlers/autoUpdateHandlers').register(ipcMain, {
 let mainWindow;
 let tray = null;
 let isQuitting = false;
+let downloadsContainer = null;
+let storesViewManager = null;
+let downloadsShutdownComplete = false;
+let downloadsShutdownPromise = null;
 
 const driveCache = { data: null, lastFetched: 0 };
 const DRIVE_CACHE_TTL = 60_000;
@@ -1583,6 +1657,54 @@ function createTray() {
 // ============================================================
 // WINDOW
 // ============================================================
+function _coldCoverStablePlatformId(game = {}) {
+    const platform = String(game.platform || '').toLowerCase().trim();
+    if (platform === 'steam') {
+        const raw = game.allIds?.steam || game.steamAppId || game.steam_appid || game.appId || game.appid || game.id;
+        const match = String(raw || '').match(/(\d{3,})/);
+        return match ? { platform: 'steam', id: match[1] } : null;
+    }
+    if (platform === 'epic' || platform === 'epic games' || platform === 'epic_games') {
+        const raw = game.allIds?.epic || game.namespace || game.catalogNamespace || game.epicNamespace || game.appName || game.launcherGameId || game.catalogItemId;
+        const id = String(raw || '').replace(/^epic[-_]/i, '').trim();
+        return id ? { platform: 'epic', id } : null;
+    }
+    if (platform === 'gog') {
+        const raw = game.allIds?.gog || game.productId || game.appName || game.gameId || game.id;
+        const id = String(raw || '').replace(/^gog[-_]/i, '').trim();
+        return id ? { platform: 'gog', id } : null;
+    }
+    return null;
+}
+
+async function _resolveColdCoverMetadata(game = {}) {
+    const title = game.title || game.name || game.displayName || '';
+    const stable = _coldCoverStablePlatformId(game);
+    if (stable?.platform && stable?.id) {
+        const hit = await baddelApi.lookupGame({ platform: stable.platform, id: stable.id }).catch(() => null);
+        if (hit) return baddelApi.normalizeServerData(hit);
+        if (stable.platform === 'steam' || stable.platform === 'epic') {
+            baddelApi.requestGameEnrich(stable.platform, stable.id, title).catch(() => {});
+            return null;
+        }
+    }
+
+    const mrm = gamesApi.resolutionManager;
+    if (!mrm || !title) return null;
+    const pathHint = game.executablePath || game.launchCommand || game.command || game.path || undefined;
+    const candidates = generateMetadataCandidates({
+        name: title,
+        exeName: game.exeName || undefined,
+        folderName: game.folderName || undefined,
+        pathHint,
+    });
+    const resolveResult = await mrm.resolve(game.id || title, {
+        candidates,
+        title,
+        platformHint: game.platform || undefined,
+    }).catch(() => null);
+    return resolveResult?.meta || null;
+}
 function createWindow() {
     _startupPerf.createWindowCalled = Date.now();
     _startupPerfLog('createWindow called');
@@ -1609,8 +1731,15 @@ function createWindow() {
         }
     });
 
+    // Establish the final viewport while hidden so the first renderer layout is already maximized.
+    mainWindow.maximize();
+
     mainWindow.on('close', (event) => {
-        if (!isQuitting) { event.preventDefault(); mainWindow.hide(); }
+        if (!isQuitting) {
+            event.preventDefault();
+            storesViewManager?.setVisible(false);
+            mainWindow.hide();
+        }
     });
     mainWindow.once('show', () => {
         _startupPerf.windowShown = _startupPerf.windowShown || Date.now();
@@ -1669,7 +1798,6 @@ function createWindow() {
     });
     // --
 
-    mainWindow.maximize();
     mainWindow.loadFile(path.join(__dirname, 'src', 'dashboard.html'));
     mainWindow.webContents.once('dom-ready', () => {
         _startupPerf.domReady = Date.now();
@@ -1692,6 +1820,7 @@ function createWindow() {
     mainWindow.once('ready-to-show', () => {
         _startupPerf.readyToShow = Date.now();
         _startupPerfLog('ready-to-show');
+        downloadsContainer?.maintenanceScheduler?.start?.();
         if (isStartupLaunch) {
             // Boot-time launch: stay hidden in tray, do not steal focus.
             console.log('[Startup] launched hidden to tray');
@@ -1769,6 +1898,38 @@ ipcMain.handle('get-artwork-network-diagnostics', () =>
 // ============================================================
 let CACHE_DIR;
 let artworkDownloadManager;
+let coldCoverBootstrapService;
+let gridArtworkThumbnailCache;
+
+function scheduleIncrementalArtworkCoverMigration() {
+    if (process.env.BADDEL_DISABLE_ARTWORK_COVER_MIGRATION === '1') return;
+    let inFlight = false;
+    let stopped = false;
+    const step = async () => {
+        if (stopped || inFlight || !artworkDownloadManager) return;
+        inFlight = true;
+        try {
+            const result = await artworkDownloadManager.migrateOversizedActiveCovers?.({
+                maxAssets: Number(process.env.BADDEL_ARTWORK_COVER_MIGRATION_BATCH_ASSETS || 25),
+                batchSize: Number(process.env.BADDEL_ARTWORK_MANIFEST_BATCH_SIZE || 50),
+            });
+            if (result?.migrated > 0) {
+                console.log('[ArtworkMigration] normalized oversized covers', {
+                    migrated: result.migrated,
+                    bytesSaved: result.bytesSaved,
+                    lastReason: result.lastReason,
+                });
+                setTimeout(step, 2000);
+            }
+        } catch (err) {
+            console.warn('[ArtworkMigration] incremental cover migration failed:', err?.message || err);
+        } finally {
+            inFlight = false;
+        }
+    };
+    setTimeout(step, Number(process.env.BADDEL_ARTWORK_COVER_MIGRATION_DELAY_MS || 60000));
+    app.once('before-quit', () => { stopped = true; });
+}
 
 // ============================================================
 // APP STARTUP
@@ -1819,12 +1980,20 @@ app.whenReady().then(async () => {
             crypto,
             baseDir: path.join(app.getPath('userData'), 'artwork-cache-v2'),
             maxCacheBytes: process.env.BADDEL_ARTWORK_CACHE_MAX_BYTES,
+            activeCoverCacheBytes: process.env.BADDEL_ACTIVE_COVER_CACHE_BYTES,
+            secondaryCacheBytes: process.env.BADDEL_SECONDARY_ARTWORK_CACHE_BYTES,
         }),
         scheduler: new ArtworkDownloadScheduler({
-            concurrency: 3,
+            concurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 2 : 6,
             worker: task => task.run(),
         }),
-        httpClient: new ArtworkHttpClient(),
+        httpClient: new ArtworkHttpClient({
+            // Use Chromium's network service in Electron so artwork follows the
+            // same proxy/DNS stack as the app. ArtworkHttpClient still enforces
+            // MIME, size, timeout, retry, and cache trust rules.
+            fetchImpl: electron.net?.fetch ? electron.net.fetch.bind(electron.net) : undefined,
+            timeoutMs: process.env.BADDEL_ARTWORK_HTTP_TIMEOUT_MS,
+        }),
         bandwidthPolicy: new ArtworkBandwidthPolicy({
             dataSaver: process.env.BADDEL_ARTWORK_DATA_SAVER === '1',
             maxAutomaticBytes: process.env.BADDEL_ARTWORK_AUTOMATIC_BUDGET_BYTES,
@@ -1832,6 +2001,26 @@ app.whenReady().then(async () => {
         }),
         telemetry: artworkNetworkTelemetry,
     });
+    gridArtworkThumbnailCache = new GridArtworkThumbnailCache({
+        baseDir: path.join(app.getPath('userData'), 'artwork-grid-cache-v1', '160x240'),
+        sourceRoots: [path.join(app.getPath('userData'), 'artwork-cache-v2')],
+        maxBytes: process.env.BADDEL_GRID_ARTWORK_CACHE_MAX_BYTES,
+    });
+    coldCoverBootstrapService = new ColdCoverBootstrapService({
+        artworkDownloadManager,
+        metadataResolver: _resolveColdCoverMetadata,
+        jobConcurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 2 : 6,
+        backgroundJobConcurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 1 : 2,
+        bufferJobConcurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 1 : 4,
+        metadataConcurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 1 : 3,
+        visibleMetadataConcurrency: process.env.BADDEL_ARTWORK_DATA_SAVER === '1' ? 1 : 2,
+        dataSaverJobConcurrency: 2,
+        notify: (payload) => {
+            try { mainWindow?.webContents?.send('artwork-cold-cover-bootstrap:batch', payload); } catch {}
+        },
+    });
+
+    scheduleIncrementalArtworkCoverMigration();
 
     // -- Games feature IPC — primary registration via games adapter (Phase 3.3) --
     // All four legacy handler groups (installedGames, gameLibrary, image, localMetadata)
@@ -1840,7 +2029,11 @@ app.whenReady().then(async () => {
     // at line ~1990, well after this block, so the renderer cannot send IPC before then.
     // Shadow routing for get-game-by-id and get-hidden-games is preserved from Phase 3.2.
     // Rollback: restore the four individual .register() calls and the pre-whenReady imageHandlers block.
-    const installedGamesState = { backgroundScanInProgress: false };
+    const installedGamesState = {
+        backgroundScanInProgress: false,
+        lastLibrarySignature: null,
+        backgroundMetadataTimer: null,
+    };
     const _gamesDeps = {
         // installedGamesHandlers
         refetchMissingImages,
@@ -1862,6 +2055,9 @@ app.whenReady().then(async () => {
         dialog,
         imageWebpCache,
         artworkDownloadManager,
+        coldCoverBootstrapService,
+        gridArtworkThumbnailCache,
+        artworkNetworkTelemetry,
         fileURLToPath,
         _collectImageCacheIdsFromGame,
         _readReadyToInstallProtectedImageIds,
@@ -1884,8 +2080,14 @@ app.whenReady().then(async () => {
         path,
         fs,
         getMainWindow: () => mainWindow,
+        clipboard: electron.clipboard,
     };
     gamesIpc.register(ipcMain, _gamesDeps);
+    gamesApi.registerGameImageUpdatedNotifier((payload) => {
+        const target = mainWindow;
+        if (!target || target.isDestroyed?.() || target.webContents?.isDestroyed?.()) return;
+        target.webContents.send('game-image-updated', payload);
+    });
     // -- Playtime IPC (moved to handlers/playtimeHandlers.js) --
     require('./handlers/playtimeHandlers').register(ipcMain, {
         updatePlaytime,
@@ -1904,6 +2106,7 @@ app.whenReady().then(async () => {
     require('./handlers/creatorPageHandlers').register(ipcMain, {
         dialog,
         getMainWindow: () => mainWindow,
+        clipboard: electron.clipboard,
         fs,
         path,
         app,
@@ -2221,22 +2424,100 @@ const allAchievements = allSchemaAchievements.length
     require('./handlers/baddelApiHandlers').register(ipcMain, { baddelApi });
 
     createWindow();
+    storesViewManager = new StoresViewManager({
+        electron,
+        mainWindow,
+        userDataPath: app.getPath('userData'),
+        shell,
+        resolveActiveAccount: async provider => {
+            const groups = await getAllAccountsForQuickSwitcher();
+            const group = groups.find(item => item.platform === provider);
+            return group?.accounts?.find(account => account.isActive)?.accountId || null;
+        },
+    });
+    registerStoresHandlers(ipcMain, {
+        getManager: () => storesViewManager,
+        getMainWindow: () => mainWindow,
+        clipboard: electron.clipboard,
+        analytics,
+    });
+    const vaultShowcaseExportService = new VaultShowcaseExportService({
+        BrowserWindow,
+        dialog,
+        clipboard,
+        nativeImage,
+        sharp: require('sharp'),
+        exportPagePath: path.join(__dirname, 'src', 'vault-export.html'),
+        exportPreloadPath: path.join(__dirname, 'vault-export-preload.js'),
+        trustedArtworkRoots: [
+            path.join(app.getPath('userData'), 'artwork-cache-v2'),
+            path.join(app.getPath('userData'), 'image_cache'),
+            path.join(app.getPath('userData'), 'user_artwork'),
+        ],
+        getParentWindow: () => mainWindow,
+    });
+    registerVaultShowcaseHandlers(ipcMain, { service: vaultShowcaseExportService, analytics });
+    app.on('baddel-account-switched', payload => {
+        storesViewManager?.accountChanged(payload?.platform).catch(error => console.warn('[Stores] account session refresh failed:', error?.message));
+    });
     createTray();
     registerAccountHandlers(ipcMain);
     registerPlatformSyncHandlers(ipcMain, () => mainWindow);
-    const downloadsContainer = createDownloadsContainer({
+    downloadsContainer = createDownloadsContainer({
+        getDrives: async () => {
+            if (!driveCache.data || Date.now() - driveCache.lastFetched > 60000) await refreshDriveCache();
+            return driveCache.data || [];
+        },
         app,
         GogRuntimeClass: GogRuntime,
+        loadGogRuntimeVersionInfo,
+        gogFetch: defaultGogFetch,
+        epicConnector,
         gamesApi: {
             getSavedGames,
             getAllGames,
             upsertGame,
+            removeGame,
             saveDatabase,
             flushDatabase,
             generateStableId,
+            reconcileManagedInstalledGames: async (tasks) => {
+                const result = await getJsonGameRepository().reconcileManagedInstalledGames(tasks);
+                if (!result?.idRemap || !Object.keys(result.idRemap).length) return result;
+                await colHandler.remapGameIds(result.idRemap);
+                if (artworkDownloadManager) {
+                    for (const [oldId, survivorId] of Object.entries(result.idRemap)) {
+                        for (const type of ["cover", "hero", "logo"]) {
+                            const cached = artworkDownloadManager.getCachedAsset({ canonicalGameId: oldId, type });
+                            if (cached?.assetHash) artworkDownloadManager.linkCachedAlias({
+                                assetHash: cached.assetHash,
+                                canonicalGameId: survivorId,
+                                type,
+                            });
+                        }
+                    }
+                }
+                if (result.changed) {
+                    console.log('[InstalledReconciliation] completed', {
+                        removedCount: result.removedCount,
+                        rules: result.merges.map(item => ({ platform: item.platform, rule: item.rule })),
+                    });
+                    try { mainWindow?.webContents?.send('library-updated', getSavedGames()); } catch {}
+                }
+                return result;
+            },
         },
         notifyLibraryUpdated: (games) => {
             try { mainWindow?.webContents?.send('library-updated', games || getSavedGames()); } catch {}
+        },
+        isGameRunning: async (game) => {
+            if (activeTrackers[String(game?.id || '')]) return true;
+            return isGameRunning(
+                game?.command || game?.launchCommand || game?.executablePath || '',
+                game?.path || game?.installPath || '',
+                game?.name || game?.title || '',
+                game?.id || null
+            );
         },
     });
     registerDownloadsIpc(ipcMain, {
@@ -2244,13 +2525,14 @@ const allAchievements = allSchemaAchievements.length
         dialog,
         shell,
         getMainWindow: () => mainWindow,
+        clipboard: electron.clipboard,
     });
     downloadsContainer.queueManager.load().catch(err => {
         console.warn('[Downloads] queue recovery failed:', err && err.message);
     });
 
     // -- Account Shortcuts IPC (moved to handlers/accountShortcutHandlers.js) --
-    require('./handlers/accountShortcutHandlers').register(ipcMain, { accountShortcuts });
+    require('./handlers/accountShortcutHandlers').register(ipcMain, { accountShortcuts, analytics });
 
     // Register global shortcuts - fires switchAccountByPlatform and shows a notification.
     await accountShortcuts.registerAll(async (platform, accountId, accountName) => {
@@ -2270,7 +2552,6 @@ const allAchievements = allSchemaAchievements.length
     // Register the global hotkey and open the overlay on fire.
     try {
         await quickSwitcher.registerQuickSwitcherHotkey();
-        try { analytics.track('quick_switcher_opened'); } catch {}
     } catch {}
     quickSwitcher.createQuickSwitcherWindow();
 
@@ -2294,13 +2575,20 @@ const allAchievements = allSchemaAchievements.length
         }
     });
 
-    const _downloadAssetsToCache = async (assets, gameId) => {
+    const _downloadAssetsToCache = async (assets, gameId, options = {}) => {
         if (!artworkDownloadManager) return assets;
+        const keys = Object.keys(assets || {}).filter((key) => assets[key]);
+        const coverOnly = keys.length === 1 && keys[0] === 'cover';
         return artworkDownloadManager.downloadAssets(assets, gameId, {
-            priority: ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND,
-            sourceSubsystem: 'main-shared-asset-downloader',
-            reason: 'platform-sync-or-background-metadata',
+            priority: options.priority || (coverOnly ? ARTWORK_DOWNLOAD_PRIORITIES.LIBRARY_COVER_HYDRATION : ARTWORK_DOWNLOAD_PRIORITIES.BACKGROUND),
+            sourceSubsystem: options.sourceSubsystem || 'main-shared-asset-downloader',
+            reason: options.reason || (coverOnly ? 'library-cover-hydration' : 'platform-sync-or-background-metadata'),
+            activeLibraryGameCount: options.activeLibraryGameCount || null,
         });
+    };
+    _downloadAssetsToCache.withManifestTransaction = (options, fn) => {
+        if (!artworkDownloadManager?.withManifestTransaction) return fn();
+        return artworkDownloadManager.withManifestTransaction(options, fn);
     };
 
     // Wire the same downloader into both pipelines so Steam/Epic games from
@@ -2456,12 +2744,28 @@ function _detectPlatform(command) {
 // ============================================================
 app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 
-app.on('before-quit', () => {
+app.on('before-quit', (event) => {
     isQuitting = true;
+    storesViewManager?.destroy();
     analytics.stopHeartbeat();
     accountShortcuts.unregisterAll();
     quickSwitcher.unregisterQuickSwitcherHotkey();
     quickSwitcher.destroyQuickSwitcherWindow();
+    downloadsContainer?.maintenanceScheduler?.stop?.();
+    const activeDownloadId = downloadsContainer?.queueManager?.getSnapshot?.().activeTaskId || null;
+    if (!downloadsShutdownComplete && (activeDownloadId || downloadsShutdownPromise)) {
+        event.preventDefault();
+        if (!downloadsShutdownPromise) {
+            downloadsShutdownPromise = downloadsContainer.queueManager.shutdown()
+                .catch((error) => {
+                    console.error('[Downloads] Could not stop the active provider before exit:', error?.message || error);
+                })
+                .finally(() => {
+                    downloadsShutdownComplete = true;
+                    app.quit();
+                });
+        }
+    }
     // Save in-progress playtime sessions before exit
     for (const [gameId, tracker] of Object.entries(activeTrackers)) {
         clearInterval(tracker.intervalId);
@@ -2490,7 +2794,16 @@ require('./handlers/launchHandlers').register(ipcMain, {
     safeLauncher,
     analytics,
     app,
+    launcherPathResolver: require('./services/launcherPathResolver'),
 });
+
+if (performanceDiagnostics.enabled) {
+    ipcMain.handle('perf-diagnostics:snapshot', () => performanceDiagnostics.snapshot({ app }));
+    ipcMain.handle('perf-diagnostics:renderer-report', (_event, report) => ({
+        accepted: performanceDiagnostics.addRendererReport(report),
+    }));
+    app.once('before-quit', () => performanceDiagnostics.shutdown());
+}
 
 // ---- Analytics handlers (consent, log events - moved to handlers/analyticsHandlers.js) ----
 require('./handlers/analyticsHandlers').register(ipcMain, { analytics, fs, app });

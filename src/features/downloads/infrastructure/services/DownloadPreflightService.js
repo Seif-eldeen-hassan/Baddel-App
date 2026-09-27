@@ -4,7 +4,7 @@ const path = require('path');
 const fs = require('fs');
 const { DownloadFileSafetyService } = require('./DownloadFileSafetyService');
 
-const SUPPORTED_DOWNLOAD_PLATFORMS = new Set(['gog']);
+const SUPPORTED_DOWNLOAD_PLATFORMS = new Set(['gog', 'epic']);
 
 function makeDownloadError(code, message) {
     const err = new Error(message || code);
@@ -21,11 +21,12 @@ class DownloadPreflightService {
 
     validateQueuePayload(payload = {}) {
         const platform = String(payload.platform || '').trim().toLowerCase();
-        if (platform === 'epic') {
-            throw makeDownloadError('EPIC_DIRECT_DOWNLOAD_NOT_AVAILABLE', 'Epic direct downloads are not available in this build.');
-        }
         if (!SUPPORTED_DOWNLOAD_PLATFORMS.has(platform)) {
-            throw makeDownloadError('DOWNLOAD_UNSUPPORTED_PLATFORM', 'Direct downloads are only available for GOG in this build.');
+            throw makeDownloadError('DOWNLOAD_UNSUPPORTED_PLATFORM', 'This direct-download provider is not supported.');
+        }
+        const installProvider = String(payload.installProvider || (platform === 'gog' ? 'gogdl' : '')).trim().toLowerCase();
+        if ((platform === 'gog' && installProvider !== 'gogdl') || (platform === 'epic' && installProvider !== 'legendary')) {
+            throw makeDownloadError('DOWNLOAD_PROVIDER_UNAVAILABLE', 'This installation provider is not available.');
         }
         if (!String(payload.accountId || '').trim()) {
             throw makeDownloadError('DOWNLOAD_ACCOUNT_NOT_READY', 'Choose a linked account before adding this game to the queue.');
@@ -49,21 +50,22 @@ class DownloadPreflightService {
             throw makeDownloadError('DOWNLOAD_INVALID_INSTALL_PATH', 'Choose a full installation path.');
         }
         const preflight = this.fileSafety.inspectInstallPath({ ...payload, platform, installPath });
-        const expectedDownloadBytes = Number.isFinite(Number(payload.expectedDownloadBytes || payload.expectedTotalBytes || payload.totalBytes || payload.downloadSizeBytes))
-            ? Number(payload.expectedDownloadBytes || payload.expectedTotalBytes || payload.totalBytes || payload.downloadSizeBytes)
-            : null;
-        const expectedInstalledBytes = Number.isFinite(Number(payload.expectedInstalledBytes || payload.installedDiskSizeBytes))
-            ? Number(payload.expectedInstalledBytes || payload.installedDiskSizeBytes)
-            : null;
+        const positiveSize = values => values.find(value => typeof value === 'number' && Number.isSafeInteger(value) && value > 0) ?? null;
+        const expectedDownloadBytes = positiveSize([payload.downloadSizeBytes, payload.expectedDownloadBytes, payload.expectedTotalBytes, payload.totalBytes]);
+        const expectedInstalledBytes = positiveSize([payload.installedDiskSizeBytes, payload.expectedInstalledBytes]);
         return {
             ...payload,
             ...preflight,
             platform,
+            installProvider,
             expectedDownloadBytes,
             expectedInstalledBytes,
             expectedTotalBytes: expectedDownloadBytes,
+            sizeStatus: Number.isFinite(Number(preflight.requiredSpaceBytes)) && Number(preflight.requiredSpaceBytes) > 0 ? 'resolved' : 'unknown',
+            sizeReason: Number.isFinite(Number(preflight.requiredSpaceBytes)) && Number(preflight.requiredSpaceBytes) > 0 ? null : (payload.sizeReason || 'not-provided-before-queue'),
+            sizeCheckedAt: payload.sizeCheckedAt || new Date().toISOString(),
             sizeResolutionStatus: Number.isFinite(Number(preflight.requiredSpaceBytes)) && Number(preflight.requiredSpaceBytes) > 0 ? 'resolved' : 'unresolved',
-            sizeResolutionFailureReason: Number.isFinite(Number(preflight.requiredSpaceBytes)) && Number(preflight.requiredSpaceBytes) > 0 ? null : 'not-provided-before-queue',
+            sizeResolutionFailureReason: Number.isFinite(Number(preflight.requiredSpaceBytes)) && Number(preflight.requiredSpaceBytes) > 0 ? null : (payload.sizeReason || 'not-provided-before-queue'),
         };
     }
 }

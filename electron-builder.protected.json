@@ -18,7 +18,8 @@
   "files": [
     "**/*",
     "!.git/**/*",
-    "!.vscode/**/*"
+    "!.vscode/**/*",
+    "!bin/legendary.exe"
   ],
   "extraResources": [
     {
@@ -36,6 +37,14 @@
         "version.json",
         "LICENSE-GPL-3.0.txt"
       ]
+    },
+    {
+      "from": "bin/legendary.exe",
+      "to": "bin/legendary.exe"
+    },
+    {
+      "from": "resources/gog-account-switcher-helper.ps1",
+      "to": "gog-account-switcher-helper.ps1"
     }
   ],
   "publish": [

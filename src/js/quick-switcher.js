@@ -517,6 +517,7 @@ async function _switchAccount(item) {
 function _switchWaitMs(platform) {
     if (platform === 'steam') return 7000;
     if (platform === 'epic') return 6000;
+    if (platform === 'gog') return 10000;
     return 1500;
 }
 

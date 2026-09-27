@@ -1,0 +1,21 @@
+const fs = require('node:fs');
+const path = require('node:path');
+(async () => {
+  const root = process.cwd();
+  const asarRoot = path.join(root, 'dist', 'win-unpacked', 'resources', 'app.asar');
+  const userData = 'C:\\Users\\TestUser\\AppData\\Roaming\\baddel-launcher-beta';
+  const { ContentAddressedArtworkCache } = require(path.join(asarRoot, 'src', 'features', 'games', 'infrastructure', 'services', 'ContentAddressedArtworkCache.js'));
+  const { ArtworkDownloadManager } = require(path.join(asarRoot, 'src', 'features', 'games', 'infrastructure', 'services', 'ArtworkDownloadManager.js'));
+  const beforeText = fs.readFileSync(path.join(userData, 'artwork-cache-v2', 'manifest.json'), 'utf8');
+  const beforeFiles = new Set(fs.readdirSync(path.join(userData, 'artwork-cache-v2', 'assets')));
+  const cache = new ContentAddressedArtworkCache({ baseDir: path.join(userData, 'artwork-cache-v2'), logger: { log(){}, warn(){}, error(){} } });
+  const manager = new ArtworkDownloadManager({ cache, scheduler: { getStats: () => ({}), getSnapshot: () => ({ stats: {}, active: 0, pending: [] }) }, httpClient: {}, logger: { log(){}, warn(){}, error(){} } });
+  const result = await manager.migrateOneOversizedActiveCover();
+  const afterText = fs.readFileSync(path.join(userData, 'artwork-cache-v2', 'manifest.json'), 'utf8');
+  const afterFiles = new Set(fs.readdirSync(path.join(userData, 'artwork-cache-v2', 'assets')));
+  const deletedAgain = [...beforeFiles].filter(f => !afterFiles.has(f)).length;
+  const createdAgain = [...afterFiles].filter(f => !beforeFiles.has(f)).length;
+  const report = { marker: 'PACKAGED_ARTWORK_MIGRATION_IDEMPOTENCY', result, normalizedAgain: result?.migrated ? 1 : 0, deletedAgain, createdAgain, manifestChanged: beforeText !== afterText };
+  fs.writeFileSync(path.join(root, 'acceptance-checkpoints', 'packaged-compatibility', 'packaged-artwork-migration-idempotency.json'), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify(report, null, 2));
+})().catch((err) => { console.error(err.stack || err); process.exit(1); });

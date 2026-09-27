@@ -31,6 +31,10 @@ const util      = require('util');
 const execAsync = util.promisify(exec);
 const crypto    = require('crypto');
 const { mapPlatformHint } = require('../../../../shared/platform/platformHints');
+const { GogInstalledGamesScanner } = require('./GogInstalledGamesScanner');
+
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function verboseLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
 
 // ─── Shortcut args parser ─────────────────────────────────────────────────────
 function parseShortcutArgs(rawArgs) {
@@ -54,13 +58,16 @@ function _cacheBaseName(type, gameId) {
 // Alias kept for backward-compatible export.
 const _mapPlatformHint = mapPlatformHint;
 
-const SCANNER_PLATFORMS = new Set(['steam', 'epic', 'riot', 'ubisoft', 'ea', 'xbox']);
+const SCANNER_PLATFORMS = new Set(['steam', 'epic', 'gog', 'riot', 'ubisoft', 'ea', 'xbox']);
 
 const PLATFORM_LABEL_TO_KEY = {
     steam: 'steam',
     'steam games': 'steam',
     epic: 'epic',
     'epic games': 'epic',
+    gog: 'gog',
+    'gog.com': 'gog',
+    'gog galaxy': 'gog',
     riot: 'riot',
     'riot games': 'riot',
     ubisoft: 'ubisoft',
@@ -229,6 +236,33 @@ function _scoreExeCandidate(filePath, root, options = {}) {
     return score;
 }
 
+function scoreExeCandidateForDiagnostics(filePath, root, options = {}) {
+    const base = path.basename(filePath).toLowerCase();
+    const reasons = [];
+    if (!base.endsWith('.exe')) reasons.push('not-executable');
+    if (isLauncherOrHelperExe(base)) reasons.push('launcher-or-helper');
+    const includePatterns = options.includeNamePatterns || [];
+    if (includePatterns.length && !includePatterns.some(re => re.test(base))) reasons.push('include-pattern-rejected');
+    const preferred = (options.preferredNames || []).map(name => String(name).toLowerCase());
+    if (preferred.includes(base)) reasons.push(`preferred-name:${preferred.indexOf(base)}`);
+    const hint = normalizeDisplayName(options.nameHint || path.basename(root || '')).toLowerCase().replace(/[^a-z0-9]/g, '');
+    const exeStem = base.replace(/\.exe$/i, '').replace(/[^a-z0-9]/g, '');
+    if (hint && (exeStem.includes(hint) || hint.includes(exeStem))) reasons.push('name-hint-similarity');
+    const lowerPath = String(filePath || '').toLowerCase();
+    if (lowerPath.includes('\\binaries\\') || lowerPath.includes('/binaries/')) reasons.push('binaries-directory');
+    if (lowerPath.includes('\\win64\\') || lowerPath.includes('/win64/')) reasons.push('win64-directory');
+    if (lowerPath.includes('\\bin\\') || lowerPath.includes('/bin/')) reasons.push('bin-directory');
+    if (base.includes('shipping')) reasons.push('shipping-name');
+    if (base.includes('server') || base.includes('dedicated') || base.includes('editor') || base.includes('benchmark')) reasons.push('utility-name-penalty');
+    if (base === 'game.exe' || base === 'launcher.exe') reasons.push('generic-name-penalty');
+    const rawScore = _scoreExeCandidate(filePath, root, options);
+    return {
+        score: Number.isFinite(rawScore) ? rawScore : null,
+        scoreLabel: Number.isFinite(rawScore) ? String(rawScore) : '-Infinity',
+        reasons,
+    };
+}
+
 function findLikelyGameExe(root, options = {}) {
     const cleanRoot = _cleanPathInput(root);
     if (fileExists(cleanRoot) && cleanRoot.toLowerCase().endsWith('.exe')) {
@@ -313,6 +347,13 @@ function makeInstalledGameKey(game = {}) {
         const launcherId = game.launcherGameId || [ns, item, appName].filter(Boolean).join(':');
         if (launcherId) return `epic:${String(launcherId).toLowerCase()}`;
     }
+    if (platform === 'gog') {
+        const productId = ids.gog || game.gogProductId || game.providerProductId || game.launcherGameId;
+        const installPath = normalizePath(game.installPath || game.path || game.executablePath);
+        if (/^\d+$/.test(String(productId || '')) && installPath) {
+            return `gog:${productId}:${_hashShort(installPath).slice(0, 10)}`;
+        }
+    }
     if (platform === 'riot') {
         const product = game.riotProduct || game.launcherGameId || ids.riot;
         if (product) return `riot:${String(product).toLowerCase()}`;
@@ -358,7 +399,7 @@ function isGameInstallValid(game = {}) {
         return { valid: false, reason: 'exe_missing', validationWarnings: ['executable missing'] };
     }
 
-    if (['riot', 'ubisoft', 'ea'].includes(platform) && !exePath) {
+    if (['gog', 'riot', 'ubisoft', 'ea'].includes(platform) && !exePath) {
         return { valid: false, reason: 'exe_missing', validationWarnings: ['no verified game executable'] };
     }
 
@@ -401,7 +442,7 @@ class GameScannerCore {
      *   MRM_STATUS:     object,   — MRM_STATUS enum
      * }} opts
      */
-    constructor({ programData, dbFolder, testDriveRoots, riotSearchRoots, api, mrm, MRM_STATUS }) {
+    constructor({ programData, dbFolder, testDriveRoots, riotSearchRoots, api, mrm, MRM_STATUS, gogScanner, getStoredGames }) {
         this.programData      = programData;
         this.dbFolder         = dbFolder;
         this._testDriveRoots  = testDriveRoots  || null;
@@ -409,6 +450,8 @@ class GameScannerCore {
         this._api             = api;
         this._mrm             = mrm;
         this._MRM_STATUS      = MRM_STATUS;
+        this._gogScanner      = gogScanner || null;
+        this._getStoredGames  = getStoredGames || (() => []);
         this._scanReports     = {};
     }
 
@@ -820,12 +863,45 @@ class GameScannerCore {
         const results = await Promise.allSettled([
             this.getSteamGames(),
             this.getEpicGames(),
+            this.getGogGames(),
             this.getRiotGames(),
             this.getUbisoftGames(),
             this.getEAGames(),
             this.getXboxGames()
         ]);
         return results.flatMap(r => r.status === 'fulfilled' ? r.value : []);
+    }
+
+    // --- GOG ---
+    async getGogGames() {
+        const report = this._platformReport('gog');
+        const started = Date.now();
+        if (!this._gogScanner) {
+            this._gogScanner = new GogInstalledGamesScanner({
+                programData: this.programData,
+                userDataDir: this.dbFolder,
+                driveRoots: await this._getFilesystemDrives(),
+                getStoredGames: this._getStoredGames,
+                findLikelyGameExe,
+            });
+        }
+        try {
+            const result = await this._gogScanner.scan();
+            const games = Array.isArray(result?.games) ? result.games : [];
+            report.raw = games.length;
+            report.valid = games.length;
+            report.kept = games.length;
+            report.sourceReadiness = result?.diagnostics?.sources || {};
+            report.deletionReady = result?.deletionReady === true;
+            report.duplicatesMerged = result?.diagnostics?.duplicatesMerged || 0;
+            report.durationMs = result?.diagnostics?.durationMs || (Date.now() - started);
+            if (!report.deletionReady) report.errors.push('GOG_SCAN_NOT_DELETION_READY');
+            return games;
+        } catch (error) {
+            report.deletionReady = false;
+            this._recordError('gog', error);
+            return [];
+        }
     }
 
     // --- Steam ---
@@ -1261,7 +1337,7 @@ class GameScannerCore {
                 scanMode = 'all-users';
             } catch (err) {
                 if (_isAccessDenied(err)) {
-                    console.warn('[Xbox Scan] -AllUsers access denied — retrying as current user');
+                    verboseLog('[Xbox Scan] -AllUsers access denied — retrying as current user');
                     ({ stdout } = await execAsync(`powershell -command "${PS_CUR}"`, { timeout: 30000 }));
                     scanMode = 'current-user-fallback';
                 } else {
@@ -1269,7 +1345,7 @@ class GameScannerCore {
                 }
             }
 
-            console.log(`[Xbox Scan] mode=${scanMode}`);
+            verboseLog(`[Xbox Scan] mode=${scanMode}`);
 
             if (!stdout?.trim()) return [];
             let apps = JSON.parse(stdout);
@@ -1291,7 +1367,7 @@ class GameScannerCore {
 
             const afterPathValidation = afterBloat.filter(app => {
                 if (!app.InstallLocation || dirExists(app.InstallLocation)) return true;
-                console.log(`[Xbox Scan] DROP missing InstallLocation "${app.Name}" path=${app.InstallLocation}`);
+                verboseLog(`[Xbox Scan] DROP missing InstallLocation "${app.Name}" path=${app.InstallLocation}`);
                 return false;
             });
             const totalPathDropped = totalAfterBloat - afterPathValidation.length;
@@ -1333,7 +1409,7 @@ class GameScannerCore {
                 if (isLikelyXboxGameCandidate(c.name)) {
                     candidates.push(c);
                 } else {
-                    console.log(`[Xbox Scan] PREFILTER DROP junk "${c.name}"`);
+                    verboseLog(`[Xbox Scan] PREFILTER DROP junk "${c.name}"`);
                     totalPrefilterDropped++;
                 }
             }
@@ -1373,22 +1449,22 @@ class GameScannerCore {
                             if (cached.meta) _hydrate(candidate, cached.meta);
                             games.push(candidate);
                             totalKept++;
-                            console.log(`[Xbox Scan] KEEP cache-hit     "${candidate.name}"`);
+                            verboseLog(`[Xbox Scan] KEEP cache-hit     "${candidate.name}"`);
                         } else if (cached.action === 'defer') {
                             _markDeferred(candidate, cached.reason || 'cached-defer');
                             deferredCandidates.push(candidate);
                             totalDeferred++;
-                            console.log(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (cache)`);
+                            verboseLog(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (cache)`);
                         } else {
                             totalDropped++;
-                            console.log(`[Xbox Scan] DROP cache-hit     "${candidate.name}"`);
+                            verboseLog(`[Xbox Scan] DROP cache-hit     "${candidate.name}"`);
                         }
                         continue;
                     }
 
                     const isException = [...EXCEPTIONS].some(e => nameLower.includes(e));
                     if (isException) {
-                        console.log(`[Xbox Scan] EXCEPTION KEEP     "${candidate.name}" — attempting art hydration`);
+                        verboseLog(`[Xbox Scan] EXCEPTION KEEP     "${candidate.name}" — attempting art hydration`);
                     }
 
                     const mrmKey = `xbox_candidate:${_toSlug(candidate.name) || candidate.name.toLowerCase().replace(/[^a-z0-9]/g, '-')}`;
@@ -1402,7 +1478,7 @@ class GameScannerCore {
                             const normalised = this._api.normalizeServerData(slugResult);
                             if (_hasImageAsset(normalised)) {
                                 meta = normalised;
-                                console.log(`[Xbox Scan] KEEP server-hit    "${candidate.name}" (slug)`);
+                                verboseLog(`[Xbox Scan] KEEP server-hit    "${candidate.name}" (slug)`);
                             }
                         }
 
@@ -1412,7 +1488,7 @@ class GameScannerCore {
                                 const normalised = this._api.normalizeServerData(titleResult);
                                 if (_hasImageAsset(normalised)) {
                                     meta = normalised;
-                                    console.log(`[Xbox Scan] KEEP server-hit    "${candidate.name}" (title)`);
+                                    verboseLog(`[Xbox Scan] KEEP server-hit    "${candidate.name}" (title)`);
                                 }
                             }
                         }
@@ -1432,13 +1508,13 @@ class GameScannerCore {
 
                     if (stage1Error) {
                         if (isException) {
-                            console.log(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (lookup network error — art deferred)`);
+                            verboseLog(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (lookup network error — art deferred)`);
                             _markDeferred(candidate, 'exception_keep_pending_art');
                             validationCache.set(cacheKey, { action: 'keep', meta: null });
                             games.push(candidate);
                             totalKept++;
                         } else {
-                            console.log(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (lookup network error)`);
+                            verboseLog(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (lookup network error)`);
                             _markDeferred(candidate, 'network_error');
                             validationCache.set(cacheKey, { action: 'defer', reason: 'network_error' });
                             deferredCandidates.push(candidate);
@@ -1452,13 +1528,13 @@ class GameScannerCore {
 
                     if (isRateLimited) {
                         if (isException) {
-                            console.log(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (rate-limit active — art deferred)`);
+                            verboseLog(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (rate-limit active — art deferred)`);
                             _markDeferred(candidate, 'exception_keep_pending_art');
                             validationCache.set(cacheKey, { action: 'keep', meta: null });
                             games.push(candidate);
                             totalKept++;
                         } else {
-                            console.log(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (rate-limit active)`);
+                            verboseLog(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (rate-limit active)`);
                             _markDeferred(candidate, 'rate_limited');
                             validationCache.set(cacheKey, { action: 'defer', reason: 'rate_limited' });
                             deferredCandidates.push(candidate);
@@ -1468,7 +1544,7 @@ class GameScannerCore {
                     }
 
                     if (!_isPlausibleGameTitle(candidate.name)) {
-                        console.log(`[Xbox Scan] DROP implausible-title "${candidate.name}"`);
+                        verboseLog(`[Xbox Scan] DROP implausible-title "${candidate.name}"`);
                         validationCache.set(cacheKey, { action: 'drop' });
                         totalDropped++;
                         continue;
@@ -1476,7 +1552,7 @@ class GameScannerCore {
 
                     if (this._mrm.getStatus(mrmKey) === this._MRM_STATUS.COOLDOWN) {
                         if (isException) {
-                            console.log(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (MRM cooldown active)`);
+                            verboseLog(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (MRM cooldown active)`);
                             candidate.needsValidation    = true;
                             candidate.validationDeferred = true;
                             candidate.validationReason   = 'rate_limited_exception';
@@ -1484,7 +1560,7 @@ class GameScannerCore {
                             games.push(candidate);
                             totalKept++;
                         } else {
-                            console.log(`[Xbox Scan] DEFERRED "${candidate.name}" (MRM cooldown active)`);
+                            verboseLog(`[Xbox Scan] DEFERRED "${candidate.name}" (MRM cooldown active)`);
                             _markDeferred(candidate, 'rate_limited');
                             validationCache.set(cacheKey, { action: 'defer', reason: 'rate_limited' });
                             deferredCandidates.push(candidate);
@@ -1494,7 +1570,7 @@ class GameScannerCore {
                     }
 
                     if (transientUsed >= TRANSIENT_BUDGET && !isException) {
-                        console.log(`[Xbox Scan] DEFERRED (transient budget exhausted) "${candidate.name}"`);
+                        verboseLog(`[Xbox Scan] DEFERRED (transient budget exhausted) "${candidate.name}"`);
                         _markDeferred(candidate, 'budget_exhausted');
                         validationCache.set(cacheKey, { action: 'defer', reason: 'budget_exhausted' });
                         deferredCandidates.push(candidate);
@@ -1550,19 +1626,19 @@ class GameScannerCore {
                         validationCache.set(cacheKey, { action: 'keep', meta });
                         games.push(candidate);
                         totalKept++;
-                        console.log(`[Xbox Scan] KEEP transient-resolved "${candidate.name}" (cover=${!!candidate.image} hero=${!!candidate.heroImage} logo=${!!candidate.logo})`);
+                        verboseLog(`[Xbox Scan] KEEP transient-resolved "${candidate.name}" (cover=${!!candidate.image} hero=${!!candidate.heroImage} logo=${!!candidate.logo})`);
 
                     } else if (resolveOutcome === 'not_found' && !isException) {
                         validationCache.set(cacheKey, { action: 'drop' });
                         totalDropped++;
-                        console.log(`[Xbox Scan] DROP confirmed-not-found "${candidate.name}"`);
+                        verboseLog(`[Xbox Scan] DROP confirmed-not-found "${candidate.name}"`);
 
                     } else if (isException) {
                         _markDeferred(candidate, 'exception_keep_pending_art');
                         validationCache.set(cacheKey, { action: 'keep', meta: null });
                         games.push(candidate);
                         totalKept++;
-                        console.log(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (reason=${resolveOutcome} — art deferred to background pipeline)`);
+                        verboseLog(`[Xbox Scan] EXCEPTION KEEP (no-art) "${candidate.name}" (reason=${resolveOutcome} — art deferred to background pipeline)`);
 
                     } else {
                         const reason = resolveOutcome;
@@ -1570,7 +1646,7 @@ class GameScannerCore {
                         validationCache.set(cacheKey, { action: 'defer', reason });
                         deferredCandidates.push(candidate);
                         totalDeferred++;
-                        console.log(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (reason=${reason})`);
+                        verboseLog(`[Xbox Scan] DEFERRED hidden-from-library "${candidate.name}" (reason=${reason})`);
                     }
                 }
             };
@@ -1578,13 +1654,11 @@ class GameScannerCore {
             await Promise.all(Array.from({ length: CONCURRENCY }, worker));
 
             if (deferredCandidates.length > 0) {
-                console.log(
-                    `[Xbox Scan] Deferred (hidden) candidates: [${deferredCandidates.map(c => `"${c.name}"`).join(', ')}]`
-                );
+                verboseLog(`[Xbox Scan] Deferred (hidden) candidates: [${deferredCandidates.map(c => `"${c.name}"`).join(', ')}]`);
             }
 
-            console.log(
-                `[Xbox Scan] ══ Summary ══` +
+            verboseLog(
+                `[Xbox Scan] Summary` +
                 ` raw=${totalRaw}` +
                 ` after-bloat=${totalAfterBloat}` +
                 ` path-dropped=${totalPathDropped}` +
@@ -1592,10 +1666,8 @@ class GameScannerCore {
                 ` keptVisible=${totalKept}` +
                 ` dropped=${totalDropped}` +
                 ` deferredHidden=${totalDeferred}` +
-                (rateLimitedAt ? ` rateLimitedAt="${rateLimitedAt}"` : '') +
-                ` ══`
-            );
-            xboxReport.valid    = totalKept;
+                (rateLimitedAt ? ` rateLimitedAt="${rateLimitedAt}"` : '')
+            );            xboxReport.valid    = totalKept;
             xboxReport.kept     = totalKept;
             xboxReport.skipped  = totalDropped + totalDeferred + totalPathDropped + totalPrefilterDropped;
             xboxReport.skippedMissingPath = totalPathDropped;
@@ -1631,6 +1703,7 @@ function scannerPlatformForGame(game = {}) {
     const id = String(game.id || '').toLowerCase();
     if (id.startsWith('steam-'))   return 'steam';
     if (id.startsWith('epic-'))    return 'epic';
+    if (id.startsWith('gog-') || id.startsWith('gog_')) return 'gog';
     if (id.startsWith('riot-'))    return 'riot';
     if (id.startsWith('ubisoft-')) return 'ubisoft';
     if (id.startsWith('ea-'))      return 'ea';
@@ -1653,7 +1726,7 @@ function prepareScannerGame(game, platform, scanStartedAt) {
     const prepared = {
         ...game,
         name: normalizeDisplayName(game.name || game.title),
-        installSource: 'scanner',
+        installSource: game.installSource || 'scanner',
         scannerPlatform,
         launchCommand: game.launchCommand || game.command || null,
         installVerified: validation.valid,
@@ -1670,6 +1743,7 @@ function prepareScannerGame(game, platform, scanStartedAt) {
     if (!prepared.launcherGameId) {
         if (scannerPlatform === 'steam')  prepared.launcherGameId = prepared.allIds?.steam || String(prepared.id || '').replace(/^steam[-_]/i, '');
         if (scannerPlatform === 'epic')   prepared.launcherGameId = [prepared.namespace || prepared.catalogNamespace, prepared.catalogItemId, prepared.appName].filter(Boolean).join(':');
+        if (scannerPlatform === 'gog')    prepared.launcherGameId = prepared.allIds?.gog || prepared.gogProductId;
         if (scannerPlatform === 'riot')   prepared.launcherGameId = prepared.riotProduct;
         if (scannerPlatform === 'xbox')   prepared.launcherGameId = prepared.packageFamilyName;
     }
@@ -1728,6 +1802,7 @@ module.exports = {
     dirHasUsefulFiles,
     findFirstExisting,
     findLikelyGameExe,
+    scoreExeCandidateForDiagnostics,
     safeJsonParse,
     normalizeDisplayName,
     normalizeScannerPlatform,

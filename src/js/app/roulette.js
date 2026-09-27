@@ -83,7 +83,7 @@ function setRouletteMode(mode) {
         if (spinBtn) {
             if (installPool.length === 0) {
                 spinBtn.disabled = true;
-                spinBtn.title    = 'Sync your Steam or Epic library first';
+                spinBtn.title    = 'Sync your Steam, Epic, or GOG library first';
                 spinBtn.innerHTML = `<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.59-9.21l-3.25 1.64"></path></svg> No synced games`;
             } else {
                 spinBtn.disabled = false;
@@ -103,11 +103,59 @@ function setRouletteMode(mode) {
 // ── Build pool for each mode ───────────────────────────────────
 function _buildPlayPool() {
     const games = Array.isArray(window.allGamesData) ? window.allGamesData : [];
-    let pool = games.filter(g => !g.isHidden && (g.path || g.command));
-    if (customSpinIds.length > 0) {
-        pool = pool.filter(g => customSpinIds.includes(String(g.id)));
+    let pool = games.filter(g => !g.isHidden && (g.path || g.command || g.launchCommand || g.executablePath) && _rouletteIsVerifiedPlayable(g));
+    const identityService = window.BaddelCanonicalProductIdentity;
+    if (identityService?.dedupeDelegatedLaunchProducts) {
+        try { pool = identityService.dedupeDelegatedLaunchProducts(pool); } catch (_) {}
     }
-    return pool;
+    if (customSpinIds.length > 0) {
+        pool = pool.filter(g => customSpinIds.includes(_rouletteCanonicalId(g)) ||
+            customSpinIds.some(id => _rouletteIdentityAliases(g).has(String(id))));
+    }
+    const seen = new Set();
+    return pool.filter((game) => {
+        const id = _rouletteCanonicalId(game);
+        if (!id || seen.has(id)) return false;
+        seen.add(id);
+        return true;
+    });
+}
+
+function _roulettePlatformFamily(game = {}) {
+    const hints = [game.scannerPlatform, game.installProvider, game.installProvenance, game.platform]
+        .map(value => String(value || '').toLowerCase());
+    if (hints.some(value => value.includes('gog'))) return 'gog';
+    return hints.find(Boolean) || '';
+}
+
+function _rouletteIsVerifiedPlayable(game) {
+    if (!game || game.isHidden || !(game.path || game.command || game.launchCommand || game.executablePath)) return false;
+    if (_roulettePlatformFamily(game) === 'gog' && typeof window._gameHasInstalledGogEvidence === 'function') {
+        try { return window._gameHasInstalledGogEvidence(game); } catch (_) {
+            return String(game.scannerPlatform || '').toLowerCase() === 'gog' ||
+                (game.installVerified === true && String(game.installSource || '').toLowerCase() === 'download');
+        }
+    }
+    if (typeof _agIsInstalled === 'function') {
+        try { return _agIsInstalled(game); } catch (_) { return false; }
+    }
+    return true;
+}
+
+function _rouletteCanonicalId(game) {
+    const raw = game?._raw || game || {};
+    const explicit = raw.canonicalGameId || raw.canonicalId || raw.localGameId || raw.canonicalProductKey;
+    if (explicit) return String(explicit);
+    const identity = window.BaddelCanonicalProductIdentity?.deriveCanonicalProductIdentity?.(raw);
+    return String(identity?.productKey || raw.id || game?.id || '');
+}
+
+function _rouletteIdentityAliases(game) {
+    const raw = game?._raw || game || {};
+    return new Set([
+        _rouletteCanonicalId(game), raw.id, game?.id, raw.installedId,
+        raw.canonicalGameId, raw.canonicalId, raw.localGameId, raw.canonicalProductKey,
+    ].map(value => String(value || '')).filter(Boolean));
 }
 
 function _rouletteResolveArtwork(game, surface = 'roulette') {
@@ -140,6 +188,7 @@ function _buildInstallPool() {
     // Map them into a shape consistent with local games so the spinner can display them.
     const synced = Array.isArray(window._suggAllGames) ? window._suggAllGames : (typeof _suggAllGames !== 'undefined' ? _suggAllGames : []);
     if (synced.length > 0) {
+        const seen = new Set();
         return synced.map(g => {
             // Merge art from _suggArtCache so roulette candidates have hero data
             // even when _suggHydrateArt ran after the pool was last built.
@@ -170,6 +219,11 @@ function _buildInstallPool() {
                 _platform:    g._platform,
                 _raw:         g, // original synced object — mutated in-place by _suggHydrateArt
             };
+        }).filter(candidate => {
+            const id = _rouletteCanonicalId(candidate);
+            if (!id || seen.has(id)) return false;
+            seen.add(id);
+            return true;
         });
     }
     return [];
@@ -684,7 +738,12 @@ function _rouletteSetHeroBackground(game) {
 }
 
 function _rouletteGameId(game) {
-    return String(game?.id || game?._raw?.id || '');
+    const raw = game?._raw || game || {};
+    const explicit = raw.canonicalGameId || raw.canonicalId || raw.localGameId || raw.canonicalProductKey;
+    if (explicit) return String(explicit);
+    const service = typeof window !== 'undefined' ? window.BaddelCanonicalProductIdentity : null;
+    const identity = service?.deriveCanonicalProductIdentity?.(raw);
+    return String(identity?.productKey || game?.id || game?._raw?.id || '');
 }
 
 function _rouletteEntropySeed() {
@@ -1150,7 +1209,8 @@ function openRoulettePool() {
     if (availableGames.length === 0) return showToast('Your library is empty!', 'error');
 
     availableGames.forEach(g => {
-        const isChecked = customSpinIds.includes(String(g.id)) ? 'checked' : '';
+        const canonicalId = _rouletteCanonicalId(g);
+        const isChecked = customSpinIds.includes(canonicalId) ? 'checked' : '';
         const poolArtwork = _rouletteResolveArtwork(g, 'roulette-custom-pool');
         const poolCover = poolArtwork.cover?.value || '../assets/default_hero.jpg';
         const div = document.createElement('div');
@@ -1158,7 +1218,7 @@ function openRoulettePool() {
         div.setAttribute('data-name', g.name.toLowerCase());
         div.innerHTML = `
             <label class="custom-checkbox">
-                <input type="checkbox" value="${g.id}" ${isChecked}>
+                <input type="checkbox" value="${canonicalId}" ${isChecked}>
                 <span class="checkmark"></span>
             </label>
             <img src="${poolCover}" style="width:32px;height:32px;border-radius:6px;margin-right:12px;object-fit:cover; border: 1px solid #333;">
@@ -1216,5 +1276,9 @@ window.clearRoulettePool      = clearRoulettePool;
 // Helpers exposed for tests and internal cross-file calls
 window._buildPlayPool         = _buildPlayPool;
 window._buildInstallPool      = _buildInstallPool;
+window._rouletteCanonicalId   = _rouletteCanonicalId;
+window._rouletteSetCustomSpinIds = ids => { customSpinIds = Array.isArray(ids) ? ids.map(String) : []; };
+window._roulettePickFinal     = _roulettePickFinal;
+window._rouletteIsVerifiedPlayable = _rouletteIsVerifiedPlayable;
 window.getRoulettePosterUrl   = getRoulettePosterUrl;
 window.prepareInstallRoulettePool = prepareInstallRoulettePool;

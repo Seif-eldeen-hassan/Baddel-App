@@ -266,7 +266,12 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
     });
 
     // ---- System: hardware info (slow — cached after first call) ----
+    let systemInfoPromise = null;
+    let systemInfoCache = null;
     ipcMain.handle('get-system-info', async () => {
+        if (systemInfoCache) return systemInfoCache;
+        if (systemInfoPromise) return systemInfoPromise;
+        systemInfoPromise = (async () => {
         const cpus = os.cpus();
         const base = {
             osName: `${os.type()} ${os.release()}`,
@@ -297,12 +302,24 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
             }
         } catch { /* hardware info optional */ }
         return base;
+        })();
+        try {
+            systemInfoCache = await systemInfoPromise;
+            return systemInfoCache;
+        } finally {
+            systemInfoPromise = null;
+        }
     });
 
     // ---- System: live stats ----
+    let liveStatsPromise = null;
+    let liveStatsCache = null;
+    let liveStatsCachedAt = 0;
     ipcMain.handle('get-live-stats', async () => {
         if (!si) return {};
-        try {
+        if (liveStatsCache && Date.now() - liveStatsCachedAt < 1000) return liveStatsCache;
+        if (liveStatsPromise) return liveStatsPromise;
+        liveStatsPromise = (async () => { try {
             const [cpu, mem, net, temp, ping] = await Promise.all([
                 si.currentLoad(),
                 si.mem(),
@@ -310,7 +327,7 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
                 si.cpuTemperature().catch(() => null),
                 si.inetLatency('8.8.8.8').catch(() => 0)
             ]);
-            return {
+            const result = {
                 cpuLoad: Math.round(cpu.currentLoad || 0),
                 cpuTemp: temp?.main ? Math.round(temp.main) : null,
                 usedRam: mem.active || mem.used,
@@ -321,7 +338,12 @@ module.exports.register = function registerSystemHandlers(ipcMain, deps) {
                 gpuLoad: staticGpuInfo?.utilizationGpu || 0,
                 gpuTemp: staticGpuInfo?.temperatureGpu || 0
             };
-        } catch { return {}; }
+            liveStatsCache = result;
+            liveStatsCachedAt = Date.now();
+            return result;
+        } catch { return liveStatsCache || {}; } })();
+        try { return await liveStatsPromise; }
+        finally { liveStatsPromise = null; }
     });
 
     // ---- Startup toggle IPC ----

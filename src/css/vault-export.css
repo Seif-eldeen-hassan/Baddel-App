@@ -1,0 +1,49 @@
+@import url('./fonts.css');
+
+:root { color-scheme: dark; --green: #43f178; --muted: #9aa39d; --panel: #121614; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 1920px; min-width: 1920px; overflow: hidden; background: #080a09; color: #f6faf7; font-family: 'Outfit', 'Segoe UI', sans-serif; }
+
+.showcase { width: 1920px; min-height: 1080px; padding: 74px 96px 62px; background: radial-gradient(circle at 86% 5%, rgba(67,241,120,.10), transparent 420px), linear-gradient(180deg, #0b0e0c 0, #070908 100%); }
+.showcase-header { min-height: 500px; border: 1px solid rgba(107,255,151,.20); border-radius: 34px; padding: 45px 50px 48px; background: rgba(15,19,17,.94); box-shadow: inset 0 1px rgba(255,255,255,.04), 0 28px 90px rgba(0,0,0,.32); }
+.brand-row { display: flex; align-items: center; gap: 18px; }
+.brand-mark { width: 68px; height: 68px; object-fit: contain; }
+.brand-name { display: block; color: #fff; font-size: 27px; font-weight: 800; letter-spacing: .14em; }
+.brand-kicker { display: block; margin-top: 2px; color: #929b95; font-size: 14px; font-weight: 600; letter-spacing: .18em; }
+.export-dates { margin-left: auto; display: grid; justify-items: end; gap: 5px; }
+.generated-date { color: #a8b0ab; font-size: 20px; }
+.price-data-date { color: #758079; font-size: 14px; }
+.title-row { display: flex; align-items: end; justify-content: space-between; margin-top: 38px; gap: 40px; }
+h1 { margin: 0; font-size: 70px; line-height: .98; letter-spacing: -.045em; }
+#displayName { margin: 15px 0 0; color: #bfc8c2; font-size: 23px; }
+.count-summary { max-width: 720px; display: grid; grid-template-columns: repeat(4, minmax(140px, 1fr)); gap: 10px; }
+.count-chip { min-height: 72px; padding: 14px 16px; border: 1px solid #29322d; border-radius: 16px; background: #0c100e; }
+.count-chip strong { display: block; color: #fff; font-size: 25px; }
+.count-chip span { color: var(--muted); font-size: 14px; }
+.finance-grid { display: grid; grid-template-columns: repeat(var(--finance-count, 4), minmax(0, 1fr)); gap: 16px; margin-top: 39px; }
+.finance-grid[hidden] { display: none; }
+.showcase-header.games-only { min-height: 0; padding-bottom: 42px; }
+.finance-card { min-height: 130px; padding: 22px 24px; border: 1px solid #29322d; border-radius: 20px; background: #0a0e0c; }
+.finance-card.primary { border-color: rgba(67,241,120,.42); box-shadow: inset 0 0 38px rgba(67,241,120,.055); }
+.finance-card h2 { margin: 0 0 13px; color: #a3aca6; font-size: 16px; font-weight: 600; letter-spacing: .035em; }
+.money-line { display: block; font-size: 27px; font-weight: 750; line-height: 1.22; }
+.finance-card small { display: block; margin-top: 9px; color: #778079; font-size: 13px; }
+.game-section { margin-top: 54px; }
+.section-heading { height: 74px; display: flex; align-items: center; gap: 14px; border-bottom: 1px solid #242b27; margin-bottom: 24px; }
+.section-heading h2 { margin: 0; font-size: 31px; letter-spacing: -.02em; }
+.section-heading span { padding: 5px 11px; color: var(--green); border: 1px solid rgba(67,241,120,.28); border-radius: 999px; background: rgba(67,241,120,.07); font-size: 16px; font-weight: 700; }
+.poster-grid { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); gap: 28px 24px; }
+.poster { position: relative; aspect-ratio: 2 / 3; overflow: hidden; border-radius: 17px; border: 1px solid #2b332e; background: #111613; box-shadow: 0 14px 32px rgba(0,0,0,.32); }
+.poster::after { content: ''; position: absolute; inset: 0; pointer-events: none; border-radius: inherit; box-shadow: inset 0 0 0 1px rgba(255,255,255,.025); }
+.poster img { width: 100%; height: 100%; display: block; object-fit: cover; opacity: 0; transition: none; }
+.poster.loaded img { opacity: 1; }
+.poster-placeholder { position: absolute; inset: 0; display: grid; place-items: center; padding: 22px; text-align: center; background: radial-gradient(circle at 50% 35%, rgba(67,241,120,.10), transparent 58%), #111613; }
+.poster-placeholder span { color: #bdc6c0; font-size: 16px; line-height: 1.3; overflow-wrap: anywhere; }
+.poster.loaded .poster-placeholder { display: none; }
+.showcase-footer { display: flex; align-items: center; gap: 18px; margin-top: 72px; padding: 30px 4px 4px; border-top: 1px solid #202723; color: #8b958f; }
+.showcase-footer img { width: 46px; height: 46px; object-fit: contain; }
+.showcase-footer div { display: grid; gap: 4px; }
+.showcase-footer p { margin: 0; color: #dbe2de; font-size: 20px; font-weight: 600; }
+.showcase-footer strong { color: #fff; font-weight: 850; letter-spacing: .08em; }
+.showcase-footer span { font-size: 16px; }
+.showcase-footer b { color: var(--green); font-weight: 800; }

@@ -15,6 +15,13 @@ test('download state machine allows the expected active lifecycle', () => {
     assert.equal(canTransition('installing', 'completed'), true);
 });
 
+test('a resumed provider job may proceed directly to verification without transfer progress', () => {
+    assert.equal(canTransition('resuming', 'verifying'), true);
+    const task = normalizeTask({ id: 'dl_1234567890abcdef', status: DOWNLOAD_STATUSES.RESUMING });
+    const verified = applyTransition(task, DOWNLOAD_STATUSES.VERIFYING, { statusMessage: 'Verifying files' });
+    assert.equal(verified.status, DOWNLOAD_STATUSES.VERIFYING);
+});
+
 test('download state machine rejects completed to downloading', () => {
     const task = normalizeTask({ id: 'dl_1234567890abcdef', status: DOWNLOAD_STATUSES.COMPLETED });
     assert.throws(

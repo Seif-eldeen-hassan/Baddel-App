@@ -22,6 +22,14 @@ function normalizePlatform(platform) {
     return String(platform || '').trim().toLowerCase();
 }
 
+function normalizeOperationKind(value) {
+    const operation = String(value || 'install').trim().toLowerCase();
+    return ['install', 'update', 'repair'].includes(operation) ? operation : 'install';
+}
+
+function positiveSize(value) { return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 ? value : null; }
+function sizeText(value) { return typeof value === 'string' ? value.replace(/[\x00-\x1f]/g, '').slice(0, 160) : null; }
+
 function normalizeTask(input = {}, deps = {}) {
     const ts = input.createdAt || nowIso(deps.clock);
     const status = input.status || DOWNLOAD_STATUSES.PENDING;
@@ -34,11 +42,33 @@ function normalizeTask(input = {}, deps = {}) {
         coverUrl: input.coverUrl || null,
         heroUrl: input.heroUrl || null,
 
+        operationKind: normalizeOperationKind(input.operationKind),
+        historyHidden: input.historyHidden === true,
+        maintenanceRequestedAt: input.maintenanceRequestedAt || null,
+        maintenanceErrorCode: input.maintenanceErrorCode ? String(input.maintenanceErrorCode) : null,
+        maintenanceErrorMessage: input.maintenanceErrorMessage ? String(input.maintenanceErrorMessage) : null,
+        maintenanceFailedAt: input.maintenanceFailedAt || null,
+        maintenanceBaseCompletionReceipt: input.maintenanceBaseCompletionReceipt && typeof input.maintenanceBaseCompletionReceipt === 'object'
+            ? input.maintenanceBaseCompletionReceipt : null,
+        maintenanceBaseCompletedAt: input.maintenanceBaseCompletedAt || null,
+        maintenanceBaseUninstallEligible: input.maintenanceBaseUninstallEligible === true,
+        maintenanceBaseManaged: input.maintenanceBaseManaged === true,
+        updateCheckedAt: input.updateCheckedAt || null,
+        updateAvailable: input.updateAvailable == null ? null : input.updateAvailable === true,
+        installedBuildId: input.installedBuildId ? String(input.installedBuildId) : null,
+        targetBuildId: input.targetBuildId ? String(input.targetBuildId) : null,
+
         platform: normalizePlatform(input.platform),
+        installProvider: input.installProvider ? String(input.installProvider).trim().toLowerCase() : (normalizePlatform(input.platform) === 'gog' ? 'gogdl' : null),
         accountId: input.accountId ? String(input.accountId) : null,
         accountDisplayName: input.accountDisplayName ? String(input.accountDisplayName) : null,
         providerProductId: input.providerProductId ? String(input.providerProductId) : null,
         providerAppName: input.providerAppName ? String(input.providerAppName) : null,
+        appName: input.appName ? String(input.appName) : (input.providerAppName ? String(input.providerAppName) : null),
+        namespace: input.namespace ? String(input.namespace) : null,
+        catalogItemId: input.catalogItemId ? String(input.catalogItemId) : null,
+        ownedByAccountIds: Array.isArray(input.ownedByAccountIds) ? [...new Set(input.ownedByAccountIds.map(String).filter(Boolean))] : [],
+        installedByAccountId: input.installedByAccountId ? String(input.installedByAccountId) : null,
         gogProductId: input.gogProductId ? String(input.gogProductId) : null,
         contentSystemProductId: input.contentSystemProductId ? String(input.contentSystemProductId) : null,
         gogdlAppName: input.gogdlAppName ? String(input.gogdlAppName) : null,
@@ -67,9 +97,13 @@ function normalizeTask(input = {}, deps = {}) {
         ownershipNonce: input.ownershipNonce ? String(input.ownershipNonce) : null,
         installPathOwnershipPreparedAt: input.installPathOwnershipPreparedAt || null,
         partialDeletedAt: input.partialDeletedAt || null,
+        uninstallEligible: input.uninstallEligible === true,
+        readyToPlay: input.readyToPlay === true,
+        uninstalledAt: input.uninstalledAt || null,
 
         status,
         statusMessage: input.statusMessage ? String(input.statusMessage) : '',
+        providerActivity: input.providerActivity ? String(input.providerActivity).slice(0, 240) : '',
         stage: input.stage ? String(input.stage) : status,
 
         progressPercent: input.progressPercent == null ? null : (Number.isFinite(Number(input.progressPercent)) ? Number(input.progressPercent) : null),
@@ -77,7 +111,16 @@ function normalizeTask(input = {}, deps = {}) {
         totalBytes: input.totalBytes == null ? null : (Number.isFinite(Number(input.totalBytes)) ? Number(input.totalBytes) : null),
         transferDownloadedBytes: input.transferDownloadedBytes == null ? null : (Number.isFinite(Number(input.transferDownloadedBytes)) ? Number(input.transferDownloadedBytes) : null),
         transferTotalBytes: input.transferTotalBytes == null ? null : (Number.isFinite(Number(input.transferTotalBytes)) ? Number(input.transferTotalBytes) : null),
-        installedDiskSizeBytes: input.installedDiskSizeBytes == null ? null : (Number.isFinite(Number(input.installedDiskSizeBytes)) ? Number(input.installedDiskSizeBytes) : null),
+        downloadSizeBytes: positiveSize(input.downloadSizeBytes),
+        installedDiskSizeBytes: positiveSize(input.installedDiskSizeBytes),
+        sizeStatus: ['resolved', 'unknown', 'runtime_resolved'].includes(String(input.sizeStatus)) ? String(input.sizeStatus) : (positiveSize(input.downloadSizeBytes) && positiveSize(input.installedDiskSizeBytes) ? 'resolved' : 'unknown'),
+        sizeSource: sizeText(input.sizeSource),
+        sizeReason: sizeText(input.sizeReason),
+        sizeCheckedAt: input.sizeCheckedAt ? String(input.sizeCheckedAt) : null,
+        downloadSizeSource: sizeText(input.downloadSizeSource),
+        installedSizeSource: sizeText(input.installedSizeSource),
+        buildVersion: sizeText(input.buildVersion),
+        buildId: sizeText(input.buildId),
         verifiedBytes: input.verifiedBytes == null ? null : (Number.isFinite(Number(input.verifiedBytes)) ? Number(input.verifiedBytes) : null),
         providerProgressMode: input.providerProgressMode ? String(input.providerProgressMode) : null,
         providerReportedPercent: input.providerReportedPercent == null ? null : (Number.isFinite(Number(input.providerReportedPercent)) ? Number(input.providerReportedPercent) : null),
@@ -102,6 +145,8 @@ function normalizeTask(input = {}, deps = {}) {
         downloadSpeedSmoothedBps: input.downloadSpeedSmoothedBps == null ? null : (Number.isFinite(Number(input.downloadSpeedSmoothedBps)) ? Number(input.downloadSpeedSmoothedBps) : null),
         diskUsageBps: Number.isFinite(Number(input.diskUsageBps)) ? Number(input.diskUsageBps) : 0,
         etaSeconds: input.etaSeconds == null ? null : (Number.isFinite(Number(input.etaSeconds)) ? Number(input.etaSeconds) : null),
+        etaSource: input.etaSource ? String(input.etaSource) : null,
+        etaUpdatedAt: input.etaUpdatedAt || null,
         bytesWritten: input.bytesWritten == null ? null : (Number.isFinite(Number(input.bytesWritten)) ? Number(input.bytesWritten) : null),
         writtenBytes: input.writtenBytes == null ? null : (Number.isFinite(Number(input.writtenBytes)) ? Number(input.writtenBytes) : null),
         rawDownloadedBytes: input.rawDownloadedBytes == null ? null : (Number.isFinite(Number(input.rawDownloadedBytes)) ? Number(input.rawDownloadedBytes) : null),
@@ -119,6 +164,17 @@ function normalizeTask(input = {}, deps = {}) {
         failureSuggestedAction: input.failureSuggestedAction ? String(input.failureSuggestedAction) : null,
         errorTechnicalSummary: input.errorTechnicalSummary ? String(input.errorTechnicalSummary) : null,
         autoResumeEligible: input.autoResumeEligible == null ? null : input.autoResumeEligible === true,
+        stallAutoResumeAttempts: Number.isInteger(Number(input.stallAutoResumeAttempts)) ? Math.max(0, Number(input.stallAutoResumeAttempts)) : 0,
+        autoResumeAttempt: Number.isInteger(Number(input.autoResumeAttempt)) ? Math.max(0, Number(input.autoResumeAttempt)) : 0,
+        autoResumeFromSessionId: input.autoResumeFromSessionId ? String(input.autoResumeFromSessionId) : null,
+        lastStalledSessionId: input.lastStalledSessionId ? String(input.lastStalledSessionId) : null,
+        lastRealByteMovementAt: input.lastRealByteMovementAt || null,
+        lastPositiveNetworkAt: input.lastPositiveNetworkAt || null,
+        lastPositiveDiskAt: input.lastPositiveDiskAt || null,
+        providerSilenceDurationMs: Number.isFinite(Number(input.providerSilenceDurationMs)) ? Math.max(0, Number(input.providerSilenceDurationMs)) : null,
+        byteStallDurationMs: Number.isFinite(Number(input.byteStallDurationMs)) ? Math.max(0, Number(input.byteStallDurationMs)) : null,
+        watchdogWarning: input.watchdogWarning === true,
+        hardStallDecision: input.hardStallDecision === true,
         expectedTotalBytes: input.expectedTotalBytes == null ? null : (Number.isFinite(Number(input.expectedTotalBytes)) ? Number(input.expectedTotalBytes) : null),
         expectedDownloadBytes: input.expectedDownloadBytes == null ? null : (Number.isFinite(Number(input.expectedDownloadBytes)) ? Number(input.expectedDownloadBytes) : null),
         expectedInstalledBytes: input.expectedInstalledBytes == null ? null : (Number.isFinite(Number(input.expectedInstalledBytes)) ? Number(input.expectedInstalledBytes) : null),
@@ -176,6 +232,7 @@ module.exports = {
     DOWNLOAD_STATUSES,
     normalizeTask,
     normalizePlatform,
+    normalizeOperationKind,
 };
 
 

@@ -318,3 +318,43 @@ test('service tolerates missing cache file and downloader returning no file URLs
         rmDir(dir);
     }
 });
+
+
+test('service does not persist managed artwork-cache-v2 file URLs but still emits runtime cover-ready', async () => {
+    const dir = makeTempDir();
+    try {
+        const cacheFile = path.join(dir, 'library.json');
+        const managedCover = path.join(dir, 'artwork-cache-v2', 'assets', 'cover.webp');
+        fs.mkdirSync(path.dirname(managedCover), { recursive: true });
+        fs.writeFileSync(managedCover, 'image', 'utf8');
+        const managedUrl = fileUrl(managedCover);
+        const entries = [{
+            id: 'game-1',
+            title: 'Game One',
+            coverUrl: 'https://cdn.example/cover.jpg',
+            image: 'https://cdn.example/cover.jpg',
+        }];
+        writeJson(cacheFile, entries);
+        const events = [];
+        const service = new PlatformSyncAssetWriteBackService({ userDataDir: dir });
+
+        await service.cacheLibraryCoversFirst({
+            entries,
+            downloader: async () => ({ cover: managedUrl }),
+            cacheFile,
+            matchFn: matchById,
+            emitter: null,
+            opts: { coverCachedEmitter: (payload) => events.push(payload), coverConcurrency: 1, batchSize: 1 },
+        });
+
+        assert.equal(events.length, 1);
+        assert.equal(events[0].coverUrl, managedUrl);
+        assert.equal(entries[0]._agResolvedCoverUrl, managedUrl);
+        const persisted = readJson(cacheFile)[0];
+        assert.equal(persisted.coverUrl, 'https://cdn.example/cover.jpg');
+        assert.equal(persisted.image, 'https://cdn.example/cover.jpg');
+        assert.notEqual(persisted.coverUrl, managedUrl);
+    } finally {
+        rmDir(dir);
+    }
+});

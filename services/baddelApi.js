@@ -11,16 +11,17 @@
  *   - Call /games/import or /games/enrich* (admin-only endpoints)
  *
  * Safe endpoints used by this module:
- *   GET  /games/lookup          — public, no auth required
- *   POST /client/request-enrich — low-trust, rate-limited, no secret required
+ *   GET  /games/lookup          � public, no auth required
+ *   POST /client/request-enrich � low-trust, rate-limited, no secret required
  */
 
 const BASE_URL = (
     process.env.BADDEL_API_URL ||
-    'https://baddel-metadata-api-jmn98.ondigitalocean.app'
+    'https://baddelmetadata.spaincentral.cloudapp.azure.com'
 ).replace(/\/+$/, '');
 
 const QUIET_LOGS = process.env.BADDEL_QUIET_LOGS === '1';
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
 
 // Throttle: suppress repeat log messages for the same key within 60 s.
 const _logThrottle = new Map();
@@ -32,10 +33,11 @@ function _throttledWarn(key, ...args) {
         console.warn(...args);
     }
 }
-function _quietLog(...args) { if (!QUIET_LOGS) console.log(...args); }
+function _quietLog(...args) { if (VERBOSE_LOGS && !QUIET_LOGS) console.log(...args); }
+function _normalLog(...args) { if (!QUIET_LOGS) console.log(...args); }
 
 // Optional install-id for lightweight analytics / rate-limit bucketing.
-// Not a secret — just identifies this install, not a user.
+// Not a secret � just identifies this install, not a user.
 const _installId = (() => {
     try {
         const { app } = require('electron');
@@ -50,7 +52,7 @@ const _installId = (() => {
     } catch { return 'unknown'; }
 })();
 
-// App version for server telemetry — not a secret.
+// App version for server telemetry � not a secret.
 // Mirrors the pattern used by _installId above.
 const _appVersion = (() => {
     try { return require('electron').app.getVersion(); }
@@ -65,19 +67,19 @@ const _appVersion = (() => {
  */
 class ApiError extends Error {
     constructor(path, status, retryAfter = null) {
-        super(`Baddel API ${path} → HTTP ${status}`);
+        super(`Baddel API ${path} ? HTTP ${status}`);
         this.name       = 'ApiError';
         this.status     = status;
         this.retryAfter = retryAfter;  // string seconds e.g. "30", or null
     }
 }
 
-// ── Global 429 cooldown ──────────────────────────────────────────────────────
+// -- Global 429 cooldown ------------------------------------------------------
 // When the server rate-limits us, every additional request EXTENDS the lockout
 // window. This causes a cascade where one rate-limited game makes every
 // subsequent game also fail until the user restarts. Once a 429 lands here,
 // short-circuit all further requests (synthetic 429) until the Retry-After
-// window expires — so the server's window can actually close.
+// window expires � so the server's window can actually close.
 const _DEFAULT_COOLDOWN_MS = 60_000;
 const _baddelApiCooldowns = new Map();
 
@@ -143,7 +145,7 @@ async function apiFetch(path, options = {}) {
     return res.json();
 }
 
-// ─── Lookup ───────────────────────────────────────────────────────────────────
+// --- Lookup -------------------------------------------------------------------
 
 /**
  * Look up a game already in the DB.
@@ -178,7 +180,7 @@ async function lookupGame(query) {
         }
 
         // Anything else (429 / timeout / network / cooldown) is a transient
-        // failure — must not collapse into "No metadata".
+        // failure � must not collapse into "No metadata".
         _throttledWarn(
             "lookup-fail",
             '[BaddelAPI] lookup temporary failure:',
@@ -191,7 +193,7 @@ async function lookupGame(query) {
     }
 }
 
-// ─── Client-safe Enrich Request ───────────────────────────────────────────────
+// --- Client-safe Enrich Request -----------------------------------------------
 
 /**
  * Raw single-shot enrich request (no retry, no queue).
@@ -212,7 +214,7 @@ async function _rawRequestGameEnrich(platform, id, title) {
 }
 
 /**
- * Ask the server to enrich a game — simple wrapper kept for
+ * Ask the server to enrich a game � simple wrapper kept for
  * one-off callers outside of a sync pass.
  *
  * For sync passes use requestGameEnrichBatch() instead.
@@ -231,7 +233,7 @@ async function requestGameEnrich(platform, id, title) {
     }
 }
 
-// ─── Transient Resolver (non-Steam/Epic) ─────────────────────────────────────
+// --- Transient Resolver (non-Steam/Epic) -------------------------------------
 
 /**
  * POST /client/resolve-metadata
@@ -242,7 +244,7 @@ async function requestGameEnrich(platform, id, title) {
  *   { status: 'ambiguous',  candidates: [...] }
  *   { status: 'not_found' }
  *
- * This is a read-only, no-DB-write endpoint — safe for public low-trust clients.
+ * This is a read-only, no-DB-write endpoint � safe for public low-trust clients.
  * Never call this for Steam or Epic games; use lookupGame() + requestGameEnrich() instead.
  *
  * @param {{ title: string, slug?: string, platform?: string, hints?: object }} hints
@@ -250,9 +252,9 @@ async function requestGameEnrich(platform, id, title) {
  */
 async function resolveMetadata(hints) {
     try {
-        _quietLog(`[BaddelAPI] resolveMetadata → POST /client/resolve-metadata`, JSON.stringify(hints));
+        _quietLog(`[BaddelAPI] resolveMetadata ? POST /client/resolve-metadata`, JSON.stringify(hints));
 
-        // Honor the shared 429 cooldown set by apiFetch — synthesise a 429
+        // Honor the shared 429 cooldown set by apiFetch � synthesise a 429
         // ApiError so callers' existing rate-limit handling fires without
         // hitting the network and extending the server's lockout window.
         const _RM_PATH = '/client/resolve-metadata';
@@ -263,7 +265,7 @@ async function resolveMetadata(hints) {
             throw new ApiError(_RM_PATH, 429, retrySec);
         }
 
-        // Do NOT use apiFetch() here — we need to inspect non-2xx bodies ourselves.
+        // Do NOT use apiFetch() here � we need to inspect non-2xx bodies ourselves.
         // The server returns a valid JSON body on 404 (not_found), but apiFetch()
         // throws ApiError before we can read it.
         const res = await fetch(`${BASE_URL}/client/resolve-metadata`, {
@@ -276,12 +278,12 @@ async function resolveMetadata(hints) {
             body: JSON.stringify(hints),
         });
 
-        // Always try to parse the body — even on error statuses
+        // Always try to parse the body � even on error statuses
         let result = null;
         try {
             result = await res.json();
         } catch (parseErr) {
-            console.warn(`[BaddelAPI] resolveMetadata ← HTTP ${res.status}: body is not JSON — parse error: ${parseErr.message}`);
+            console.warn(`[BaddelAPI] resolveMetadata ? HTTP ${res.status}: body is not JSON � parse error: ${parseErr.message}`);
         }
 
         if (!res.ok) {
@@ -290,26 +292,26 @@ async function resolveMetadata(hints) {
             // Log the raw body so we can distinguish a valid not_found JSON from
             // a true route-level 404 (which would have an HTML or empty body).
             console.warn(
-                `[BaddelAPI] resolveMetadata ← HTTP ${res.status}` +
+                `[BaddelAPI] resolveMetadata ? HTTP ${res.status}` +
                 (retryAfter ? ` (Retry-After: ${retryAfter}s)` : '') +
-                ` — raw body: ${JSON.stringify(result)}`
+                ` � raw body: ${JSON.stringify(result)}`
             );
 
-            // HTTP 404 with a valid structured body from the server → return as-is.
+            // HTTP 404 with a valid structured body from the server ? return as-is.
             // The server previously sent 404 for not_found; treat any JSON with a
             // recognisable status field as a structured result rather than an error.
             if (res.status === 404 && result && typeof result.status === 'string') {
-                _quietLog(`[BaddelAPI] resolveMetadata: 404 has structured body — returning status="${result.status}" directly`);
+                _quietLog(`[BaddelAPI] resolveMetadata: 404 has structured body � returning status="${result.status}" directly`);
                 return result;
             }
 
-            // Rate-limited or other hard server error — throw so callers know
+            // Rate-limited or other hard server error � throw so callers know
             if (res.status === 429) _setCooldownFromRetryAfter('/client/resolve-metadata', retryAfter);
             throw new ApiError('/client/resolve-metadata', res.status, retryAfter);
         }
 
         const resolvedTitle = result?.meta?.title || result?.data?.title || null;
-        _quietLog(`[BaddelAPI] resolveMetadata ← status="${result?.status}"`, result?.status === 'resolved' ? `title="${resolvedTitle}"` : '');
+        _quietLog(`[BaddelAPI] resolveMetadata ? status="${result?.status}"`, result?.status === 'resolved' ? `title="${resolvedTitle}"` : '');
         return result;
     } catch (err) {
         // Re-throw ApiError so callers can inspect .status and .retryAfter.
@@ -319,19 +321,19 @@ async function resolveMetadata(hints) {
             console.warn(`[BaddelAPI] resolveMetadata failed (HTTP ${err.status}):`, err.message);
             throw err;
         }
-        // Non-API errors (network, parse) — log and re-throw so callers
+        // Non-API errors (network, parse) � log and re-throw so callers
         // can apply the same deferred-keep logic as for rate limits.
         console.warn('[BaddelAPI] resolveMetadata network/parse error:', err.message);
         throw err;
     }
 }
 
-// ─── Batch Enrich Request ─────────────────────────────────────────────────────
+// --- Batch Enrich Request -----------------------------------------------------
 
 /**
  * Send a batch of games to POST /client/request-enrich/batch.
  *
- * Security: public client path — no secret, uses X-Baddel-Install-Id only.
+ * Security: public client path � no secret, uses X-Baddel-Install-Id only.
  * HTTP 207 Multi-Status is treated as success (partial results are normal).
  * HTTP 429 triggers an ApiError with retryAfter populated from the header.
  *
@@ -360,7 +362,7 @@ async function requestGameEnrichBatch(platform, games) {
         body: JSON.stringify({ platform, games }),
     });
 
-    // 207 Multi-Status = partial success — treat as OK
+    // 207 Multi-Status = partial success � treat as OK
     if (res.status === 207 || res.ok) {
         return res.json();
     }
@@ -369,7 +371,7 @@ async function requestGameEnrichBatch(platform, games) {
     throw new ApiError('/client/request-enrich/batch', res.status, retryAfter);
 }
 
-// ─── EnrichQueue ──────────────────────────────────────────────────────────────
+// --- EnrichQueue --------------------------------------------------------------
 
 /**
  * Rate-limit-aware, deduplicating, throttled queue for POST /client/request-enrich.
@@ -381,12 +383,12 @@ async function requestGameEnrichBatch(platform, games) {
  *  - On HTTP 429: reads `Retry-After` header if present, otherwise uses
  *    exponential backoff with jitter (base 10 s, cap 120 s).
  *  - Retries up to `maxRetries` times (default 4) before marking as deferred.
- *  - Never throws — collects per-item outcomes into a summary.
+ *  - Never throws � collects per-item outcomes into a summary.
  *
  * Usage:
  *   const q = new EnrichQueue({ concurrency: 2 });
  *   q.enqueue('epic', 'someNamespace', 'Game Title');
- *   // … enqueue more …
+ *   // � enqueue more �
  *   const summary = await q.drain();
  *   // { queued, skippedDuplicate, rateLimited, failed }
  */
@@ -400,7 +402,7 @@ class EnrichQueue {
 
         /** @type {Array<{ platform:string, id:string, title?:string }>} */
         this._pending = [];
-        this._seen    = new Set();   // dedup key → already enqueued
+        this._seen    = new Set();   // dedup key ? already enqueued
 
         // Counters
         this.queued           = 0;  // successfully accepted by server
@@ -446,7 +448,7 @@ class EnrichQueue {
             const items = this._pending.splice(0);
             if (items.length === 0) return this._summary();
 
-            _quietLog(`[EnrichQueue] starting drain — ${items.length} items, concurrency=${this._concurrency}`);
+            _quietLog(`[EnrichQueue] starting drain � ${items.length} items, concurrency=${this._concurrency}`);
 
             let cursor = 0;
             const worker = async () => {
@@ -461,10 +463,12 @@ class EnrichQueue {
             );
 
             const s = this._summary();
-            console.log(
-                `[EnrichQueue] drain complete — queued:${s.queued} duplicate:${s.skippedDuplicate} ` +
-                `rateLimited:${s.rateLimited} failed:${s.failed}`
-            );
+            if (VERBOSE_LOGS || s.rateLimited > 0 || s.failed > 0) {
+                _normalLog(
+                    `[EnrichQueue] Summary queued:${s.queued} duplicate:${s.skippedDuplicate} ` +
+                    `rateLimited:${s.rateLimited} failed:${s.failed}`
+                );
+            }
             return s;
         })();
 
@@ -492,29 +496,29 @@ class EnrichQueue {
             try {
                 await _rawRequestGameEnrich(platform, id, title);
                 this.queued++;
-                _quietLog(`[EnrichQueue] ✓ queued        ${tag}`);
+                _quietLog(`[EnrichQueue] ? queued        ${tag}`);
                 return;
             } catch (err) {
                 const is429 = err && err.status === 429;
 
                 if (!is429) {
                     this.failed++;
-                    _throttledWarn(tag, `[EnrichQueue] ✗ failed (perm) ${tag} — ${err.message}`);
+                    _throttledWarn(tag, `[EnrichQueue] ? failed (perm) ${tag} � ${err.message}`);
                     return;
                 }
 
-                // 429 — compute back-off
+                // 429 � compute back-off
                 attempt++;
                 if (attempt > this._maxRetries) {
                     this.rateLimited++;
-                    _throttledWarn(tag, `[EnrichQueue] ✗ rate-limited  ${tag} — giving up after ${this._maxRetries} retries`);
+                    _throttledWarn(tag, `[EnrichQueue] ? rate-limited  ${tag} � giving up after ${this._maxRetries} retries`);
                     return;
                 }
 
                 const retryAfterMs = this._retryAfterMs(err, attempt);
-                console.warn(
-                    `[EnrichQueue] ↻ 429 retry ${attempt}/${this._maxRetries} ${tag} ` +
-                    `— waiting ${Math.round(retryAfterMs / 1000)}s`
+                _quietLog(
+                    `[EnrichQueue] 429 retry ${attempt}/${this._maxRetries} ${tag} ` +
+                    `waiting ${Math.round(retryAfterMs / 1000)}s`
                 );
                 await this._sleep(retryAfterMs);
             }
@@ -523,7 +527,7 @@ class EnrichQueue {
 
     /**
      * Parse `Retry-After` from error message if present, otherwise
-     * exponential back-off: base 10 s × 2^attempt + ±20 % jitter, capped at 120 s.
+     * exponential back-off: base 10 s � 2^attempt + �20 % jitter, capped at 120 s.
      *
      * @param {Error} err
      * @param {number} attempt  1-based retry attempt number
@@ -535,8 +539,8 @@ class EnrichQueue {
             const seconds = parseInt(err.retryAfter, 10);
             if (!isNaN(seconds) && seconds > 0 && seconds < 600) return seconds * 1000;
         }
-        // Exponential back-off with ±20 % jitter.
-        // attempt is 1-based: attempt=1 → 10 s, attempt=2 → 20 s, attempt=3 → 40 s …
+        // Exponential back-off with �20 % jitter.
+        // attempt is 1-based: attempt=1 ? 10 s, attempt=2 ? 20 s, attempt=3 ? 40 s �
         const base   = 10_000;
         const exp    = Math.min(base * Math.pow(2, attempt - 1), 120_000);
         const jitter = exp * (0.8 + Math.random() * 0.4);
@@ -549,7 +553,7 @@ class EnrichQueue {
 }
 
 /**
- * Convenience factory — creates a fresh EnrichQueue for a sync pass.
+ * Convenience factory � creates a fresh EnrichQueue for a sync pass.
  * Export gives platformSync.js a clean import surface.
  *
  * @param {{ concurrency?: number, maxRetries?: number }} [opts]
@@ -559,7 +563,7 @@ function createEnrichQueue(opts) {
     return new EnrichQueue(opts);
 }
 
-// ─── Normalize server response to app format ──────────────────────────────────
+// --- Normalize server response to app format ----------------------------------
 
 /**
  * Safely parse a genres value that may arrive in multiple shapes:
@@ -606,11 +610,11 @@ function normalizeServerData(serverGame) {
     const metadata = serverGame.metadata || [];
     const sysreqs  = serverGame.system_requirements || [];
 
-    // ── Diagnostic: log metadata array shape so we can see what we're working with ──
+    // -- Diagnostic: log metadata array shape so we can see what we're working with --
     _quietLog(`[BaddelAPI] normalizeServerData: "${serverGame.title}" | metadata rows: ${metadata.length} | sources: [${metadata.map(m => m.source).join(', ')}]`);
     if (metadata.length > 0) {
         metadata.forEach((m, i) => {
-            _quietLog(`[BaddelAPI]   metadata[${i}] source=${m.source} | desc=${!!m.description} (${String(m.description||'').slice(0,60)}) | dev=${m.developer||'—'} | genres type=${typeof m.genres} val=${JSON.stringify(m.genres)}`);
+            _quietLog(`[BaddelAPI]   metadata[${i}] source=${m.source} | desc=${!!m.description} (${String(m.description||'').slice(0,60)}) | dev=${m.developer||'�'} | genres type=${typeof m.genres} val=${JSON.stringify(m.genres)}`);
         });
     }
 
@@ -625,10 +629,10 @@ function normalizeServerData(serverGame) {
     const imageTypes = images.map(i => i.image_type).filter(Boolean);
     _quietLog(
         `[BaddelAPI] normalizeServerData images for "${serverGame.title}": [${imageTypes.join(', ')}] ` +
-        `→ cover=${!!cover} hero=${!!hero} logo=${!!logo}`
+        `? cover=${!!cover} hero=${!!hero} logo=${!!logo}`
     );
     if (imageTypes.includes('hero') && !hero) {
-        console.warn(`[BaddelAPI] normalizeServerData: image_type=hero present but pick() returned null for "${serverGame.title}" — check cdn_url/url fields`);
+        console.warn(`[BaddelAPI] normalizeServerData: image_type=hero present but pick() returned null for "${serverGame.title}" � check cdn_url/url fields`);
     }
     const screenshots = images
         .filter(i => i.image_type === 'screenshot')
@@ -676,7 +680,7 @@ function normalizeServerData(serverGame) {
     const description = meta.description || serverGame.description || null;
     const short_description = meta.short_description || serverGame.short_description || null;
 
-    // Use robust parser — Postgres may return genres as "{Action,RPG}" array literal string
+    // Use robust parser � Postgres may return genres as "{Action,RPG}" array literal string
     const genres = _parseGenres(meta.genres) || _parseGenres(serverGame.genres) || [];
 
     _quietLog(`[BaddelAPI] normalizeServerData: "${serverGame.title}" cover=${!!cover} hero=${!!hero} desc=${!!description} genres=${genres.length}`);
@@ -741,16 +745,16 @@ function _normalizeRequirements(sysreqs) {
     return result;
 }
 
-// ─── Deprecated stubs — kept for temporary compatibility only ─────────────────
+// --- Deprecated stubs � kept for temporary compatibility only -----------------
 // These wrappers log a warning and internally use the safe flow.
 // They will be removed in the next cleanup pass.
 
-// ── Shared module-level queue for importGames() ────────────────────────────────
+// -- Shared module-level queue for importGames() --------------------------------
 // The old implementation created a NEW EnrichQueue on every importGames() call
 // and called drain() immediately.  platformSync.js calls importGames() once per
-// platform per sync pass — so two concurrent calls (steam + epic) each spawned
+// platform per sync pass � so two concurrent calls (steam + epic) each spawned
 // their own queue, each one re-draining the FULL game list independently.
-// Result: 2 × N request-enrich calls at startup, instant 429 storm.
+// Result: 2 � N request-enrich calls at startup, instant 429 storm.
 //
 // Fix: one shared queue + one shared drain timer.  All importGames() calls
 // within a 200 ms window are merged into the same queue and drained once.
@@ -767,7 +771,7 @@ function _getSharedImportQueue() {
 
 /** @deprecated Use createEnrichQueue() + EnrichQueue.enqueue() instead */
 async function importGames(platform, games) {
-    console.warn('[BaddelAPI] importGames() is deprecated. Migrating callers to EnrichQueue.');
+    _quietLog('[BaddelAPI] importGames() is deprecated. Migrating callers to EnrichQueue.');
     const q = _getSharedImportQueue();
     for (const g of games || []) {
         const id = platform === 'steam' ? (g.id || g.appid) : (g.id || g.namespace);
@@ -805,7 +809,7 @@ async function importGames(platform, games) {
 
 /** @deprecated Use requestGameEnrich() instead */
 async function enrichGame(gameId, clientData = {}) {
-    console.warn('[BaddelAPI] enrichGame() is deprecated — admin endpoint removed from launcher.');
+    console.warn('[BaddelAPI] enrichGame() is deprecated � admin endpoint removed from launcher.');
     // We can no longer call /games/enrich/:id directly.
     // Silently swallow the call; the server will enrich via its own queue after request-enrich.
     return null;
@@ -825,16 +829,16 @@ async function importAndEnrich(platform, game) {
     return looked?.id || null;
 }
 
-// ─── Canonical installed-game → server routing helper ────────────────────────
+// --- Canonical installed-game ? server routing helper ------------------------
 
 /**
  * Decide whether an installed game is eligible for server lookup/enrich,
  * and resolve the canonical platform + external ID to use.
  *
  * Rules:
- *  - Steam  → { platform: 'steam', id: '<numeric appid>' }
- *  - Epic   → { platform: 'epic',  id: '<CatalogNamespace hex UUID>' }
- *  - Others → null  (stay local-first, no server call)
+ *  - Steam  ? { platform: 'steam', id: '<numeric appid>' }
+ *  - Epic   ? { platform: 'epic',  id: '<CatalogNamespace hex UUID>' }
+ *  - Others ? null  (stay local-first, no server call)
  *
  * This is the single source of truth for platform eligibility and ID
  * resolution.  All callers (game-details.js, gameScanner.js, IPC handlers)
@@ -848,7 +852,7 @@ function resolveInstalledServerTarget(game) {
 
     const platRaw = (game.platform || '').toLowerCase().trim();
 
-    // ── Steam ─────────────────────────────────────────────────────────────────
+    // -- Steam -----------------------------------------------------------------
     const isSteam = platRaw === 'steam';
     if (isSteam) {
         // Prefer the pre-stored allIds.steam (set at scan time)
@@ -856,28 +860,28 @@ function resolveInstalledServerTarget(game) {
             ? String(game.allIds.steam).trim()
             : null;
 
-        // Fallback: strip prefix from the stored id  (e.g. 'steam-12345' → '12345')
+        // Fallback: strip prefix from the stored id  (e.g. 'steam-12345' ? '12345')
         if (!steamId) {
             const stripped = String(game.id || '').replace(/^steam[-_]/i, '').trim();
             if (/^\d+$/.test(stripped)) steamId = stripped;
         }
 
         if (!steamId) {
-            console.warn(`[ServerTarget] Steam game "${game.name}" — could not resolve a numeric app id. Skipping server flow.`);
+            console.warn(`[ServerTarget] Steam game "${game.name}" � could not resolve a numeric app id. Skipping server flow.`);
             return null;
         }
 
-        _quietLog(`[ServerTarget] ✓ Steam game "${game.name}" → id=${steamId}`);
+        _quietLog(`[ServerTarget] ? Steam game "${game.name}" ? id=${steamId}`);
         return { platform: 'steam', id: steamId };
     }
 
-    // ── Epic Games ────────────────────────────────────────────────────────────
+    // -- Epic Games ------------------------------------------------------------
     const isEpic = platRaw === 'epic games' || platRaw === 'epic';
     if (isEpic) {
         // Precedence:
-        //   1. game.allIds.epic  — the canonical namespace written at scan time
-        //   2. game.namespace    — raw manifest field
-        //   3. stripped game.id  — only if it passes namespace validation
+        //   1. game.allIds.epic  � the canonical namespace written at scan time
+        //   2. game.namespace    � raw manifest field
+        //   3. stripped game.id  � only if it passes namespace validation
         // appName is NEVER used (it's a short slug, not a namespace UUID).
         const candidates = [
             game.allIds?.epic,
@@ -889,16 +893,16 @@ function resolveInstalledServerTarget(game) {
 
         if (!epicId) {
             const rejected = candidates.join(', ') || '(none)';
-            console.warn(`[ServerTarget] Epic game "${game.name}" — no valid namespace found. Rejected candidates: [${rejected}]. Staying local-only.`);
+            console.warn(`[ServerTarget] Epic game "${game.name}" � no valid namespace found. Rejected candidates: [${rejected}]. Staying local-only.`);
             return null;
         }
 
-        _quietLog(`[ServerTarget] ✓ Epic game "${game.name}" → namespace=${epicId}`);
+        _quietLog(`[ServerTarget] ? Epic game "${game.name}" ? namespace=${epicId}`);
         return { platform: 'epic', id: epicId };
     }
 
-    // ── Unsupported platforms — local-only for this release ──────────────────
-    _quietLog(`[ServerTarget] Platform "${game.platform}" is not Steam/Epic — local-only (no server call).`);
+    // -- Unsupported platforms � local-only for this release ------------------
+    _quietLog(`[ServerTarget] Platform "${game.platform}" is not Steam/Epic � local-only (no server call).`);
     return null;
 }
 
@@ -916,16 +920,16 @@ function _isValidEpicNamespace(s) {
 }
 
 
-// ─── Riot metadata lookup resolver ───────────────────────────────────────────
+// --- Riot metadata lookup resolver -------------------------------------------
 
 /**
  * Resolve the best metadata lookup key for a Riot Games title.
- * Riot is local-first — this helper produces a slug or title for a
+ * Riot is local-first � this helper produces a slug or title for a
  * server lookup by name only.  Never sends platform/id to the server.
  *
  * Known mappings (hardened):
- *   VALORANT           → slug 'valorant'
- *   League of Legends  → slug 'league-of-legends'
+ *   VALORANT           ? slug 'valorant'
+ *   League of Legends  ? slug 'league-of-legends'
  *
  * Unknown Riot titles fall back to { title: game.name }.
  *
@@ -944,16 +948,16 @@ function resolveRiotMetadataLookup(game) {
     const slug = SLUG_MAP[normalized] || null;
 
     if (slug) {
-        _quietLog(`[RiotMeta] Known title "${game.name}" → slug="${slug}"`);
+        _quietLog(`[RiotMeta] Known title "${game.name}" ? slug="${slug}"`);
         return { slug };
     }
 
-    // Unknown Riot title — try by title, don't fail
-    _quietLog(`[RiotMeta] Unknown Riot title "${game.name}" — fallback to title lookup`);
+    // Unknown Riot title � try by title, don't fail
+    _quietLog(`[RiotMeta] Unknown Riot title "${game.name}" � fallback to title lookup`);
     return { title: game.name };
 }
 
-// ─── Normalize transient resolver payload → app format ────────────────────────
+// --- Normalize transient resolver payload ? app format ------------------------
 
 /**
  * Normalizes the `meta` object returned by POST /client/resolve-metadata
@@ -970,9 +974,9 @@ function resolveRiotMetadataLookup(game) {
  *
  * This is DIFFERENT from a full server-game object (which has images[],
  * metadata[], platform_ids[], etc.).  Never pass a transient payload into
- * normalizeServerData() — use this function instead.
+ * normalizeServerData() � use this function instead.
  *
- * @param {object|null} resultMeta  — the `meta` (or `data`) field from the
+ * @param {object|null} resultMeta  � the `meta` (or `data`) field from the
  *                                    /client/resolve-metadata response
  * @returns {object|null}
  */
@@ -994,7 +998,7 @@ function normalizeTransientData(resultMeta) {
         isVideo:  v.url ? !v.url.includes('youtube') : false,
     })).filter(t => {
         if (!t.url) return false;
-        // Reject URLs containing the literal string 'undefined' — these are
+        // Reject URLs containing the literal string 'undefined' � these are
         // the result of a null video_id being interpolated into the embed URL.
         if (t.url.includes('undefined')) {
             console.warn(`[BaddelAPI] normalizeTransientData: dropping trailer with bad URL: ${t.url}`);
@@ -1035,7 +1039,7 @@ function normalizeTransientData(resultMeta) {
     // can skip persisting it.
     const _isArtOnly = !hasText && screenshots.length === 0;
 
-    console.log(`[BaddelAPI] normalizeTransientData: "${resultMeta.title}" | desc=${!!description} | cover=${hasCover} | hero=${hasHero} | genres=${genres.length} | screenshots=${screenshots.length} | trailers=${allTrailers.length} | artOnly=${_isArtOnly}`);
+    _quietLog(`[BaddelAPI] normalizeTransientData: "${resultMeta.title}" | desc=${!!description} | cover=${hasCover} | hero=${hasHero} | genres=${genres.length} | screenshots=${screenshots.length} | trailers=${allTrailers.length} | artOnly=${_isArtOnly}`);
 
     return {
         cover,
@@ -1064,14 +1068,14 @@ function normalizeTransientData(resultMeta) {
     };
 }
 
-// ─── Image-asset presence check ──────────────────────────────────────────────
+// --- Image-asset presence check ----------------------------------------------
 
 /**
  * Returns true when a normalised metadata object (from normalizeServerData OR
  * normalizeTransientData) contains at least one usable image asset:
- *   • cover  / image
- *   • heroImage / hero
- *   • logo
+ *   � cover  / image
+ *   � heroImage / hero
+ *   � logo
  *
  * Used by getXboxGames() to decide whether a Store app is a real game.
  *

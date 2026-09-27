@@ -1,8 +1,0 @@
-{
-  "name": "heroic-gogdl",
-  "version": "1.2.2",
-  "platform": "win32",
-  "arch": "x64",
-  "sha256": "37E7CF848D35FFFF92DFAEB62D7751709E0B8A0DEB17DDA36A013D73300E61C1",
-  "source": "https://github.com/Heroic-Games-Launcher/heroic-gogdl/releases/tag/v1.2.2"
-}

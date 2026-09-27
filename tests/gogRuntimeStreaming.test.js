@@ -73,3 +73,50 @@ test('GOG runtime spawnCommand aborts a running process', async () => {
     await assert.rejects(promise, /cancelled/i);
     assert.equal(spawned.killed, true);
 });
+
+test('GOG runtime rejects when process-tree termination has no close confirmation', async () => {
+    let spawned;
+    const runtime = new GogRuntime({
+        projectRoot: 'E:\\Baddel\\Baddel-App',
+        fs: { accessSync: () => {} },
+        spawn: () => {
+            spawned = makeProcess({ hang: true });
+            spawned.kill = () => { spawned.killed = true; };
+            return spawned;
+        },
+        execFile: (_cmd, _args, _opts, cb) => cb?.(),
+        terminationConfirmationMs: 25,
+    });
+    const controller = new AbortController();
+    const promise = runtime.spawnCommand(['download', '123'], { signal: controller.signal, killTree: false });
+    setImmediate(() => controller.abort());
+    await assert.rejects(promise, err => err?.code === 'GOG_RUNTIME_STOP_NOT_CONFIRMED');
+    assert.equal(spawned.killed, true);
+});
+
+
+test('GOG runtime terminates the Windows process tree before confirming close', { skip: process.platform !== 'win32' }, async () => {
+    let spawned;
+    const taskkillCalls = [];
+    const runtime = new GogRuntime({
+        projectRoot: 'E:\\Baddel\\Baddel-App',
+        fs: { accessSync: () => {} },
+        spawn: () => {
+            spawned = makeProcess({ hang: true });
+            return spawned;
+        },
+        execFile: (command, args, _options, callback) => {
+            taskkillCalls.push({ command, args });
+            setImmediate(() => {
+                callback?.(null);
+                spawned.emit('close', 1, 'SIGTERM');
+            });
+        },
+    });
+    const controller = new AbortController();
+    const promise = runtime.spawnCommand(['download', '123'], { signal: controller.signal });
+    setImmediate(() => controller.abort());
+    await assert.rejects(promise, err => err?.code === 'GOG_RUNTIME_CANCELLED' && err?.details?.terminationConfirmed === true);
+    assert.equal(taskkillCalls[0].command, 'taskkill');
+    assert.deepEqual(taskkillCalls[0].args, ['/PID', '12345', '/T', '/F']);
+});

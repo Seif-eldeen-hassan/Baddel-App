@@ -103,17 +103,37 @@ function _homeHeroPickGame(gameId) {
 
 function _homeHeroArtworkFor(game) {
     const readModel = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
-        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({ displayGame: game, canonicalGame: game })
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({
+            displayGame: game,
+            canonicalGame: game,
+            cacheArtwork: {
+                cover: game?.__baddelResolvedLocalCover || null,
+                hero: game?.__baddelResolvedLocalHero || null,
+                logo: game?.__baddelResolvedLocalLogo || null,
+            },
+        })
         : null;
     const heroArtwork = _heroSurfaceArtwork(game, 'home-hero');
     const presentation = window.BaddelGameArtworkReadModel?.selectPresentationCandidates
         ? window.BaddelGameArtworkReadModel.selectPresentationCandidates(readModel, 'home-hero')
         : [];
+    const cacheBacked = (value) => {
+        if (typeof isCacheBackedArtworkUrl === 'function') return isCacheBackedArtworkUrl(value);
+        const safe = safeImageUrl(value);
+        return /^file:\/\//i.test(String(safe || '')) ? safe : null;
+    };
+    const localPresentation = presentation.map(cacheBacked).filter(Boolean);
+    const localHero = cacheBacked(heroArtwork.hero?.value) || cacheBacked(game?.__baddelResolvedLocalHero);
+    const localCover = cacheBacked(readModel?.cover?.effectiveValue) || cacheBacked(heroArtwork.cover?.value) || cacheBacked(game?.__baddelResolvedLocalCover);
+    const localLogo = cacheBacked(readModel?.logo?.effectiveValue || heroArtwork.logo?.value);
+    const selected = window.BaddelHomeArtworkPresentation?.selectHomeHeroArtwork?.(readModel) || null;
     return {
         readModel,
         heroArtwork,
-        bg: safeImageUrl(presentation[0] || heroArtwork.hero?.value || heroArtwork.cover?.value || null),
-        logo: safeImageUrl(readModel?.logo?.effectiveValue || heroArtwork.logo?.value),
+        bg: safeImageUrl(cacheBacked(selected?.background) || localPresentation[0] || localHero || (readModel?.hero?.terminal === true ? localCover : null) || null),
+        logo: safeImageUrl(cacheBacked(selected?.logo) || localLogo),
+        heroPending: readModel?.hero?.pending === true,
+        logoPending: readModel?.logo?.pending === true,
     };
 }
 
@@ -170,23 +190,33 @@ function _homeHeroPrimeGameShell(game, gameId) {
 }
 
 async function _homeHeroHydrateCachedArtwork(game, source = 'hero', options = {}) {
-    if (!game || !window.__baddelLoadCachedArtworkForGame) return { coverHit: false, heroHit: false, logoHit: false };
-    const canonicalGame = { id: game.localGameId || game.installedId || game.id };
-    const cached = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame, { types: options.types || ['cover', 'hero', 'logo'] }).catch(() => null);
+    if (!game) return { coverHit: false, heroHit: false, logoHit: false };
+    let cached = null;
+    if (window.__baddelResolveArtworkCacheBulk) {
+        const bulk = await window.__baddelResolveArtworkCacheBulk([game], { types: options.types || ['cover', 'hero', 'logo'], surface: source || 'home-hero' }).catch(() => null);
+        cached = bulk?.results?.get?.(String(game.id || '')) || null;
+    }
+    if (!cached && window.__baddelLoadCachedArtworkForGame) {
+        const canonicalGame = { id: game.localGameId || game.installedId || game.id };
+        cached = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame, { types: options.types || ['cover', 'hero', 'logo'] }).catch(() => null);
+    }
     const cover = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.cover) : cached?.cover;
     const hero = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.hero) : cached?.hero;
     const logo = typeof isCacheBackedArtworkUrl === 'function' ? isCacheBackedArtworkUrl(cached?.logo) : cached?.logo;
     if (cover) {
+        game.__baddelResolvedLocalCover = cover;
         game.image = cover;
         game.defaultImage = cover;
         game.coverUrl = cover;
     }
     if (hero) {
+        game.__baddelResolvedLocalHero = hero;
         game.heroImage = hero;
         game.defaultHero = hero;
         game.hero = hero;
     }
     if (logo) {
+        game.__baddelResolvedLocalLogo = logo;
         game.logo = logo;
         game.defaultLogo = logo;
         game.logoUrl = logo;
@@ -207,6 +237,14 @@ async function _homeHeroHydrateCachedArtwork(game, source = 'hero', options = {}
 function _homeHeroCommit(payload) {
     const { token, gameId, game, bg, logo, heroLoaded } = payload || {};
     if (token !== _homeHeroRequestToken || currentHeroGameId !== String(gameId)) return;
+    window.BaddelArtworkDiagnostics?.record?.('home-hero-commit-request', {
+        canonicalIdentity: game?.localGameId || game?.id,
+        provider: game?.platform,
+        value: bg,
+        logoValue: logo,
+        generationToken: token,
+        reason: heroLoaded ? 'decoded' : 'decode-miss',
+    });
     const bgImg = document.getElementById('heroBg');
     const logoImg = document.getElementById('heroLogo');
     const titleTxt = document.getElementById('heroTitle');
@@ -332,6 +370,15 @@ async function updateHeroSection(gameId, options) {
     if (!game) return;
     currentHeroGameId = String(gameId);
     const token = ++_homeHeroRequestToken;
+    window.BaddelArtworkDiagnostics?.record?.('home-hero-selection', {
+        canonicalIdentity: game?.localGameId || game?.id,
+        provider: game?.platform,
+        generationToken: token,
+        reason: options.reason || 'update',
+    });
+    window.__baddelExploreCoverHydrationController?.prewarmHeroArtwork?.([game], {
+        reason: options.reason === 'card-hover' ? 'interactive-hover' : (options.reason || 'home-hero'),
+    });
 
     // Hydrate hero/logo from localStorage and cache aliases before reading the fields
     checkBackgroundAssets(game);

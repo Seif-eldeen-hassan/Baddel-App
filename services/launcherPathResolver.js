@@ -3,7 +3,7 @@
 // ============================================================
 // LAUNCHER PATH RESOLVER
 // Generic launcher detection for the Account Switcher.
-// Supports: Steam, Epic Games Launcher, EA App, Riot Client,
+// Supports: Steam, Epic Games Launcher, GOG Galaxy, EA App, Riot Client,
 //           Ubisoft Connect, Rockstar Games Launcher, Discord.
 //
 // Detection order (each strategy is tried in priority order):
@@ -24,6 +24,16 @@ const { execFile }  = require('child_process');
 const util          = require('util');
 
 const execFileAsync = util.promisify(execFile);
+
+async function boundedProbe(probe, fallback, timeoutMs = 12000) {
+    let timer;
+    try {
+        return await Promise.race([
+            Promise.resolve().then(probe).catch(() => fallback),
+            new Promise(resolve => { timer = setTimeout(() => resolve(fallback), timeoutMs); }),
+        ]);
+    } finally { clearTimeout(timer); }
+}
 
 // Windows path helpers — always use win32 semantics so paths compare correctly
 // on cross-platform CI as well as the production Windows host.
@@ -49,7 +59,7 @@ const _app = (_electronApp && typeof _electronApp.getPath === 'function')
 
 // ── Supported platform list ───────────────────────────────────────────────────
 
-const SUPPORTED_PLATFORMS = ['steam', 'epic', 'ea', 'riot', 'ubisoft', 'rockstar', 'discord'];
+const SUPPORTED_PLATFORMS = ['steam', 'epic', 'gog', 'ea', 'riot', 'ubisoft', 'rockstar', 'discord'];
 
 // ── Per-platform configuration ────────────────────────────────────────────────
 // All candidate path functions are lazy (using getters) so env vars are read at
@@ -100,6 +110,28 @@ function _buildPlatformConfig() {
                 winJoin(drive, 'Epic Games',                           'Launcher', 'Portal', 'Binaries', 'Win64', 'EpicGamesLauncher.exe'),
                 winJoin(drive, 'Program Files',       'Epic Games',   'Launcher', 'Portal', 'Binaries', 'Win64', 'EpicGamesLauncher.exe'),
                 winJoin(drive, 'Program Files (x86)', 'Epic Games',   'Launcher', 'Portal', 'Binaries', 'Win64', 'EpicGamesLauncher.exe'),
+            ],
+        },
+        gog: {
+            name:            'GOG Galaxy',
+            dialogTitle:     'Locate GOG Galaxy',
+            exeNames:        ['GalaxyClient.exe'],
+            processNames:    ['GalaxyClient'],
+            registryAliases: 'gog galaxy|gog.com galaxy|gog.com',
+            shortcutAliases: 'gog galaxy|gog.com galaxy|gog',
+            protocolKeys:    ['goggalaxy'],
+            envCandidates:   () => [
+                winJoin(e.pfx(), 'GOG Galaxy', 'GalaxyClient.exe'),
+                winJoin(e.pf(),  'GOG Galaxy', 'GalaxyClient.exe'),
+            ],
+            driveCandidates: (drive) => [
+                winJoin(drive, 'Program Files (x86)', 'GOG Galaxy', 'GalaxyClient.exe'),
+                winJoin(drive, 'Program Files',       'GOG Galaxy', 'GalaxyClient.exe'),
+                winJoin(drive, 'GOG Galaxy',                         'GalaxyClient.exe'),
+                winJoin(drive, 'GOG',                                'GalaxyClient.exe'),
+                winJoin(drive, 'Games',              'GOG Galaxy',  'GalaxyClient.exe'),
+                winJoin(drive, 'Apps',               'GOG Galaxy',  'GalaxyClient.exe'),
+                winJoin(drive, 'Launchers',          'GOG Galaxy',  'GalaxyClient.exe'),
             ],
         },
         ea: {
@@ -218,6 +250,10 @@ function _cleanPath(p) {
     if (!p || typeof p !== 'string') return '';
     let s = p.trim().replace(/^"+|"+$/g, '');
     if (!s) return '';
+    s = s.replace(/%([^%]+)%/g, (match, key) => {
+        const name = Object.keys(process.env).find(name => name.toLowerCase() === key.toLowerCase());
+        return name ? process.env[name] : match;
+    });
     s = s.replace(/^file:\/+/i, '');
     try { return path.normalize(s); } catch { return s; }
 }
@@ -347,6 +383,65 @@ async function _queryProtocolHandlers(platform, existsFn) {
 }
 
 // ── Strategy: Start Menu / Desktop shortcuts ──────────────────────────────────
+
+async function _queryGogClientRegistration() {
+    const keys = [
+        'HKCU\\SOFTWARE\\GOG.com\\GalaxyClient\\paths',
+        'HKLM\\SOFTWARE\\GOG.com\\GalaxyClient\\paths',
+        'HKLM\\SOFTWARE\\WOW6432Node\\GOG.com\\GalaxyClient\\paths',
+    ];
+    const candidates = [];
+    await Promise.all(keys.flatMap(key => ['client', 'path'].map(async value => {
+            try {
+                const { stdout } = await execFileAsync('reg.exe', ['query', key, '/v', value], { timeout: 4000, windowsHide: true });
+                const match = String(stdout || '').match(/REG_(?:SZ|EXPAND_SZ)\s+(.+)$/im);
+                const raw = _cleanPath(match?.[1] || '');
+                if (!raw) return;
+                candidates.push(raw.toLowerCase().endsWith('.exe') ? raw : winJoin(raw, 'GalaxyClient.exe'));
+            } catch { /* key/value absent */ }
+    })));
+    await Promise.all(['HKCU', 'HKLM'].flatMap(hive => ['32', '64'].map(async view => {
+        try {
+            const { stdout } = await execFileAsync('reg.exe', ['query', `${hive}\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\App Paths\\GalaxyClient.exe`, '/ve', `/reg:${view}`], { timeout: 4000, windowsHide: true });
+            const match = String(stdout || '').match(/REG_(?:SZ|EXPAND_SZ)\s+(.+)$/im);
+            if (match) candidates.push(_cleanPath(match[1]));
+        } catch { /* App Paths is optional. */ }
+    })));
+    try {
+        const { stdout } = await execFileAsync('reg.exe', [
+            'query', 'HKLM\\SYSTEM\\CurrentControlSet\\Services\\GalaxyClientService', '/v', 'ImagePath',
+        ], { timeout: 4000, windowsHide: true });
+        const match = String(stdout || '').match(/REG_(?:SZ|EXPAND_SZ)\s+(.+)$/im);
+        const command = _cleanPath(match?.[1] || '');
+        const serviceExe = command.match(/^"([^"]+\.exe)"/i)?.[1]
+            || command.match(/^(.+?\.exe)(?:\s|$)/i)?.[1]
+            || '';
+        if (serviceExe) candidates.push(winJoin(winDirname(serviceExe), 'GalaxyClient.exe'));
+    } catch { /* GalaxyClientService is optional. */ }
+    return candidates;
+}
+
+async function _deepSearchLauncherOnDrives(platform, drives) {
+    const cfg = _getPlatformConfig(platform);
+    if (!cfg || process.platform !== 'win32') return [];
+    const searches = [];
+    for (const drive of Array.isArray(drives) ? drives : []) {
+        if (!/^[A-Za-z]:\\$/.test(String(drive || ''))) continue;
+        for (const exeName of cfg.exeNames) {
+            searches.push((async () => {
+                try {
+                    const { stdout } = await execFileAsync('where.exe', ['/r', drive, exeName], {
+                        timeout: 25000,
+                        windowsHide: true,
+                        maxBuffer: 1024 * 1024,
+                    });
+                    return String(stdout || '').split(/\r?\n/).map(_cleanPath).filter(Boolean);
+                } catch { return []; }
+            })());
+        }
+    }
+    return (await Promise.all(searches)).flat();
+}
 
 async function _queryShortcutsForLauncher(platform) {
     const cfg = _getPlatformConfig(platform);
@@ -542,6 +637,12 @@ async function findLauncherExe(platform, _opts = {}) {
     const queryShorts  = _opts._queryShortcuts|| (() => _queryShortcutsForLauncher(platform));
     const findRunning  = _opts._findRunning   || (() => _findInRunningProcesses(platform));
     const queryProto   = _opts._queryProtocol || ((pl, ef) => _queryProtocolHandlers(pl, ef));
+    const deepSearch   = _opts._deepSearch || ((pl, drives) => _deepSearchLauncherOnDrives(pl, drives));
+    const readManual   = _opts._readManualPath || getSavedManualLauncherPath;
+    const resolved = (exePath, source) => {
+        if (exePath) _opts._onResolved?.({ exePath, source });
+        return exePath;
+    };
 
     const check = (raw) => {
         const p = _cleanPath(String(raw || ''));
@@ -549,23 +650,51 @@ async function findLauncherExe(platform, _opts = {}) {
     };
 
     // ── A. Saved manual path ─────────────────────────────────────────────────
-    const manual = await getSavedManualLauncherPath(platform);
+    const manual = await readManual(platform);
     if (manual) {
         const r = check(manual);
-        if (r) return r;
+        if (r) return resolved(r, 'manual');
         // stale — fall through to auto-detection
     }
 
     // ── B. Env-based candidates ──────────────────────────────────────────────
+    if (platform === 'gog') {
+        const queryGogRegistration = _opts._queryGogRegistration || _queryGogClientRegistration;
+        for (const candidate of await boundedProbe(queryGogRegistration, [], _opts._probeTimeoutMs)) {
+            const r = check(candidate);
+            if (r) return resolved(r, 'gog-registration');
+        }
+        const protocolCandidate = check(await boundedProbe(() => queryProto(platform, existsFn), null, _opts._probeTimeoutMs));
+        if (protocolCandidate) return resolved(protocolCandidate, 'protocol');
+    }
+
     for (const c of cfg.envCandidates()) {
-        const r = check(c); if (r) return r;
+        const r = check(c); if (r) return resolved(r, 'environment');
     }
 
     // Steam: registry InstallPath (more reliable than fixed paths)
+    if (platform === 'gog') {
+        const probes = [
+            [async () => (await queryReg()).flatMap(entry => _exeCandidatesFromRegistryEntry(entry, cfg)), 'uninstall-registration'],
+            [queryShorts, 'shortcut'],
+            [async () => [await findRunning()], 'running-process'],
+            [async () => (await getDrives()).flatMap(drive => cfg.driveCandidates(drive)), 'drive-scan'],
+            [async () => deepSearch(platform, await getDrives()), 'deep-drive-search', _opts._deepSearchTimeoutMs || 28000],
+        ];
+        try {
+            const hit = await Promise.any(probes.map(async ([probe, source, timeoutMs]) => {
+                const candidates = await boundedProbe(probe, [], timeoutMs || _opts._probeTimeoutMs);
+                for (const raw of candidates) { const exePath = check(raw); if (exePath) return { exePath, source }; }
+                throw new Error('No valid Galaxy candidate');
+            }));
+            return resolved(hit.exePath, hit.source);
+        } catch { return null; }
+    }
+
     if (platform === 'steam') {
         const steamRegFn = _opts._steamRegPath || _findSteamFromRegistry;
         const regExe = await steamRegFn();
-        if (regExe) { const r = check(regExe); if (r) return r; }
+        if (regExe) { const r = check(regExe); if (r) return resolved(r, 'steam-registration'); }
     }
 
     // Riot: ProgramData/Riot Games/RiotClientInstalls.json
@@ -574,19 +703,19 @@ async function findLauncherExe(platform, _opts = {}) {
         const installs = await readFn();
         if (installs) {
             for (const key of ['rc_default', 'rc_live']) {
-                const r = check(installs[key]); if (r) return r;
+                const r = check(installs[key]); if (r) return resolved(r, 'riot-metadata');
             }
             for (const val of Object.values(installs.associated_client || {})) {
                 const p = _cleanPath(String(val || ''));
                 if (!p) continue;
-                if (_isValidExeForPlatform('riot', p)) { const r = check(p); if (r) return r; }
+                if (_isValidExeForPlatform('riot', p)) { const r = check(p); if (r) return resolved(r, 'riot-metadata'); }
                 // Infer client from sibling game directory
                 const lower = p.toLowerCase();
                 for (const game of ['\\valorant\\', '\\league of legends\\']) {
                     const idx = lower.indexOf(game);
                     if (idx >= 0) {
                         const r = check(winJoin(p.slice(0, idx), 'Riot Client', 'RiotClientServices.exe'));
-                        if (r) return r;
+                        if (r) return resolved(r, 'riot-metadata');
                     }
                 }
             }
@@ -597,14 +726,14 @@ async function findLauncherExe(platform, _opts = {}) {
     if (platform === 'discord') {
         const discordFn = _opts._discordAppDirs || _scanDiscordAppDirs;
         const appExe    = await discordFn(existsFn);
-        if (appExe) { const r = check(appExe); if (r) return r; }
+        if (appExe) { const r = check(appExe); if (r) return resolved(r, 'per-user-install'); }
     }
 
     // ── C. Every fixed Windows drive ─────────────────────────────────────────
     const drives = await getDrives();
     for (const drive of drives) {
         for (const c of cfg.driveCandidates(drive)) {
-            const r = check(c); if (r) return r;
+            const r = check(c); if (r) return resolved(r, 'drive-scan');
         }
     }
 
@@ -612,23 +741,37 @@ async function findLauncherExe(platform, _opts = {}) {
     const regEntries = await queryReg();
     for (const entry of regEntries) {
         for (const candidate of _exeCandidatesFromRegistryEntry(entry, cfg)) {
-            const r = check(candidate); if (r) return r;
+            const r = check(candidate); if (r) return resolved(r, 'uninstall-registration');
         }
     }
 
     // ── E. Protocol handler registry ─────────────────────────────────────────
-    const protoExe = await queryProto(platform, existsFn);
-    if (protoExe) return protoExe;
+    if (platform !== 'gog') {
+        const protocolCandidate = check(await queryProto(platform, existsFn));
+        if (protocolCandidate) return resolved(protocolCandidate, 'protocol');
+    }
 
     // ── F. Start Menu / Desktop shortcuts ────────────────────────────────────
     const shortcutPaths = await queryShorts();
-    for (const p of shortcutPaths) { const r = check(p); if (r) return r; }
+    for (const p of shortcutPaths) { const r = check(p); if (r) return resolved(r, 'shortcut'); }
 
     // ── G. Currently running process ─────────────────────────────────────────
     const running = await findRunning();
-    if (running) return running;
+    if (running) {
+        const r = check(running);
+        if (r) return resolved(r, 'running-process');
+    }
 
     return null;
+}
+
+async function resolveLauncher(platform, _opts = {}) {
+    let resolution = null;
+    await findLauncherExe(platform, {
+        ..._opts,
+        _onResolved: value => { resolution = value; },
+    });
+    return resolution;
 }
 
 // ── Public: validate ──────────────────────────────────────────────────────────
@@ -716,16 +859,17 @@ async function clearManualLauncherPath(platform) {
  * Returns null if the launcher cannot be found.
  */
 async function getLauncherLaunchSpec(platform, _opts = {}) {
-    const exePath = await findLauncherExe(platform, _opts);
-    if (!exePath) return null;
+    const resolution = await resolveLauncher(platform, _opts);
+    if (!resolution) return null;
+    const { exePath, source } = resolution;
     if (platform === 'discord') {
         const basename = path.win32.basename(exePath).toLowerCase();
         if (basename === 'update.exe') {
-            return { exePath, args: ['--processStart', 'Discord.exe'] };
+            return { exePath, args: ['--processStart', 'Discord.exe'], source };
         }
-        return { exePath, args: [] };
+        return { exePath, args: [], source };
     }
-    return { exePath, args: [] };
+    return { exePath, args: [], source };
 }
 
 // ── Public: diagnostics ───────────────────────────────────────────────────────
@@ -765,6 +909,7 @@ async function getLauncherDetectionDiagnostics(platform, _opts = {}) {
 module.exports = {
     // Core
     findLauncherExe,
+    resolveLauncher,
     validateLauncherExe,
     getLauncherLaunchSpec,
     // Manual path management

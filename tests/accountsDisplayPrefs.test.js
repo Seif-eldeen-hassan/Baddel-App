@@ -20,7 +20,7 @@ test('display-prefs.js: _agSaveDisplayPrefs is defined', () => {
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs is defined', () => {
-    assert.match(DISPLAY_PREFS_JS, /function _agApplyDisplayPrefs\s*\(\s*\)/);
+    assert.match(DISPLAY_PREFS_JS, /function _agApplyDisplayPrefs\s*\(\s*options\s*=\s*\{\}\s*\)/);
 });
 
 test('display-prefs.js: AG_DISPLAY_DEFAULTS constant is defined', () => {
@@ -290,39 +290,39 @@ test('display-prefs.js: setIgField calls _igSaveDisplayPrefs and _igApplyDisplay
 // ─── 5. Behavior: apply functions update DOM ──────────────────────────────────
 
 test('display-prefs.js: _agApplyDisplayPrefs reads from window._agDisplayPrefs', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 200);
     assert.match(fn, /window\._agDisplayPrefs/);
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs targets allGamesGrid element', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 300);
     assert.match(fn, /getElementById\(['"]allGamesGrid['"]\)/);
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs targets allGamesList element', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 400);
     assert.match(fn, /getElementById\(['"]allGamesList['"]\)/);
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs toggles density classes on grid', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 3700);
     assert.match(fn, /density-compact/, 'must manage density-compact class');
     assert.match(fn, /density-normal/, 'must manage density-normal class');
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs syncs field visibility checkboxes', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
-    const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 3700);
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
+    const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 4500);
     assert.match(fn, /adpFieldTitle/, 'must sync adpFieldTitle checkbox');
     assert.match(fn, /adpFieldPlatforms/, 'must sync adpFieldPlatforms checkbox');
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs guards against ag-empty-mode', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 3700);
     assert.match(fn, /ag-empty-mode/, 'must check for ag-empty-mode to skip layout changes');
 });
@@ -493,7 +493,7 @@ test('display-prefs.js: _igSaveDisplayPrefs does not reference currentView', () 
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs does not reference currentFilters', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 3700);
     assert.doesNotMatch(fn, /\bcurrentFilters\b/);
 });
@@ -505,7 +505,7 @@ test('display-prefs.js: _igApplyDisplayPrefs does not reference currentFilters',
 });
 
 test('display-prefs.js: _agApplyDisplayPrefs does not reference playtimeData', () => {
-    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs()');
+    const idx = DISPLAY_PREFS_JS.indexOf('function _agApplyDisplayPrefs(');
     const fn  = DISPLAY_PREFS_JS.slice(idx, idx + 3700);
     assert.doesNotMatch(fn, /\bplaytimeData\b/);
 });

@@ -244,9 +244,11 @@ test('platformSync still owns Steam bridge, Legendary, and Electron runtime boun
     assert.match(source, /steamBridge\.waitForCacheReady/);
     assert.match(source, /steamBridge\.getOwnedGames/);
 
-    assert.match(source, /const\s+\{\s*execFile\s*\}\s*=\s*require\(['"]child_process['"]\)/);
+    assert.match(source, /const\s+\{\s*spawn\s*\}\s*=\s*require\(['"]child_process['"]\)/);
     assert.match(source, /function\s+runLegendary\s*\(/);
-    assert.match(source, /execFile\(LEGENDARY_BIN/);
+    assert.match(source, /inspectLegendaryRuntime/);
+    assert.match(source, /spawn\(runtime\.legendaryPath/);
+    assert.match(source, /shell:\s*false/);
     assert.match(source, /function\s+openEpicLoginWindow\s*\(/);
     assert.match(source, /runLegendary\(\['list',\s*'--json'\]/);
     assert.match(source, /getLegendaryConfPath/);
@@ -295,3 +297,4 @@ test('public API, IPC channels, and production entrypoint remain on the platform
     assert.match(mainSource, /require\(['"]\.\/src\/features\/sync\/infrastructure\/composition\/SyncContainer['"]\)/);
     assert.match(mainSource, /getSyncFeature\(\)/);
 });
+

@@ -24,6 +24,8 @@ const GA4_API_SECRET = process.env.BADDEL_GA4_API_SECRET || '';
 const GA4_HOST       = 'www.google-analytics.com';
 
 const APP_VERSION = app.getVersion?.() || '0.0.0';
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function analyticsLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
 
 // ---- Module state ----
 let _installationId  = null;
@@ -32,6 +34,26 @@ let _dataDir         = null;
 let _eventQueue      = [];
 let _isFlushing      = false;
 let _cachedOsVersion = 'unknown';
+
+const FEATURE_EVENT_NAMES = new Set([
+    'feature_viewed', 'search_used', 'filter_changed', 'sort_changed',
+    'game_details_opened', 'game_details_tab_changed', 'trailer_started',
+    'creator_action',
+    'install_flow_opened', 'download_queued', 'download_action',
+    'download_completed', 'download_failed', 'settings_changed',
+    'store_provider_selected', 'vault_action', 'vault_account_activated', 'update_action',
+    'account_link_started', 'platform_sync_started',
+    'quick_switcher_opened', 'quick_switcher_hotkey_changed',
+    'quick_switcher_switch_attempt', 'quick_switcher_switch_success',
+    'quick_switcher_switch_failed', 'quick_switcher_end_game_attempt',
+    'quick_switcher_end_game_result',
+]);
+const SAFE_FEATURE_PROPERTY_KEYS = new Set([
+    'feature', 'view', 'source', 'platform', 'provider', 'action', 'result',
+    'status', 'method', 'mode', 'tab', 'filter', 'sort', 'setting',
+    'operation', 'error_code', 'query_present', 'enabled', 'custom_pool',
+    'count_bucket', 'game_count_bucket', 'account_count_bucket', 'duration_bucket',
+]);
 
 // ============================================================
 // INIT
@@ -191,7 +213,7 @@ async function _flushQueue() {
         _eventQueue.splice(0, batch.length);
         await _saveQueue();
 
-        console.log(`[PostHog] Sent ${batch.length} event(s).`);
+        analyticsLog(`[PostHog] Sent ${batch.length} event(s).`);
 
         if (_eventQueue.length > 0) {
             setTimeout(_flushQueue, 2000);
@@ -249,7 +271,7 @@ async function _sendToGA4(eventName, properties = {}) {
 
                 res.on('end', () => {
                     if (res.statusCode >= 200 && res.statusCode < 300) {
-                        console.log(`[GA4] Sent event: ${eventName}`);
+                        analyticsLog(`[GA4] Sent event: ${eventName}`);
                     } else {
                         console.warn(`[GA4] Failed event ${eventName}: ${res.statusCode}`);
                     }
@@ -472,8 +494,27 @@ async function logSyncCompleted(platform, totalGames, accountsSynced) {
 async function logSyncFailed(platform, reason = '') {
     await _send('platform_sync_failed', {
         platform,
-        reason: String(reason).slice(0, 120),
+        error_code: _classifyError(reason),
     });
+}
+
+async function logSyncStarted(platform, accountCount = 0, source = 'manual') {
+    await track('platform_sync_started', {
+        platform,
+        source,
+        account_count_bucket: _bucketCount(accountCount),
+    });
+}
+
+async function logAccountAddStarted(platform, method = 'default') {
+    await track('account_link_started', { platform, method });
+}
+
+async function track(eventName, properties = {}) {
+    const name = String(eventName || '').trim().toLowerCase();
+    if (!FEATURE_EVENT_NAMES.has(name)) return false;
+    await _send(name, sanitizeFeatureProperties(properties));
+    return true;
 }
 
 /**
@@ -512,6 +553,34 @@ function _bucketCount(n) {
     if (n < 50) return '25-50';
     if (n < 100) return '50-100';
     return '100+';
+}
+
+function _classifyError(value) {
+    const text = String(value?.code || value?.message || value || '').toLowerCase();
+    if (/cancel/.test(text)) return 'cancelled';
+    if (/429|rate.?limit/.test(text)) return 'rate_limited';
+    if (/401|403|auth|credential|token|login/.test(text)) return 'authentication';
+    if (/timeout|timed.?out/.test(text)) return 'timeout';
+    if (/offline|network|fetch|econn|enet|dns|eai_again/.test(text)) return 'network';
+    if (/not.?found|missing|unavailable|enoent/.test(text)) return 'not_found';
+    if (/permission|access.?denied|eperm|eacces/.test(text)) return 'permission';
+    return 'unknown';
+}
+
+function _safeEnum(value, fallback = 'unknown') {
+    const normalized = String(value || '').trim().toLowerCase().replace(/[^a-z0-9_-]+/g, '_').replace(/^_+|_+$/g, '');
+    return normalized ? normalized.slice(0, 48) : fallback;
+}
+
+function sanitizeFeatureProperties(properties = {}) {
+    const safe = {};
+    for (const [key, value] of Object.entries(properties || {})) {
+        if (!SAFE_FEATURE_PROPERTY_KEYS.has(key) || value == null) continue;
+        if (typeof value === 'boolean') safe[key] = value;
+        else if (key === 'error_code') safe[key] = _classifyError(value);
+        else safe[key] = _safeEnum(value);
+    }
+    return safe;
 }
 
 function _osVersion() {
@@ -662,7 +731,13 @@ module.exports = {
     logPlatformUnlinked,
     logSyncCompleted,
     logSyncFailed,
+    logSyncStarted,
+    logAccountAddStarted,
     logAutoSyncStarted,
+
+    track,
+    sanitizeFeatureProperties,
+    classifyAnalyticsError: _classifyError,
 
     // Uninstall telemetry
     writeUninstallTelemetryConfig,

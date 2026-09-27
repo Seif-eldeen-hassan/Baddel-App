@@ -4,22 +4,40 @@
 // Declarative Environment Record when those files call them.
 // Depends on escapeHtml from domUtils.js (loaded earlier in dashboard.html).
 
+const activeToastsById = new Map();
+
 function showToast(msgOrOpts, t) {
     let message, type, duration = 3500;
+    let toastId = '';
     if (typeof msgOrOpts === 'object' && msgOrOpts !== null) {
         message = msgOrOpts.message || msgOrOpts.title || '';
         type = msgOrOpts.type || t;
         duration = msgOrOpts.duration || 3500;
+        toastId = String(msgOrOpts.id || '');
     } else {
         message = msgOrOpts;
         type = t;
     }
     const w = document.getElementById('toast-wrapper');
-    const d = document.createElement('div');
+    const previous = toastId ? activeToastsById.get(toastId) : null;
+    if (previous?.timer) clearTimeout(previous.timer);
+    const d = previous?.element?.isConnected ? previous.element : document.createElement('div');
     d.className = `toast-notification ${type === 'error' ? 'toast-error' : ''}`;
-    d.innerHTML = `<span>${message}</span>`;
-    w.appendChild(d);
-    setTimeout(() => { d.style.animation = 'fadeOutUp 0.3s ease forwards'; setTimeout(() => d.remove(), 300); }, duration);
+    d.style.animation = '';
+    d.replaceChildren();
+    const text = document.createElement('span');
+    text.textContent = message;
+    d.appendChild(text);
+    if (!d.isConnected) w.appendChild(d);
+    const timer = setTimeout(() => {
+        d.style.animation = 'fadeOutUp 0.3s ease forwards';
+        setTimeout(() => {
+            d.remove();
+            if (toastId && activeToastsById.get(toastId)?.element === d) activeToastsById.delete(toastId);
+        }, 300);
+    }, duration);
+    if (toastId) activeToastsById.set(toastId, { element: d, timer });
+    return d;
 }
 
 let pendingConfirmAction = null;

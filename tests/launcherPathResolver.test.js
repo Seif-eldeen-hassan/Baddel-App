@@ -33,6 +33,8 @@ const noProtocol  = async () => null;
 const noSteamReg  = async () => null;
 const noRiotInstalls = async () => null;
 const noDiscordApp   = async () => null;
+const noGogRegistration = async () => [];
+const noDeepSearch = async () => [];
 
 // ─── validateLauncherExe ─────────────────────────────────────────────────────
 
@@ -188,6 +190,55 @@ test('findLauncherExe: finds Rockstar on E:\\ custom drive', async () => {
         _queryShortcuts: noShortcuts,
         _findRunning:    noRunning,
         _queryProtocol:  noProtocol,
+    });
+    assert.equal(found, expected);
+});
+
+test('findLauncherExe: finds GOG installed directly on a non-system drive', async () => {
+    const expected = path.win32.join('E:', 'GOG Galaxy', 'GalaxyClient.exe');
+    const found = await resolver.findLauncherExe('gog', {
+        _fileExists: makeExists(expected),
+        _getDrives: makeDrives('C', 'D', 'E'),
+        _queryGogRegistration: noGogRegistration,
+        _queryRegistry: noRegistry,
+        _queryShortcuts: noShortcuts,
+        _findRunning: noRunning,
+        _queryProtocol: noProtocol,
+        _deepSearch: noDeepSearch,
+    });
+    assert.equal(found, expected);
+});
+
+test('findLauncherExe: deep search finds GOG in an arbitrary folder on D or E', async () => {
+    const expected = path.win32.join('D:', 'Anything', 'Custom Launcher Folder', 'GalaxyClient.exe');
+    const found = await resolver.findLauncherExe('gog', {
+        _fileExists: makeExists(expected),
+        _getDrives: makeDrives('C', 'D', 'E'),
+        _queryGogRegistration: noGogRegistration,
+        _queryRegistry: noRegistry,
+        _queryShortcuts: noShortcuts,
+        _findRunning: noRunning,
+        _queryProtocol: noProtocol,
+        _deepSearch: async (platform, drives) => {
+            assert.equal(platform, 'gog');
+            assert.deepEqual(drives.map(drive => drive[0]), ['C', 'D', 'E']);
+            return [expected];
+        },
+    });
+    assert.equal(found, expected);
+});
+
+test('findLauncherExe: GOG registration accepts a custom-drive executable', async () => {
+    const expected = path.win32.join('E:', 'My Launchers', 'GalaxyClient.exe');
+    const found = await resolver.findLauncherExe('gog', {
+        _fileExists: makeExists(expected),
+        _getDrives: noDrives,
+        _queryGogRegistration: async () => [expected],
+        _queryRegistry: noRegistry,
+        _queryShortcuts: noShortcuts,
+        _findRunning: noRunning,
+        _queryProtocol: noProtocol,
+        _deepSearch: noDeepSearch,
     });
     assert.equal(found, expected);
 });

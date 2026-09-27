@@ -5,6 +5,7 @@ const defaultFs = require('fs');
 const defaultFsPromises = require('fs').promises;
 const defaultPath = require('path');
 const { execFile: defaultExecFile, spawn: defaultSpawn } = require('child_process');
+const { getGogRuntimePaths, loadGogRuntimeVersionInfo } = require('./GogRuntimeResolver');
 
 const SECRET_RE = /(access[_-]?token|refresh[_-]?token|authorization|auth[_-]?code|code|cookie|password|secret)(["'\s:=]+)([^"'\s,}]+)/gi;
 const MAX_CAPTURE_BYTES = 64 * 1024;
@@ -40,6 +41,7 @@ class GogRuntime {
         spawn = defaultSpawn,
         expectedSha256 = null,
         versionInfo = null,
+        terminationConfirmationMs = 4000,
     } = {}) {
         this.projectRoot = projectRoot;
         this.resourcesPath = resourcesPath;
@@ -49,18 +51,43 @@ class GogRuntime {
         this.path = path;
         this.execFile = execFile;
         this.spawn = spawn;
-        this.expectedSha256 = expectedSha256 || versionInfo?.sha256 || null;
-        this.versionInfo = versionInfo || null;
+        this.terminationConfirmationMs = Math.max(50, Number(terminationConfirmationMs) || 4000);
+        const loadedVersion = versionInfo ? { versionInfo, error: null, versionPath: null } : loadGogRuntimeVersionInfo({
+            projectRoot: this.projectRoot,
+            resourcesPath: this.resourcesPath,
+            isPackaged: this.isPackaged,
+            fs: this.fs,
+            path: this.path,
+        });
+        this.versionInfo = loadedVersion.versionInfo || null;
+        this.versionInfoError = loadedVersion.error || null;
+        this.versionInfoPath = loadedVersion.versionPath || null;
+        this.expectedSha256 = expectedSha256 || this.versionInfo?.sha256 || null;
+    }
+
+    get runtimePaths() {
+        return getGogRuntimePaths({
+            projectRoot: this.projectRoot,
+            resourcesPath: this.resourcesPath,
+            isPackaged: this.isPackaged,
+            path: this.path,
+        });
     }
 
     get runtimeDir() {
-        return this.isPackaged
-            ? this.path.join(this.resourcesPath || '', 'gog-runtime')
-            : this.path.join(this.projectRoot || '', 'gog-runtime');
+        return this.runtimePaths.runtimeDir;
     }
 
     get exePath() {
-        return this.path.join(this.runtimeDir, 'gogdl.exe');
+        return this.runtimePaths.exePath;
+    }
+
+    get versionPath() {
+        return this.runtimePaths.versionPath;
+    }
+
+    get defaultWorkingDirectory() {
+        return this.isPackaged ? this.runtimeDir : this.projectRoot;
     }
 
     async assertExists() {
@@ -75,7 +102,11 @@ class GogRuntime {
     }
 
     async verifyChecksum() {
-        if (!this.expectedSha256) return null;
+        if (!this.expectedSha256) {
+            const details = { versionPath: this.versionInfoPath || this.versionPath, runtimeDir: this.runtimeDir };
+            const message = this.versionInfoError?.message || 'GOG runtime metadata is missing a pinned sha256.';
+            throw new GogRuntimeError('GOG_RUNTIME_METADATA_INVALID', message, details);
+        }
         await this.assertExists();
         const data = await this.fsPromises.readFile(this.exePath);
         const actual = crypto.createHash('sha256').update(data).digest('hex').toUpperCase();
@@ -100,7 +131,7 @@ class GogRuntime {
         return { exePath: this.exePath, version };
     }
 
-    run(args = [], { timeoutMs = 45000, env = {}, signal = null, cwd = null, redactOutput = true } = {}) {
+    run(args = [], { timeoutMs = 45000, env = {}, signal = null, cwd = null, redactOutput = true, onStarted = () => {}, onStdout = () => {}, onStderr = () => {} } = {}) {
         return new Promise((resolve, reject) => {
             if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string')) {
                 reject(new GogRuntimeError('GOG_RUNTIME_INVALID', 'Invalid GOG runtime arguments.'));
@@ -118,7 +149,7 @@ class GogRuntime {
             let stderr = '';
             let settled = false;
             const proc = this.execFile(this.exePath, args, {
-                cwd: cwd || this.projectRoot,
+                cwd: cwd || this.defaultWorkingDirectory,
                 env: { ...process.env, ...env },
                 windowsHide: true,
                 timeout: timeoutMs,
@@ -151,8 +182,9 @@ class GogRuntime {
                 signal.addEventListener('abort', onAbort, { once: true });
             }
 
-            proc.stdout?.on('data', (data) => { stdout = boundedAppend(stdout, data); });
-            proc.stderr?.on('data', (data) => { stderr = boundedAppend(stderr, data); });
+            proc.once?.('spawn', () => onStarted({ pid: proc.pid || null }));
+            proc.stdout?.on('data', (data) => { stdout = boundedAppend(stdout, data); onStdout(); });
+            proc.stderr?.on('data', (data) => { stderr = boundedAppend(stderr, data); onStderr(); });
             proc.on('error', (err) => {
                 finish(() => reject(new GogRuntimeError('GOG_RUNTIME_INVALID', redactGogSecrets(err?.message || 'Failed to start GOG runtime.'))));
             });
@@ -184,7 +216,7 @@ class GogRuntime {
         killTree = true,
     } = {}) {
         return new Promise((resolve, reject) => {
-            if (!Array.isArray(args) || args.some((arg) => typeof arg !== 'string')) {
+            if (!Array.isArray(args) || args.some(arg => typeof arg !== 'string')) {
                 reject(new GogRuntimeError('GOG_RUNTIME_INVALID', 'Invalid GOG runtime arguments.'));
                 return;
             }
@@ -197,96 +229,139 @@ class GogRuntime {
             }
 
             let settled = false;
+            let closeObserved = false;
+            let terminationRequested = false;
+            let terminationReason = null;
+            let terminationRequestedAt = null;
             let stdoutTail = '';
             let stderrTail = '';
-            let timer = null;
+            let operationTimer = null;
+            let terminationTimer = null;
             const proc = this.spawn(this.exePath, args, {
-                cwd: cwd || this.projectRoot,
+                cwd: cwd || this.defaultWorkingDirectory,
                 env: { ...process.env, ...env },
                 windowsHide: true,
                 shell: false,
                 stdio: ['ignore', 'pipe', 'pipe'],
             });
 
-            const cleanupSignal = () => {
+            const cleanup = () => {
                 if (signal && onAbort) signal.removeEventListener('abort', onAbort);
-                if (timer) clearTimeout(timer);
+                if (operationTimer) clearTimeout(operationTimer);
+                if (terminationTimer) clearTimeout(terminationTimer);
+                operationTimer = null;
+                terminationTimer = null;
             };
 
-            const terminate = () => {
-                if (!proc || proc.killed) return;
+            const finish = fn => {
+                if (settled) return;
+                settled = true;
+                cleanup();
+                fn();
+            };
+
+            const armTerminationConfirmation = () => {
+                if (terminationTimer || settled || closeObserved) return;
+                terminationTimer = setTimeout(() => {
+                    if (settled || closeObserved) return;
+                    finish(() => reject(new GogRuntimeError(
+                        'GOG_RUNTIME_STOP_NOT_CONFIRMED',
+                        'GOG runtime process exit was not confirmed after termination.',
+                        {
+                            pid: proc?.pid || null,
+                            terminationReason,
+                            terminationRequestedAt,
+                        }
+                    )));
+                }, this.terminationConfirmationMs);
+                terminationTimer.unref?.();
+            };
+
+            const terminate = reason => {
+                if (settled || closeObserved || terminationRequested) return;
+                terminationRequested = true;
+                terminationReason = reason || 'requested';
+                terminationRequestedAt = new Date().toISOString();
+                armTerminationConfirmation();
+
                 if (killTree && process.platform === 'win32' && proc.pid) {
                     try {
-                        this.execFile('taskkill', ['/PID', String(proc.pid), '/T', '/F'], { windowsHide: true }, () => {});
+                        this.execFile(
+                            'taskkill',
+                            ['/PID', String(proc.pid), '/T', '/F'],
+                            { windowsHide: true },
+                            err => {
+                                if (!err || settled || closeObserved) return;
+                                try { proc.kill(); } catch {}
+                            }
+                        );
                         return;
                     } catch {}
                 }
                 try { proc.kill(); } catch {}
             };
 
-            const finish = (fn) => {
-                if (settled) return;
-                settled = true;
-                cleanupSignal();
-                fn();
-            };
-
-            const onAbort = signal
-                ? () => {
-                    terminate();
-                }
-                : null;
-
+            const onAbort = signal ? () => terminate('abort') : null;
             if (signal) {
-                if (signal.aborted) {
-                    terminate();
-                } else {
-                    signal.addEventListener('abort', onAbort, { once: true });
-                }
+                if (signal.aborted) terminate('abort');
+                else signal.addEventListener('abort', onAbort, { once: true });
             }
 
             if (timeoutMs > 0) {
-                timer = setTimeout(() => {
-                    terminate();
-                }, timeoutMs);
+                operationTimer = setTimeout(() => terminate('timeout'), timeoutMs);
+                operationTimer.unref?.();
             }
 
-            proc.stdout?.on('data', (data) => {
+            proc.stdout?.on('data', data => {
                 stdoutTail = boundedAppend(stdoutTail, data);
                 onStdout(redactGogSecrets(String(data || '')));
             });
-            proc.stderr?.on('data', (data) => {
+            proc.stderr?.on('data', data => {
                 stderrTail = boundedAppend(stderrTail, data);
                 onStderr(redactGogSecrets(String(data || '')));
             });
             proc.on('spawn', () => onStarted({ pid: proc.pid }));
-            proc.on('error', (err) => {
-                finish(() => reject(new GogRuntimeError('GOG_RUNTIME_INVALID', redactGogSecrets(err?.message || 'Failed to start GOG runtime.'))));
+            proc.on('error', err => {
+                if (terminationRequested && signal?.aborted) return;
+                finish(() => reject(new GogRuntimeError(
+                    'GOG_RUNTIME_INVALID',
+                    redactGogSecrets(err?.message || 'Failed to start GOG runtime.')
+                )));
             });
             proc.on('close', (code, signalName) => {
+                closeObserved = true;
                 finish(() => {
-                    if (signal?.aborted) {
-                        reject(new GogRuntimeError('GOG_RUNTIME_CANCELLED', 'GOG runtime operation was cancelled.', { code, signal: signalName }));
+                    if (signal?.aborted || terminationReason === 'abort') {
+                        reject(new GogRuntimeError('GOG_RUNTIME_CANCELLED', 'GOG runtime operation was cancelled.', {
+                            code,
+                            signal: signalName,
+                            pid: proc.pid || null,
+                            terminationConfirmed: true,
+                        }));
                         return;
                     }
                     const stdout = redactGogSecrets(stdoutTail);
                     const stderr = redactGogSecrets(stderrTail);
                     if (code === 0) {
-                        resolve({ stdout, stderr, code, signal: signalName });
+                        resolve({ stdout, stderr, code, signal: signalName, pid: proc.pid || null });
                         return;
                     }
-                    reject(new GogRuntimeError('GOG_RUNTIME_PROCESS_FAILED', stderr.trim() || stdout.trim() || `gogdl exited with code ${code || signalName}`, {
-                        code,
-                        signal: signalName,
-                    }));
+                    reject(new GogRuntimeError(
+                        'GOG_RUNTIME_PROCESS_FAILED',
+                        stderr.trim() || stdout.trim() || `gogdl exited with code ${code || signalName}`,
+                        { code, signal: signalName, pid: proc.pid || null }
+                    ));
                 });
             });
         });
     }
+
 }
 
 module.exports = {
     GogRuntime,
     GogRuntimeError,
     redactGogSecrets,
+    getGogRuntimePaths,
+    loadGogRuntimeVersionInfo,
 };

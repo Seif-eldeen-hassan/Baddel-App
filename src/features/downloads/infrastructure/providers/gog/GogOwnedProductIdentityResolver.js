@@ -14,6 +14,8 @@ class GogOwnedProductIdentityResolver {
         mapRepository = null,
         runtime = null,
         timeoutMs = 15000,
+        maxNetworkRetries = 2,
+        sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
         now = () => new Date().toISOString(),
         debug = () => {},
     } = {}) {
@@ -22,6 +24,8 @@ class GogOwnedProductIdentityResolver {
         this.userDataDir = userDataDir;
         this.fetch = fetchImpl;
         this.timeoutMs = timeoutMs;
+        this.maxNetworkRetries = Math.max(0, Number(maxNetworkRetries) || 0);
+        this.sleep = sleep;
         this.now = now;
         this.debug = debug;
         this.runtime = runtime;
@@ -93,6 +97,7 @@ class GogOwnedProductIdentityResolver {
 
         const valid = [];
         let invalidLicenceSeen = false;
+        let providerUnavailable = null;
         for (const candidate of candidates) {
             try {
                 const result = await this.validateCandidateWithRefresh({ candidate, auth, title });
@@ -110,6 +115,7 @@ class GogOwnedProductIdentityResolver {
                 });
             } catch (err) {
                 if (err.code === 'GOG_INVALID_LICENCE' || err.code === 'GOG_PRODUCT_NOT_OWNED') invalidLicenceSeen = true;
+                if (err.code === 'GOG_NETWORK_ERROR' || err.code === 'GOG_REQUEST_TIMEOUT' || err.code === 'GOG_SECURE_LINK_TIMEOUT') providerUnavailable = err;
                 diagnostics.rejectedCandidateReasons.push({
                     candidateId: candidate.productId,
                     source: candidate.source,
@@ -139,11 +145,29 @@ class GogOwnedProductIdentityResolver {
                     'Baddel found this GOG game, but could not verify a downloadable licence for the connected account. Refresh or reconnect the GOG account and try again.'
                 );
             }
+            if (providerUnavailable) throw providerUnavailable;
             throw makeDownloadError('GOG_OWNED_IDENTITY_UNRESOLVED', 'Baddel could not resolve a verified GOG download identity for this game.');
         }
 
         const mapping = await this.mapRepository.set(mappingKey, valid[0]);
         return this.decoratePayload(payload, mapping);
+    }
+
+    async revalidateVerifiedTask(task = {}) {
+        const accountId = stringOrNull(task.accountId);
+        const ids = [task.gogProductId, task.contentSystemProductId, task.gogdlAppName]
+            .map(normalizeNumericId)
+            .filter(Boolean);
+        if (!accountId || task.ownershipVerified !== true || task.secureLinkVerified !== true || ids.length !== 3 || new Set(ids).size !== 1) {
+            throw makeDownloadError('GOG_OWNED_IDENTITY_UNRESOLVED', 'Baddel could not revalidate this GOG installation identity.');
+        }
+        const auth = await this.readAuth(accountId);
+        const result = await this.validateCandidateWithRefresh({
+            candidate: { productId: ids[0], source: 'persisted-verified-install', provenance: 'verified-install' },
+            auth,
+            title: stringOrNull(task.title),
+        });
+        return this.decoratePayload(task, { ...result.mapping, source: 'persisted-verified-install' });
     }
 
     async readAuth(accountId) {
@@ -276,30 +300,42 @@ class GogOwnedProductIdentityResolver {
     }
 
     async requestJson(url, { accessToken = null, timeoutMs = this.timeoutMs, secureLink = false } = {}) {
-        const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), timeoutMs);
-        try {
-            const headers = { Accept: 'application/json', 'User-Agent': 'Baddel-GOG-Resolver/1.0' };
-            if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
-            const res = await this.fetch(url, { headers, signal: controller.signal });
-            let body = null;
-            try { body = await res.json(); } catch {}
-            if (!res.ok) {
-                const message = safeDiagnosticMessage(body?.error || body?.code || body?.message || `GOG request failed with HTTP ${res.status}`);
-                const err = makeDownloadError(secureLink ? 'GOG_SECURE_LINK_REJECTED' : 'GOG_HTTP_REQUEST_FAILED', message);
-                err.status = res.status;
-                throw err;
+        for (let attempt = 0; attempt <= this.maxNetworkRetries; attempt += 1) {
+            const controller = new AbortController();
+            const timer = setTimeout(() => controller.abort(), timeoutMs);
+            try {
+                const headers = { Accept: 'application/json', 'User-Agent': 'Baddel-GOG-Resolver/1.0' };
+                if (accessToken) headers.Authorization = `Bearer ${accessToken}`;
+                const res = await this.fetch(url, { headers, signal: controller.signal });
+                let body = null;
+                try { body = await res.json(); } catch {}
+                if (!res.ok) {
+                    const message = safeDiagnosticMessage(body?.error || body?.code || body?.message || `GOG request failed with HTTP ${res.status}`);
+                    const err = makeDownloadError(secureLink ? 'GOG_SECURE_LINK_REJECTED' : 'GOG_HTTP_REQUEST_FAILED', message);
+                    err.status = res.status;
+                    throw err;
+                }
+                return body && typeof body === 'object' ? body : {};
+            } catch (error) {
+                let err = error;
+                if (error?.name === 'AbortError') {
+                    err = makeDownloadError('GOG_REQUEST_TIMEOUT', 'GOG request timed out.');
+                    err.status = 0;
+                } else if (!error?.code || error.code === 'NETWORK_ERROR' || error.name === 'TypeError' || [
+                    'ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN',
+                    'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET',
+                ].includes(error.code)) {
+                    err = makeDownloadError('GOG_NETWORK_ERROR', 'GOG is temporarily unavailable. Check the connection and try again.');
+                    err.networkCode = String(error?.cause?.code || error?.code || 'NETWORK_ERROR');
+                    err.cause = error;
+                }
+                const transientStatus = [408, 429].includes(err.status) || (err.status >= 500 && err.status <= 599);
+                const transient = err.code === 'GOG_NETWORK_ERROR' || err.code === 'GOG_REQUEST_TIMEOUT' || transientStatus;
+                if (!transient || attempt >= this.maxNetworkRetries) throw err;
+                await this.sleep(Math.min(250 * (2 ** attempt), 1000));
+            } finally {
+                clearTimeout(timer);
             }
-            return body && typeof body === 'object' ? body : {};
-        } catch (err) {
-            if (err.name === 'AbortError') {
-                const timeout = makeDownloadError('GOG_REQUEST_TIMEOUT', 'GOG request timed out.');
-                timeout.status = 0;
-                throw timeout;
-            }
-            throw err;
-        } finally {
-            clearTimeout(timer);
         }
     }
 

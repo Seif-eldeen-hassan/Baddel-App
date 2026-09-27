@@ -5,11 +5,14 @@ const _allGamesArtworkRoot = typeof window !== 'undefined' ? window : globalThis
 const _gameArtworkResolver = (typeof require === 'function')
     ? require('./GameArtworkResolver')
     : _allGamesArtworkRoot.BaddelGameArtworkResolver;
+const _artworkSchema = (typeof require === 'function')
+    ? require('./GameArtworkSchema')
+    : _allGamesArtworkRoot.BaddelGameArtworkSchema;
 
 const { resolveGameArtwork } = _gameArtworkResolver;
 
-const COVER_ALIASES = Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage']);
-const LEGACY_ALL_GAMES_COVER_ORDER = Object.freeze(['coverUrl', 'image', 'defaultImage', 'cover', 'posterImage']);
+const COVER_ALIASES = _artworkSchema.TYPE_ALIASES.cover;
+const LEGACY_ALL_GAMES_COVER_ORDER = _artworkSchema.LEGACY_ALL_GAMES_COVER_ORDER;
 
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;

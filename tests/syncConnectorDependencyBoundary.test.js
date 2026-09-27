@@ -105,20 +105,22 @@ test('Steam connector still depends on the Steam bridge runtime boundary', () =>
     }
 });
 
-test('Epic connector still depends on the Legendary execFile runtime boundary', () => {
+test('Epic connector still depends on the Legendary spawn runtime boundary', () => {
     const platformSyncSource = readSource(PLATFORM_SYNC_PATH);
     const epicConnectorSource = extractObjectLiteral(platformSyncSource, 'epicConnectorMethods');
 
-    assert.match(platformSyncSource, /const\s+\{\s*execFile\s*\}\s*=\s*require\(['"]child_process['"]\)/);
+    assert.match(platformSyncSource, /const\s+\{\s*spawn\s*\}\s*=\s*require\(['"]child_process['"]\)/);
     assert.match(platformSyncSource, /function\s+runLegendary\s*\(/);
-    assert.match(platformSyncSource, /execFile\(LEGENDARY_BIN/);
+    assert.match(platformSyncSource, /inspectLegendaryRuntime/);
+    assert.match(platformSyncSource, /spawn\(runtime\.legendaryPath/);
+    assert.match(platformSyncSource, /shell:\s*false/);
+    assert.doesNotMatch(platformSyncSource, /execFile\(runtime\.legendaryPath/);
     assert.match(platformSyncSource, /function\s+openEpicLoginWindow\s*\(/);
 
     for (const boundary of ['openEpicLoginWindow', 'runLegendary', 'syncSingleEpicAccount', 'getLegendaryConfPath']) {
         assert.match(epicConnectorSource, new RegExp(escapeRegExp(boundary)), `${boundary} should remain inside the Epic connector boundary`);
     }
 });
-
 test('platformSync still owns Electron login, session, notification, state, and event seams', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
     const terminalEmitterSource = readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH);
@@ -204,3 +206,4 @@ test('public sync API keys and platform-sync IPC channels remain unchanged', () 
         assert.match(source, new RegExp(`['"]${escapeRegExp(channel)}['"]`), `${channel} IPC channel should remain unchanged`);
     }
 });
+

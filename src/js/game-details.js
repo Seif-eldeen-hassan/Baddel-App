@@ -24,6 +24,7 @@ const _gdPendingMetadataRetries = new Map();
  * in-flight callbacks from a previous open are silently dropped.
  */
 let _gdViewToken = null;
+const _gdOpenPromises = new Map();
 let _gdDownloadInterval = null;   // للـ demo download progress
 let _gdPreviousView    = 'home';  // عشان نعرف نرجع لأنهي شاشة
 let _gdSavedFilterState = null;   // FIX: saves All Games filter state before navigating in
@@ -41,6 +42,29 @@ let _gdDownloadsSnapshot = null;
 let _gdDownloadsUnsubscribers = [];
 let _gdCurrentDownloadTask = null;
 const _gdDownloadActionInFlight = new Set();
+
+function _gdRecordStage(stage, details = {}) {
+    if (window.__baddelDebugGameDetails !== true) return;
+    const trace = window.__gdStageTrace || (window.__gdStageTrace = []);
+    const entry = { stage, timestamp: new Date().toISOString(), gameId: String(_gdCurrentGameId || ''), ...details };
+    trace.push(entry);
+    if (trace.length > 120) trace.splice(0, trace.length - 120);
+    console.debug('[GD-STAGE]', entry);
+}
+
+function _gdMetadataDiagnosticSummary(meta) {
+    if (!meta || typeof meta !== 'object') return { received: false };
+    const info = meta.info && typeof meta.info === 'object' ? meta.info : {};
+    return {
+        received: true,
+        source: String(meta.source || meta._resolveSource || ''),
+        pending: meta?._serverData?.pending === true,
+        hasDescription: Boolean(info.description || meta.description || info.short_description),
+        screenshots: Array.isArray(info.screenshots) ? info.screenshots.length : 0,
+        trailers: Array.isArray(info.allTrailers) ? info.allTrailers.length : 0,
+        hasArtwork: Boolean(meta.cover || meta.hero || meta.heroImage || meta.logo || meta.image),
+    };
+}
 
 // ── Creator session snapshots (isolated from committed state) ──────────────────
 // Initialized when entering Creator edit mode; never mutated by preview/draft.
@@ -141,6 +165,16 @@ function _gdFindInstalledGameByDownloadTask(task = {}, games = window.allGamesDa
 }
 
 async function _gdResolveInstalledGameForDownloadTask(task = {}) {
+    if (task.platform === 'epic' && task.installProvider === 'legendary') {
+        const result = await window.electronAPI?.downloads?.resolveEpicPlayTarget?.(task.id);
+        if (result?.status !== 'success' || !result.game) {
+            const error = new Error(result?.message || 'Baddel could not resolve the finalized Epic installation.');
+            error.code = result?.code || 'EPIC_MANAGED_INSTALL_RESOLUTION_FAILED';
+            error.stage = result?.stage || 'managed-install-resolution';
+            throw error;
+        }
+        return result.game;
+    }
     let installed = _gdFindInstalledGameByDownloadTask(task);
     if (installed) return installed;
     try {
@@ -207,6 +241,95 @@ function _gdSetMainButton(labelText, { installMode = false, disabled = false, ti
     if (playIcon) playIcon.style.display = installMode ? 'none' : 'inline-block';
 }
 
+function _gdRenderMaintenanceActions() {
+    const statusEl = document.getElementById('gdMaintenanceStatus');
+    const updateBtn = document.getElementById('gdUpdateBtn');
+    if (!statusEl || !updateBtn || !_gdCurrentGame) return;
+    const state = window.__baddelGetManagedMaintenanceState?.(_gdCurrentGame);
+    const presentation = state?.maintenancePresentation || window.__baddelMaintenancePresentation?.(state);
+    const updating = presentation?.operation === 'update';
+    const statusText = presentation ? presentation.label : (state?.updateAvailable === true ? 'UPDATE AVAILABLE' : '');
+    statusEl.textContent = statusText || '';
+    statusEl.hidden = !statusText;
+    updateBtn.hidden = !(updating || (state?.supportsUpdate === true && state.updateAvailable === true && !presentation));
+    updateBtn.disabled = Boolean(updating);
+    updateBtn.textContent = updating ? presentation.label.toUpperCase() : 'UPDATE';
+    _gdRenderGameManagement(_gdCurrentGame, state, presentation);
+}
+
+window.gdRunMaintenance = function(action) {
+    if (!_gdCurrentGame) return;
+    const run = () => window.__baddelRunMaintenanceAction?.(_gdCurrentGame, action);
+    if (action === 'repair' && typeof openConfirmModal === 'function') {
+        openConfirmModal('Verify / Repair game?', 'The provider will verify this installation and download only missing or damaged content.', 'Verify / Repair', run);
+        return;
+    }
+    run();
+};
+
+function _gdGameIsInstalled(game = {}) {
+    const launchOpts = typeof window._gdBuildLaunchOptions === 'function' ? window._gdBuildLaunchOptions(game) : [];
+    return _gdInstalledRecordCanLaunch(game) || Boolean(game.isInstalled || game.installVerified || game.installPath) || (Array.isArray(launchOpts) && launchOpts.length > 0);
+}
+
+function _gdRenderGameManagement(game = _gdCurrentGame, state = null, presentation = null) {
+    const root = document.getElementById('gdManagementMenuRoot');
+    const menu = document.getElementById('gdManagementMenu');
+    if (!root || !menu) return;
+    const installed = _gdGameIsInstalled(game);
+    root.hidden = !installed;
+    if (!installed) { menu.innerHTML = ''; return; }
+    const maintenance = state || window.__baddelGetManagedMaintenanceState?.(game);
+    const busy = presentation || maintenance?.maintenancePresentation || window.__baddelMaintenancePresentation?.(maintenance);
+    const checkingForUpdate = maintenance?.checkingForUpdate === true;
+    const trackingEnabled = game.timeTrackingEnabled !== false;
+    const item = (label, action, { disabled = false, danger = false, value = '' } = {}) =>
+        `<button type="button" role="menuitem" class="dropdown-item${danger ? ' danger' : ''}" data-gd-management-action="${action}"${disabled ? ' disabled aria-disabled="true"' : ''}><span>${label}</span>${value ? `<span class="gd-management-value">${value}</span>` : ''}</button>`;
+    const rows = [item('Time Tracking', trackingEnabled ? 'tracking-off' : 'tracking-on', { value: trackingEnabled ? 'ON' : 'OFF' })];
+    if (maintenance) {
+        rows.push('<div class="gd-management-separator" role="separator"></div>');
+        if (busy) {
+            rows.push(item(busy.label, 'maintenance-status', { disabled: true }));
+            rows.push(item('View in Downloads', 'downloads'));
+        } else if (checkingForUpdate) {
+            rows.push(item('Checking for updates\u2026', 'maintenance-status', { disabled: true }));
+        } else {
+            if (maintenance.supportsUpdate === true) rows.push(item('Check for Updates', 'check'));
+            if (maintenance.supportsRepair === true) rows.push(item('Verify / Repair', 'repair'));
+        }
+        if (maintenance.uninstallEligible === true) {
+            rows.push('<div class="gd-management-separator" role="separator"></div>');
+            rows.push(item('Uninstall', 'uninstall', { disabled: Boolean(busy), danger: true }));
+        }
+    }
+    menu.innerHTML = rows.join('');
+}
+
+window.gdRunGameManagementAction = function(action) {
+    window.baddelMenus?.close?.();
+    if (!_gdCurrentGame) return;
+    if (action === 'tracking-on' || action === 'tracking-off') {
+        return window._gdToggleTimeTracking(_gdCurrentGame.id, action === 'tracking-on');
+    }
+    if (action === 'downloads') return window.navigateToDownloads?.();
+    if (action === 'uninstall') {
+        const state = window.__baddelGetManagedMaintenanceState?.(_gdCurrentGame);
+        if (!state?.isMaintenanceActive) return window.downloadsUninstall?.(state?.taskId);
+        return;
+    }
+    if (action === 'repair') return window.gdRunMaintenance('repair');
+    if (action === 'check') return window.gdRunMaintenance('check');
+};
+
+document.addEventListener('click', event => {
+    const action = event.target.closest?.('[data-gd-management-action]')?.dataset?.gdManagementAction;
+    if (action && action !== 'maintenance-status') window.gdRunGameManagementAction(action);
+});
+
+window.addEventListener('baddel-maintenance-state-changed', () => {
+    if (_gdCurrentGame) _gdRenderMaintenanceActions();
+});
+
 function _gdRenderDownloadState(task = _gdCurrentDownloadTask) {
     if (!_gdCurrentGame) return;
     const downloadBlock = document.getElementById('gdDownloadBlock');
@@ -227,6 +350,7 @@ function _gdRenderDownloadState(task = _gdCurrentDownloadTask) {
         if (playBtn) playBtn.style.display = 'flex';
         _gdCurrentDownloadTask = null;
         _gdSetActionButton(_gdCurrentGame);
+        _gdRenderMaintenanceActions();
         return;
     }
     _gdCurrentDownloadTask = task;
@@ -235,6 +359,7 @@ function _gdRenderDownloadState(task = _gdCurrentDownloadTask) {
         if (downloadBlock) downloadBlock.style.display = 'none';
         if (playBtn) playBtn.style.display = 'flex';
         _gdSetMainButton('PLAY', { title: 'Launch game' });
+        _gdRenderMaintenanceActions();
         if (!installed && task.installedGameId) {
             window.electronAPI?.getGames?.().then(games => {
                 if (!Array.isArray(games)) return;
@@ -246,8 +371,10 @@ function _gdRenderDownloadState(task = _gdCurrentDownloadTask) {
         }
         return;
     }
+    const isMaintenance = task.operationKind === 'update' || task.operationKind === 'repair';
     if (downloadBlock) downloadBlock.style.display = 'block';
-    if (playBtn) playBtn.style.display = 'none';
+    if (playBtn) playBtn.style.display = isMaintenance ? 'flex' : 'none';
+    _gdRenderMaintenanceActions();
     let actionBtn = document.getElementById('gdDlActionBtn');
     if (downloadBlock && !actionBtn) {
         actionBtn = document.createElement('button');
@@ -263,7 +390,27 @@ function _gdRenderDownloadState(task = _gdCurrentDownloadTask) {
     if (percentEl) percentEl.textContent = percentText;
     if (etaEl) etaEl.textContent = etaText;
     if (speedEl) speedEl.textContent = status === 'paused' ? byteText : fmt.formatRate(task.downloadSpeedBps, task);
-    const stateLabels = {
+    const stateLabels = task.operationKind === 'repair' ? {
+        pending: ['VERIFY / REPAIR QUEUED', '', null, true],
+        preparing: ['PREPARING VERIFY / REPAIR', '', null, true],
+        downloading: ['REPAIRING FILES…', '', 'Pause', false],
+        pausing: ['PAUSING', '', 'Pausing...', true],
+        paused: ['VERIFY / REPAIR PAUSED', '', 'Resume', false],
+        resuming: ['RESUMING VERIFY / REPAIR', '', 'Resuming...', true],
+        verifying: ['VERIFYING FILES…', '', null, true],
+        installing: ['REPAIRING FILES…', '', null, true],
+        failed: ['VERIFY / REPAIR FAILED', task.errorMessage || task.statusMessage || 'Verify / Repair failed', 'Retry', false],
+    } : task.operationKind === 'update' ? {
+        pending: ['UPDATE QUEUED', '', null, true],
+        preparing: ['PREPARING UPDATE', '', null, true],
+        downloading: ['UPDATING…', '', 'Pause', false],
+        pausing: ['PAUSING', '', 'Pausing...', true],
+        paused: ['UPDATE PAUSED', '', 'Resume', false],
+        resuming: ['RESUMING UPDATE', '', 'Resuming...', true],
+        verifying: ['VERIFYING UPDATE…', '', null, true],
+        installing: ['FINALIZING UPDATE…', '', null, true],
+        failed: ['UPDATE FAILED', task.errorMessage || task.statusMessage || 'Update failed', 'Retry', false],
+    } : {
         pending: ['QUEUED', '', null, true],
         preparing: ['PREPARING', '', null, true],
         downloading: ['DOWNLOADING', '', 'Pause', false],
@@ -479,6 +626,34 @@ function _gdHasUsableMeta(meta) {
         meta.heroImage ||
         meta.image
     );
+}
+
+function _gdRenderMetadataErrorState(game, error) {
+    const message = String(error?.message || error || 'Metadata request failed.');
+    _gdRecordStage('GD_METADATA_ERROR_RENDERED', { error: message });
+    const errorHtml = `
+        <div class="gd-empty-state gd-metadata-error" role="alert">
+            <div class="gd-empty-text">
+                <h3>Could not load metadata</h3>
+                <p>The metadata request failed. Check your connection and try again.</p>
+                <button id="gdMetadataRetryBtn" type="button" class="gd-empty-retry">Retry</button>
+            </div>
+        </div>`;
+    const infoGrid = document.getElementById('gdInfoGrid');
+    if (infoGrid) {
+        infoGrid.innerHTML = errorHtml;
+        document.getElementById('gdMetadataRetryBtn')?.addEventListener('click', () => {
+            window.openGameDetails(String(game?.id || _gdCurrentGameId || ''));
+        }, { once: true });
+    }
+    const detailList = document.getElementById('gdDetailList');
+    if (detailList) detailList.innerHTML = '<div class="gd-detail-row"><span class="gd-detail-label">Metadata status</span><span>Error</span></div>';
+    const shortDescSection = document.getElementById('gdShortDescSection') || document.getElementById('gdShortDesc');
+    const shortDescText = document.getElementById('gdShortDescText');
+    if (shortDescText) shortDescText.textContent = 'Could not load metadata. Try again.';
+    if (shortDescSection) shortDescSection.style.display = 'block';
+    const screenshots = document.getElementById('gdScreenshots');
+    if (screenshots && !screenshots.querySelector('img')) screenshots.innerHTML = '<div class="gd-no-media">Media unavailable</div>';
 }
 
 function _gdShowMetadataPendingAndRetry(game, reason = 'pending') {
@@ -1173,6 +1348,23 @@ async function _gdHydrateGogRichRecordForDetails(game) {
     }
 }
 
+async function _gdRequestLazyGogRichMetadata(game, tokenStillValid) {
+    if (!_gdIsGogGame(game) || !window.electronAPI?.platformSyncEnrichGogDetails) return;
+    const gameId = String(game?.id || '').match(/^gog[_-]\d+$/i)?.[0]
+        || (_gdGogIdentityValue(game) ? `gog_${_gdGogIdentityValue(game)}` : '');
+    if (!gameId) return;
+    try {
+        const result = await window.electronAPI.platformSyncEnrichGogDetails(gameId);
+        if (!result?.game || !tokenStillValid()) return;
+        const merged = _gdMergeGogRichGameRecord(_gdCurrentGame || game, result.game);
+        _gdCurrentGame = merged;
+        _gdPopulateBasic(merged);
+        _gdPopulateMeta(merged, merged.info || merged);
+    } catch (error) {
+        console.warn('[GD][GOGLazyEnrichment] failed:', error?.message || error);
+    }
+}
+
 const _gdEnrichSent = new Map();
 const _GD_ENRICH_COOLDOWN = 10 * 60 * 1000; // 10 min cooldown
 
@@ -1734,7 +1926,10 @@ function _gdResolveRiotMetadataLookup(game) {
  * openGameDetails(gameId)
  * يفتح صفحة تفاصيل اللعبة - استدعيها من createGameCard أو أي مكان تاني
  */
-window.openGameDetails = async function(gameId) {
+async function _gdOpenGameDetailsImpl(gameId) {
+    if (window.electronAPI?.performanceDiagnostics?.enabled === true) {
+        window.__gdOpenImplementationCount = Number(window.__gdOpenImplementationCount || 0) + 1;
+    }
     _gdCurrentGameId = String(gameId);
 
     // Capture the active view/filter state so Back can restore it exactly.
@@ -1771,18 +1966,29 @@ window.openGameDetails = async function(gameId) {
     const _gdOpenStart = Date.now();
     const tokenStillValid = () => _gdViewToken === myToken;
     console.log('[GD-DIAG] mint token gameId=', _gdCurrentGameId, 'token=', myToken.toString(), 'prevExisted=', !!_gdViewToken);
+    _gdRecordStage('GD_OPEN_START');
+    let game = null;
+
+    // Render a stable skeleton before any lookup so the first click is visible
+    // within the next paint. Async continuations remain protected by the token.
+    if (typeof _hideAllViews === 'function') _hideAllViews();
+    const immediateView = document.getElementById('gameDetailsView');
+    if (immediateView) {
+        immediateView.style.display = 'block';
+        immediateView.scrollTop = 0;
+    }
+    _gdResetUI();
+    _gdRecordStage('GD_VIEW_SWITCHED');
+    _gdRecordStage('GD_RESET_UI');
 
   try {
 
     // ── Settle delay: if the user clicks through games rapidly, the token will
     // be stale after 250 ms and we exit without making a single server call.
     // 250 ms is imperceptible when the skeleton UI is already on screen.
-    await new Promise(r => setTimeout(r, 250));
-    if (!tokenStillValid()) return;
-
     // ── 0. Synced-game override: app.js sets this before calling openGameDetails
     //    for games that live in the synced library but not in the local DB.
-    let game = null;
+    game = null;
     if (window._gdSyncedGameOverride && String(window._gdSyncedGameOverride.id) === _gdCurrentGameId) {
         game = window._gdSyncedGameOverride;
         window._gdSyncedGameOverride = null;
@@ -1805,9 +2011,10 @@ window.openGameDetails = async function(gameId) {
                 || (cachedGame.allIds?.epic && _gdIsValidEpicNamespace(cachedGame.allIds.epic)
                     ? cachedGame.allIds.epic : null);
             game = {
+                ...cachedGame,
                 id:            _gdCurrentGameId,
-                name:          cachedGame.title,
-                image:         cachedGame.coverUrl,
+                name:          cachedGame.title || cachedGame.name,
+                image:         cachedGame.coverUrl || cachedGame.image || cachedGame.cover || cachedGame.defaultImage || null,
                 heroImage:     cachedGame.heroUrl || cachedGame.heroImage || null,
                 logo:          cachedGame.logoUrl || cachedGame.logo || null,
                 short_description: cachedGame.short_description || cachedGame.info?.short_description || null,
@@ -1866,9 +2073,80 @@ window.openGameDetails = async function(gameId) {
     }
 
     if (!game) {
+        _gdRecordStage('GD_GAME_MISSING');
         console.warn('[GD] Game not found for ID:', _gdCurrentGameId);
         return;
     }
+    _gdRecordStage('GD_GAME_RESOLVED', { platform: String(game.platform || ''), title: String(game.name || game.title || '') });
+
+    // Resolve persisted canonical artwork and managed cache aliases before the
+    // first details artwork render. In-memory library records may be structurally
+    // current while still missing artwork written by a background transaction.
+    let canonicalArtworkGame = null;
+    try {
+        const canonicalRecords = Array.isArray(window.__baddelCanonicalGames)
+            ? window.__baddelCanonicalGames
+            : [];
+        const projected = window.BaddelCanonicalArtworkProjection?.projectFromRecords
+            ? window.BaddelCanonicalArtworkProjection.projectFromRecords(game, canonicalRecords)
+            : null;
+        if (projected?._artworkIdentityMatchReason) {
+            game = projected;
+            canonicalArtworkGame = canonicalRecords.find(record => String(record.id) === String(projected.localGameId || projected.id)) || projected;
+        }
+        if (!canonicalArtworkGame && window.electronAPI?.getGameById) {
+            const candidateIds = [...new Set([
+                game.localGameId,
+                game.installedId,
+                game.id,
+            ].filter(Boolean).map(String))];
+            for (const candidateId of candidateIds) {
+                const record = await _gdWithTimeout(window.electronAPI.getGameById(candidateId), 5000, 'getGameById(artwork)');
+                if (record) {
+                    canonicalArtworkGame = record;
+                    const fromDb = window.BaddelCanonicalArtworkProjection?.projectFromRecords
+                        ? window.BaddelCanonicalArtworkProjection.projectFromRecords(game, [record])
+                        : null;
+                    if (fromDb?._artworkIdentityMatchReason) game = fromDb;
+                    break;
+                }
+            }
+        }
+        if (!tokenStillValid()) return;
+        if (window.__baddelLoadCachedArtworkForGame) {
+            const cachedArtwork = await window.__baddelLoadCachedArtworkForGame(
+                game,
+                canonicalArtworkGame || game,
+                { types: ['cover', 'hero', 'logo'] }
+            );
+            if (!tokenStillValid()) return;
+            if (cachedArtwork?.cover) {
+                game.image = cachedArtwork.cover;
+                game.defaultImage = cachedArtwork.cover;
+                game.coverUrl = cachedArtwork.cover;
+            }
+            if (cachedArtwork?.hero) {
+                game.heroImage = cachedArtwork.hero;
+                game.defaultHero = cachedArtwork.hero;
+                game.heroUrl = cachedArtwork.hero;
+            }
+            if (cachedArtwork?.logo) {
+                game.logo = cachedArtwork.logo;
+                game.defaultLogo = cachedArtwork.logo;
+                game.logoUrl = cachedArtwork.logo;
+            }
+            _gdRecordStage('GD_ARTWORK_CACHE_HYDRATED', {
+                canonicalId: String(canonicalArtworkGame?.id || game.localGameId || game.id || ''),
+                matchReason: game._artworkIdentityMatchReason || null,
+                hits: ['cover', 'hero', 'logo'].filter(type => !!cachedArtwork?.[type]),
+            });
+        }
+    } catch (error) {
+        _gdRecordStage('GD_ARTWORK_CACHE_HYDRATE_FAILED', {
+            error: String(error?.message || error || 'unknown'),
+        });
+    }
+    if (!tokenStillValid()) return;
 
     // ── 4. Merge launch data (path/command) from allGamesData if absent ───────
     //    We do NOT call getGames() a second time — use what we already have.
@@ -1907,8 +2185,13 @@ window.openGameDetails = async function(gameId) {
         }
     }
 
-    game = await _gdHydrateGogRichRecordForDetails(game);
-    if (!tokenStillValid()) return;
+    // Render the local/basic shell before optional provider work. Epic prefetch and
+    // GOG rich hydration are isolated side work and can never hold the page skeleton.
+    const initialDirectPlatforms = _gdDetectPlatforms(game).filter(platform => platform === 'epic' || platform === 'gog');
+    if (initialDirectPlatforms.length === 1) {
+        _gdRecordStage(initialDirectPlatforms[0] === 'epic' ? 'GD_EPIC_PREFETCH_SCHEDULED' : 'GD_GOG_PREFETCH_SCHEDULED');
+        void _gdPrefetchDefaultInstallSize(game);
+    }
 
     _gdCurrentBaseGame = typeof _gdClonePlain === 'function' ? _gdClonePlain(game) : { ...game };
     _gdCurrentCustomDetails = _gdLoadCustomDetails(game);
@@ -1917,13 +2200,17 @@ window.openGameDetails = async function(gameId) {
     _gdCurrentMeta = null;
     _gdSetCreatorModeState('normal', { log: false });
 
-    // ── Show the details view ─────────────────────────────────────────────────
-    if (typeof _hideAllViews === 'function') _hideAllViews();
     const view = document.getElementById('gameDetailsView');
-    view.style.display = 'block';
-    view.scrollTop = 0;
-    _gdResetUI();
+    if (!view || !tokenStillValid()) return;
+    _gdRecordStage('GD_POPULATE_BASIC_START');
     _gdPopulateBasic(game);
+    _gdRecordStage('GD_POPULATE_BASIC_END');
+    const localInfoMeta = _gdBuildGameInfoMeta(game);
+    if (localInfoMeta) {
+        _gdCurrentMeta = localInfoMeta;
+        _gdPopulateMeta(game, localInfoMeta);
+    }
+    _gdRequestLazyGogRichMetadata(game, tokenStillValid);
     _gdSyncCreatorChrome();
     if (_gdCurrentCustomDetails) {
         const customMeta = _gdBuildCustomMeta(game, _gdCurrentCustomDetails);
@@ -1933,6 +2220,29 @@ window.openGameDetails = async function(gameId) {
     _gdSetAchievementsTabVisibility(game);
     _gdSetAccountsTabVisibility(game);
 
+    if (initialDirectPlatforms.length === 1 && initialDirectPlatforms[0] === 'gog') {
+        const compactGogGame = game;
+        _gdRecordStage('GD_GOG_HYDRATE_START');
+        void _gdHydrateGogRichRecordForDetails(compactGogGame).then(hydrated => {
+            _gdRecordStage('GD_GOG_HYDRATE_END', { changed: hydrated !== compactGogGame });
+            if (!tokenStillValid() || !hydrated) return;
+            _gdCurrentBaseGame = typeof _gdClonePlain === 'function' ? _gdClonePlain(hydrated) : { ...hydrated };
+            const displayGame = _gdCurrentCustomDetails
+                ? _gdApplyCustomToGame(hydrated, _gdCurrentCustomDetails)
+                : hydrated;
+            _gdCurrentGame = displayGame;
+            _gdPopulateBasic(displayGame);
+            if (_gdHasUsableMeta(displayGame.info || displayGame)) {
+                _gdCurrentMeta = displayGame.info || displayGame;
+                _gdPopulateMeta(displayGame, _gdCurrentMeta);
+            }
+            _gdRecordStage('GD_GOG_PREFETCH_SCHEDULED');
+            void _gdPrefetchDefaultInstallSize(displayGame);
+        }).catch(error => {
+            _gdRecordStage('GD_GOG_HYDRATE_FAILED', { error: String(error?.message || error || 'unknown') });
+        });
+    }
+
     // Achievements are independent of metadata — start immediately (Steam only)
     if (_gdCurrentGameId === String(game.id) && !_gdAchievementsLoaded && _gdHasSteamAchievements(game)) {
         _gdAchievementsLoaded = true;
@@ -1940,6 +2250,11 @@ window.openGameDetails = async function(gameId) {
     }
 
     // ── 5. Metadata fetch with cache, dedup, and resilient error handling ─────
+    _gdRecordStage('GD_METADATA_START', {
+        platform: String(game.platform || ''),
+        providerId: String(game.providerProductId || game.productId || game.namespace || game.appid || game.appId || game.allIds?.steam || game.allIds?.epic || game.allIds?.gog || ''),
+        cacheObject: _gdMetadataDiagnosticSummary(game.info || game.metadata || null),
+    });
     try {
         let meta = null;
         // FIX B (hoisted): keep exeStem/folderName accessible for the entire try block,
@@ -2018,6 +2333,11 @@ window.openGameDetails = async function(gameId) {
 
             // ── In-memory cache hit: render instantly, skip all network ───────
             const cached = _gdCacheGet(cacheKey);
+            _gdRecordStage('GD_METADATA_MEMORY_CACHE', {
+                cacheKey,
+                hit: cached !== undefined,
+                metadata: _gdMetadataDiagnosticSummary(cached),
+            });
             if (cached !== undefined) {
                 if (cached) {
                     const preferredCached = _gdPreferLocalArtwork(game, cached);
@@ -2031,12 +2351,7 @@ window.openGameDetails = async function(gameId) {
             }
 
             // ── Guard: if API is in 429 cooldown, skip the network entirely ─
-            const _preCheckCooling = await window.electronAPI.isCooldownActive?.().catch(() => false);
-            if (_preCheckCooling) {
-                console.warn('[GD] 429 cooldown active before initial lookup — showing pending/retry for', game.name);
-                _gdShowMetadataPendingAndRetry(game, 'cooldown');
-                return;
-            }
+            // Read persisted metadata below even while remote backfill is cooling down.
             
         } else {
             // ── Generic local platform: Ubisoft / EA / Xbox / Manual / etc. ─────
@@ -2165,12 +2480,21 @@ window.openGameDetails = async function(gameId) {
             // ── C. Check local persisted metadata cache first ─────────────────
             let cachedFallback = null;
             try {
+                _gdRecordStage('GD_METADATA_PERSISTED_IPC_REQUEST', { cacheId: fullMetadataCacheId });
                 cachedFallback = await _gdWithTimeout(
                     window.electronAPI.loadFullMetadata(fullMetadataCacheId),
                     15000,
                     'loadFullMetadata'
                 );
+                _gdRecordStage('GD_METADATA_PERSISTED_IPC_RESPONSE', {
+                    cacheId: fullMetadataCacheId,
+                    metadata: _gdMetadataDiagnosticSummary(cachedFallback),
+                });
             } catch (e) {
+                _gdRecordStage('GD_METADATA_PERSISTED_IPC_ERROR', {
+                    cacheId: fullMetadataCacheId,
+                    error: String(e?.message || e || 'unknown'),
+                });
                 console.warn('[GD] loadFullMetadata timed out or failed for', game.id, '—', e?.message);
                 cachedFallback = null;
             }
@@ -2223,38 +2547,47 @@ window.openGameDetails = async function(gameId) {
                         reason: 'game-details-cached-fallback',
                     })
                     .then(localAssets => {
-                        // Persist local URLs (or remote fallback) back into the game DB
-                        // so that the hero banner is stable across page re-opens.
-                        window.electronAPI.saveMetadata(game.id, {
-                            cover:            localAssets?.cover || cachedFallback.cover || null,
-                            hero:             localAssets?.hero  || cachedFallback.heroImage || cachedFallback.hero || null,
-                            logo:             localAssets?.logo  || cachedFallback.logo  || null,
-                            artworkSource:    'server-details',
-                            artworkUpdatedAt: Date.now(),
-                        }, { source: 'server-details' }).catch(() => {});
+                        const artworkPatch = {};
+                        if (localAssets?.cover) artworkPatch.cover = localAssets.cover;
+                        if (localAssets?.hero) artworkPatch.hero = localAssets.hero;
+                        if (localAssets?.logo) artworkPatch.logo = localAssets.logo;
+                        if (Object.keys(artworkPatch).length) {
+                            artworkPatch.artworkSource = 'server-details';
+                            artworkPatch.artworkUpdatedAt = Date.now();
+                            window.electronAPI.saveMetadata(game.id, artworkPatch, { source: 'server-details' }).catch(() => {});
+                        }
                     })
                     .catch(() => {
-                        // cacheAllAssets failed — still persist remote URLs directly
-                        // so the hero is not left blank on next open.
-                        window.electronAPI.saveMetadata(game.id, {
-                            cover:            cachedFallback.cover || null,
-                            hero:             cachedFallback.heroImage || cachedFallback.hero || null,
-                            logo:             cachedFallback.logo  || null,
-                            artworkSource:    'server-details',
-                            artworkUpdatedAt: Date.now(),
-                        }, { source: 'server-details' }).catch(() => {});
+                        // Keep the prior typed state on a cache/download failure. Remote
+                        // values are candidates, not renderer-safe committed artwork.
+                        window.BaddelArtworkDiagnostics?.record?.('details-cache-failed', {
+                            canonicalIdentity: game?.localGameId || game?.installedId || game?.id,
+                            provider: game?.platform,
+                            reason: 'cache-all-assets-failed',
+                        });
                     });
                 }
             } else {
                 // ── D. No local cache — call getMetadata() as full fallback ───
                 console.log(`[GD] ${meta ? 'Server metadata too incomplete' : 'Server lookup missed'} for "${game.name}" — trying getMetadata() fallback`);
                 let fallbackMeta = null;
+                let fallbackError = null;
                 try {
+                    const cooling = await window.electronAPI.isCooldownActive?.().catch(() => false);
+                    if (!tokenStillValid()) return;
+                    if (cooling) {
+                        if (!_gdHasUsableMeta(_gdCurrentMeta)) _gdShowMetadataPendingAndRetry(game, 'cooldown');
+                        return;
+                    }
                     const canonicalAllIds = {
                         ...(game.allIds || {}),
                         ...(platform && cleanedId ? { [platform]: cleanedId } : {}),
                     };
 
+                    _gdRecordStage('GD_METADATA_BACKFILL_IPC_REQUEST', {
+                        platform: String(platform || game.platform || ''),
+                        providerId: String(cleanedId || game.id || ''),
+                    });
                     fallbackMeta = await _gdWithTimeout(window.electronAPI.getMetadata(game.name, {
                         id: cleanedId || game.id,
                         platform: platform || game.platform,
@@ -2278,7 +2611,16 @@ window.openGameDetails = async function(gameId) {
                         folderName: _manualFolderName || undefined,
                         pathHint:   (game.path || game.command) || undefined,
                     }), 15000, 'getMetadata');
-                } catch (_) { fallbackMeta = null; }
+                    _gdRecordStage('GD_METADATA_BACKFILL_IPC_RESPONSE', {
+                        metadata: _gdMetadataDiagnosticSummary(fallbackMeta),
+                    });
+                } catch (error) {
+                    fallbackError = error;
+                    _gdRecordStage('GD_METADATA_BACKFILL_IPC_ERROR', {
+                        error: String(error?.message || error || 'unknown'),
+                    });
+                    fallbackMeta = null;
+                }
                 if (!tokenStillValid()) { console.warn('[GD-DIAG] stale-token bail gameId=', _gdCurrentGameId, 'at', new Error().stack?.split('\n')[1]?.trim()); return; }
 
                 if (fallbackMeta && _gdHasUsefulMetadataValue(fallbackMeta)) {
@@ -2289,6 +2631,9 @@ window.openGameDetails = async function(gameId) {
                     if (!_gdCurrentMeta || _gdIsMetadataTooIncomplete(_gdCurrentMeta)) {
                         _gdCurrentMeta = merged;
                         _gdPopulateMeta(game, merged);
+                        _gdRecordStage('GD_METADATA_RENDERED', {
+                            metadata: _gdMetadataDiagnosticSummary(merged),
+                        });
                     }
 
                     // Persist images as usual
@@ -2303,15 +2648,23 @@ window.openGameDetails = async function(gameId) {
                             reason: 'game-details-metadata-fallback',
                         })
                         .then(localAssets => {
-                            window.electronAPI.saveMetadata(game.id, {
-                                cover:            localAssets.cover,
-                                hero:             localAssets.hero,
-                                logo:             localAssets.logo,
-                                artworkSource:    'server-details',
-                                artworkUpdatedAt: Date.now(),
-                            }, { source: 'server-details' }).catch(() => {});
+                            const artworkPatch = {};
+                            if (localAssets?.cover) artworkPatch.cover = localAssets.cover;
+                            if (localAssets?.hero) artworkPatch.hero = localAssets.hero;
+                            if (localAssets?.logo) artworkPatch.logo = localAssets.logo;
+                            if (Object.keys(artworkPatch).length) {
+                                artworkPatch.artworkSource = 'server-details';
+                                artworkPatch.artworkUpdatedAt = Date.now();
+                                window.electronAPI.saveMetadata(game.id, artworkPatch, { source: 'server-details' }).catch(() => {});
+                            }
                         })
-                        .catch(() => {});
+                        .catch(() => {
+                            window.BaddelArtworkDiagnostics?.record?.('details-cache-failed', {
+                                canonicalIdentity: game?.localGameId || game?.installedId || game?.id,
+                                provider: game?.platform,
+                                reason: 'metadata-fallback-cache-failed',
+                            });
+                        });
                     }
 
                     // Persist full structured metadata to dedicated cache.
@@ -2348,9 +2701,12 @@ window.openGameDetails = async function(gameId) {
                     // مهم جدًا:
                     // لو Steam/Epic ومعاه canonical ID، ممنوع نعرض No metadata.
                     // اعرض Pending + اعمل retry حتى لو عندك صورة/cover محلية فقط.
-                    if (_gdIsLikelyServerPending) {
+                    if (_gdIsLikelyServerPending && !_gdHasUsableMeta(_gdCurrentMeta)) {
                         _gdCurrentMeta = null;
-                        _gdShowMetadataPendingAndRetry(game, 'fallback-miss');
+                        _gdRecordStage('GD_METADATA_PENDING', { reason: fallbackError ? 'backfill-error' : 'fallback-miss' });
+                        _gdShowMetadataPendingAndRetry(game, fallbackError ? 'backfill-error' : 'fallback-miss');
+                    } else if (fallbackError && !_gdHasUsableMeta(_gdCurrentMeta)) {
+                        _gdRenderMetadataErrorState(game, fallbackError);
                     } else {
                         // غير Steam/Epic فقط: استخدم local text fallback لو موجود
                         if (!_gdCurrentMeta && fallbackMeta) {
@@ -2401,14 +2757,7 @@ window.openGameDetails = async function(gameId) {
             if (_gdIsLikelyMetadataPending(game, null, null, null)) {
                 _gdShowMetadataPendingAndRetry(game, 'metadata-error');
             } else {
-                _gdClearSkeletons();
-
-                const _pendingNote = document.getElementById('gdShortDescText');
-                if (_pendingNote) {
-                    _pendingNote.textContent = 'Could not load metadata — please try again.';
-                    const _pendingSection = document.getElementById('gdShortDescSection');
-                    if (_pendingSection) _pendingSection.style.display = 'block';
-                }
+                _gdRenderMetadataErrorState(game, e);
             }
         }
     } finally {
@@ -2418,7 +2767,15 @@ window.openGameDetails = async function(gameId) {
         //   2. Skeleton placeholders are always cleared so future openGameDetails() calls
         //      start from a clean state and are not poisoned by a previous hung request.
         if (tokenStillValid()) {
-            try { _gdPopulateAccounts(game); } catch (_) {}
+            void Promise.resolve()
+                .then(() => _gdPopulateAccounts(game))
+                .then(() => _gdRecordStage('GD_ACCOUNTS_POPULATED'))
+                .catch(error => {
+                    if (!tokenStillValid()) return;
+                    const accounts = document.getElementById('gdAccountsList');
+                    if (accounts) accounts.innerHTML = '<div class="gd-no-accounts">Account details are unavailable.</div>';
+                    _gdRecordStage('GD_ACCOUNTS_FAILED', { error: String(error?.message || error || 'unknown') });
+                });
 
             // لو اللعبة Steam/Epic أو multi-platform ولسه الميتاداتا بتتجهز،
             // ممنوع نعرض No metadata. اعرض Pending واعمل retry.
@@ -2430,11 +2787,48 @@ window.openGameDetails = async function(gameId) {
                 }
             }
         }
+        _gdRecordStage('GD_OPEN_COMPLETE', { elapsedMs: Date.now() - _gdOpenStart, hasMeta: !!_gdCurrentMeta });
         console.log('[GD-DIAG] inner-finally elapsed=', Date.now() - _gdOpenStart, 'ms gameId=', _gdCurrentGameId, 'tokenValid=', tokenStillValid(), 'hasMeta=', !!_gdCurrentMeta);
     }
   } catch (fatal) {
+        _gdRecordStage('GD_OPEN_FATAL', { error: String(fatal?.message || fatal || 'unknown'), stack: String(fatal?.stack || '').slice(0, 1200) });
         console.error('[GD-DIAG] openGameDetails FATAL gameId=', _gdCurrentGameId, 'tokenValid=', _gdViewToken === myToken, 'msg=', fatal?.message, 'stack=', fatal?.stack);
+        if (tokenStillValid()) {
+            try {
+                const view = document.getElementById('gameDetailsView');
+                if (view) view.style.display = 'block';
+                if (game) {
+                    _gdCurrentGame = game;
+                    try { _gdPopulateBasic(game); } catch (_) {}
+                }
+                _gdClearSkeletons();
+                const accounts = document.getElementById('gdAccountsList');
+                if (accounts) accounts.innerHTML = '<div class="gd-no-accounts">Account details are unavailable.</div>';
+                const media = document.getElementById('gdScreenshots');
+                if (media && !media.querySelector('img')) media.innerHTML = '<div class="gd-no-media">Media unavailable</div>';
+            } catch (fallbackError) {
+                console.error('[GD-DIAG] fatal fallback failed:', fallbackError?.message || fallbackError);
+            }
+        }
   }
+}
+
+window.openGameDetails = async function(gameId) {
+    const key = String(gameId);
+    const existing = _gdOpenPromises.get(key);
+    if (existing) return existing;
+    window.electronAPI?.trackFeatureEvent?.('game_details_opened', {
+        feature: 'game_details',
+        source: typeof currentView !== 'undefined' ? currentView : 'unknown',
+    }).catch?.(() => {});
+    // Capture immediately at the public action boundary; the implementation
+    // records the richer per-view filter snapshot before switching views.
+    if (typeof currentView !== 'undefined') _gdPreviousView = currentView;
+    const promise = _gdOpenGameDetailsImpl(key).finally(() => {
+        if (_gdOpenPromises.get(key) === promise) _gdOpenPromises.delete(key);
+    });
+    _gdOpenPromises.set(key, promise);
+    return promise;
 };
 
 // ──────────────────────────────────────────
@@ -3072,6 +3466,50 @@ function _gdMetadataArtworkFromMeta(metaData) {
     };
 }
 
+// Keep cache acquisition separate from the pure artwork resolver. Synced games
+// need no installed DB row: cache results belong to the open view as well.
+let _gdArtworkHydrationToken = null;
+let _gdArtworkHydrations = new Map();
+function _gdHydratePendingArtwork(game, art) {
+    const token = _gdViewToken;
+    if (!token || !window.electronAPI?.cacheAllAssets) return Promise.resolve();
+    if (_gdArtworkHydrationToken !== token) {
+        _gdArtworkHydrationToken = token;
+        _gdArtworkHydrations = new Map();
+    }
+    const assets = {};
+    for (const type of ['cover', 'hero', 'logo']) {
+        const decision = art?.[type];
+        if (decision?.pending && /^https?:\/\//i.test(decision.originalValue || '')) assets[type] = decision.originalValue;
+    }
+    if (!Object.keys(assets).length) return Promise.resolve();
+    const identity = String(game.localGameId || game.installedId || game.id || '');
+    // Each type is independently scheduled and painted. A stalled hero must not
+    // hold a completed cover/logo behind the batch IPC response.
+    return Promise.all(Object.entries(assets).map(([type, sourceUrl]) => {
+        const key = JSON.stringify([type, sourceUrl]);
+        if (_gdArtworkHydrations.has(key)) return _gdArtworkHydrations.get(key);
+        const pending = Promise.resolve().then(() => window.electronAPI.cacheAllAssets({ [type]: sourceUrl }, identity, {
+            priority: 'game-details', sourceSubsystem: 'game-details-artwork', reason: 'visible-details-pending-artwork',
+        })).then(localAssets => {
+            if (_gdViewToken !== token) return;
+            const currentArt = _gdResolveArtworkForDisplay(_gdCurrentGame || game, _gdCurrentMeta);
+            const local = localAssets?.[type];
+            if (!/^file:\/\//i.test(local || '') || currentArt?.[type]?.originalValue !== sourceUrl) return;
+            const marker = `__baddelResolvedLocal${type[0].toUpperCase()}${type.slice(1)}`;
+            if (_gdCurrentBaseGame) _gdCurrentBaseGame[marker] = local;
+            if (_gdCurrentGame) _gdCurrentGame[marker] = local;
+            game[marker] = local;
+            window.__baddelInvalidateArtworkCacheLookup?.(identity, 'game-details-hydrated');
+            _gdApplyResolvedArtworkToDom(_gdCurrentGame || game, _gdCurrentMeta);
+        }).catch(error => {
+            _gdRecordStage('GD_ARTWORK_ACQUISITION_FAILED', { code: error?.code || 'ARTWORK_CACHE_FAILED' });
+        });
+        _gdArtworkHydrations.set(key, pending);
+        return pending;
+    }));
+}
+
 function _gdResolveArtworkForDisplay(game, metaData = null) {
     const adapter = window.BaddelGameDetailsArtworkAdapter;
     if (metaData?._creatorCustom && adapter?.legacyGameDetailsArtwork) {
@@ -3148,7 +3586,20 @@ function _gdShouldRenderLogoImage(game, logoDecision, art) {
 
 function _gdApplyResolvedArtworkToDom(game, metaData = null) {
     const art = _gdResolveArtworkForDisplay(game, metaData);
+    void _gdHydratePendingArtwork(game, art);
     const name = game?.name || game?.title || '';
+    for (const type of ['cover', 'hero', 'logo']) {
+        window.BaddelArtworkDiagnostics?.record?.('game-details-resolve', {
+            canonicalIdentity: game?.localGameId || game?.installedId || game?.id,
+            provider: game?.platform,
+            type,
+            value: art?.[type]?.value,
+            sourceValue: art?.[type]?.originalValue,
+            availability: art?.[type]?.availability,
+            reason: art?.[type]?.reason || art?.[type]?.source,
+            revision: art?.[type]?.revision,
+        });
+    }
 
     const logoEl = document.getElementById('gdLogo');
     const titleEl = document.getElementById('gdTitle');
@@ -3259,45 +3710,7 @@ function _gdPopulateBasic(game) {
 //  TIME TRACKING TOGGLE
 // ──────────────────────────────────────────
 function _gdRenderTimeTrackingToggle(game) {
-    const row = document.getElementById('gdTimeTrackingRow');
-    if (!row) return;
-
-    const launchOpts = typeof window._gdBuildLaunchOptions === 'function'
-        ? window._gdBuildLaunchOptions(game)
-        : [];
-    const isInstalled =
-        !!(game?.path || game?.command || game?.launchCommand || game?.executablePath || game?.installPath || game?.isInstalled || game?.installVerified) ||
-        (Array.isArray(launchOpts) && launchOpts.length > 0);
-
-    if (!isInstalled) {
-        row.innerHTML = '';
-        row.style.display = 'none';
-        return;
-    }
-
-    const isEnabled = !(game.timeTrackingEnabled === false);
-
-    row.style.display = '';
-    row.innerHTML = `
-        <div class="gd-tracking-row">
-            <div class="gd-tracking-icon" aria-hidden="true">
-                <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                    <circle cx="12" cy="12" r="8"></circle>
-                    <path d="M12 8v4l3 2"></path>
-                </svg>
-            </div>
-            <div class="gd-tracking-copy">
-                <div class="gd-tracking-title">
-                    Time Tracking
-                    <span class="gd-tracking-pill ${isEnabled ? 'is-on' : 'is-off'}">${isEnabled ? 'ON' : 'OFF'}</span>
-                </div>
-            </div>
-            <button class="gd-tracking-toggle${isEnabled ? ' is-destructive' : ''}"
-                    onclick="_gdToggleTimeTracking('${game.id}', ${!isEnabled})">
-                ${isEnabled ? 'Disable' : 'Enable'}
-            </button>
-        </div>
-    `;
+    _gdRenderGameManagement(game);
 }
 
 window._gdToggleTimeTracking = async function(gameId, enable) {
@@ -3307,7 +3720,7 @@ window._gdToggleTimeTracking = async function(gameId, enable) {
         if (res && res.status === 'success') {
             if (_gdCurrentGame && String(_gdCurrentGame.id) === String(gameId)) {
                 _gdCurrentGame.timeTrackingEnabled = enable;
-                _gdRenderTimeTrackingToggle(_gdCurrentGame);
+                _gdRenderGameManagement(_gdCurrentGame);
             }
             if (typeof showToast === 'function')
                 showToast(enable ? 'Time tracking enabled for this game' : 'Time tracking disabled for this game', 'info');
@@ -3649,6 +4062,27 @@ function _gdBuildLaunchOptions(game) {
 
     function add(record) {
         if (!record || (!record.path && !record.command)) return;
+        // A canonical/catalog projection may carry managed provenance and a
+        // launch path while retaining its catalog ID. Resolve it back to the
+        // concrete installed record before path de-duplication or IPC launch.
+        if (Array.isArray(window.allGamesData)) {
+            const provider = String(record.installProvider || '').toLowerCase();
+            const appName = String(record.appName || record.providerAppName || '').toLowerCase();
+            const recordPath = String(record.installPath || record.path || '').replace(/\\/g, '/').replace(/\/+$/g, '').toLowerCase();
+            const installed = window.allGamesData.find(local => {
+                if (provider && provider !== 'legendary') return false;
+                if (String(local.installProvider || '').toLowerCase() !== 'legendary'
+                    || String(local.platform || '').toLowerCase() !== 'epic') return false;
+                if (String(local.id) === String(record.id)
+                    || (record.installedId && String(local.id) === String(record.installedId))
+                    || (record.localGameId && String(local.id) === String(record.localGameId))) return true;
+                const localAppName = String(local.appName || local.providerAppName || '').toLowerCase();
+                const localPath = String(local.installPath || local.path || '').replace(/\\/g, '/').replace(/\/+$/g, '').toLowerCase();
+                return provider === 'legendary' && appName && localAppName === appName
+                    && recordPath && localPath === recordPath;
+            });
+            if (installed) record = { ...record, ...installed, managedDownloadTaskId: record.managedDownloadTaskId || installed.managedDownloadTaskId || null };
+        }
         if (seenIds.has(record.id)) return;
         const pathKey = (record.path || record.command || '').toLowerCase().trim();
         if (pathKey && seenPaths.has(pathKey)) return;
@@ -3660,6 +4094,18 @@ function _gdBuildLaunchOptions(game) {
             name:            record.name            || game.name,
             platform:        record.platform        || game.platform,
             scannerPlatform: record.scannerPlatform || '',
+            source:          record.source || null,
+            installProvider: record.installProvider || null,
+            installSource:   record.installSource || null,
+            installPath:     record.installPath || null,
+            accountId:       record.accountId || record.installedByAccountId || null,
+            accountDisplayName: record.accountDisplayName || null,
+            installedByAccountId: record.installedByAccountId || null,
+            providerAppName: record.providerAppName || record.appName || null,
+            ownedByAccountIds: record.ownedByAccountIds || [],
+            epicLicensedAccountIds: record.epicLicensedAccountIds || [],
+            isInstalled:     record.isInstalled,
+            buildId:         record.buildId || null,
             path:            record.path            || null,
             command:         record.command         || null,
             launchCommand:   record.launchCommand   || null,
@@ -3668,6 +4114,7 @@ function _gdBuildLaunchOptions(game) {
             launcherGameId:  record.launcherGameId  || game.launcherGameId  || null,
             namespace:       record.namespace       || game.namespace       || null,
             catalogItemId:   record.catalogItemId   || game.catalogItemId   || null,
+            managedDownloadTaskId: record.managedDownloadTaskId || game.managedDownloadTaskId || null,
             allIds:          record.allIds          || game.allIds          || null,
             label:           _gdLaunchOptionLabel(record),
         });
@@ -3712,10 +4159,11 @@ function _gdSetActionButton(game) {
     } else {
         // حالة التحميل
         btn.classList.add('install-mode');
-        label.innerHTML = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:6px"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>INSTALL`;
+        label.textContent = 'INSTALL';
         btn.title = 'Install game';
-        if (playIcon) playIcon.style.display = 'none'; // 🟢 إخفاء أيقونة البلاي عشان متظهرش مع أيقونة التحميل
+        if (playIcon) playIcon.style.display = 'none';
     }
+    if (typeof _gdRenderMaintenanceActions === 'function') _gdRenderMaintenanceActions();
 }
 
 // ──────────────────────────────────────────
@@ -3733,12 +4181,21 @@ window.gdHandleMainAction = async function() {
     const downloadStatus = String(downloadTask?.status || '');
     if (downloadTask && downloadStatus && downloadStatus !== 'cancelled') {
         if (downloadStatus === 'completed') {
-            const installedFromTask = await _gdResolveInstalledGameForDownloadTask(downloadTask);
+            let installedFromTask;
+            try {
+                installedFromTask = await _gdResolveInstalledGameForDownloadTask(downloadTask);
+            } catch (error) {
+                if (typeof showToast === 'function') showToast(error?.message || 'Baddel could not resolve this installation.', 'error');
+                return;
+            }
             if (installedFromTask) {
                 _gdCurrentGame = { ..._gdCurrentGame, ...installedFromTask };
                 _gdCurrentGameId = String(installedFromTask.id || _gdCurrentGameId);
+            } else if (downloadTask.platform === 'epic' && downloadTask.installProvider === 'legendary') {
+                if (typeof showToast === 'function') showToast('This Epic installation has not finished finalizing.', 'error');
+                return;
             }
-        } else {
+        } else if (downloadTask.operationKind !== 'update' && downloadTask.operationKind !== 'repair') {
             if (typeof showToast === 'function') showToast(downloadTask.statusMessage || 'Download is already in progress.', 'info');
             return;
         }
@@ -3792,14 +4249,197 @@ window.gdHandleMainAction = async function() {
     }
 };
 
+async function _gdRefreshEpicLauncherAvailability() {
+    const option = document.getElementById('gdEpicLauncherInstallOption');
+    const reason = document.getElementById('gdEpicLauncherInstallReason');
+    if (!option) return;
+    try {
+        const result = await window.electronAPI?.getLauncherAvailability?.('epic');
+        if (!option.isConnected) return;
+        option.disabled = result?.available === false;
+        if (option.disabled && _gdInstallSelectedProvider === 'epic_launcher') {
+            _gdInstallSelectedProvider = null;
+            _gdInstallClearAccount();
+            _gdInstallUpdateSteps();
+        }
+        if (reason) reason.textContent = result?.available === false ? 'Epic Games Launcher is not installed.' : '';
+    } catch { option.disabled = false; }
+}
+
+async function _gdRefreshGogLauncherAvailability() {
+    const option = document.getElementById('gdGogGalaxyInstallOption');
+    const reason = document.getElementById('gdGogGalaxyInstallReason');
+    if (!option) return;
+    try {
+        const result = await window.electronAPI?.getLauncherAvailability?.('gog');
+        if (!option.isConnected) return;
+        option.disabled = result?.available === false;
+        if (option.disabled && _gdInstallSelectedProvider === 'gog_galaxy') {
+            _gdInstallSelectedProvider = 'gogdl';
+            _gdInstallClearAccount();
+            _gdInstallUpdateSteps();
+            await gdInstallLoadAccounts('gog');
+        }
+        if (reason) reason.textContent = option.disabled ? 'GOG Galaxy is not installed.' : '';
+    } catch { option.disabled = false; }
+}
+
 // ──────────────────────────────────────────
 //  INSTALL PICKER MODAL
 // ──────────────────────────────────────────
 
+let _gdInstallSelectedPlatform = null;
+let _gdInstallSelectedAccountId = null;
 let _gdInstallSelectedAccountUsername = null;
 let _gdInstallSelectedAccountName     = null;
 let _gdInstallSelectedActionStatus    = null;
 let _gdInstallConfirmInFlight         = false;
+window.__gdInstallContinueInFlight    = false;
+let _gdInstallSelectedProvider         = null;
+let _gdInstallPlatforms = [];
+let _gdInstallAccountRevision = 0;
+let _gdInstallModalRevision = 0;
+let _gdInstallWizardPage = 'setup';
+
+function _gdNormalizeDirectInstallAccountOptions(platform, options = []) {
+    return options;
+}
+
+function _gdDefaultInstallAccountId(platform, provider, options = []) {
+    const allowNoSwitchInstall = platform === 'steam' || provider === 'epic_launcher' || provider === 'gog_galaxy';
+    const canUse = option => provider === 'legendary' ? option.enabled === true : (allowNoSwitchInstall ? !option.notInSwitcher : true);
+    const firstOwned = options.find(option => option.actionStatus === 'ready' && canUse(option));
+    const firstSelectable = options.find(option => option.enabled && canUse(option));
+    return firstOwned?.id || firstSelectable?.id || (allowNoSwitchInstall ? '__none__' : null);
+}
+
+function _gdRequestInstallSizePrefetch(platform, game, accountId, installProvider) {
+    if (!window.electronAPI?.downloads?.prefetchInstallSize || !game || !accountId || accountId === '__none__') return null;
+    if (!((platform === 'epic' && installProvider === 'legendary') || (platform === 'gog' && installProvider === 'gogdl'))) return null;
+    const payload = _gdDirectInstallPayload(platform, game, accountId, installProvider);
+    if (!payload.providerAppName || !payload.providerProductId) return null;
+    const sentAt = performance.now();
+    const diagnostic = { platform, installProvider, accountId, gameId: payload.gameId, sentAt, payload: { ...payload } };
+    const diagnostics = window.__gdInstallSizePrefetchDiagnostics || (window.__gdInstallSizePrefetchDiagnostics = []);
+    diagnostics.push(diagnostic);
+    if (diagnostics.length > 50) diagnostics.splice(0, diagnostics.length - 50);
+    console.debug('[GD][InstallSizePrefetch] request', { platform, installProvider, accountId, gameId: payload.gameId, sentAt });
+    return window.electronAPI.downloads.prefetchInstallSize(payload).then(response => {
+        diagnostic.completedAt = performance.now();
+        diagnostic.result = response;
+        console.debug('[GD][InstallSizePrefetch] complete', { platform, gameId: payload.gameId, durationMs: Math.round(performance.now() - sentAt), status: response?.prefetch?.prefetchStatus || response?.status });
+        return response;
+    }).catch(error => {
+        diagnostic.completedAt = performance.now();
+        diagnostic.error = error?.name || 'Error';
+        console.debug('[GD][InstallSizePrefetch] failed', { platform, gameId: payload.gameId, durationMs: Math.round(performance.now() - sentAt), error: error?.name || 'Error' });
+        return null;
+    });
+}
+
+async function _gdPrefetchDefaultInstallSize(game) {
+    const selectionDiagnostic = { gameId: game?.id || null, startedAt: performance.now(), stage: 'selection-started' };
+    const selectionDiagnostics = window.__gdInstallSizePrefetchSelectionDiagnostics || (window.__gdInstallSizePrefetchSelectionDiagnostics = []);
+    selectionDiagnostics.push(selectionDiagnostic);
+    if (selectionDiagnostics.length > 50) selectionDiagnostics.splice(0, selectionDiagnostics.length - 50);
+    const localInstalledMatch = typeof _gdFindInstalledLocalMatch === 'function' ? _gdFindInstalledLocalMatch(game) : null;
+    if (_gdInstalledRecordCanLaunch(game) || _gdInstalledRecordCanLaunch(localInstalledMatch)) {
+        selectionDiagnostic.stage = 'skipped-installed';
+        return null;
+    }
+    const directPlatforms = _gdDetectPlatforms(game).filter(platform => platform === 'epic' || platform === 'gog');
+    selectionDiagnostic.directPlatforms = directPlatforms;
+    if (directPlatforms.length !== 1) { selectionDiagnostic.stage = 'skipped-platform'; return null; }
+    const platform = directPlatforms[0];
+    const installProvider = platform === 'epic' ? 'legendary' : 'gogdl';
+    const identity = _gdProviderInstallIdentity(platform, game);
+    if (!identity.providerAppName || !identity.providerProductId) { selectionDiagnostic.stage = 'skipped-identity'; return null; }
+    const ownerIds = (Array.isArray(game.ownedByAccountIds) ? game.ownedByAccountIds : []).map(String).filter(Boolean);
+    if (platform === 'epic') {
+        selectionDiagnostic.stage = 'requested-main-account-resolution';
+        return _gdRequestInstallSizePrefetch(platform, game, null, installProvider);
+    }
+    if (ownerIds.length && /^\d+$/.test(String(identity.providerProductId || ''))) {
+        selectionDiagnostic.accountId = ownerIds[0];
+        selectionDiagnostic.stage = 'requested-owned-identity';
+        return _gdRequestInstallSizePrefetch(platform, game, ownerIds[0], installProvider);
+    }
+
+    let options;
+    try {
+        options = await buildPlatformAccountOptions({ game, platform, mode: 'install' });
+    } catch { selectionDiagnostic.stage = 'skipped-account-error'; return null; }
+    const installOptions = _gdNormalizeDirectInstallAccountOptions(platform, options);
+    const accountId = _gdDefaultInstallAccountId(platform, installProvider, installOptions);
+    const selected = installOptions.find(option => String(option.id) === String(accountId));
+    selectionDiagnostic.accountId = accountId || null;
+    selectionDiagnostic.accountStatus = selected?.actionStatus || null;
+    selectionDiagnostic.accountEnabled = selected?.enabled ?? null;
+    if (!selected || selected.actionStatus !== 'ready' || selected.enabled === false) { selectionDiagnostic.stage = 'skipped-account'; return null; }
+    selectionDiagnostic.stage = 'requested';
+    return _gdRequestInstallSizePrefetch(platform, game, accountId, installProvider);
+}
+
+function _gdInstallClearAccount() {
+    _gdInstallAccountRevision++;
+    _gdInstallSelectedAccountId = null;
+    _gdInstallSelectedAccountUsername = null;
+    _gdInstallSelectedAccountName = null;
+    _gdInstallSelectedActionStatus = null;
+    window.baddelInstallStorage?.reset();
+    _gdInstallWizardPage = 'setup';
+}
+window.gdInstallUpdateConfirm = function() {
+    const button = document.getElementById('gdInstallConfirmBtn');
+    const back = document.getElementById('gdInstallBackBtn');
+    const cancel = document.getElementById('gdInstallCancelBtn');
+    const label = document.getElementById('gdInstallConfirmLabel');
+    const direct = ['legendary', 'gogdl'].includes(_gdInstallSelectedProvider);
+    const page = typeof _gdInstallWizardPage === 'string' ? _gdInstallWizardPage : 'setup';
+    const setupValid = Boolean(_gdInstallSelectedPlatform && _gdInstallSelectedProvider && _gdInstallSelectedAccountId);
+    if (button) button.disabled = page === 'storage' ? !direct || !window.baddelInstallStorage?.valid() : !setupValid;
+    if (label) label.textContent = page === 'storage' ? 'Install' : 'Continue';
+    if (back) back.hidden = page !== 'storage';
+    if (cancel) cancel.hidden = page === 'storage';
+};
+function _gdInstallUpdateSteps() {
+    const setup = document.getElementById('gdInstallSetupPage');
+    const methods = document.getElementById('gdInstallMethodsSection');
+    const accounts = document.getElementById('gdInstallAccountsSection');
+    const storage = document.getElementById('gdInstallStorageSection');
+    if (setup) setup.hidden = _gdInstallWizardPage !== 'setup';
+    if (storage && _gdInstallWizardPage !== 'storage') storage.hidden = true;
+    if (methods) {
+        methods.hidden = _gdInstallWizardPage !== 'setup' || !['epic', 'gog'].includes(_gdInstallSelectedPlatform);
+        methods.querySelectorAll('[data-provider]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.provider === _gdInstallSelectedProvider)));
+        methods.querySelectorAll('[data-platform]').forEach(button => { button.hidden = button.dataset.platform !== _gdInstallSelectedPlatform; });
+        const epicReason = document.getElementById('gdEpicLauncherInstallReason');
+        const gogReason = document.getElementById('gdGogGalaxyInstallReason');
+        if (epicReason) epicReason.hidden = _gdInstallSelectedPlatform !== 'epic';
+        if (gogReason) gogReason.hidden = _gdInstallSelectedPlatform !== 'gog';
+    }
+    if (accounts) accounts.hidden = _gdInstallWizardPage !== 'setup' || !_gdInstallSelectedPlatform || !_gdInstallSelectedProvider;
+    document.querySelectorAll?.('#gdInstallWizardSteps [data-page]').forEach(item => item.setAttribute('aria-current', item.dataset.page === _gdInstallWizardPage ? 'step' : 'false'));
+    window.gdInstallUpdateConfirm();
+}
+window.gdInstallSelectProvider = async function(provider) {
+    const allowed = _gdInstallSelectedPlatform === 'epic'
+        ? ['legendary', 'epic_launcher']
+        : (_gdInstallSelectedPlatform === 'gog' ? ['gogdl', 'gog_galaxy'] : []);
+    if (!allowed.includes(provider)) return;
+    if (provider === 'epic_launcher' && document.getElementById('gdEpicLauncherInstallOption')?.disabled) return;
+    if (provider === 'gog_galaxy' && document.getElementById('gdGogGalaxyInstallOption')?.disabled) return;
+    _gdInstallSelectedProvider = provider;
+    _gdInstallClearAccount();
+    _gdInstallUpdateSteps();
+    await gdInstallLoadAccounts(_gdInstallSelectedPlatform);
+};
+window.gdInstallClose = function() {
+    _gdInstallModalRevision++;
+    _gdInstallClearAccount();
+    document.getElementById('gdInstallerModal')?.remove();
+    document.getElementById('gdPlayBtn')?.focus();
+};
 
 
 // ── Install-picker artwork resolver ──────────────────────────────────────────
@@ -3893,23 +4533,30 @@ function _gdInstallPlatformLabel(platform) {
     return map[key] || (key.charAt(0).toUpperCase() + key.slice(1));
 }
 
-async function _gdOpenInstallPicker(game) {
-    document.getElementById('gdInstallerModal')?.remove();
+async function _gdOpenInstallPicker(game, options = {}) {
+    window.electronAPI?.trackFeatureEvent?.('install_flow_opened', { feature: 'game_details', source: 'game_details', platform: game?.platform || game?.source }).catch?.(() => {});
+    window.gdInstallClose();
+    const modalRevision = _gdInstallModalRevision;
 
-    // 1. كشف المنصات المتاحة للعبة (ستيم وإيبك فقط للتحميل حالياً)
-    const detectedPlats = _gdDetectPlatforms(game).filter(p => p === 'gog');
+    const supportedPlatforms = new Set(['epic', 'steam', 'gog']);
+    const detectedPlats = _gdDetectPlatforms(game).filter(platform => supportedPlatforms.has(platform));
 
     if (detectedPlats.length === 0) {
-        if (typeof showToast === 'function') showToast('Direct install is available for supported linked stores only.', 'error');
+        if (typeof showToast === 'function') showToast('This installation method is not available for this game.', 'error');
         return;
     }
 
     // 2. اختيار أول منصة كافتراضي
-    _gdInstallSelectedPlatform = detectedPlats[0];
-    _gdInstallSelectedAccountId = null;
+    _gdInstallPlatforms = detectedPlats;
+    _gdInstallSelectedPlatform = detectedPlats.includes(options.platform) ? options.platform : detectedPlats.length === 1 ? detectedPlats[0] : null;
+    _gdInstallSelectedProvider = ({ steam: 'steam_client', gog: 'gogdl' }[_gdInstallSelectedPlatform]) || null;
+    if (_gdInstallSelectedPlatform === 'epic' && ['legendary', 'epic_launcher'].includes(options.installProvider)) _gdInstallSelectedProvider = options.installProvider;
+    _gdInstallClearAccount();
+    _gdInstallWizardPage = 'setup';
 
     // Resolve best available poster + hero across all candidate fields / caches.
     const _art   = await _gdResolveInstallArtwork(game);
+    if (modalRevision !== _gdInstallModalRevision) return;
     const _poster = _art.poster || '';
     const _hero   = _art.hero   || '';
     const coverHtml = _poster ? `<img class="pl-game-cover" src="${_poster.replace(/\\/g, '/')}" alt="${game.name}">` : '';
@@ -3926,7 +4573,7 @@ async function _gdOpenInstallPicker(game) {
                 ? `<img src="${cfg.img}" alt="${cfg.name || p}" ${cfg.invert ? 'style="filter:invert(1) brightness(1.1)"' : ''}>`
                 : `<span style="font-size:1.1em;font-weight:700;">${_gdInstallPlatformLabel(p)}</span>`;
             return `
-                <button class="gd-inst-plat-card${isSelected ? ' selected' : ''}" data-plat="${p}" title="${cfg.name || _gdInstallPlatformLabel(p)}">
+                <button class="gd-inst-plat-card${isSelected ? ' selected' : ''}" data-plat="${p}" aria-pressed="${isSelected}" title="${cfg.name || _gdInstallPlatformLabel(p)}">
                     <div class="gd-inst-plat-logo">${logoHtml}</div>
                     <span class="gd-inst-plat-name">${cfg.name || _gdInstallPlatformLabel(p)}</span>
                 </button>`;
@@ -3949,76 +4596,11 @@ async function _gdOpenInstallPicker(game) {
     const modal = document.createElement('div');
     modal.id        = 'gdInstallerModal';
     modal.className = 'pl-backdrop';
+    modal.setAttribute('role', 'dialog');
+    modal.setAttribute('aria-modal', 'true');
+    modal.setAttribute('aria-label', 'Install game');
     modal.innerHTML = `
-        <style>
-            .gd-inst-plat-row {
-                display: flex;
-                gap: 10px;
-                flex-wrap: wrap;
-                padding: 6px 0 10px;
-            }
-            .gd-inst-plat-card {
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                gap: 8px;
-                width: 108px;
-                min-height: 80px;
-                padding: 14px 10px 12px;
-                border-radius: 10px;
-                border: 1.5px solid rgba(255,255,255,0.10);
-                background: rgba(255,255,255,0.04);
-                cursor: pointer;
-                transition: border-color 0.15s, background 0.15s, transform 0.12s;
-                position: relative;
-                outline: none;
-            }
-            .gd-inst-plat-card:hover {
-                border-color: rgba(255,255,255,0.28);
-                background: rgba(255,255,255,0.08);
-                transform: translateY(-1px);
-            }
-            .gd-inst-plat-card.selected {
-                border-color: #3dff6e;
-                background: rgba(61,255,110,0.07);
-                box-shadow: 0 0 0 1px rgba(61,255,110,0.18), 0 4px 18px rgba(61,255,110,0.10);
-            }
-            .gd-inst-plat-card.selected::after {
-                content: '';
-                position: absolute;
-                top: 7px; right: 7px;
-                width: 8px; height: 8px;
-                border-radius: 50%;
-                background: #3dff6e;
-                box-shadow: 0 0 6px #3dff6e;
-            }
-            .gd-inst-plat-logo {
-                width: 44px;
-                height: 30px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-            }
-            .gd-inst-plat-logo img {
-                max-width: 44px;
-                max-height: 30px;
-                width: auto;
-                height: auto;
-                object-fit: contain;
-            }
-            .gd-inst-plat-name {
-                font-size: 0.72em;
-                font-weight: 600;
-                letter-spacing: 0.05em;
-                color: rgba(255,255,255,0.65);
-                text-transform: uppercase;
-                line-height: 1;
-            }
-            .gd-inst-plat-card.selected .gd-inst-plat-name {
-                color: #3dff6e;
-            }
-        </style>
+
         <div class="pl-modal" id="gdInstallModalInner">
             <div class="pl-hero" style="background-image:url('${heroBg.replace(/\\/g, '/')}')">
                 <div class="pl-hero-overlay"></div>
@@ -4026,17 +4608,28 @@ async function _gdOpenInstallPicker(game) {
                     ${coverHtml}
                     <div class="pl-game-info">
                         <div class="pl-game-label">INSTALLATION</div>
-                        <h2 class="pl-game-name">${game.name}</h2>
+                        <h2 class="pl-game-name">${escapeHtml(game.name || game.title || 'Unknown Game')}</h2>
                     </div>
                 </div>
-                <button class="pl-close-btn" onclick="document.getElementById('gdInstallerModal')?.remove()">
+                <button class="pl-close-btn" onclick="gdInstallClose()">
                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                 </button>
             </div>
             
+            <div class="install-wizard-indicator" id="gdInstallWizardSteps" aria-label="Installation steps"><span data-page="setup" aria-current="step">Setup <b>1/2</b></span><span data-page="storage" aria-current="false">Storage <b>2/2</b></span></div>
             <div class="pl-body">
+                <div class="install-wizard-page" id="gdInstallSetupPage">
                 ${platformsHtml}
-                <div class="pl-section">
+                <div class="pl-section" id="gdInstallMethodsSection" hidden>
+                    <div class="pl-section-header"><span class="pl-section-title">INSTALL METHOD</span></div>
+                    <div class="install-methods">
+                        <button type="button" class="install-method" data-platform="epic" data-provider="legendary" aria-pressed="false" onclick="gdInstallSelectProvider('legendary')">Install with Baddel <small>Recommended</small></button>
+                        <button type="button" class="install-method" id="gdEpicLauncherInstallOption" data-platform="epic" data-provider="epic_launcher" aria-pressed="false" onclick="gdInstallSelectProvider('epic_launcher')">Epic Games Launcher</button>
+                        <button type="button" class="install-method" data-platform="gog" data-provider="gogdl" aria-pressed="false" onclick="gdInstallSelectProvider('gogdl')">Install with Baddel <small>Recommended</small></button>
+                        <button type="button" class="install-method" id="gdGogGalaxyInstallOption" data-platform="gog" data-provider="gog_galaxy" aria-pressed="false" onclick="gdInstallSelectProvider('gog_galaxy')">GOG Galaxy</button>
+                    </div><p id="gdEpicLauncherInstallReason"></p><p id="gdGogGalaxyInstallReason"></p>
+                </div>
+                <div class="pl-section" id="gdInstallAccountsSection" hidden>
                     <div class="pl-section-header">
                         <div class="pl-step-badge">${accountStepNum}</div>
                         <span class="pl-section-title">CHOOSE ACCOUNT</span>
@@ -4046,22 +4639,28 @@ async function _gdOpenInstallPicker(game) {
                         <div class="pl-accounts-loading"><div class="pl-spinner"></div><span>Loading accounts…</span></div>
                     </div>
                 </div>
+                </div>
+                <div class="pl-section install-wizard-page" id="gdInstallStorageSection" hidden></div>
             </div>
 
             <div class="pl-footer">
-                <button class="pl-btn-cancel" onclick="document.getElementById('gdInstallerModal')?.remove()">Cancel</button>
-                <button class="pl-btn-launch" id="gdInstallConfirmBtn" onclick="gdInstallConfirm()">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="margin-right:4px;">
-                        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
-                    </svg>
-                    Install
-                </button>
+                <button class="pl-btn-cancel" id="gdInstallCancelBtn" onclick="gdInstallClose()">Cancel</button>
+                <button class="pl-btn-cancel" id="gdInstallBackBtn" onclick="gdInstallBack()" hidden>Back</button>
+                <button class="pl-btn-launch" id="gdInstallConfirmBtn" onclick="gdInstallContinue()"><span id="gdInstallConfirmLabel">Continue</span></button>
             </div>
         </div>
     `;
 
     document.body.appendChild(modal);
-    modal.addEventListener('click', e => { if (e.target === modal) modal.remove(); });
+    modal.addEventListener('click', e => { if (e.target === modal) gdInstallClose(); });
+    modal.addEventListener('keydown', event => {
+        if (event.key === 'Escape') { event.preventDefault(); gdInstallClose(); return; }
+        if (event.key !== 'Tab') return;
+        const items = [...modal.querySelectorAll('button:not(:disabled), input, [tabindex="0"]')].filter(item => item.getClientRects().length);
+        const first = items[0], last = items[items.length - 1];
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    });
 
     // Wire platform switcher buttons (only present for multi-platform games)
     const platRow = document.getElementById('gdInstPlatformsRow');
@@ -4069,23 +4668,21 @@ async function _gdOpenInstallPicker(game) {
         platRow.addEventListener('click', async (e) => {
             const btn = e.target.closest('.gd-inst-plat-card');
             if (!btn) return;
-            const nextPlatform = btn.dataset.plat;
-            if (!nextPlatform || nextPlatform === _gdInstallSelectedPlatform) return;
-            _gdInstallSelectedPlatform = nextPlatform;
-            _gdInstallSelectedAccountId = null;
-            platRow.querySelectorAll('.gd-inst-plat-card').forEach(b => b.classList.remove('selected'));
-            btn.classList.add('selected');
-            await gdInstallLoadAccounts(nextPlatform);
+            await gdInstallSelectPlatform(btn.dataset.plat);
         });
     }
 
     requestAnimationFrame(() => {
         modal.classList.add('visible');
         document.getElementById('gdInstallModalInner')?.classList.add('visible');
+        modal.querySelector('button:not(:disabled)')?.focus();
     });
 
     // 4. تحميل الحسابات الخاصة بالمنصة الافتراضية
-    await gdInstallLoadAccounts(_gdInstallSelectedPlatform);
+    _gdInstallUpdateSteps();
+    if (_gdInstallSelectedPlatform === 'epic') _gdRefreshEpicLauncherAvailability();
+    if (_gdInstallSelectedPlatform === 'gog' && typeof _gdRefreshGogLauncherAvailability === 'function') _gdRefreshGogLauncherAvailability();
+    if (_gdInstallSelectedProvider) await gdInstallLoadAccounts(_gdInstallSelectedPlatform);
 }
 
 // Public entry point used by app.js synced-suggestions Install button.
@@ -4117,28 +4714,36 @@ function _gdBuildInstallPlatformCard(platKey, selected) {
 }
 
 window.gdInstallSelectPlatform = async function(platKey) {
-    if (_gdInstallSelectedPlatform === platKey) return;
+    if (!_gdInstallPlatforms.includes(platKey) || _gdInstallSelectedPlatform === platKey) return;
     _gdInstallSelectedPlatform = platKey;
-    _gdInstallSelectedAccountId = null;
+    _gdInstallSelectedProvider = ({ steam: 'steam_client', gog: 'gogdl' }[platKey]) || null;
+    _gdInstallClearAccount();
+    _gdInstallUpdateSteps();
+    if (platKey === 'epic') _gdRefreshEpicLauncherAvailability();
+    if (platKey === 'gog' && typeof _gdRefreshGogLauncherAvailability === 'function') _gdRefreshGogLauncherAvailability();
 
     // Support both new card class and legacy pl-platform-card
     const row = document.getElementById('gdInstPlatformsRow');
     if (row) {
-        row.querySelectorAll('.gd-inst-plat-card, .pl-platform-card').forEach(c => c.classList.remove('selected'));
+        row.querySelectorAll('.gd-inst-plat-card, .pl-platform-card').forEach(c => { c.classList.remove('selected'); c.setAttribute('aria-pressed', String(c.dataset.plat === platKey)); });
         const target = row.querySelector(`[data-plat="${platKey}"]`);
         target?.classList.add('selected');
     }
 
-    await gdInstallLoadAccounts(platKey);
+    if (_gdInstallSelectedProvider) await gdInstallLoadAccounts(platKey);
 };
 
 window.gdInstallLoadAccounts = async function(platKey) {
+    const revision = ++_gdInstallAccountRevision;
+    const provider = _gdInstallSelectedProvider;
+    if (!provider || platKey !== _gdInstallSelectedPlatform) return;
     _gdUpdateInstallPlatformHint?.(platKey);
     const list = document.getElementById('gdInstallAccountsList');
     if (!list) return;
 
     list.style.opacity = '0';
     await new Promise(r => setTimeout(r, 150));
+    if (revision !== _gdInstallAccountRevision || !list.isConnected) return;
     list.innerHTML = `<div class="pl-accounts-loading"><div class="pl-spinner"></div><span>Loading accounts…</span></div>`;
     list.style.opacity = '1';
 
@@ -4149,18 +4754,28 @@ window.gdInstallLoadAccounts = async function(platKey) {
 
     let options = [];
     try {
-        options = await buildPlatformAccountOptions({ game, platform: platKey, mode: 'install' });
+        options = platKey === 'epic' && provider === 'legendary'
+            ? await buildDirectEpicInstallAccountOptions({ game })
+            : platKey === 'gog' && provider === 'gogdl'
+                ? (typeof buildManagedProviderAccountOptions === 'function'
+                    ? await buildManagedProviderAccountOptions({ game, platform: 'gog', provider: 'gogdl' })
+                    : (await buildPlatformAccountOptions({ game, platform: 'gog', mode: 'install' })).map(option =>
+                        option.actionStatus === 'add_to_switcher' && option.syncAccountId
+                            ? { ...option, id: String(option.syncAccountId), actionStatus: 'ready', enabled: true, notInSwitcher: false }
+                            : option))
+            : await buildPlatformAccountOptions({ game, platform: platKey, mode: 'install' });
     } catch (e) {
         console.error('[Install] Error loading accounts:', e);
     }
 
+    if (revision !== _gdInstallAccountRevision || !list.isConnected) return;
     if (options.length > 0 &&
         options.every(o => o.actionStatus === 'sync_to_verify') &&
         (window._poLastBuildDebug?.usedAccountsCount === 0 || window._poLastBuildDebug?.usedGamesCount === 0)) {
         console.warn('[Install] All accounts are sync_to_verify because sync data is unavailable', window._poLastBuildDebug);
     }
 
-    const allowNoSwitchInstall = platKey !== 'gog';
+    const allowNoSwitchInstall = platKey === 'steam' || _gdInstallSelectedProvider === 'epic_launcher' || _gdInstallSelectedProvider === 'gog_galaxy';
     const noSwitchRow = allowNoSwitchInstall ? `
         <div class="pl-account-row no-switch" id="gdInstAcct-__none__"
              onclick="gdInstallSelectAccount('__none__', '${platKey}')"
@@ -4173,23 +4788,13 @@ window.gdInstallLoadAccounts = async function(platKey) {
                 </svg>
             </div>
             <div class="pl-account-info">
-                <div class="pl-account-name">Install Directly</div>
+                <div class="pl-account-name">${['epic', 'gog'].includes(platKey) ? 'Launch Directly' : 'Install Directly'}</div>
                 <div class="pl-account-sub">No account switch</div>
             </div>
             <div class="pl-account-check"></div>
         </div>` : '';
 
-    const installOptions = options.map(opt => {
-        if (platKey === 'gog' && opt.actionStatus === 'add_to_switcher' && opt.syncAccountId) {
-            return {
-                ...opt,
-                id:           String(opt.syncAccountId),
-                actionStatus: 'ready',
-                enabled:      true,
-            };
-        }
-        return opt;
-    });
+    const installOptions = options;
 
     const accountRows = installOptions.map(opt => _poRenderAccountRow(opt, {
         idPrefix:     'gdInstAcct-',
@@ -4202,9 +4807,10 @@ window.gdInstallLoadAccounts = async function(platKey) {
 
     list.style.opacity = '0';
     await new Promise(r => setTimeout(r, 150));
+    if (revision !== _gdInstallAccountRevision || !list.isConnected) return;
     list.innerHTML = noSwitchRow + accountRows;
 
-    const canUseAccountForInstall = (o) => allowNoSwitchInstall ? !o.notInSwitcher : true;
+    const canUseAccountForInstall = (o) => ['legendary', 'gogdl'].includes(_gdInstallSelectedProvider) ? o.enabled === true : (allowNoSwitchInstall ? !o.notInSwitcher : o.enabled === true && o.inSwitcher === true);
     const firstOwned      = installOptions.find(o => o.actionStatus === 'ready' && canUseAccountForInstall(o));
     const firstSelectable = installOptions.find(o => o.enabled && canUseAccountForInstall(o));
     const defaultAccountId =
@@ -4222,10 +4828,12 @@ window.gdInstallLoadAccounts = async function(platKey) {
     }
 
     list.style.opacity = '1';
+    window.gdInstallUpdateConfirm();
 };
 window.gdInstallSelectAccount = function(accountId, platformType) {
+    if (platformType !== _gdInstallSelectedPlatform) return;
     const row = document.querySelector(`#gdInstallAccountsList .pl-account-row[data-id="${accountId}"]`);
-    if (row && row.getAttribute('aria-disabled') === 'true') return;
+    if (!row || row.getAttribute('aria-disabled') === 'true') return;
     _gdInstallSelectedAccountId       = accountId;
     _gdInstallSelectedAccountUsername = null;
     _gdInstallSelectedAccountName     = null;
@@ -4237,6 +4845,43 @@ window.gdInstallSelectAccount = function(accountId, platformType) {
         _gdInstallSelectedAccountUsername = row.dataset.username     || null;
         _gdInstallSelectedAccountName     = row.dataset.name         || null;
         _gdInstallSelectedActionStatus    = row.dataset.actionStatus || null;
+    }
+    if (_gdInstallSelectedActionStatus === 'ready') {
+        void _gdRequestInstallSizePrefetch(_gdInstallSelectedPlatform, _gdCurrentGame, accountId, _gdInstallSelectedProvider);
+    }
+    window.baddelInstallStorage?.reset();
+    _gdInstallWizardPage = 'setup';
+    _gdInstallUpdateSteps();
+};
+
+window.gdInstallBack = function() {
+    if (_gdInstallWizardPage !== 'storage') return;
+    window.baddelInstallStorage?.reset();
+    _gdInstallWizardPage = 'setup';
+    _gdInstallUpdateSteps();
+    requestAnimationFrame(() => document.querySelector('#gdInstallAccountsList .pl-account-row.selected, #gdInstallMethodsSection [aria-pressed="true"]')?.focus());
+};
+
+window.gdInstallContinue = async function() {
+    if (window.__gdInstallContinueInFlight || (typeof _gdInstallConfirmInFlight !== 'undefined' && _gdInstallConfirmInFlight)) return;
+    const direct = ['legendary', 'gogdl'].includes(_gdInstallSelectedProvider);
+    if (!_gdInstallSelectedPlatform || !_gdInstallSelectedProvider || !_gdInstallSelectedAccountId) return;
+    window.__gdInstallContinueInFlight = true;
+    const button = document.getElementById('gdInstallConfirmBtn');
+    if (button) { button.disabled = true; button.setAttribute?.('aria-busy', 'true'); }
+    try {
+        if (_gdInstallWizardPage === 'setup' && direct) {
+            _gdInstallWizardPage = 'storage';
+            _gdInstallUpdateSteps();
+            await window.baddelInstallStorage?.mount(_gdDirectInstallPayload(_gdInstallSelectedPlatform, _gdCurrentGame, _gdInstallSelectedAccountId, _gdInstallSelectedProvider));
+            document.getElementById('gdInstallStorageSection')?.focus?.();
+            return;
+        }
+        await window.gdInstallConfirm();
+    } finally {
+        window.__gdInstallContinueInFlight = false;
+        if (button) button.removeAttribute?.('aria-busy');
+        window.gdInstallUpdateConfirm?.();
     }
 };
 
@@ -4538,6 +5183,13 @@ function getEpicInstallUrl(game) {
     return `com.epicgames.launcher://apps/${epicAppId}?action=install&silent=false`;
 }
 
+function getGogGalaxyProductViewUrl(game) {
+    const identity = _gdProviderInstallIdentity('gog', game || {});
+    const productId = _gdNormalizeGogProductId(identity.providerProductId);
+    return productId ? `goggalaxy://openGameView/${productId}` : null;
+}
+window.getGogGalaxyProductViewUrl = getGogGalaxyProductViewUrl;
+
 
 
 async function _gdInstallConfirmImpl() {
@@ -4554,19 +5206,61 @@ async function _gdInstallConfirmImpl() {
         return;
     }
 
-    document.getElementById('gdInstallerModal')?.remove();
-    if (!game) return;
+    if (!game || !_gdInstallPlatforms.includes(platform) || !_gdInstallSelectedProvider || !accountId) return;
+    const targetPlatform = platform;
+    const installProvider = _gdInstallSelectedProvider;
 
-    const targetPlatform = String(
-        platform || (Array.isArray(game.platforms) ? game.platforms[0] : game.platform) || 'steam'
-    ).toLowerCase().trim();
-
-    if (targetPlatform === 'epic' || targetPlatform === 'gog') {
-        await _gdQueueDirectDownload(targetPlatform, game, accountId);
+    if (targetPlatform === 'epic' && installProvider === 'legendary') {
+        await _gdQueueDirectDownload(targetPlatform, game, accountId, installProvider);
+        return;
+    }
+    if (targetPlatform === 'gog' && installProvider === 'gogdl') {
+        await _gdQueueDirectDownload(targetPlatform, game, accountId, installProvider);
         return;
     }
 
-    if (targetPlatform === 'epic') {
+    if (targetPlatform === 'gog' && installProvider === 'gog_galaxy') {
+        const noSwitch = accountId === '__none__';
+        if (_gdInstallSelectedActionStatus !== 'ready') {
+            if (typeof showToast === 'function') showToast('Choose a linked GOG account that owns this game.', 'warning');
+            return;
+        }
+        const installUrl = getGogGalaxyProductViewUrl(game);
+        if (!installUrl) {
+            if (typeof showToast === 'function') showToast('A valid numeric GOG product ID is required to open this game in Galaxy.', 'error');
+            return;
+        }
+        let didSwitchAccount = false;
+        if (!noSwitch) {
+            try {
+                const switchResult = await window.electronAPI.switchGogAccount?.(accountId);
+                if (switchResult?.status === 'error') throw Object.assign(new Error(switchResult.message), { code: switchResult.code });
+                didSwitchAccount = true;
+            } catch (error) {
+                if (typeof showToast === 'function') showToast(error?.message || 'GOG account switch failed.', 'error');
+                return;
+            }
+        }
+        document.getElementById('gdInstallerModal')?.remove();
+        await _gdOpenInstallUrl('gog', installUrl, accountId, 'GOG Galaxy opened on the game page. Continue the installation in Galaxy.', { didSwitchAccount });
+        return;
+    }
+
+    document.getElementById('gdInstallerModal')?.remove();
+    if (targetPlatform === 'epic' && installProvider === 'epic_launcher') {
+    let didSwitchAccount = false;
+    if (accountId && accountId !== '__none__') {
+        const switchArg = _gdInstallSelectedAccountUsername || _gdInstallSelectedAccountName || accountId;
+        try {
+            if (typeof showToast === 'function') showToast(`Switching Epic account to ${_gdInstallSelectedAccountName || switchArg}...`, 'info');
+            await window.electronAPI.switchEpic?.(switchArg);
+            didSwitchAccount = true;
+            await new Promise(resolve => setTimeout(resolve, 6000));
+        } catch (error) {
+            if (typeof showToast === 'function') showToast(error?.message || 'Epic account switch failed.', 'error');
+            return;
+        }
+    }
     const installUrl = getEpicInstallUrl(game);
 
     console.log('[Install][Epic] payload', {
@@ -4592,17 +5286,17 @@ async function _gdInstallConfirmImpl() {
             gameId: game.id,
             gameName: game.name,
             installUrl,
-            accountId: null,
-            didSwitchAccount: false
+            accountId,
+            didSwitchAccount
         });
     }
 
     await _gdOpenInstallUrl(
         'epic',
         installUrl,
-        null,
+        accountId,
         'Opening Epic to install...',
-        { didSwitchAccount: false }
+        { didSwitchAccount }
     );
 
     return;
@@ -4734,6 +5428,8 @@ async function _gdOpenInstallUrl(platform, installUrl, accountId, successMsg, op
                     showToast('Steam is ready. Continue installation in Steam.', 'success');
                 } else if (platform === 'epic') {
                     showToast('Epic installation request sent. The download should start in Epic Games Launcher.', 'success');
+                } else if (platform === 'gog') {
+                    showToast('GOG Galaxy opened on the game page. Continue the installation in Galaxy.', 'success');
                 } else if (successMsg) {
                     showToast(successMsg, 'success');
                 } else {
@@ -4828,7 +5524,7 @@ function _gdPopulateMeta(game, metaData) {
     } else {
         metaData = _gdMergeCustomIntoMeta(game, metaData);
     }
-    if (_gdIsGogGame(game)) {
+    if (!isCreatorDraftMeta) {
         const gameInfoMeta = _gdBuildGameInfoMeta(game);
         if (gameInfoMeta) {
             metaData = _gdMergeMetaSafe(gameInfoMeta, metaData || {});
@@ -8055,7 +8751,13 @@ function _gdProviderInstallIdentity(platform, game = {}) {
         };
     }
     if (platform === 'gog') {
-        const gogProductId = _gdNormalizeGogProductId(game.gogdlAppName || game.contentSystemProductId || game.gogProductId);
+        const identity = game.gogIdentity && typeof game.gogIdentity === 'object' ? game.gogIdentity : {};
+        const gogProductId = [
+            game.productId, game.providerProductId, game.gogProductId, game.contentSystemProductId,
+            game.gogdlAppName, game.allIds?.gog, identity.gogProductId,
+            identity.contentSystemProductId, identity.gogdlAppName,
+            identity.gamesDbExternalId, identity.galaxyExternalId,
+        ].map(_gdNormalizeGogProductId).find(Boolean) || null;
         return {
             providerAppName: gogProductId,
             providerProductId: gogProductId,
@@ -8069,65 +8771,68 @@ function _gdNormalizeGogProductId(value) {
     return /^\d+$/.test(normalized) ? normalized : null;
 }
 
-async function _gdQueueDirectDownload(platform, game, accountId) {
-    if (!window.electronAPI?.downloads?.selectInstallDirectory || !window.electronAPI?.downloads?.queueInstall) {
-        if (typeof showToast === 'function') showToast('Downloads service is not available. Restart Baddel and try again.', 'error');
-        return;
-    }
-
-    const resolvedAccountId = accountId && accountId !== '__none__' ? accountId : null;
-    if (platform === 'gog' && !resolvedAccountId) {
-        if (typeof showToast === 'function') showToast('Choose a linked GOG account first.', 'warning');
-        return;
-    }
-
-    const accountName = _gdInstallSelectedAccountName || _gdInstallSelectedAccountUsername || accountId || null;
+function _gdDirectInstallPayload(platform, game, accountId, installProvider) {
+    const resolvedAccountId = accountId;
+    const accountName = _gdInstallSelectedAccountName || _gdInstallSelectedAccountUsername || accountId;
     const identity = _gdProviderInstallIdentity(platform, game);
     const gogIdentity = platform === 'gog' && game.gogIdentity && typeof game.gogIdentity === 'object' ? game.gogIdentity : null;
-    if (platform === 'gog' && !identity.providerProductId && !gogIdentity?.galaxyExternalId && !gogIdentity?.gamesDbExternalId) {
-        if (typeof showToast === 'function') showToast('This game is missing its GOG download identity. Sync the GOG library again and retry.', 'error');
-        return;
-    }
-
-    const folderRes = await window.electronAPI.downloads.selectInstallDirectory({ platform });
-    if (folderRes?.status === 'error') {
-        if (typeof showToast === 'function') showToast(folderRes.message || 'Could not choose install folder.', 'error');
-        return;
-    }
-    if (folderRes?.canceled || !folderRes?.path) {
-        if (typeof showToast === 'function') showToast('Install was cancelled.', 'info');
-        return;
-    }
-
-    const payload = {
+    return {
         gameId: game.id || null,
         canonicalGameId: game.canonicalGameId || game.canonicalId || game.id || null,
         title: game.name || game.title || 'Unknown Game',
         coverUrl: game.coverUrl || game.cover || game.poster || game.image || game.defaultImage || null,
         heroUrl: game.heroUrl || game.heroImage || game.background || null,
         platform,
-        accountId: resolvedAccountId || `${platform}:default`,
+        installProvider,
+        accountId: resolvedAccountId,
         accountDisplayName: accountName || (platform === 'gog' ? 'GOG account' : 'Epic account'),
         providerProductId: identity.providerProductId,
         providerAppName: identity.providerAppName,
+        appName: identity.providerAppName,
+        namespace: game.namespace || game._raw?.namespace || null,
+        catalogItemId: game.catalogItemId || game._raw?.catalogItemId || null,
+        ownedByAccountIds: Array.isArray(game.ownedByAccountIds) ? game.ownedByAccountIds : [],
         gogProductId: game.gogProductId || null,
         contentSystemProductId: game.contentSystemProductId || null,
         gogdlAppName: game.gogdlAppName || null,
         gogIdentity,
-        installRoot: folderRes.path,
-        installPath: folderRes.path,
     };
+}
 
-    const res = await window.electronAPI.downloads.queueInstall(payload);
-    if (res?.status === 'success') {
-        if (typeof showToast === 'function') showToast('Added to Downloads.', 'success');
-        if (typeof navigateToDownloads === 'function') navigateToDownloads();
+async function _gdQueueDirectDownload(platform, game, accountId, installProvider = platform === 'epic' ? 'legendary' : 'gogdl') {
+    if (!window.electronAPI?.downloads?.queueInstall || !accountId || accountId === '__none__') return;
+    const revision = _gdInstallModalRevision;
+    const accountRevision = _gdInstallAccountRevision;
+    const selected = await window.baddelInstallStorage?.confirmed();
+    if (revision !== _gdInstallModalRevision || accountRevision !== _gdInstallAccountRevision) return;
+    if (!selected) {
+        if (typeof showToast === 'function') showToast('Choose a valid install location and check available space.', 'warning');
         return;
     }
-
-    if (typeof showToast === 'function') {
-        showToast(res?.message || 'Could not add this game to Downloads.', 'error');
+    if (selected.sizeStatus === 'unknown' && selected.unknownSizeConfirmed !== true) {
+        if (typeof openConfirmModal !== 'function') {
+            if (typeof showToast === 'function') showToast('Size confirmation is unavailable. Reopen the installer and try again.', 'error');
+            return;
+        }
+        openConfirmModal(
+            'Install size unavailable',
+            'The exact download and installed size could not be determined. Make sure this drive has enough free space. Baddel will check again when the provider prepares the download.',
+            'Install anyway',
+            async () => {
+                window.baddelInstallStorage?.confirmUnknown?.();
+                await _gdQueueDirectDownload(platform, game, accountId, installProvider);
+            }
+        );
+        return;
     }
+    const payload = { ..._gdDirectInstallPayload(platform, game, accountId, installProvider), installPath: selected.installPath, installPlanId: selected.installPlanId };
+    for (const field of ['totalBytes', 'expectedTotalBytes', 'downloadSizeBytes', 'installedDiskSizeBytes']) payload[field] = selected[field];
+    const res = await window.electronAPI.downloads.queueInstall(payload);
+    if (res?.status === 'success') {
+        window.gdInstallClose();
+        if (typeof showToast === 'function') showToast('Added to Downloads.', 'success');
+        if (typeof navigateToDownloads === 'function') navigateToDownloads();
+    } else if (typeof showToast === 'function') showToast(res?.message || 'Could not add this game to Downloads.', 'error');
 }
 
 function _gdPickTrailerFallbackThumbnail(game, info = {}, metaData = {}) {
@@ -8279,6 +8984,7 @@ function _gdRenderMediaTrailerCards(trailers, game) {
 
     grid.querySelectorAll('[data-gd-media-trailer]').forEach((btn) => {
         btn.addEventListener('click', () => {
+            window.electronAPI?.trackFeatureEvent?.('trailer_started', { feature: 'game_details', source: 'media_tab' }).catch?.(() => {});
             const idx = Number(btn.dataset.gdMediaTrailer || 0);
             const wrap = document.querySelector('#gdTrailerSection .gd-trailer-wrap');
             const overviewBtn = document.querySelector('.gd-tab[data-tab="overview"]');
@@ -9476,6 +10182,7 @@ window.gdCreatorTourDebug = function() {
 
 window.gdOpenCreatorMode = function() {
     if (!_gdCurrentGame) return;
+    window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'open', result: 'success' }).catch?.(() => {});
     console.debug('[GD][Creator] open');
     _gdSetCreatorModeState('normal', { clearDraft: false });
     // ── Snapshot the committed state before any edits begin ──────────────────
@@ -9633,6 +10340,7 @@ window.gdImportCreatorPage = async function() {
 window.gdExportCreatorPage = async function() {
     const data = _gdCurrentCustomDetails || _gdLoadCustomDetails(_gdCurrentGame);
     if (!data) {
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'export', result: 'unavailable' }).catch?.(() => {});
         if (typeof showToast === 'function') showToast('No custom page to export. Save a custom page first.', 'warn');
         return;
     }
@@ -9671,9 +10379,14 @@ window.gdExportCreatorPage = async function() {
     };
     try {
         const ok = await (window.electronAPI.exportCreatorPagePack || window.electronAPI.exportCreatorPage)?.(`${gameName}.baddelpage`, payload);
-        if (ok === false) return;
+        if (ok === false) {
+            window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'export', result: 'cancelled' }).catch?.(() => {});
+            return;
+        }
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'export', result: 'success' }).catch?.(() => {});
         if (typeof showToast === 'function') showToast('Page pack exported.', 'success');
     } catch (err) {
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'export', result: 'failed', error_code: err }).catch?.(() => {});
         console.warn('[GD][Creator] export failed:', err);
         if (typeof showToast === 'function') showToast(err?.message || 'Export failed.', 'error');
     }
@@ -9685,11 +10398,17 @@ window.gdImportCreatorPage = async function() {
     try {
         parsed = await (window.electronAPI.importCreatorPagePack || window.electronAPI.importCreatorPage)?.();
     } catch (err) {
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'failed', error_code: err }).catch?.(() => {});
         console.warn('[GD][Creator] import failed:', err);
+        return;
     }
-    if (!parsed) return;
+    if (!parsed) {
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'cancelled' }).catch?.(() => {});
+        return;
+    }
     if (typeof parsed === 'string') {
         try { parsed = JSON.parse(parsed); } catch (_) {
+            window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'failed', error_code: 'invalid_format' }).catch?.(() => {});
             if (typeof showToast === 'function') showToast('Invalid file - could not parse.', 'error');
             return;
         }
@@ -9698,12 +10417,14 @@ window.gdImportCreatorPage = async function() {
         try {
             parsed = await window.electronAPI.resolveCreatorPageAssets(parsed, _gdCreatorGameKey(_gdCurrentGame));
         } catch (err) {
+            window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'failed', error_code: err }).catch?.(() => {});
             console.warn('[GD][Creator] asset decode failed:', err);
             if (typeof showToast === 'function') showToast('Could not unpack Page Pack assets.', 'error');
             return;
         }
     }
     if (parsed?.schema !== 'baddel.creatorPage' || !parsed?.page) {
+        window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'failed', error_code: 'invalid_format' }).catch?.(() => {});
         if (typeof showToast === 'function') showToast('Invalid page pack file.', 'error');
         return;
     }
@@ -9742,6 +10463,7 @@ window.gdImportCreatorPage = async function() {
     _gdCreatorDraft = { ...(_gdCreatorDraftFromCurrent()), ...importedDraft };
     _gdCreatorOriginalDraft = JSON.parse(JSON.stringify(_gdCreatorDraft));
     _gdCreatorApplyDraftToPage();
+    window.electronAPI?.trackFeatureEvent?.('creator_action', { feature: 'creator_page', action: 'import', result: 'success' }).catch?.(() => {});
     if (typeof showToast === 'function') showToast('Page pack loaded. Review it, then Save to keep it.', 'info');
 };
 
@@ -11625,6 +12347,7 @@ function _gdCheckGameOwnership(game, platform, profile) {
 window.gdSwitchTab = function(tabName, btnEl) {
     // Block achievements tab for non-Steam games
     if (tabName === 'achievements' && !_gdHasSteamAchievements(_gdCurrentGame)) return;
+    window.electronAPI?.trackFeatureEvent?.('game_details_tab_changed', { feature: 'game_details', tab: tabName }).catch?.(() => {});
     document.querySelectorAll('.gd-tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.gd-tab-content').forEach(t => {
         t.style.display = 'none';

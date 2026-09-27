@@ -2,6 +2,7 @@
 
 // Maximum lengths for validated string types
 const MAX_ID_LEN       = 64;
+const MAX_ARTWORK_CACHE_KEY_LEN = 256;
 const MAX_STRING_LEN   = 2048;
 const MAX_PATH_LEN     = 1024;
 
@@ -9,6 +10,7 @@ const VALID_PLATFORMS  = new Set(['steam', 'epic', 'ea', 'ubisoft', 'riot', 'dis
 
 // Regex for stable game IDs (MD5 hex or uuid-like short IDs from gameScanner)
 const ID_RE = /^[a-zA-Z0-9_\-]{1,64}$/;
+const ARTWORK_CACHE_KEY_RE = /^[A-Za-z0-9:_\-]{1,256}$/;
 
 function _reject(code, msg) {
     const e = new Error(msg);
@@ -32,6 +34,19 @@ function assertString(v, name, max = MAX_STRING_LEN) {
 function assertSafeId(v, name = 'id') {
     assertString(v, name, MAX_ID_LEN);
     if (!ID_RE.test(v)) throw _reject('IPC_INVALID_ARG', `${name} contains invalid characters`);
+    return v;
+}
+
+
+/**
+ * Assert `v` is a safe artwork cache key. Artwork keys may be canonical
+ * platform/account/product identities such as epic:<account>:<product>.
+ * This validator is intentionally not used for unrelated game IDs.
+ */
+function assertArtworkCacheKey(v, name = 'artworkCacheKey') {
+    assertString(v, name, MAX_ARTWORK_CACHE_KEY_LEN);
+    if (!ARTWORK_CACHE_KEY_RE.test(v)) throw _reject('IPC_INVALID_ARG', `${name} contains invalid characters`);
+    if (/[\/\.\s\0]/.test(v) || v.includes('..')) throw _reject('IPC_INVALID_ARG', `${name} contains unsafe path characters`);
     return v;
 }
 
@@ -75,4 +90,4 @@ function sanitizeErrorForRenderer(err, fallback = 'An internal error occurred.')
     };
 }
 
-module.exports = { assertString, assertSafeId, assertArrayOfStrings, assertPlatform, assertPathLike, sanitizeErrorForRenderer };
+module.exports = { assertString, assertSafeId, assertArtworkCacheKey, assertArrayOfStrings, assertPlatform, assertPathLike, sanitizeErrorForRenderer };

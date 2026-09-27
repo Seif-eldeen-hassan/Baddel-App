@@ -392,8 +392,29 @@ function _currentLibraryRevision() {
     return Number(window.__baddelLibraryRevision || 0);
 }
 
+function _dedupeInstalledProductProjection(games) {
+    const list = Array.isArray(games) ? games.filter(Boolean) : [];
+    const api = window.BaddelCanonicalProductIdentity;
+    if (api && typeof api.dedupeDelegatedLaunchProducts === 'function') {
+        try {
+            const projected = api.dedupeDelegatedLaunchProducts(list);
+            if (Array.isArray(projected)) return projected;
+        } catch (_) {}
+    }
+    return list;
+}
+
+let _installedRenderGeneration = 0;
+function _nextInstalledRenderGeneration() {
+    _installedRenderGeneration += 1;
+    return _installedRenderGeneration;
+}
+
+function _isInstalledRenderGenerationCurrent(generation) {
+    return Number(generation || 0) === Number(_installedRenderGeneration || 0);
+}
 function _computeInstalledGamesSnapshot(games, filters = currentFilters, collections = allCollections, playtime = playtimeData) {
-    let filtered = Array.isArray(games) ? [...games] : [];
+    let filtered = _dedupeInstalledProductProjection(games);
     const platform = filters?.platform || 'all';
     if (platform && platform !== 'all') filtered = filtered.filter(g => _gameMatchesPlatformFilter(g, platform));
     const search = String(filters?.search || '').trim().toLowerCase();
@@ -449,11 +470,14 @@ function _installedSnapshotMatchesCurrentFilters(snapshot) {
         String(filters.collectionId ?? '') === String(currentFilters.collectionId ?? '');
 }
 
-function _renderInstalledSnapshot(snapshot) {
+async function _renderInstalledSnapshot(snapshot) {
     const grid = document.getElementById('gamesGrid');
     if (!grid || !_installedSnapshotMatchesCurrentFilters(snapshot)) return false;
-    const games = Array.isArray(snapshot.games) ? snapshot.games : [];
+    const generation = _nextInstalledRenderGeneration();
+    const games = _dedupeInstalledProductProjection(snapshot.games);
     window._lastInstalledFilteredGames = games;
+    await window.__baddelResolveArtworkCacheBulk?.(games, { types: ['cover'], surface: 'installed-snapshot' }).catch(() => null);
+    if (!_isInstalledRenderGenerationCurrent(generation)) return false;
     grid.style.minHeight = grid.offsetHeight + 'px';
     grid.innerHTML = '';
     if (typeof imageQueue !== 'undefined') imageQueue.length = 0;
@@ -465,6 +489,8 @@ function _renderInstalledSnapshot(snapshot) {
         }
     }
     updateFooterStats();
+    const countEl = document.getElementById('igResultCount');
+    if (countEl) countEl.textContent = games.length > 0 ? `${games.length} games` : '';
     setTimeout(() => { grid.style.minHeight = 'auto'; }, 10);
     return true;
 }
@@ -870,6 +896,24 @@ function _handleStartupScanState(payload = {}) {
         lib.scanResolved = true;
         window.__baddelStartupLibrary = lib;
         const count = Number(payload.count || 0);
+        if (count > 0 && !_startupLibraryHasGames() && !lib.scanRecoveryInFlight) {
+            lib.scanRecoveryInFlight = true;
+            window.__baddelStartupLibrary = lib;
+            Promise.resolve(window.electronAPI?.getGames?.())
+                .then(recoveredGames => {
+                    if (_startupLibraryHasGames() || !_startupLibraryHasGames(recoveredGames)) return;
+                    _processLibraryUpdatedPayload(recoveredGames);
+                })
+                .catch(error => {
+                    console.warn('[StartupLibrary] confirmed scan snapshot recovery failed:', error?.message || error);
+                    if (!_startupLibraryHasGames()) renderHomeScanErrorState();
+                })
+                .finally(() => {
+                    const current = window.__baddelStartupLibrary || {};
+                    current.scanRecoveryInFlight = false;
+                    window.__baddelStartupLibrary = current;
+                });
+        }
         if (count === 0 && !_startupLibraryHasGames()) {
             renderHomeConfirmedEmptyState();
         }
@@ -1057,6 +1101,8 @@ function _hideAllViews() {
     const allGmsView  = document.getElementById('allGamesView');
     const collView = document.getElementById('collectionsView');
     const downloadsView = document.getElementById('downloadsView');
+    const vaultView = document.getElementById('vaultView');
+    const storesView = document.getElementById('storesView');
 
     // Stop any playing trailer/video before hiding Game Details
     if (gdView && gdView.style.display !== 'none') {
@@ -1070,8 +1116,17 @@ function _hideAllViews() {
     if (gdView)   gdView.style.display   = 'none';
     if (collView) collView.style.display = 'none';
     if (downloadsView) downloadsView.style.display = 'none';
-    if (typeof _agExitEmptyPageMode === 'function') _agExitEmptyPageMode();
+    if (vaultView) vaultView.style.display = 'none';
+    if (storesView) storesView.style.display = 'none';
+    if (typeof window.hideStoresView === 'function') window.hideStoresView();
+    if (typeof _agExitEmptyPageMode === 'function') {
+        const preserveVirtualGrid = typeof window._agShouldPreserveVirtualGrid === 'function'
+            ? window._agShouldPreserveVirtualGrid()
+            : false;
+        _agExitEmptyPageMode({ preserveVirtualGrid });
+    }
     if (allGmsView) allGmsView.style.display = 'none';
+    window._agSyncBackToTopVisibility?.();
 }
 
 function navigateToHome() {
@@ -1108,6 +1163,8 @@ function navigateToHome() {
         return;
     }
 
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'home', view: 'home' }).catch?.(() => {});
+
     traceHomeStep('renderRecentlyPlayed',    () => renderRecentlyPlayed());
     traceHomeStep('renderExploreCarousel',   () => renderExploreCarousel());
     traceHomeStep('renderSyncedSuggestions', () => renderSyncedSuggestions());
@@ -1120,6 +1177,7 @@ function navigateToHome() {
 }
 
 function navigateToInstalled() {
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'library', view: 'installed' }).catch?.(() => {});
     window.agReadyOnly = false;
     currentView = 'installed';
     currentFilters.collectionId = null;
@@ -1130,18 +1188,18 @@ function navigateToInstalled() {
     syncSidebarActionButton();
     requestAnimationFrame(() => { syncSidebarActionButton(); });
 
-    // رجّع آخر فلتر Installed محفوظ
     _igRestoreFilterState();
 
-    const usedPreparedSnapshot = _renderInstalledSnapshot(window.__baddelInstalledSnapshot);
-    if (!usedPreparedSnapshot) applyFilters();
-
-    // مهم للـ List mode عشان يعيد رسم القائمة بنفس الفلتر
-    if (typeof _renderInstalledViewModeAware === 'function') {
-        _renderInstalledViewModeAware(window._lastInstalledFilteredGames || []);
-    } else if (typeof _igApplyDisplayPrefs === 'function') {
-        _igApplyDisplayPrefs();
-    }
+    Promise.resolve(_renderInstalledSnapshot(window.__baddelInstalledSnapshot)).then((usedPreparedSnapshot) => {
+        if (!usedPreparedSnapshot) return applyFilters();
+        return null;
+    }).finally(() => {
+        if (typeof _renderInstalledViewModeAware === 'function') {
+            _renderInstalledViewModeAware(window._lastInstalledFilteredGames || []);
+        } else if (typeof _igApplyDisplayPrefs === 'function') {
+            _igApplyDisplayPrefs();
+        }
+    });
 }
 
 // applyHeroForHome moved to src/js/app/hero.js
@@ -1169,16 +1227,28 @@ function _dispatchHomeVisibleWhenReady(reason = 'navigation') {
 
 function _exploreCoverValue(game) {
     if (!game) return null;
-    const model = window.BaddelGameArtworkReadModel?.createReadModel
-        ? window.BaddelGameArtworkReadModel.createReadModel(game, game, {})
+    const model = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({
+            displayGame: game,
+            canonicalGame: game,
+            cacheArtwork: { cover: game.__baddelResolvedLocalCover || null },
+        })
         : null;
     return model?.cover?.effectiveValue || game.image || game.defaultImage || game.coverUrl || game.cover || null;
 }
 
 function _exploreArtworkValues(game) {
     if (!game) return { cover: null, hero: null, logo: null };
-    const model = window.BaddelGameArtworkReadModel?.createReadModel
-        ? window.BaddelGameArtworkReadModel.createReadModel(game, game, {})
+    const model = window.BaddelGameArtworkReadModel?.buildGameArtworkReadModel
+        ? window.BaddelGameArtworkReadModel.buildGameArtworkReadModel({
+            displayGame: game,
+            canonicalGame: game,
+            cacheArtwork: {
+                cover: game.__baddelResolvedLocalCover || null,
+                hero: game.__baddelResolvedLocalHero || null,
+                logo: game.__baddelResolvedLocalLogo || null,
+            },
+        })
         : null;
     return {
         cover: model?.cover?.effectiveValue || game.image || game.defaultImage || game.coverUrl || game.cover || null,
@@ -1191,10 +1261,19 @@ function _exploreCanonicalId(game) {
     return String(game?.localGameId || game?.installedId || game?.id || '');
 }
 
+function _setExploreArtworkAvailability(game, type, state, reason) {
+    if (!game || !['cover', 'hero', 'logo'].includes(type)) return;
+    const current = game.__baddelArtworkAvailability && typeof game.__baddelArtworkAvailability === 'object'
+        ? game.__baddelArtworkAvailability
+        : {};
+    game.__baddelArtworkAvailability = { ...current, [type]: { state, reason: reason || null, updatedAt: Date.now() } };
+}
+
 class ExploreCoverHydrationController {
     constructor() {
         this.generation = 0;
         this.selectedIds = new Set();
+        this.interactiveSecondaryIds = new Set();
         this.gamesByDisplayId = new Map();
         this.nodesByDisplayId = new Map();
         this.pendingByDisplayId = new Map();
@@ -1209,6 +1288,7 @@ class ExploreCoverHydrationController {
         this.secondaryInFlightByDisplayId = new Map();
         this.secondaryCompletedByDisplayId = new Map();
         this.secondaryFailedByDisplayId = new Map();
+        this.secondaryPriorityReasonByDisplayId = new Map();
         this.secondaryScheduled = false;
         this.finalReconcileQueued = false;
         this.terminalCoverByDisplayId = new Map();
@@ -1235,20 +1315,32 @@ class ExploreCoverHydrationController {
         this._resolveCoverWaiters({ stale: true, timedOut: true });
         this.generation += 1;
         this.selectedIds = new Set();
+        this.interactiveSecondaryIds = new Set();
         this.gamesByDisplayId = new Map();
         this.terminalCoverByDisplayId = new Map();
         this._clearPostRevealRetryTimers();
         this.postRevealRetryByDisplayId = new Map();
+        this.secondaryPriorityReasonByDisplayId = new Map();
         this.coverStatsByGeneration.set(this.generation, {
             startedAt: _baddelPerfNow(),
             cacheHits: 0,
             downloads: 0,
+        });
+        window.BaddelArtworkDiagnostics?.record?.('explore-selection', {
+            operationId: `explore-generation-${this.generation}`,
+            generationToken: this.generation,
+            selectedCount: Array.isArray(games) ? games.length : 0,
+            reason,
         });
         for (const game of Array.isArray(games) ? games : []) {
             const id = String(game?.id || '');
             if (!id) continue;
             this.selectedIds.add(id);
             this.gamesByDisplayId.set(id, game);
+            const current = _exploreArtworkValues(game);
+            if (!_isCacheBackedNormalArtworkUrl(current.cover)) _setExploreArtworkAvailability(game, 'cover', 'pending', 'visible-selection');
+            if (!_isCacheBackedNormalArtworkUrl(current.hero)) _setExploreArtworkAvailability(game, 'hero', 'pending', 'visible-selection');
+            if (!_isCacheBackedNormalArtworkUrl(current.logo)) _setExploreArtworkAvailability(game, 'logo', 'pending', 'visible-selection');
         }
         for (const id of [...this.nodesByDisplayId.keys()]) {
             if (!this.selectedIds.has(id)) this.nodesByDisplayId.delete(id);
@@ -1387,6 +1479,7 @@ class ExploreCoverHydrationController {
             const stats = this.coverStatsByGeneration.get(generation);
             if (stats) stats.cacheHits += 1;
             this._applyTrustedArtworkToGame(game, cached);
+            _setExploreArtworkAvailability(game, 'cover', 'available', 'cache-hit');
             this._storeAndApply(id, {
                 canonicalGameId,
                 localUrl: cached.cover,
@@ -1422,6 +1515,7 @@ class ExploreCoverHydrationController {
         if (!remoteAssets.cover) {
             this.negativeByDisplayId.set(id, { reason: 'no-cover-candidate', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
             this._applyFallbackCover(id, 'metadata-no-cover');
+            _setExploreArtworkAvailability(game, 'cover', 'terminal-miss', 'metadata-no-cover');
             this._ensureSecondaryRequest(id, game, canonicalGameId, generation, 'metadata-no-cover');
             this._schedulePostRevealArtworkRetry(id, 'metadata-no-cover');
             return;
@@ -1449,12 +1543,14 @@ class ExploreCoverHydrationController {
         if (!assets.cover) {
             this.blockedByDisplayId.set(id, { reason: localAssets?.reason || 'blocked-or-failed', at: Date.now(), retryAt: Date.now() + this.retryTtlMs });
             this._applyFallbackCover(id, 'cover-cache-blocked');
+            _setExploreArtworkAvailability(game, 'cover', 'pending', 'cover-cache-blocked');
             this._schedulePostRevealArtworkRetry(id, 'cover-cache-blocked');
             return;
         }
 
         if (!this._isGenerationCurrent(id, generation)) return;
         this._applyTrustedArtworkToGame(game, assets);
+        _setExploreArtworkAvailability(game, 'cover', 'available', 'downloaded');
         const operationId = `explore-cover-${canonicalGameId}-${Date.now()}`;
         this._storeAndApply(id, {
             canonicalGameId,
@@ -1546,7 +1642,7 @@ class ExploreCoverHydrationController {
     }
 
     _ensureSecondaryRequest(id, game, canonicalGameId, generation, reason) {
-        if (!this._isGenerationCurrent(id, generation)) return;
+        if (!this._isSecondaryGenerationCurrent(id, generation)) return;
         if (
             this.secondaryQueuedByDisplayId.has(id) ||
             this.secondaryInFlightByDisplayId.has(id) ||
@@ -1587,10 +1683,12 @@ class ExploreCoverHydrationController {
             const id = this.secondaryQueuedByDisplayId.values().next().value;
             this.secondaryQueuedByDisplayId.delete(id);
             const game = this.gamesByDisplayId.get(id);
-            if (!game || !this.selectedIds.has(id)) continue;
+            if (!game || !this._isSecondaryGenerationCurrent(id, this.generation)) continue;
             const generation = this.generation;
             const canonicalGameId = _exploreCanonicalId(game);
-            const promise = this._hydrateSecondary({ id, game, canonicalGameId, generation, reason })
+            const promotedReason = this.secondaryPriorityReasonByDisplayId.get(id) || reason;
+            this.secondaryPriorityReasonByDisplayId.delete(id);
+            const promise = this._hydrateSecondary({ id, game, canonicalGameId, generation, reason: promotedReason })
                 .catch(err => {
                     this.secondaryFailedByDisplayId.set(id, { reason: err?.message || 'secondary-failed', at: Date.now() });
                     this._schedulePostRevealArtworkRetry(id, 'secondary-failed');
@@ -1623,7 +1721,7 @@ class ExploreCoverHydrationController {
 
     _schedulePostRevealArtworkRetry(id, reason = 'post-reveal-artwork-retry', { immediate = false } = {}) {
         const displayId = String(id || '');
-        if (!displayId || !this.selectedIds.has(displayId)) return;
+        if (!displayId || !this._isSecondaryGenerationCurrent(displayId, this.generation)) return;
         if (!window.__baddelStartupReadinessCoordinator?.revealed) return;
         if (this.postRevealRetryTimersByDisplayId.has(displayId)) return;
         const delays = this.postRevealRetryDelaysMs.length ? this.postRevealRetryDelaysMs : [15000, 60000, 180000];
@@ -1645,10 +1743,10 @@ class ExploreCoverHydrationController {
     _runPostRevealArtworkRetry(id, reason = 'post-reveal-artwork-retry') {
         const displayId = String(id || '');
         const game = this.gamesByDisplayId.get(displayId);
-        if (!game || !this.selectedIds.has(displayId) || !window.__baddelStartupReadinessCoordinator?.revealed) return;
+        if (!game || !this._isSecondaryGenerationCurrent(displayId, this.generation) || !window.__baddelStartupReadinessCoordinator?.revealed) return;
         const current = _exploreArtworkValues(game);
         const completed = this.completedByDisplayId.get(displayId);
-        if (completed?.fallback === true || !_isCacheBackedNormalArtworkUrl(current.cover)) {
+        if (this.selectedIds.has(displayId) && (completed?.fallback === true || !_isCacheBackedNormalArtworkUrl(current.cover))) {
             this.completedByDisplayId.delete(displayId);
             this.failedByDisplayId.delete(displayId);
             this.negativeByDisplayId.delete(displayId);
@@ -1674,13 +1772,13 @@ class ExploreCoverHydrationController {
     async _hydrateSecondary({ id, game, canonicalGameId, generation, reason }) {
         const startedAt = _baddelPerfNow();
         const cached = await this._lookupCachedArtwork(game, { id: canonicalGameId }, { types: ['hero', 'logo'], stage: 'secondary-cache' });
-        if (!this._isGenerationCurrent(id, generation)) return;
+        if (!this._isSecondaryGenerationCurrent(id, generation)) return;
         let assets = {
             hero: _isCacheBackedNormalArtworkUrl(cached?.hero),
             logo: _isCacheBackedNormalArtworkUrl(cached?.logo),
         };
+        let remote = this.metadataByDisplayId.get(id) || null;
         if (!assets.hero || !assets.logo) {
-            let remote = this.metadataByDisplayId.get(id);
             if (!remote) {
                 const metadataStartedAt = _baddelPerfNow();
                 const meta = await window.electronAPI?.getMetadata?.(game.name, {
@@ -1702,6 +1800,16 @@ class ExploreCoverHydrationController {
                 this.metadataByDisplayId.set(id, remote);
                 this._logTiming('secondary-metadata', id, { metadataMs: _baddelPerfNow() - metadataStartedAt });
             }
+            window.BaddelArtworkDiagnostics?.record?.('explore-metadata-result', {
+                canonicalIdentity: canonicalGameId,
+                provider: game.platform,
+                operationId: `explore-generation-${generation}`,
+                coverValue: remote?.cover || null,
+                heroValue: remote?.hero || null,
+                logoValue: remote?.logo || null,
+                generationToken: generation,
+                reason,
+            });
             const requested = {};
             if (!assets.hero && remote?.hero) requested.hero = remote.hero;
             if (!assets.logo && remote?.logo) requested.logo = remote.logo;
@@ -1711,7 +1819,9 @@ class ExploreCoverHydrationController {
                     window.__baddelStartupMetrics.artworkHttpDownloadCount = Number(window.__baddelStartupMetrics.artworkHttpDownloadCount || 0) + Object.keys(requested).length;
                 }
                 const localAssets = await window.electronAPI?.cacheAllAssets?.(requested, canonicalGameId, {
-                    priority: 'background',
+                    // Game Details is the scheduler's existing interactive/highest priority.
+                    // Reusing it also coalesces a hover with an in-flight Details request.
+                    priority: String(reason || '').includes('interactive') ? 'game-details' : 'background',
                     reason: 'explore-secondary-hydration',
                     displayId: id,
                 }).catch(() => null);
@@ -1724,11 +1834,18 @@ class ExploreCoverHydrationController {
         }
         if (!assets.hero && !assets.logo) {
             this.secondaryFailedByDisplayId.set(id, { reason: 'no-secondary-assets', at: Date.now() });
-            this._schedulePostRevealArtworkRetry(id, 'secondary-no-assets');
+            _setExploreArtworkAvailability(game, 'hero', remote?.hero ? 'pending' : 'terminal-miss', remote?.hero ? 'hero-download-failed' : 'metadata-no-hero');
+            _setExploreArtworkAvailability(game, 'logo', remote?.logo ? 'pending' : 'terminal-miss', remote?.logo ? 'logo-download-failed' : 'metadata-no-logo');
+            if (remote?.hero || remote?.logo) this._schedulePostRevealArtworkRetry(id, 'secondary-download-failed');
+            if (typeof currentHeroGameId !== 'undefined' && String(currentHeroGameId) === String(id)) {
+                window.__baddelRequestHomeHeroTransition?.(id, { immediate: true, reason: 'secondary-terminal-miss' });
+            }
             return;
         }
-        if (!this._isGenerationCurrent(id, generation)) return;
+        if (!this._isSecondaryGenerationCurrent(id, generation)) return;
         this._applyTrustedArtworkToGame(game, assets);
+        _setExploreArtworkAvailability(game, 'hero', assets.hero ? 'available' : (remote?.hero ? 'pending' : 'terminal-miss'), assets.hero ? 'secondary-ready' : (remote?.hero ? 'hero-download-failed' : 'metadata-no-hero'));
+        _setExploreArtworkAvailability(game, 'logo', assets.logo ? 'available' : (remote?.logo ? 'pending' : 'terminal-miss'), assets.logo ? 'secondary-ready' : (remote?.logo ? 'logo-download-failed' : 'metadata-no-logo'));
         this.secondaryCompletedByDisplayId.set(id, { reason, at: Date.now(), assets });
         this._persistArtworkStage({
             id,
@@ -1752,9 +1869,14 @@ class ExploreCoverHydrationController {
         const visible = (Array.isArray(games) ? games : []).slice(0, 8);
         for (const game of visible) {
             const id = String(game?.id || '');
-            if (!id || !this.selectedIds.has(id)) continue;
+            if (!id) continue;
+            if (!this.selectedIds.has(id)) {
+                this.interactiveSecondaryIds.add(id);
+                this.gamesByDisplayId.set(id, game);
+            }
             const current = _exploreArtworkValues(game);
             if (_isCacheBackedNormalArtworkUrl(current.hero) && _isCacheBackedNormalArtworkUrl(current.logo)) continue;
+            if (String(reason).includes('interactive')) this.secondaryPriorityReasonByDisplayId.set(id, reason);
             this._ensureSecondaryRequest(id, game, _exploreCanonicalId(game), this.generation, reason);
         }
     }
@@ -1775,6 +1897,12 @@ class ExploreCoverHydrationController {
 
     _isGenerationCurrent(id, generation) {
         return generation === this.generation && this.selectedIds.has(String(id));
+    }
+
+    _isSecondaryGenerationCurrent(id, generation) {
+        const displayId = String(id);
+        return generation === this.generation &&
+            (this.selectedIds.has(displayId) || this.interactiveSecondaryIds.has(displayId));
     }
 
     _expireRetryState(id) {
@@ -2097,7 +2225,7 @@ function _explorePatchCardArtwork(card, game) {
     }
 }
 
-function renderExploreCarousel() {
+async function renderExploreCarousel() {
     const grid = document.getElementById('exploreGrid');
     if (!grid) return;
     const previousScrollLeft = grid.scrollLeft || 0;
@@ -2137,6 +2265,7 @@ function renderExploreCarousel() {
     const previousIds = Array.isArray(window._exploreRenderedIds) ? window._exploreRenderedIds : [];
     const previousNodes = window._exploreRenderedNodes instanceof Map ? window._exploreRenderedNodes : new Map();
     const sameMembership = ids.length === previousIds.length && ids.every((id, index) => id === previousIds[index]);
+    await window.__baddelResolveArtworkCacheBulk?.(shuffled, { types: ['cover', 'hero', 'logo'], surface: 'home-explore' }).catch(() => null);
     window.__baddelExploreCoverHydrationController?.setSelection(shuffled, { reason: 'renderExploreCarousel' });
 
     if (sameMembership && ids.every(id => previousNodes.get(id)?.isConnected)) {
@@ -2548,6 +2677,7 @@ function _classifyLibrarySnapshot(prev, next) {
 }
 
 function _logRenderDecision(event, decision, surfacesPatched = []) {
+    try { window.__agScrollDiagnosticEvent?.('renderDecision', { event, decision, surfacesPatched }); } catch {}
     console.info('[RenderDecision]', {
         event,
         classification: decision.classification,
@@ -2616,6 +2746,12 @@ async function _processLibraryUpdatedPayload(updatedGames, options = {}) {
     window.allGamesData = allGamesData;
     window._readyToInstallRenderedGames = null;
     _lastLibraryRenderSnapshot = nextSnapshot;
+    // The first background scan can populate Home through the startup fast path,
+    // which returns before the normal structural renderer refreshes the sidebar.
+    // Publish the installed count as soon as the canonical snapshot is committed.
+    try { updateSmartSidebarCounts(); } catch (error) {
+        console.warn('[LibraryUpdate] sidebar count refresh failed:', error?.message || error);
+    }
     const startupHandled = _handleStartupLibraryUpdatedPayload(mergedGames);
     if (decision.structuralRender && typeof window.hydrateSidebarAllGamesCount === 'function') {
         window.hydrateSidebarAllGamesCount('library-updated').catch(() => {});
@@ -2675,16 +2811,28 @@ if (window.electronAPI.onGameDeletedPermanently) {
 }
 
 if (window.electronAPI.onGameImageUpdated) {
-    window.electronAPI.onGameImageUpdated((updatedGame) => {
+    window.electronAPI.onGameImageUpdated((payload) => {
+        const updatedGame = payload?.canonicalGame || payload;
+        if (!updatedGame?.id) return;
+        const eventChangedTypes = Array.isArray(payload?.changedTypes) ? payload.changedTypes : [];
         const changedTypes = window.__baddelDetectArtworkChangedTypes
-            ? window.__baddelDetectArtworkChangedTypes(updatedGame)
+            ? window.__baddelDetectArtworkChangedTypes(updatedGame, eventChangedTypes)
             : ['cover', 'hero', 'logo'];
-        const summary = window.__baddelCommitCanonicalGameUpdate?.(updatedGame, {
+        const summary = window.__baddelCommitCanonicalGameUpdate?.(payload?.canonicalGame ? payload : updatedGame, {
             reason: 'game-image-updated',
             changedTypes,
+            operationId: payload?.operationId || null,
+            expectedRevisions: payload?.revisions || null,
             suppressDuplicateRevision: true,
         });
         const matchedDisplayIds = summary?.matchedDisplayIds || [];
+        window.BaddelArtworkDiagnostics?.record?.('renderer-canonical-update', {
+            canonicalIdentity: summary?.canonicalGameId || updatedGame?.id,
+            provider: updatedGame?.platform,
+            changedTypes: summary?.changedTypes || changedTypes,
+            revision: Math.max(...['cover', 'hero', 'logo'].map(type => Number(updatedGame?.artworkState?.[type]?.revision || 0))),
+            reason: summary?.duplicate ? 'duplicate-revision' : 'applied',
+        });
         const surfacesPatched = [];
         if (summary?.changedTypes?.includes('cover')) surfacesPatched.push(...matchedDisplayIds.map(id => `card:${id}`));
         if ((summary?.changedTypes?.includes('hero') || summary?.changedTypes?.includes('logo')) &&
@@ -2726,7 +2874,7 @@ const _PLAT_NORM_MAP = {
     'rockstar': 'rockstar', 'rockstar games': 'rockstar',
     'xbox': 'xbox', 'xbox game pass': 'xbox', 'xbox / store': 'xbox',
     'microsoft': 'xbox', 'microsoft store': 'xbox', 'store': 'xbox',
-    'gog': 'gog', 'gog.com': 'gog',
+    'gog': 'gog', 'gog.com': 'gog', 'gogdl': 'gog',
     'battlenet': 'battlenet', 'battle.net': 'battlenet',
     'discord': 'discord',
     'manual': 'manual', 'local': 'manual',
@@ -2806,13 +2954,30 @@ function _platformAliasesForGame(game) {
 function _gameMatchesPlatformFilter(game, platformFilter) {
     if (!platformFilter || platformFilter === 'all') return true;
     const normFilter = _normPlatform(platformFilter);
+    if (normFilter === 'gog') return _gameHasInstalledGogEvidence(game);
     const aliases = _platformAliasesForGame(game);
     if (aliases.has(normFilter)) return true;
     if (normFilter === 'manual' && aliases.size === 0) return true;
     return false;
 }
 
-function applyFilters() {
+function _gameHasInstalledGogEvidence(game) {
+    if (!game || typeof game !== 'object') return false;
+    if (_normPlatform(game.scannerPlatform) === 'gog') return true;
+    if (_normPlatform(game.installProvider) === 'gog' || _normPlatform(game.installProvenance) === 'gog') return true;
+
+    const launchEvidence = [game.galaxyLaunchCommand, game.executablePath, game.installPath, game.path,
+        game.launchCommand, game.command].filter(Boolean).join(' ').toLowerCase();
+    if (launchEvidence.includes('gog galaxy') || launchEvidence.includes('goggame') || launchEvidence.includes('gogdl')) return true;
+
+    const explicitlyInstalled = game.isInstalled === true || game.installVerified === true;
+    const trustedLocalSource = ['scanner', 'download'].includes(String(game.installSource || '').toLowerCase());
+    return explicitlyInstalled && trustedLocalSource && _normPlatform(game.platform) === 'gog';
+}
+
+if (typeof window !== 'undefined') window._gameHasInstalledGogEvidence = _gameHasInstalledGogEvidence;
+
+async function applyFilters() {
     const grid = document.getElementById('gamesGrid');
     if (!grid) return;
 
@@ -2823,7 +2988,8 @@ function applyFilters() {
         imageQueue.length = 0;
     }
 
-    let filtered = [...allGamesData];
+    const generation = _nextInstalledRenderGeneration();
+    let filtered = _dedupeInstalledProductProjection(allGamesData);
 
     if (currentFilters.platform && currentFilters.platform !== 'all') {
         filtered = filtered.filter(g => _gameMatchesPlatformFilter(g, currentFilters.platform));
@@ -2887,6 +3053,8 @@ function applyFilters() {
 
     // Expose filtered list for list-mode (accounts.js) and debug helpers
     window._lastInstalledFilteredGames = filtered;
+    await window.__baddelResolveArtworkCacheBulk?.(filtered, { types: ['cover'], surface: 'installed-grid' }).catch(() => null);
+    if (!_isInstalledRenderGenerationCurrent(generation)) return;
 
     if (filtered.length === 0) {
         const platLabel = (currentFilters.platform && currentFilters.platform !== 'all')
@@ -2955,9 +3123,17 @@ window._debugInstalledGridState = function() {
     };
 };
 
+let _installedSearchAnalyticsTimer = null;
+
 function filterGames() {
     currentFilters.search = document.getElementById('searchInput').value;
     applyFilters();
+    clearTimeout(_installedSearchAnalyticsTimer);
+    _installedSearchAnalyticsTimer = setTimeout(() => {
+        window.electronAPI?.trackFeatureEvent?.('search_used', {
+            feature: 'library', view: 'installed', query_present: currentFilters.search.trim().length > 0,
+        }).catch?.(() => {});
+    }, 700);
 }
 
 function selectPlatform(value, text) {
@@ -2965,6 +3141,9 @@ function selectPlatform(value, text) {
     currentFilters.platform = value;
     toggleDropdown();
     applyFilters();
+    window.electronAPI?.trackFeatureEvent?.('filter_changed', {
+        feature: 'library', view: 'installed', filter: value || 'all',
+    }).catch?.(() => {});
 }
 
 function toggleSortDropdown(e) { 
@@ -2977,6 +3156,9 @@ function selectSort(value, text) {
     currentFilters.sort = value;
     document.getElementById('sortMenu').classList.remove('active');
     applyFilters();
+    window.electronAPI?.trackFeatureEvent?.('sort_changed', {
+        feature: 'library', view: 'installed', sort: value || 'manual',
+    }).catch?.(() => {});
 }
 
 // filterByCollection moved to src/js/app/collections.js
@@ -2985,7 +3167,11 @@ async function reloadLibrary() {
     if (isScanning) return;
     isScanning = true;
     const btn = document.getElementById('btn-scan');
-    if (btn) btn.style.transform = 'rotate(360deg)';
+    if (btn) {
+        btn.style.transform = 'rotate(360deg)';
+        btn.disabled = true;
+        btn.setAttribute('aria-busy', 'true');
+    }
     showToast('Scanning library...', 'success');
     
     try {
@@ -3016,7 +3202,11 @@ async function reloadLibrary() {
     } catch (e) { 
         showToast('Scan failed', 'error'); 
     } finally {
-        if (btn) btn.style.transform = 'none';
+        if (btn) {
+            btn.style.transform = 'none';
+            btn.disabled = false;
+            btn.removeAttribute('aria-busy');
+        }
         isScanning = false;
     }
 }
@@ -3042,32 +3232,24 @@ async function reloadLibrary() {
 function _patchGameInMemory(updatedGame) {
     if (!updatedGame || !updatedGame.id) return null;
     const normalized = _normalizeArtworkAliases({ ...updatedGame });
-    window.__baddelUpsertCanonicalGameRegistry?.(normalized);
     const id = String(normalized.id);
+    const belongsInAllGames = typeof window._agIsUserLibraryGame === 'function'
+        ? window._agIsUserLibraryGame(normalized)
+        : false;
+    window.__baddelUpsertCanonicalGameRegistry?.(normalized);
 
     const idx = allGamesData.findIndex(g => String(g.id) === id);
-    if (idx >= 0) {
-        allGamesData[idx] = _normalizeArtworkAliases({ ...allGamesData[idx], ...normalized });
-    } else {
-        allGamesData.push(normalized);
-    }
+    if (idx >= 0) allGamesData[idx] = _normalizeArtworkAliases({ ...allGamesData[idx], ...normalized });
+    else allGamesData.push(normalized);
     allGamesData = _dedupeDelegatedLaunchProducts(allGamesData);
     window.allGamesData = allGamesData;
-
-    const belongsInAllGames =
-        typeof window._agIsUserLibraryGame === 'function'
-            ? window._agIsUserLibraryGame(normalized)
-            : false;
     _nextLibraryRevision();
 
     if (Array.isArray(window._allGamesCache)) {
         const cidx = window._allGamesCache.findIndex(g => String(g.id) === id);
         if (belongsInAllGames) {
-            if (cidx >= 0) {
-                window._allGamesCache[cidx] = _normalizeArtworkAliases({ ...window._allGamesCache[cidx], ...normalized });
-            } else {
-                window._allGamesCache.push(normalized);
-            }
+            if (cidx >= 0) window._allGamesCache[cidx] = _normalizeArtworkAliases({ ...window._allGamesCache[cidx], ...normalized });
+            else window._allGamesCache.push(normalized);
         } else if (cidx >= 0) {
             window._allGamesCache.splice(cidx, 1);
         }
@@ -3571,6 +3753,9 @@ function toggleAgInstalledFilter() {
     const btn = document.getElementById('agInstalledToggle');
     if (btn) btn.classList.toggle('active', window.agInstalledOnly);
     if (typeof window.filterAllGames === 'function') window.filterAllGames();
+    window.electronAPI?.trackFeatureEvent?.('filter_changed', {
+        feature: 'library', view: 'all_games', filter: window.agInstalledOnly ? 'installed_only' : 'all',
+    }).catch?.(() => {});
 }
 
 // fixSubmenuPosition, fixSubmenuPosition.reset moved to src/js/app/game-context-actions.js

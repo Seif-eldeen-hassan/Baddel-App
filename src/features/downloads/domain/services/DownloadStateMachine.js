@@ -37,6 +37,10 @@ const TRANSITIONS = Object.freeze({
         DOWNLOAD_STATUSES.DOWNLOADING,
         DOWNLOAD_STATUSES.PAUSING,
         DOWNLOAD_STATUSES.PAUSED,
+        // A provider can finish a zero-transfer resume (or a repair/update)
+        // without emitting a downloading progress sample. The adapter still
+        // has to enter the normal completion-verification phase.
+        DOWNLOAD_STATUSES.VERIFYING,
         DOWNLOAD_STATUSES.FAILED,
         DOWNLOAD_STATUSES.CANCELLED,
     ]),
@@ -60,7 +64,10 @@ const TRANSITIONS = Object.freeze({
     [DOWNLOAD_STATUSES.CANCELLED]: new Set([
         DOWNLOAD_STATUSES.PENDING,
     ]),
-    [DOWNLOAD_STATUSES.COMPLETED]: new Set([]),
+    // A completed managed install may re-enter the same global queue for an
+    // explicit provider update or repair. DownloadQueueManager is the only
+    // caller that performs this transition and validates provenance first.
+    [DOWNLOAD_STATUSES.COMPLETED]: new Set([DOWNLOAD_STATUSES.PENDING]),
 });
 
 function canTransition(from, to) {
@@ -91,7 +98,9 @@ function applyTransition(task, toStatus, patch = {}, clock = Date) {
                 ? updatedAt
                 : task.startedAt
         ),
-        completedAt: toStatus === DOWNLOAD_STATUSES.COMPLETED ? updatedAt : (patch.completedAt || task.completedAt || null),
+        completedAt: toStatus === DOWNLOAD_STATUSES.COMPLETED
+            ? (patch.completedAt || updatedAt)
+            : (Object.prototype.hasOwnProperty.call(patch, 'completedAt') ? patch.completedAt : (task.completedAt || null)),
     };
 }
 

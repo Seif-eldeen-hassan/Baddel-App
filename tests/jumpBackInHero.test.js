@@ -140,8 +140,8 @@ test('game-card.js: createRecentCard may display safe remote JBI artwork before 
 
     assert.ok(GAME_CARD_JS.includes('function _jbiCacheBackedArtworkValue(value)'), '_jbiCacheBackedArtworkValue not defined');
     assert.ok(GAME_CARD_JS.includes('function _jbiDisplayArtworkValue(value)'), '_jbiDisplayArtworkValue not defined');
-    assert.ok(block.includes('_jbiDisplayArtworkValue(selection.selectedValue)'), 'initial JBI image must accept safe display artwork');
-    assert.ok(block.includes('_jbiDisplayArtworkValue(refreshed.selectedValue)'), 'refreshed JBI image must accept safe display artwork');
+    assert.ok(block.includes('_jbiFirstLoadableArtworkCandidate(selection.candidates)'), 'initial JBI image must be selected through loadable candidate probe');
+    assert.ok(block.includes('_jbiFirstLoadableArtworkCandidate(refreshed.candidates)'), 'refreshed JBI image must be selected through loadable candidate probe');
     assert.ok(block.includes('_jbiDisplayArtworkValue(selection.candidates[jbiCandidateIndex])'), 'fallback JBI candidates must accept safe display artwork');
     assert.ok(!block.includes('imgEl.src = refreshed.selectedValue'), 'refreshed raw value must not be assigned directly');
     assert.ok(!block.includes('imgEl.src = selection.candidates[jbiCandidateIndex]'), 'fallback raw value must not be assigned directly');
@@ -184,11 +184,13 @@ test('game-card.js: JBI candidate list orders hero before cover before placehold
     assert.ok(block.includes('candidates.push(placeholder)'), 'placeholder fallback not found');
 });
 
-test('game-card.js: createRecentCard applies selected JBI candidate to imgEl.src', () => {
+test('game-card.js: createRecentCard applies selected JBI candidate through loadable probe', () => {
     const idx = GAME_CARD_JS.indexOf('function createRecentCard(game, isFeatured');
     const nextFnIdx = GAME_CARD_JS.indexOf('\nfunction getPlatformClass', idx);
-    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2000);
-    assert.ok(block.includes('imgEl.src = displayImg'), 'selected display image not applied');
+    const block = GAME_CARD_JS.slice(idx, nextFnIdx > idx ? nextFnIdx : idx + 2400);
+    assert.ok(block.includes('_jbiFirstLoadableArtworkCandidate(selection.candidates)'), 'selected candidate probe not used');
+    assert.ok(block.includes('imgEl.src = initialSrc'), 'loadable selected image not applied');
+    assert.ok(!block.includes('imgEl.src = displayImg'), 'stale display image must not be assigned directly');
 });
 
 test('game-card.js: createRecentCard hero branch calls checkBackgroundAssets', () => {

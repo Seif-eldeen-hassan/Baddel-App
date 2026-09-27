@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' file:; style-src 'unsafe-inline'; script-src 'unsafe-inline'; connect-src 'none'; frame-src 'none';">
+    <title>Connect GOG Account</title>
+    <style>
+        * { box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; background: #0b0d0c; color: #f5f7f6; font-family: "Segoe UI", sans-serif; }
+        .auth-header { height: 84px; display: flex; align-items: center; gap: 14px; padding: 0 14px 0 20px; border-bottom: 1px solid #252a27; background: #101311; -webkit-app-region: drag; }
+        .auth-logo { width: 42px; height: 42px; object-fit: contain; }
+        .auth-copy { min-width: 0; display: grid; gap: 3px; }
+        .auth-title { font-size: 17px; line-height: 1.15; font-weight: 700; }
+        .auth-subtitle { color: #929b95; font-size: 12px; line-height: 1.2; }
+        .auth-close { width: 42px; height: 42px; margin-left: auto; border: 0; border-radius: 6px; display: grid; place-items: center; background: transparent; color: #c6cdc9; font-size: 25px; line-height: 1; cursor: pointer; -webkit-app-region: no-drag; }
+        .auth-close:hover { background: #c42b1c; color: #fff; }
+        .auth-loading { position: absolute; inset: 84px 0 0; display: grid; place-items: center; background: #0b0d0c; }
+        .auth-loading-inner { display: grid; justify-items: center; gap: 14px; color: #aab2ad; font-size: 13px; }
+        .auth-spinner { width: 28px; height: 28px; border: 2px solid #2a322d; border-top-color: #43f178; border-radius: 50%; animation: spin 850ms linear infinite; }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        @media (prefers-reduced-motion: reduce) { .auth-spinner { animation-duration: 1800ms; } }
+    </style>
+</head>
+<body>
+    <header class="auth-header">
+        <img class="auth-logo" src="../assets/app_icon.png" alt="Baddel">
+        <div class="auth-copy">
+            <div class="auth-title">Connect GOG Account</div>
+            <div class="auth-subtitle">Secure sign-in via GOG.com</div>
+        </div>
+        <button class="auth-close" type="button" aria-label="Close GOG sign-in" title="Close">&times;</button>
+    </header>
+    <main class="auth-loading" aria-live="polite">
+        <div class="auth-loading-inner"><span class="auth-spinner" aria-hidden="true"></span><span>Loading secure GOG sign-in...</span></div>
+    </main>
+    <script>
+        document.querySelector('.auth-close').addEventListener('click', () => window.close());
+    </script>
+</body>
+</html>

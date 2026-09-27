@@ -553,6 +553,10 @@ class SteamBridge extends EventEmitter {
         return this._call('submit_steam_guard_code', { code, method });
     }
 
+    async resendSteamGuardEmail() {
+        return this._call('resend_steam_guard_email', {});
+    }
+
     /**
      * Poll for current QR or device-confirmation auth status.
      * Returns { status: 'pending_approval'|'authenticated'|'approval_expired'|'approval_denied' }
@@ -581,63 +585,163 @@ class SteamBridge extends EventEmitter {
      * Returns full owned games list.
      * { status: 'success', games: [{ id, title, appid, platform }] }
      */
-    async getOwnedGames() {
-        console.log(`[SteamBridge:GAMES] ▶ getOwnedGames() — cacheReady=${this._cacheIsReady} session=${this._lastSessionSteamId}`);
-        const result = await this._call('get_owned_games', {});
+    async getOwnedGames(expectedGeneration = null) {
+        console.log(`[SteamBridge:GAMES] ▶ getOwnedGames() — cacheReady=${this._cacheIsReady} session=${this._lastSessionSteamId} generation=${expectedGeneration ?? 'any'}`);
+        const result = await this._call('get_owned_games', { expectedGeneration });
         const count = Array.isArray(result?.games) ? result.games.length : 0;
         console.log(`[SteamBridge:GAMES] ◀ getOwnedGames() — status=${result?.status} count=${count}`);
         return result;
     }
 
+    async getCollectionStatus() {
+        return this._call('get_collection_status', {}, 15_000);
+    }
+
+    async recoverCollection(expectedGeneration) {
+        return this._call('recover_collection', { expectedGeneration }, 30_000);
+    }
+
     /**
-     * Resolves as soon as the Python games cache signals it is ready for the
-     * given target Steam account.
-     *
-     * A stale `cache_ready` for a DIFFERENT account does NOT unblock this wait.
-     *
-     * @param {string} targetSteamId  The Steam64 id we are waiting for.
-     * @param {number} timeoutMs      Max wait in ms (default 35s). Resolves on
-     *                                timeout so the caller can still attempt
-     *                                getOwnedGames() with whatever is cached.
+     * Wait for an authoritative account-scoped collection. Inactivity is based
+     * only on collection progress revisions; the overall budget stays bounded.
      */
-    waitForCacheReady(targetSteamId, timeoutMs = 35_000) {
+    async waitForCacheReady(targetSteamId, timeoutOrOptions = 35_000) {
         const target = targetSteamId != null ? String(targetSteamId).trim() : '';
+        const options = typeof timeoutOrOptions === 'number'
+            ? { inactivityMs: timeoutOrOptions }
+            : (timeoutOrOptions || {});
+        const inactivityMs = Math.max(1, Number(options.inactivityMs) || 60_000);
+        const overallMs = Math.max(inactivityMs, Number(options.overallMs) || 10 * 60_000);
+        const pollIntervalMs = Math.max(1, Number(options.pollIntervalMs) || 1_000);
+        const configuredRecoveryAttempts = Number(options.maxRecoveryAttempts);
+        const maxRecoveryAttempts = Number.isFinite(configuredRecoveryAttempts)
+            ? Math.max(0, configuredRecoveryAttempts)
+            : 2;
+        const now = typeof options.now === 'function' ? options.now : Date.now;
+        const sleep = typeof options.sleep === 'function'
+            ? options.sleep
+            : (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+        const report = typeof options.onProgress === 'function' ? options.onProgress : () => {};
 
-        // Already ready for the right account — resolve immediately.
-        if (this._cacheIsReady && (!target || this._cacheReadySteamId === target)) {
-            console.log(`[SteamBridge:CACHE] Already ready for ${target || 'any'} — skipping wait`);
-            return Promise.resolve();
-        }
+        const startedAt = now();
+        let lastProgressAt = startedAt;
+        let lastRevision = null;
+        let expectedGeneration = Number.isFinite(options.expectedGeneration)
+            ? Number(options.expectedGeneration)
+            : null;
+        let recoveryAttempts = 0;
+        let latestSnapshot = null;
+        const recoveryHistory = [];
+        const readiness = { received: 0, accepted: 0, rejected: 0, lastRejectedReason: null };
+        const eventQueue = [];
+        const enqueue = (kind) => (data) => eventQueue.push({ kind, data });
+        const onReady = enqueue('ready');
+        const onIncomplete = enqueue('incomplete');
+        this.on('cacheReady', onReady);
+        this.on('cacheIncomplete', onIncomplete);
 
-        console.log(`[SteamBridge:CACHE] ⏳ Waiting for cache (timeout=${timeoutMs}ms) target=${target || 'any'} currentReady=${this._cacheReadySteamId}`);
+        const fail = (code, message) => {
+            const error = new Error(message);
+            error.code = code;
+            error.completeness = latestSnapshot?.completeness || null;
+            error.collectionDiagnostics = { ...latestSnapshot, readiness, recoveryAttempts, recoveryHistory };
+            throw error;
+        };
 
-        return new Promise((resolve) => {
-            let settled = false;
-
-            const finish = (reason) => {
-                if (settled) return;
-                settled = true;
-                clearTimeout(timer);
-                this.off('cacheReady', onReady);
-                console.log(`[SteamBridge:CACHE] ${reason} for target=${target}`);
-                resolve();
-            };
-
-            const timer = setTimeout(() => {
-                finish(`⚠ TIMED OUT after ${timeoutMs}ms — cacheIsReady=${this._cacheIsReady} cacheReadySteamId=${this._cacheReadySteamId} — proceeding anyway`);
-            }, timeoutMs);
-
-            const onReady = (data) => {
-                const readySteamId = data?.steamAccountId ? String(data.steamAccountId).trim() : null;
-                if (!target || !readySteamId || readySteamId === target) {
-                    finish(`✅ Cache ready (event steamAccountId=${readySteamId})`);
-                } else {
-                    console.warn(`[SteamBridge:CACHE] Ignoring cache_ready for ${readySteamId} — waiting for ${target}`);
+        try {
+            while (true) {
+                while (eventQueue.length) {
+                    const event = eventQueue.shift();
+                    readiness.received++;
+                    const eventAccount = event.data?.steamAccountId != null ? String(event.data.steamAccountId) : '';
+                    const eventGeneration = Number(event.data?.sessionGeneration);
+                    if ((target && eventAccount && eventAccount !== target)
+                        || (expectedGeneration != null && Number.isFinite(eventGeneration) && eventGeneration !== expectedGeneration)) {
+                        readiness.rejected++;
+                        readiness.lastRejectedReason = target && eventAccount && eventAccount !== target
+                            ? 'account_mismatch'
+                            : 'generation_mismatch';
+                    } else {
+                        readiness.accepted++;
+                    }
                 }
-            };
 
-            this.on('cacheReady', onReady);
-        });
+                const snapshot = await this.getCollectionStatus();
+                latestSnapshot = snapshot;
+                const snapshotAccount = snapshot?.steamAccountId != null ? String(snapshot.steamAccountId) : '';
+                const generation = Number(snapshot?.sessionGeneration);
+                if (target && snapshotAccount && snapshotAccount !== target) {
+                    fail('STEAM_LIBRARY_SESSION_MISMATCH', `Steam collection belongs to a different account than ${target}`);
+                }
+                if (expectedGeneration == null && Number.isFinite(generation)) expectedGeneration = generation;
+                if (expectedGeneration != null && Number.isFinite(generation) && generation < expectedGeneration) {
+                    await sleep(pollIntervalMs);
+                    continue;
+                }
+                if (expectedGeneration != null && Number.isFinite(generation) && generation > expectedGeneration) {
+                    expectedGeneration = generation;
+                    lastRevision = null;
+                    lastProgressAt = now();
+                }
+
+                const revision = Number(snapshot?.completeness?.progressRevision);
+                if (Number.isFinite(revision) && revision !== lastRevision) {
+                    lastRevision = revision;
+                    lastProgressAt = now();
+                }
+                const providerAge = Number(snapshot?.completeness?.lastMeaningfulProgressAgeMs);
+                if (Number.isFinite(providerAge)) {
+                    lastProgressAt = Math.max(lastProgressAt, now() - providerAge);
+                }
+                report({ ...snapshot, readiness: { ...readiness }, recoveryAttempts, elapsedMs: now() - startedAt });
+
+                if (snapshot?.completeness?.complete === true && snapshot?.completeness?.terminal === true) {
+                    this._cacheIsReady = true;
+                    this._cacheReadySteamId = snapshotAccount || target || null;
+                    return snapshot;
+                }
+
+                const elapsed = now() - startedAt;
+                if (elapsed >= overallMs) {
+                    fail('STEAM_LIBRARY_OVERALL_TIMEOUT', `Steam library collection exceeded the ${overallMs}ms overall budget`);
+                }
+
+                const stalled = now() - lastProgressAt >= inactivityMs;
+                const terminalIncomplete = snapshot?.completeness?.terminal === true;
+                if (stalled || terminalIncomplete) {
+                    if (recoveryAttempts >= maxRecoveryAttempts) {
+                        fail(
+                            terminalIncomplete ? 'STEAM_LIBRARY_INCOMPLETE' : 'STEAM_LIBRARY_INACTIVITY_TIMEOUT',
+                            terminalIncomplete
+                                ? 'Steam library collection finished with unresolved records after bounded recovery'
+                                : `Steam library collection made no meaningful progress for ${inactivityMs}ms after bounded recovery`
+                        );
+                    }
+                    recoveryAttempts++;
+                    const recovery = await this.recoverCollection(expectedGeneration);
+                    recoveryHistory.push({
+                        attemptedAtMs: now() - startedAt,
+                        status: recovery?.status || 'unknown',
+                        requestedPackageIds: recovery?.requestedPackageIds || [],
+                        requestedAppIds: recovery?.requestedAppIds || [],
+                        missingLicenseTokenPackageIds: recovery?.missingLicenseTokenPackageIds || [],
+                        transport: recovery?.transport || null,
+                    });
+                    latestSnapshot = recovery?.completeness
+                        ? { ...snapshot, completeness: recovery.completeness, recovery }
+                        : { ...snapshot, recovery };
+                    report({ ...latestSnapshot, readiness: { ...readiness }, recoveryAttempts, elapsedMs: now() - startedAt });
+                    await sleep(Math.min(4_000, 500 * (2 ** (recoveryAttempts - 1))));
+                    lastProgressAt = now();
+                    continue;
+                }
+
+                await sleep(Math.min(pollIntervalMs, Math.max(1, overallMs - elapsed)));
+            }
+        } finally {
+            this.off('cacheReady', onReady);
+            this.off('cacheIncomplete', onIncomplete);
+        }
     }
 
     /**
@@ -679,7 +783,13 @@ class SteamBridge extends EventEmitter {
 
             timer = setTimeout(() => {
                 this._pendingCalls.delete(id);
-                reject(new Error(`[SteamBridge] Timeout waiting for "${method}" (${timeoutMs}ms)`));
+                try {
+                    this._proc?.stdin?.write(JSON.stringify({ id: null, method: 'cancel_request', params: { requestId: id } }) + '\n');
+                } catch {}
+                const error = new Error(`[SteamBridge] Timeout waiting for "${method}" (${timeoutMs}ms)`);
+                error.code = 'STEAM_BRIDGE_REQUEST_TIMEOUT';
+                error.requestId = id;
+                reject(error);
             }, timeoutMs);
 
             this._pendingCalls.set(id, {
@@ -717,6 +827,7 @@ class SteamBridge extends EventEmitter {
         }
 
         // Response to a pending call
+        if (msg.id == null) return;
         const pending = this._pendingCalls.get(msg.id);
         if (!pending) {
             console.warn('[SteamBridge] No pending call for id:', msg.id);
@@ -741,6 +852,10 @@ class SteamBridge extends EventEmitter {
                 console.log(`[SteamBridge:CACHE] 🎮 cache_ready event received — cacheReadySteamId=${this._cacheReadySteamId}`);
                 // Emit the full data payload so account-scoped waitForCacheReady listeners can filter by steamAccountId.
                 this.emit('cacheReady', { steamAccountId: this._cacheReadySteamId });
+                break;
+
+            case 'cache_incomplete':
+                this.emit('cacheIncomplete', data);
                 break;
 
             case 'games_update':

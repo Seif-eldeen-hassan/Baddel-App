@@ -35,6 +35,11 @@ function readJson(filePath) {
     return JSON.parse(fs.readFileSync(filePath, 'utf8'));
 }
 
+function makeFakeIpcMain() {
+    const handles = new Map();
+    return { handles, handle(channel, fn) { handles.set(channel, fn); } };
+}
+
 function writeText(filePath, value) {
     mkdirp(path.dirname(filePath));
     fs.writeFileSync(filePath, value, 'utf8');
@@ -58,6 +63,10 @@ function epicAccountsFile(userData) {
 
 function epicCacheFile(userData) {
     return path.join(platformSyncDir(userData), 'epic_library_merged.json');
+}
+
+function epicVaultFile(userData) {
+    return path.join(platformSyncDir(userData), 'epic_vault.json');
 }
 
 function clearPlatformSyncCache() {
@@ -171,7 +180,7 @@ function loadPlatformSync(userData, overrides = {}) {
                 shell: { openExternal: async () => {} },
             };
         }
-        if (request === 'child_process') return { execFile };
+        if (request === 'child_process') return { execFile, spawn: execFile };
         if (request === './steamBridge') return steamBridge;
         if (request === './services/baddelApi') {
             return {
@@ -375,6 +384,53 @@ test('epic accounts are read from platform-sync JSON and tmp accounts require re
     }
 });
 
+
+test('platform-sync:get-epic-vault reconciles all linked Epic accounts into the selector projection', async () => {
+    const userData = makeTempUserData();
+    try {
+        writeJson(epicAccountsFile(userData), [
+            { id: 'e1', displayName: 'Epic One', pricingCountry: 'EG' },
+            { id: 'e2', displayName: 'Epic Two', pricingCountry: 'TR' },
+        ]);
+        writeJson(epicCacheFile(userData), [
+            { id: 'game-one', title: 'Account One Game', ownedByAccountIds: ['e1'], namespace: 'ns1', offerId: 'offer1' },
+            { id: 'game-two', title: 'Account Two Game', ownedByAccountIds: ['e2'], namespace: 'ns2', offerId: 'offer2' },
+        ]);
+        writeJson(epicVaultFile(userData), {
+            accounts: [
+                {
+                    accountId: 'e1',
+                    displayName: 'Epic One',
+                    pricingCountry: 'EG',
+                    livePrices: [{ namespace: 'ns1', offerId: 'offer1', amount: 5999, currency: 'USD', priceStatus: 'priced' }],
+                    purchaseHistoryItems: [{ title: 'Account One History', amountMinor: 1200, currency: 'USD' }],
+                    permissions: { currentPrices: true, purchaseHistory: true },
+                },
+                { accountId: 'stale', displayName: 'Stale Account', games: [{ title: 'Should Not Appear' }] },
+            ],
+        });
+
+        const { sync } = loadPlatformSync(userData);
+        const ipcMain = makeFakeIpcMain();
+        sync.registerPlatformSyncHandlers(ipcMain, () => null);
+        const result = await ipcMain.handles.get('platform-sync:get-epic-vault')({}, undefined);
+
+        assert.equal(result.status, 'success');
+        assert.deepEqual(result.vault.accounts.map((account) => account.accountId), ['e1', 'e2']);
+        const accountOne = result.vault.accounts.find((account) => account.accountId === 'e1');
+        const accountTwo = result.vault.accounts.find((account) => account.accountId === 'e2');
+        assert.equal(accountOne.purchaseHistoryItems[0].title, 'Account One History');
+        assert.equal(accountOne.permissions.purchaseHistory, true);
+        assert.equal(accountTwo.displayName, 'Epic Two');
+        assert.equal(accountTwo.permissions.currentPrices, false);
+        assert.equal(accountTwo.permissions.purchaseHistory, false);
+        assert.deepEqual(accountTwo.games.map((game) => game.title), ['Account Two Game']);
+        assert.equal(result.vault.accounts.some((account) => account.accountId === 'stale'), false);
+    } finally {
+        rmDir(userData);
+    }
+});
+
 test('epic unlink removes one account ownership and drops games no longer owned', async () => {
     const userData = makeTempUserData();
     try {
@@ -417,6 +473,36 @@ test('epic unlink removes one account ownership and drops games no longer owned'
             { id: 'e1', displayName: 'Epic One' },
             { id: 'e2', displayName: 'Epic Two' },
         ]);
+    } finally {
+        rmDir(userData);
+    }
+});
+
+
+test('epic unlink removes only the unlinked account from Epic Vault', async () => {
+    const userData = makeTempUserData();
+    try {
+        writeJson(epicAccountsFile(userData), [
+            { id: 'e1', displayName: 'Epic One' },
+            { id: 'e2', displayName: 'Epic Two' },
+        ]);
+        writeJson(epicCacheFile(userData), [
+            { id: 'epic_one', title: 'Epic One Game', ownedBy: ['Epic One'], ownedByAccountIds: ['e1'] },
+            { id: 'epic_two', title: 'Epic Two Game', ownedBy: ['Epic Two'], ownedByAccountIds: ['e2'] },
+        ]);
+        writeJson(epicVaultFile(userData), {
+            accounts: [
+                { accountId: 'e1', displayName: 'Epic One', purchaseHistoryItems: [{ title: 'One History' }], permissions: { purchaseHistory: true } },
+                { accountId: 'e2', displayName: 'Epic Two', purchaseHistoryItems: [{ title: 'Two History' }], permissions: { purchaseHistory: true } },
+            ],
+        });
+
+        const { sync } = loadPlatformSync(userData);
+        await sync.epicConnector.unlink('e2');
+
+        const vault = readJson(epicVaultFile(userData));
+        assert.deepEqual(vault.accounts.map((account) => account.accountId), ['e1']);
+        assert.equal(vault.accounts[0].purchaseHistoryItems[0].title, 'One History');
     } finally {
         rmDir(userData);
     }
@@ -487,7 +573,9 @@ test('platformSync delegates sync cache persistence to the cache repository', ()
     assert.match(repositorySource, /epic_accounts\.json/);
     assert.match(repositorySource, /epic_library_merged\.json/);
     assert.match(repositorySource, /epic_sync_classification_report\.json/);
-    assert.match(repositorySource, /JSON\.stringify\(value,\s*null,\s*2\)/);
+    assert.match(repositorySource, /AtomicJsonFileStore/);
+    assert.match(repositorySource, /writeJsonFileAtomic/);
+    assert.match(fs.readFileSync(path.join(ROOT, 'src', 'features', 'sync', 'infrastructure', 'runtime', 'AtomicJsonFileStore.js'), 'utf8'), /JSON\.stringify\(value,\s*null,\s*2\)/);
     assert.match(repositorySource, /readSteamAccountsSync/);
     assert.match(repositorySource, /readEpicAccountsSync/);
 
@@ -499,3 +587,4 @@ test('platformSync delegates sync cache persistence to the cache repository', ()
     assert.equal(repositoryFiles.includes('EpicSyncCacheRepository.js'), false);
     assert.equal(repositoryFiles.includes('SyncAccountRepository.js'), false);
 });
+

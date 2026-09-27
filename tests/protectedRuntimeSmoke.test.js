@@ -15,6 +15,8 @@ const test   = require('node:test');
 const assert = require('node:assert/strict');
 const fs     = require('fs');
 const path   = require('path');
+const crypto = require('crypto');
+const cp = require('child_process');
 
 const ROOT          = path.resolve(__dirname, '..');
 const PROTECTED_DIR = path.join(ROOT, '.protected-build', 'app');
@@ -24,6 +26,7 @@ const INDEX_HTML    = path.join(PROTECTED_DIR, 'index.html');
 const QS_HTML       = path.join(PROTECTED_DIR, 'quick-switcher.html');
 const MAIN_BUNDLE   = path.join(PROTECTED_DIR, 'main.bundle.cjs');
 const PRELOAD_BUNDLE = path.join(PROTECTED_DIR, 'preload.bundle.cjs');
+const BUILD_FINGERPRINT = path.join(PROTECTED_DIR, 'build-fingerprint.json');
 
 const bundleExists   = fs.existsSync(BUNDLE_JS);
 const mainExists     = fs.existsSync(MAIN_BUNDLE);
@@ -198,6 +201,18 @@ test('renderer.bundle.js: contains onerror symbol (requires prior build:protecte
     assert.ok(src.includes('onerror'), 'renderer.bundle.js must contain the onerror property assignment');
 });
 
+test('protected renderer bundle includes the Vault hydration runtime used after History commits', {
+    skip: !bundleExists || !fs.existsSync(BUILD_FINGERPRINT),
+}, () => {
+    const clientPath = path.join(ROOT, 'src', 'js', 'vault-hydration-client.js');
+    const fingerprint = JSON.parse(fs.readFileSync(BUILD_FINGERPRINT, 'utf8'));
+    const hash = crypto.createHash('sha256').update(fs.readFileSync(clientPath)).digest('hex');
+    assert.equal(fingerprint.source['src/js/vault-hydration-client.js'], hash);
+    const overviewPath = path.join(ROOT, 'src', 'js', 'vault-overview-model.js');
+    const overviewHash = crypto.createHash('sha256').update(fs.readFileSync(overviewPath)).digest('hex');
+    assert.equal(fingerprint.source['src/js/vault-overview-model.js'], overviewHash);
+});
+
 test('renderer.bundle.css: has content (requires prior build:protected)', {
     skip: !fs.existsSync(BUNDLE_CSS),
 }, () => {
@@ -259,6 +274,36 @@ test('preload.bundle.cjs: is obfuscated and non-trivially large (requires prior 
     assert.ok(stat.size > 5000, `preload.bundle.cjs is suspiciously small (${stat.size} bytes)`);
     const src = fs.readFileSync(PRELOAD_BUNDLE, 'utf8');
     assert.ok(/\b_0x[0-9a-f]{4,}\b/.test(src), 'preload.bundle.cjs must contain obfuscated _0x identifiers');
+});
+
+test('protected preload runtime preserves the complete Epic Purchase History API contract', {
+    skip: !preloadExists,
+}, () => {
+    const fixture = path.join(ROOT, 'tests', 'fixtures', 'executeProtectedPreload.js');
+    const execution = cp.spawnSync(process.execPath, [fixture, PRELOAD_BUNDLE], {
+        cwd: ROOT,
+        encoding: 'utf8',
+    });
+    assert.equal(execution.status, 0, execution.stderr);
+    const runtime = JSON.parse(execution.stdout);
+    assert.ok(runtime.apiNames.includes('onEpicPurchaseHistoryRefreshState'));
+    assert.ok(runtime.apiNames.includes('platformSyncConfirmEpicPurchaseHistoryHydrated'));
+    assert.deepEqual(runtime.refreshInvoke, [
+        'platform-sync:refresh-epic-purchase-history',
+        'account-a',
+        { allowInteractiveLogin: true, operationId: 'operation-fingerprint-1' },
+    ]);
+});
+
+test('protected runtime fingerprint matches current sources and the executed preload bundle', {
+    skip: !preloadExists || !fs.existsSync(BUILD_FINGERPRINT),
+}, () => {
+    const fingerprint = JSON.parse(fs.readFileSync(BUILD_FINGERPRINT, 'utf8'));
+    const hash = (file) => crypto.createHash('sha256').update(fs.readFileSync(file)).digest('hex');
+    assert.equal(fingerprint.source['preload.js'], hash(path.join(ROOT, 'preload.js')));
+    assert.equal(fingerprint.source['platformSync.js'], hash(path.join(ROOT, 'platformSync.js')));
+    assert.equal(fingerprint.bundles['preload.bundle.cjs'], hash(PRELOAD_BUNDLE));
+    assert.equal(fingerprint.bundles['main.bundle.cjs'], hash(MAIN_BUNDLE));
 });
 
 // main.bundle.cjs is also obfuscated — 'console-message' and

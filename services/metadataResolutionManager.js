@@ -3,6 +3,9 @@ const fs   = require('fs');
 const path = require('path');
 const { computeCandidateSignature } = require('./candidateGenerator');
 
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function verboseLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
+
 const STATUS = Object.freeze({
     IDLE:      'idle',
     PENDING:   'pending',
@@ -138,7 +141,7 @@ class MetadataResolutionManager {
         const id = String(gameId);
         if (this._jobs[id]) {
             this._setJob(id, { status: STATUS.IDLE, updatedAt: Date.now() });
-            console.log(`[MRM] resetToIdle: ${id.slice(0, 12)}`);
+            verboseLog(`[MRM] resetToIdle: ${id.slice(0, 12)}`);
         }
     }
 
@@ -152,7 +155,7 @@ class MetadataResolutionManager {
         if (this._jobs[id]) {
             delete this._jobs[id];
             this._flush();
-            console.log(`[MRM] clearJob: ${id.slice(0, 12)}`);
+            verboseLog(`[MRM] clearJob: ${id.slice(0, 12)}`);
         }
     }
 
@@ -183,7 +186,7 @@ class MetadataResolutionManager {
 
         const force = hints.force === true || hints.bypassTtl === true || hints.ignoreTtl === true;
         if (force) {
-            console.log(`${TAG} FORCE resolve requested — clearing persisted job state`);
+            verboseLog(`${TAG} FORCE resolve requested — clearing persisted job state`);
             this.clearJob(id);
             this._inflight.delete(id);
         }
@@ -191,7 +194,7 @@ class MetadataResolutionManager {
         const st  = this.getStatus(id);
 
         if (st === STATUS.RESOLVED) {
-            console.log(`${TAG} SKIP resolved (7-day TTL)`);
+            verboseLog(`${TAG} SKIP resolved (7-day TTL)`);
             return null;
         }
         if (st === STATUS.NOT_FOUND || st === STATUS.AMBIGUOUS) {
@@ -203,23 +206,23 @@ class MetadataResolutionManager {
             const job = this.getJob(id);
             const oldSig = job?.candidateSignature || '';
             if (newSig && (!oldSig || newSig !== oldSig)) {
-                console.log(`${TAG} candidate signature changed/initialized (${oldSig || 'none'} → ${newSig}) — clearing terminal ${st}, retrying`);
+                verboseLog(`${TAG} candidate signature changed/initialized (${oldSig || 'none'} → ${newSig}) — clearing terminal ${st}, retrying`);
                 this._setJob(id, { status: STATUS.IDLE, updatedAt: Date.now(), candidateSignature: newSig });
                 // fall through to _doResolve below
             } else {
-                console.log(`${TAG} SKIP ${st} (24-h TTL)`);
+                verboseLog(`${TAG} SKIP ${st} (24-h TTL)`);
                 return null;
             }
         }
         if (st === STATUS.COOLDOWN) {
             const job = this.getJob(id);
-            console.log(`${TAG} SKIP cooldown until ${new Date(job.cooldownUntil).toISOString()}`);
+            verboseLog(`${TAG} SKIP cooldown until ${new Date(job.cooldownUntil).toISOString()}`);
             return null;
         }
 
         // Inflight dedup: concurrent calls for the same game join the same promise
         if (this._inflight.has(id)) {
-            console.log(`${TAG} PENDING — joining inflight promise`);
+            verboseLog(`${TAG} PENDING — joining inflight promise`);
             return this._inflight.get(id);
         }
 
@@ -244,7 +247,7 @@ class MetadataResolutionManager {
         const sig = computeCandidateSignature(candidates);
         if (sig) this._setJob(id, { candidateSignature: sig });
 
-        console.log(`${TAG} candidates (${candidates.length}): ${candidates.map(c => c.title || c.slug).join(', ')}`);
+        verboseLog(`${TAG} candidates (${candidates.length}): ${candidates.map(c => c.title || c.slug).join(', ')}`);
 
         // ── Stage 1+2: cheap DB lookups (no rate-limit risk) ──────────────────
         for (const c of candidates) {
@@ -259,13 +262,13 @@ class MetadataResolutionManager {
 
                 for (const q of queries) {
                     const label = q.slug ? `slug="${q.slug}"` : `title="${q.title}"`;
-                    console.log(`${TAG} lookup ${label}`);
+                    verboseLog(`${TAG} lookup ${label}`);
                     const hit = await this._api.lookupGame(q);
                     if (hit) {
                         const norm = this._api.normalizeServerData(hit);
                         if (norm && (norm.cover || norm.heroImage || norm.logo)) {
                             const matchedName = c.displayName || c.title || c.slug;
-                            console.log(`${TAG} ✓ server HIT (${label}) → "${matchedName}"`);
+                            verboseLog(`${TAG} ✓ server HIT (${label}) → "${matchedName}"`);
                             this._setJob(id, {
                                 status: STATUS.RESOLVED,
                                 resolvedAt: Date.now(),
@@ -286,7 +289,7 @@ class MetadataResolutionManager {
         // Guard: if a prior call already registered a cooldown on this job, skip.
         const existingJob = this.getJob(id);
         if (existingJob?.cooldownUntil && Date.now() < existingJob.cooldownUntil) {
-            console.log(`${TAG} residual cooldown — skipping transient resolver`);
+            verboseLog(`${TAG} residual cooldown — skipping transient resolver`);
             this._setJob(id, { status: STATUS.COOLDOWN, updatedAt: Date.now() });
             return null;
         }
@@ -339,14 +342,14 @@ class MetadataResolutionManager {
             // Re-check cooldown before each attempt (a prior iteration may have set it)
             const freshJob = this.getJob(id);
             if (freshJob?.cooldownUntil && Date.now() < freshJob.cooldownUntil) {
-                console.log(`${TAG} cooldown active — aborting transient loop`);
+                verboseLog(`${TAG} cooldown active — aborting transient loop`);
                 this._setJob(id, { status: STATUS.COOLDOWN, updatedAt: Date.now() });
                 return null;
             }
 
             try {
                 const label = resolveHints.title ? `title="${resolveHints.title}"` : `slug="${resolveHints.slug}"`;
-                console.log(`${TAG} transient resolver [${i + 1}/${transientCandidates.length}] → POST /client/resolve-metadata ${label}`);
+                verboseLog(`${TAG} transient resolver [${i + 1}/${transientCandidates.length}] → POST /client/resolve-metadata ${label}`);
                 const res    = await this._api.resolveMetadata(resolveHints);
                 const status = res?.status;
 
@@ -355,7 +358,7 @@ class MetadataResolutionManager {
                     const norm = this._api.normalizeTransientData(raw);
                     if (norm && (norm.cover || norm.heroImage || norm.logo)) {
                         const matchedName = raw?.title || displayName;
-                        console.log(`${TAG} ✓ transient RESOLVED [${i + 1}/${transientCandidates.length}] title="${raw?.title}" via candidate "${displayName}"`);
+                        verboseLog(`${TAG} ✓ transient RESOLVED [${i + 1}/${transientCandidates.length}] title="${raw?.title}" via candidate "${displayName}"`);
                         this._setJob(id, {
                             status: STATUS.RESOLVED,
                             resolvedAt: Date.now(),
@@ -366,9 +369,9 @@ class MetadataResolutionManager {
                         return { meta: norm, matchedName, _resolveSource: 'transient-resolved' };
                     }
                     // Resolved but no images — try next candidate
-                    console.log(`${TAG} transient resolved but no images for "${displayName}" — trying next candidate`);
+                    verboseLog(`${TAG} transient resolved but no images for "${displayName}" — trying next candidate`);
                     if (isLast) {
-                        console.log(`${TAG} all candidates resolved with no images → NOT_FOUND`);
+                        verboseLog(`${TAG} all candidates resolved with no images → NOT_FOUND`);
                         this._setJob(id, { status: STATUS.NOT_FOUND, updatedAt: Date.now() });
                         return null;
                     }
@@ -376,7 +379,7 @@ class MetadataResolutionManager {
                 }
 
                 if (status === 'not_found') {
-                    console.log(`${TAG} transient NOT_FOUND for candidate "${displayName}"${isLast ? ' (last — writing NOT_FOUND)' : ' — trying next'}`);
+                    verboseLog(`${TAG} transient NOT_FOUND for candidate "${displayName}"${isLast ? ' (last — writing NOT_FOUND)' : ' — trying next'}`);
                     if (isLast) {
                         this._setJob(id, { status: STATUS.NOT_FOUND, updatedAt: Date.now() });
                         return null;
@@ -385,7 +388,7 @@ class MetadataResolutionManager {
                 }
 
                 if (status === 'ambiguous') {
-                    console.log(`${TAG} transient AMBIGUOUS for candidate "${displayName}"${isLast ? ' (last — writing AMBIGUOUS)' : ' — trying next'}`);
+                    verboseLog(`${TAG} transient AMBIGUOUS for candidate "${displayName}"${isLast ? ' (last — writing AMBIGUOUS)' : ' — trying next'}`);
                     lastAmbiguous = true;
                     if (isLast) {
                         this._setJob(id, { status: STATUS.AMBIGUOUS, updatedAt: Date.now() });
@@ -395,7 +398,7 @@ class MetadataResolutionManager {
                 }
 
                 // null / unexpected status — leave IDLE so caller can retry
-                console.log(`${TAG} transient null/unexpected for "${displayName}" (retryable) → IDLE`);
+                verboseLog(`${TAG} transient null/unexpected for "${displayName}" (retryable) → IDLE`);
                 this._setJob(id, { status: STATUS.IDLE, updatedAt: Date.now() });
                 return null;
 
@@ -420,7 +423,7 @@ class MetadataResolutionManager {
         }
 
         // Exhausted all candidates
-        console.log(`${TAG} all ${transientCandidates.length} transient candidates exhausted → ${lastAmbiguous ? 'AMBIGUOUS' : 'NOT_FOUND'}`);
+        verboseLog(`${TAG} all ${transientCandidates.length} transient candidates exhausted → ${lastAmbiguous ? 'AMBIGUOUS' : 'NOT_FOUND'}`);
         this._setJob(id, {
             status: lastAmbiguous ? STATUS.AMBIGUOUS : STATUS.NOT_FOUND,
             updatedAt: Date.now(),

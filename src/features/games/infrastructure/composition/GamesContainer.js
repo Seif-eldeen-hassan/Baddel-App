@@ -44,6 +44,8 @@ const { runBackgroundMetadataPipeline: defaultRunBackgroundMetadataPipeline } = 
 const { refetchMissingImages: defaultRefetchMissingImages } = require('../services/RefetchImagesService');
 
 let gamesFeatureSingleton = null;
+const VERBOSE_LOGS = process.env.BADDEL_VERBOSE_LOGS === '1';
+function verboseLog(...args) { if (VERBOSE_LOGS) console.log(...args); }
 
 function createGamesFeature(options = {}) {
     const app = options.app || defaultApp;
@@ -74,7 +76,7 @@ function createGamesFeature(options = {}) {
 
     function registerLocalMetadataResolver(fn) {
         localMetadataResolver = fn;
-        console.log('[BackgroundMetaPipeline] Local metadata resolver registered.');
+        verboseLog('[BackgroundMetaPipeline] Local metadata resolver registered.');
     }
 
     function registerImageDownloader(fn) {
@@ -83,7 +85,7 @@ function createGamesFeature(options = {}) {
 
     function registerGameImageUpdatedNotifier(fn) {
         gameImageUpdatedFn = fn;
-        console.log('[BackgroundMetaPipeline] game-image-updated notifier registered.');
+        verboseLog('[BackgroundMetaPipeline] game-image-updated notifier registered.');
     }
 
     async function refetchMissingImages(notifyCallback = null, _deps = {}) {

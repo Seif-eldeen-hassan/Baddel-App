@@ -339,3 +339,27 @@ test('Installed and Ready to Install badge behavior remains separate', () => {
     assert.equal(sandbox.document.getElementById('sbNavReady').textContent, '9');
 }
 );
+
+test('confirmed empty Installed library displays 0 instead of an unknown dash', () => {
+    const sandbox = createSandbox();
+    sandbox.allGamesData = [];
+    sandbox.window.allGamesData = sandbox.allGamesData;
+
+    sandbox.updateSmartSidebarCounts();
+
+    assert.equal(sandbox.document.getElementById('sbNavInstalled').textContent, '0');
+});
+
+test('cached Installed count is available before accounts.js installed predicate is ready', () => {
+    const sandbox = createSandbox();
+    sandbox._agIsInstalled = undefined;
+    sandbox.allGamesData = [
+        { id: 'epic-local', path: 'C:/Games/Epic/game.exe', command: 'launch', isInstalled: true },
+        { id: 'riot-local', path: 'C:/Games/Riot/game.exe', command: 'launch', isInstalled: true },
+    ];
+    sandbox.window.allGamesData = sandbox.allGamesData;
+
+    sandbox.updateSmartSidebarCounts();
+
+    assert.equal(sandbox.document.getElementById('sbNavInstalled').textContent, '2');
+});

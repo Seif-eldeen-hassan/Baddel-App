@@ -27,6 +27,30 @@ const PNG_1X1 = Buffer.from(
     'base64'
 );
 
+test('artwork timeout remains active while the image body is stalled', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    const client = new ArtworkHttpClient({ maxAttempts: 1, timeoutMs: 1000,
+        fetchImpl: async () => ({ ...makeResponse(), arrayBuffer: () => new Promise(() => {}) }),
+    });
+    const request = client.fetchImage({ url: 'https://fixture/image.png' });
+    const rejected = assert.rejects(request, /timed out/i);
+    await new Promise(resolve => setImmediate(resolve));
+    t.mock.timers.tick(1001);
+    await rejected;
+});
+
+test('artwork deadline settles even if a network transport ignores abort', async t => {
+    t.mock.timers.enable({ apis: ['setTimeout'] });
+    let signal;
+    const client = new ArtworkHttpClient({ maxAttempts: 1, timeoutMs: 1000,
+        fetchImpl: (_url, options) => { signal = options.signal; return new Promise(() => {}); },
+    });
+    const rejected = assert.rejects(client.fetchImage({ url: 'https://fixture/image.png' }), /timed out/i);
+    t.mock.timers.tick(1001);
+    await rejected;
+    assert.equal(signal.aborted, true);
+});
+
 function makeResponse(buffer = PNG_1X1, options = {}) {
     const headers = {
         'content-type': options.mime || 'image/png',
@@ -128,6 +152,16 @@ test('ArtworkHttpClient uses capped exponential backoff for network failures', a
     assert.equal(result.retryCount, 2);
 });
 
+test('ArtworkHttpClient retries dual-stack timeouts through credential-free HTTPS IPv4', async () => {
+    const timeout = new TypeError('fetch failed', { cause: Object.assign(new Error('connect timeout'), { code: 'ETIMEDOUT' }) });
+    const client = new ArtworkHttpClient({ fetchImpl: async () => { throw timeout; }, maxAttempts: 1 });
+    let fallbackUrl = null;
+    client._fetchHttpsIpv4 = async url => { fallbackUrl = url; return makeResponse(PNG_1X1); };
+    const result = await client.fetchImage({ url: 'https://images.example/hero.webp' });
+    assert.equal(fallbackUrl, 'https://images.example/hero.webp');
+    assert.equal(result.bytes, PNG_1X1.length);
+});
+
 test('ArtworkHttpClient does not retry non-retryable 404 responses', async () => {
     let calls = 0;
     const client = new ArtworkHttpClient({
@@ -183,4 +217,33 @@ test('ArtworkHttpClient stays independent of renderer, Electron, and production 
 
     assert.doesNotMatch(source, /electron|ipcMain|BrowserWindow|window\.|document\./);
     assert.doesNotMatch(source, /platformSync|main\.js|preload\.js|imageWebpCache/);
+});
+
+
+test('ArtworkHttpClient times out artwork requests with AbortController and retries bounded attempts', async () => {
+    const sleeps = [];
+    let calls = 0;
+    const client = new ArtworkHttpClient({
+        maxAttempts: 2,
+        timeoutMs: 5,
+        baseDelayMs: 1,
+        sleep: async ms => { sleeps.push(ms); },
+        fetchImpl: async (_url, request) => {
+            calls += 1;
+            return new Promise((_resolve, reject) => {
+                request.signal.addEventListener('abort', () => {
+                    const err = new Error('aborted');
+                    err.name = 'AbortError';
+                    reject(err);
+                });
+            });
+        },
+    });
+
+    await assert.rejects(
+        client.fetchImage({ url: 'https://cdn.example/slow.png' }),
+        (err) => err instanceof ArtworkHttpError && err.retryable === true && /timed out/.test(err.message)
+    );
+    assert.equal(calls, 2);
+    assert.deepEqual(sleeps, [1]);
 });

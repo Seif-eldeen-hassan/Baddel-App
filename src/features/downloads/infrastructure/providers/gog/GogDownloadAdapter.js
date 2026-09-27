@@ -4,6 +4,7 @@ const defaultFs = require('fs');
 const defaultPath = require('path');
 const { DOWNLOAD_STATUSES } = require('../../../domain/entities/DownloadTask');
 const { GogProgressParser } = require('./GogProgressParser');
+const { GogInstallManifestRecoveryService } = require('./GogInstallManifestRecoveryService');
 const { makeDownloadError } = require('../../services/DownloadPreflightService');
 const {
     diagnoseGogDownloadFailure,
@@ -22,6 +23,10 @@ class GogDownloadAdapter {
         pathModule = defaultPath,
         platform = 'windows',
         maxWorkers = null,
+        diagnosticRecorder = null,
+        manifestRecoveryService = null,
+        gamesApi = null,
+        identityResolver = null,
     } = {}) {
         if (!runtime) throw new Error('GogDownloadAdapter requires runtime');
         if (!discovery) throw new Error('GogDownloadAdapter requires discovery');
@@ -33,6 +38,14 @@ class GogDownloadAdapter {
         this.path = pathModule;
         this.platform = platform;
         this.maxWorkers = maxWorkers;
+        this.diagnosticRecorder = diagnosticRecorder;
+        this.identityResolver = identityResolver;
+        this.manifestRecoveryService = manifestRecoveryService || new GogInstallManifestRecoveryService({
+            userDataDir,
+            gamesApi,
+            fs: fsSync,
+            pathModule,
+        });
         this.active = new Map();
     }
 
@@ -163,27 +176,64 @@ class GogDownloadAdapter {
         return args;
     }
 
+    resolveMaintenanceInstallPath(task, validated, runtimeEnv) {
+        const manifestPath = this.manifestRecoveryService.getManifestPath(runtimeEnv.configPath, validated.productId);
+        let manifest;
+        try { manifest = JSON.parse(this.fs.readFileSync(manifestPath, 'utf8')); } catch {
+            throw makeDownloadError('GOG_INSTALL_MANIFEST_MISSING', 'GOG installation state is missing, so this game cannot be updated or repaired safely.');
+        }
+        const installDirectory = String(manifest?.installDirectory || '').trim();
+        if (!installDirectory || this.path.isAbsolute(installDirectory)) {
+            throw makeDownloadError('GOG_INSTALL_PATH_UNRESOLVED', 'GOG installation state does not contain a safe game directory.');
+        }
+        const candidate = this.path.resolve(validated.installPath, installDirectory);
+        const relative = this.path.relative(validated.installPath, candidate);
+        if (!relative || relative === '..' || relative.startsWith(`..${this.path.sep}`) || this.path.isAbsolute(relative)) {
+            throw makeDownloadError('GOG_INSTALL_PATH_UNRESOLVED', 'GOG installation state points outside the managed install folder.');
+        }
+        if (!this.fs.existsSync(candidate) || !this.fs.statSync(candidate).isDirectory()) {
+            throw makeDownloadError('GOG_INSTALLATION_NOT_FOUND', 'The installed GOG game directory could not be found.');
+        }
+        return candidate;
+    }
+
     async getCapabilityStatus() {
         const runtimeEnv = this.getRuntimeEnv();
         return this.discovery.getStatus({ env: runtimeEnv.env });
     }
 
-    async start(task, { onProgress = () => {}, sessionId = null } = {}) {
+    async checkForUpdate(task) {
+        if (!this.identityResolver?.resolveForQueue) {
+            throw makeDownloadError('GOG_UPDATE_CHECK_UNAVAILABLE', 'GOG update checks are unavailable.');
+        }
+        const resolved = this.identityResolver.revalidateVerifiedTask
+            ? await this.identityResolver.revalidateVerifiedTask(task)
+            : await this.identityResolver.resolveForQueue(task);
+        const installedBuildId = String(task.buildId || task.buildVersion || task.verifiedBuildId || '').trim() || null;
+        const targetBuildId = String(resolved.verifiedBuildId || '').trim() || null;
+        if (!installedBuildId || !targetBuildId) {
+            throw makeDownloadError('GOG_UPDATE_VERSION_UNRESOLVED', 'GOG could not compare the installed and current Windows builds.');
+        }
+        return {
+            provider: 'gog', productId: resolved.gogProductId,
+            installedBuildId, targetBuildId,
+            verifiedBuildGeneration: resolved.verifiedBuildGeneration,
+            updateAvailable: installedBuildId !== targetBuildId,
+            checkedAt: new Date().toISOString(),
+        };
+    }
+
+    async start(task, options = {}) {
+        if (this.active.has(task.id)) throw makeDownloadError('GOG_DOWNLOAD_PROCESS_FAILED', 'This GOG download is already running.');
+        const productLockId = normalizeGogProductId(task?.gogdlAppName || task?.contentSystemProductId) || task?.id || 'unknown';
+        return this.manifestRecoveryService.withProductLock(productLockId, () => this.startWithManifestRecovery(task, options));
+    }
+
+    async startWithManifestRecovery(task, { onProgress = () => {}, sessionId = null } = {}) {
         if (this.active.has(task.id)) throw makeDownloadError('GOG_DOWNLOAD_PROCESS_FAILED', 'This GOG download is already running.');
         const runtimeEnv = this.getRuntimeEnv();
         const capabilities = await this.discovery.discover({ env: runtimeEnv.env });
         const controller = new AbortController();
-        const parser = new GogProgressParser();
-        let lastProgressAt = 0;
-        let lastPercent = Number(task.progressPercent) || 0;
-        let lastStatus = task.status;
-        let meaningfulProgressSeen = false;
-        let finalTransfer = {
-            downloadedBytes: Number.isFinite(Number(task.downloadedBytes)) ? Number(task.downloadedBytes) : null,
-            totalBytes: Number.isFinite(Number(task.totalBytes)) ? Number(task.totalBytes) : null,
-            source: 'checkpoint',
-        };
-        let expectedTotalBytes = hasValidAuthoritativeTransfer(finalTransfer) ? Number(finalTransfer.totalBytes) : null;
         const active = {
             controller,
             task,
@@ -193,7 +243,10 @@ class GogDownloadAdapter {
             processInfo: null,
             diagnostics: [],
             diagnosticPath: this.getDiagnosticPath(task.id),
+            lifecycleStopped: null,
+            resolveLifecycleStopped: null,
         };
+        active.lifecycleStopped = new Promise(resolve => { active.resolveLifecycleStopped = resolve; });
         const failureContext = {
             validated: null,
             args: null,
@@ -203,141 +256,303 @@ class GogDownloadAdapter {
             runtimeEnv,
         };
         this.active.set(task.id, active);
-        const forward = (chunk) => {
-            for (const event of parser.push(chunk)) {
-                const progress = normalizeProgress(event, capabilities);
-                progress.sessionId = sessionId || task.progressSessionId || null;
-                const now = Date.now();
-                if (isMeaningfulDownloadProgress(progress)) {
-                    meaningfulProgressSeen = true;
-                }
-                if (hasValidAuthoritativeTransfer(progress)) {
-                    if (expectedTotalBytes === null) {
-                        expectedTotalBytes = Number(progress.totalBytes);
-                        progress.expectedTotalBytes = expectedTotalBytes;
-                    } else if (Number(progress.totalBytes) !== expectedTotalBytes) {
-                        progress.unexpectedTotalBytes = Number(progress.totalBytes);
-                        progress.expectedTotalBytes = expectedTotalBytes;
-                        progress.totalBytes = expectedTotalBytes;
-                        progress.providerTotalBytes = expectedTotalBytes;
-                        if (Number(progress.downloadedBytes) > expectedTotalBytes) {
-                            progress.downloadedBytes = expectedTotalBytes;
-                            progress.providerDownloadedBytes = expectedTotalBytes;
-                        }
-                    }
-                    finalTransfer = {
-                        downloadedBytes: Number(progress.downloadedBytes),
-                        totalBytes: Number(progress.totalBytes),
-                        source: 'gogdl-overall-progress',
-                    };
-                }
-                if (Number.isFinite(progress.progressPercent)) {
-                    progress.progressPercent = progress.progressSource === 'gogdl-overall-progress'
-                        ? progress.progressPercent
-                        : Math.max(lastPercent, progress.progressPercent);
-                    lastPercent = progress.progressPercent;
-                }
-                const statusChanged = progress.status && progress.status !== lastStatus;
-                const important = progress.errorCode ||
-                    statusChanged ||
-                    progress.authoritativeTransfer === true ||
-                    Number.isFinite(Number(progress.rawDownloadedBytes)) ||
-                    Number.isFinite(Number(progress.rawDownloadSpeedBps)) ||
-                    Number.isFinite(Number(progress.diskWriteSpeedBps)) ||
-                    progress.progressPercent === 100;
-                if (!important && now - lastProgressAt < 250) continue;
-                lastProgressAt = now;
-                if (progress.status) lastStatus = progress.status;
-                onProgress(progress);
-            }
-        };
+        this.diagnosticRecorder?.captureIdentity?.({ ...task, progressSessionId: sessionId || task.progressSessionId || null });
         try {
             const validated = this.validateTask(task);
-            const args = this.buildDownloadArgs(validated, {
-                forceGen: validated.verifiedBuildGeneration === 1 ? 1 : null,
-            });
+            const forceGen = validated.verifiedBuildGeneration === 1 ? 1 : null;
+            const operation = ['update', 'repair'].includes(task.operationKind) ? task.operationKind : 'download';
+            if (operation !== 'download') {
+                validated.installPath = this.resolveMaintenanceInstallPath(task, validated, runtimeEnv);
+            }
+            const args = operation === 'download'
+                ? this.buildDownloadArgs(validated, { forceGen })
+                : this.buildGogCommandArgs(validated, { operation, installPath: validated.installPath, forceGen });
             failureContext.validated = validated;
             failureContext.args = args;
             failureContext.folderBefore = this.scanInstallSnapshot(validated.installPath);
             failureContext.diskBefore = this.measureFreeSpace(validated.installPath);
-            onProgress({
-                status: DOWNLOAD_STATUSES.DOWNLOADING,
-                stage: 'downloading',
-                statusMessage: 'Starting GOG download...',
-                sessionId: sessionId || task.progressSessionId || null,
-                providerProgressMode: 'unknown',
-                runtimeVersion: capabilities.runtimeVersion || null,
-            });
-            await this.runDownloadAttempt({
-                active,
-                args,
-                controller,
-                forward,
-                onProgress,
-                capabilities,
-                runtimeEnv,
+            const preflight = this.manifestRecoveryService.inspectGogInstallation({
                 task,
-                validated,
-                forceGen: validated.verifiedBuildGeneration === 1 ? 1 : null,
+                productId: validated.productId,
+                installPath: validated.installPath,
+                configPath: runtimeEnv.configPath,
             });
-            for (const event of parser.flush()) {
-                const progress = normalizeProgress(event, capabilities);
-                progress.sessionId = sessionId || task.progressSessionId || null;
-                if (isMeaningfulDownloadProgress(progress)) meaningfulProgressSeen = true;
-                if (hasValidAuthoritativeTransfer(progress)) {
-                    finalTransfer = {
-                        downloadedBytes: Number(progress.downloadedBytes),
-                        totalBytes: Number(progress.totalBytes),
-                        source: 'gogdl-overall-progress',
-                    };
+            this.logManifestLifecycle('GOG_INSTALL_PREFLIGHT', task, {
+                ...preflight,
+                action: preflight.staleManifestCandidate ? 'await-runtime-confirmation' : 'preserve-manifest',
+            });
+            if (preflight.staleManifestCandidate) {
+                this.logManifestLifecycle('GOG_STALE_MANIFEST_DETECTED', task, {
+                    productId: validated.productId,
+                    manifestPath: preflight.manifestPath,
+                    requestedInstallPath: validated.installPath,
+                    stage: 'preflight-candidate',
+                    action: 'await-runtime-confirmation',
+                });
+            }
+
+            let staleManifestRecoveryAttempted = false;
+            let recoveryEvidence = null;
+            while (true) {
+                const parser = new GogProgressParser();
+                const attempt = makeAttemptState(task);
+                const evidence = makeStaleManifestEvidence(staleManifestRecoveryAttempted ? 2 : 1);
+                let lastProgressAt = 0;
+                let lastStatus = task.status;
+                const processEvent = (event, force = false) => {
+                    const eventAt = Date.now();
+                    const authoritativeGapMs = event.authoritativeTransfer === true && attempt.lastAuthoritativeDiagnosticAt != null
+                        ? eventAt - attempt.lastAuthoritativeDiagnosticAt
+                        : null;
+                    if (event.authoritativeTransfer === true) attempt.lastAuthoritativeDiagnosticAt = eventAt;
+                    this.recordProviderEvent(task, sessionId, event, authoritativeGapMs);
+                    const progress = normalizeProgress(event, capabilities);
+                    this.recordNormalizedProgress(task, sessionId, progress);
+                    progress.sessionId = sessionId || task.progressSessionId || null;
+                    if (isMeaningfulDownloadProgress(progress)) attempt.meaningfulProgressSeen = true;
+                    updateAttemptBytes(evidence, progress);
+                    if (hasValidAuthoritativeTransfer(progress)) {
+                        if (attempt.expectedTotalBytes === null) {
+                            attempt.expectedTotalBytes = Number(progress.totalBytes);
+                            progress.expectedTotalBytes = attempt.expectedTotalBytes;
+                        } else if (Number(progress.totalBytes) !== attempt.expectedTotalBytes) {
+                            progress.unexpectedTotalBytes = Number(progress.totalBytes);
+                            progress.expectedTotalBytes = attempt.expectedTotalBytes;
+                            progress.totalBytes = attempt.expectedTotalBytes;
+                            progress.providerTotalBytes = attempt.expectedTotalBytes;
+                            if (Number(progress.downloadedBytes) > attempt.expectedTotalBytes) {
+                                progress.downloadedBytes = attempt.expectedTotalBytes;
+                                progress.providerDownloadedBytes = attempt.expectedTotalBytes;
+                            }
+                        }
+                        attempt.finalTransfer = {
+                            downloadedBytes: Number(progress.downloadedBytes),
+                            totalBytes: Number(progress.totalBytes),
+                            source: 'gogdl-overall-progress',
+                        };
+                        this.diagnosticRecorder?.mark?.(task.id, 'LAST_AUTHORITATIVE_TRANSFER_PROGRESS', {
+                            sessionId: sessionId || task.progressSessionId || null,
+                            attempt: evidence.attempt,
+                            downloadedBytes: progress.downloadedBytes,
+                            totalBytes: progress.totalBytes,
+                            progressPercent: progress.progressPercent,
+                        });
+                        if (Number(progress.downloadedBytes) >= Number(progress.totalBytes)) {
+                            this.diagnosticRecorder?.mark?.(task.id, 'TRANSFER_REACHED_100', {
+                                sessionId: sessionId || task.progressSessionId || null,
+                                attempt: evidence.attempt,
+                                downloadedBytes: progress.downloadedBytes,
+                                totalBytes: progress.totalBytes,
+                            });
+                        }
+                    }
+                    if (Number.isFinite(progress.progressPercent)) {
+                        progress.progressPercent = progress.progressSource === 'gogdl-overall-progress'
+                            ? progress.progressPercent
+                            : Math.max(attempt.lastPercent, progress.progressPercent);
+                        attempt.lastPercent = progress.progressPercent;
+                    }
+                    const now = Date.now();
+                    const statusChanged = progress.status && progress.status !== lastStatus;
+                    const important = progress.errorCode || statusChanged || progress.authoritativeTransfer === true ||
+                        Number.isFinite(Number(progress.rawDownloadedBytes)) ||
+                        Number.isFinite(Number(progress.rawDownloadSpeedBps)) ||
+                        Number.isFinite(Number(progress.diskWriteSpeedBps)) ||
+                        progress.progressPercent === 100;
+                    if (!force && !important && now - lastProgressAt < 250) return;
+                    lastProgressAt = now;
+                    if (progress.status) lastStatus = progress.status;
+                    onProgress(progress);
+                };
+                const forward = chunk => {
+                    updateStaleManifestEvidence(evidence, chunk);
+                    for (const event of parser.push(chunk)) processEvent(event);
+                };
+
+                onProgress({
+                    status: DOWNLOAD_STATUSES.DOWNLOADING,
+                    stage: staleManifestRecoveryAttempted ? 'preparing' : 'downloading',
+                    statusMessage: operation === 'repair' ? 'Starting GOG verification and repair...'
+                        : operation === 'update' ? 'Starting GOG update...'
+                            : staleManifestRecoveryAttempted ? 'Preparing a clean GOG download...' : 'Starting GOG download...',
+                    sessionId: sessionId || task.progressSessionId || null,
+                    providerProgressMode: 'unknown',
+                    runtimeVersion: capabilities.runtimeVersion || null,
+                });
+                const executionResult = await this.runDownloadAttempt({
+                    active,
+                    args,
+                    controller,
+                    forward,
+                    onProgress,
+                    capabilities,
+                    runtimeEnv,
+                    task,
+                    validated,
+                    forceGen,
+                    operation,
+                    attemptEvidence: evidence,
+                });
+                evidence.exitCode = Number(executionResult?.code ?? 0);
+                this.diagnosticRecorder?.mark?.(task.id, 'GOG_PROCESS_EXITED', {
+                    sessionId: sessionId || task.progressSessionId || null,
+                    attempt: evidence.attempt,
+                    processExitCode: evidence.exitCode,
+                    bytesTransferred: evidence.bytesTransferred,
+                });
+                for (const event of parser.flush()) processEvent(event, true);
+
+                const postRun = this.manifestRecoveryService.inspectGogInstallation({
+                    task,
+                    productId: validated.productId,
+                    installPath: validated.installPath,
+                    configPath: runtimeEnv.configPath,
+                });
+                if (!attempt.meaningfulProgressSeen) {
+                    if (postRun.actualInstallationExists) {
+                        const verification = this.verifyInstalledGame(validated.installPath, { expectedBytes: null });
+                        if (verification.status === 'passed') {
+                            this.logManifestLifecycle('GOG_DOWNLOAD_COMPLETED', task, {
+                                productId: validated.productId,
+                                completionMode: 'already-installed-or-up-to-date',
+                                bytesTransferred: 0,
+                                actualBytes: verification.actualBytes,
+                                installPath: validated.installPath,
+                            });
+                            return makeGogCompletionReceipt({
+                                capabilities,
+                                transfer: {
+                                    downloadedBytes: verification.actualBytes,
+                                    totalBytes: verification.actualBytes,
+                                    source: 'existing-installation-filesystem',
+                                },
+                                verification,
+                                bytesTransferred: 0,
+                                completionMode: staleManifestRecoveryAttempted
+                                    ? 'stale-manifest-recovered'
+                                    : 'already-installed-or-up-to-date',
+                                staleManifestRecovered: staleManifestRecoveryAttempted,
+                                buildId: task.targetBuildId || validated.verifiedBuildId,
+                            });
+                        }
+                    }
+
+                    const staleConfirmed = !staleManifestRecoveryAttempted &&
+                        preflight.staleManifestCandidate === true &&
+                        evidence.exitCode === 0 &&
+                        evidence.bytesTransferred === 0 &&
+                        !postRun.actualInstallationExists &&
+                        hasStrongNothingToDoEvidence(evidence);
+                    if (staleConfirmed) {
+                        if (controller.signal.aborted || active.stopReason) throw makeDownloadError('GOG_DOWNLOAD_CANCELLED', 'GOG download was stopped.');
+                        recoveryEvidence = { preflight, postRun, firstAttempt: staleAttemptSummary(evidence) };
+                        this.logManifestLifecycle('GOG_STALE_MANIFEST_DETECTED', task, {
+                            productId: validated.productId,
+                            manifestPath: preflight.manifestPath,
+                            requestedInstallPath: validated.installPath,
+                            stage: 'runtime-confirmed',
+                            exitCode: evidence.exitCode,
+                            bytesTransferred: evidence.bytesTransferred,
+                            indicators: staleEvidenceSummary(evidence),
+                        });
+                        const quarantine = this.manifestRecoveryService.quarantineGogdlManifest({
+                            productId: validated.productId,
+                            configPath: runtimeEnv.configPath,
+                            requestedInstallPath: validated.installPath,
+                            reason: 'zero-byte-nothing-to-do-with-missing-target-installation',
+                            buildId: validated.verifiedBuildId,
+                        });
+                        this.logManifestLifecycle('GOG_STALE_MANIFEST_QUARANTINED', task, {
+                            productId: validated.productId,
+                            source: quarantine.source,
+                            destination: quarantine.destination,
+                            metadataPath: quarantine.metadataPath || null,
+                            metadataError: quarantine.metadataError || null,
+                            reason: 'zero-byte-nothing-to-do-with-missing-target-installation',
+                        });
+                        staleManifestRecoveryAttempted = true;
+                        this.logManifestLifecycle('GOG_STALE_MANIFEST_RECOVERY', task, {
+                            productId: validated.productId,
+                            attempt: 1,
+                            previousExitCode: evidence.exitCode,
+                            previousBytesTransferred: evidence.bytesTransferred,
+                        });
+                        continue;
+                    }
+                    if (staleManifestRecoveryAttempted) {
+                        throw makeStaleManifestFailure({
+                            recoveryEvidence,
+                            retryEvidence: evidence,
+                            postRun,
+                            diagnosticPath: active.diagnosticPath,
+                        });
+                    }
+                    throw makeDownloadError('GOG_DOWNLOAD_NO_PROGRESS', safeMessage('GOG_DOWNLOAD_NO_PROGRESS'));
                 }
-                onProgress(progress);
+                if (!isCompleteTransfer(attempt.finalTransfer)) {
+                    throw makeDownloadError('DOWNLOAD_INCOMPLETE_TRANSFER', safeMessage('DOWNLOAD_INCOMPLETE_TRANSFER'));
+                }
+                this.diagnosticRecorder?.mark?.(task.id, 'FINAL_TRANSFER_VALIDATED', { ...attempt.finalTransfer });
+                onProgress({
+                    status: DOWNLOAD_STATUSES.VERIFYING,
+                    stage: 'verifying',
+                    statusMessage: 'Verifying files',
+                    etaSeconds: null,
+                    etaSource: null,
+                    sessionId: sessionId || task.progressSessionId || null,
+                });
+                this.diagnosticRecorder?.mark?.(task.id, 'INSTALL_VERIFICATION_STARTED', { installPath: validated.installPath });
+                const verification = this.verifyInstalledGame(validated.installPath, { expectedBytes: attempt.finalTransfer.totalBytes });
+                this.diagnosticRecorder?.mark?.(task.id, 'INSTALL_VERIFICATION_FINISHED', {
+                    status: verification.status,
+                    actualBytes: verification.actualBytes,
+                    verifiedFileCount: verification.verifiedFileCount,
+                    executablePath: verification.executablePath || null,
+                });
+                if (verification.status !== 'passed') {
+                    throw makeDownloadError(verification.diagnosticCode || 'DOWNLOAD_VERIFICATION_FAILED', safeMessage(verification.diagnosticCode || 'DOWNLOAD_VERIFICATION_FAILED'));
+                }
+                this.logManifestLifecycle('GOG_DOWNLOAD_COMPLETED', task, {
+                    productId: validated.productId,
+                    completionMode: staleManifestRecoveryAttempted ? 'stale-manifest-recovered' : 'downloaded',
+                    bytesTransferred: evidence.bytesTransferred,
+                    installPath: validated.installPath,
+                });
+                return makeGogCompletionReceipt({
+                    capabilities,
+                    transfer: attempt.finalTransfer,
+                    verification,
+                    bytesTransferred: evidence.bytesTransferred,
+                    completionMode: staleManifestRecoveryAttempted ? 'stale-manifest-recovered' : 'downloaded',
+                    staleManifestRecovered: staleManifestRecoveryAttempted,
+                    buildId: task.targetBuildId || validated.verifiedBuildId,
+                });
             }
-            if (!meaningfulProgressSeen) {
-                throw makeDownloadError('GOG_DOWNLOAD_NO_PROGRESS', safeMessage('GOG_DOWNLOAD_NO_PROGRESS'));
-            }
-            if (!isCompleteTransfer(finalTransfer)) {
-                throw makeDownloadError('DOWNLOAD_INCOMPLETE_TRANSFER', safeMessage('DOWNLOAD_INCOMPLETE_TRANSFER'));
-            }
-            const verification = this.verifyInstalledGame(validated.installPath, {
-                expectedBytes: finalTransfer.totalBytes,
-            });
-            if (verification.status !== 'passed') {
-                throw makeDownloadError(
-                    verification.diagnosticCode || 'DOWNLOAD_VERIFICATION_FAILED',
-                    safeMessage(verification.diagnosticCode || 'DOWNLOAD_VERIFICATION_FAILED')
-                );
-            }
-            return {
-                provider: 'gog',
-                processExitCode: 0,
-                completionConfirmed: true,
-                transfer: finalTransfer,
-                verification,
-                diagnosticCode: null,
-                completedAt: new Date().toISOString(),
-                runtimeVersion: capabilities.runtimeVersion || null,
-            };
         } catch (err) {
             if (active.stopReason === 'startup-timeout') {
-                this.writeDiagnostics(task, active, 'startup-timeout', {
-                    normalizedErrorCode: 'GOG_DOWNLOAD_START_TIMEOUT',
-                });
+                this.writeDiagnostics(task, active, 'startup-timeout', { normalizedErrorCode: 'GOG_DOWNLOAD_START_TIMEOUT' });
                 throw makeDownloadError('GOG_DOWNLOAD_START_TIMEOUT', safeMessage('GOG_DOWNLOAD_START_TIMEOUT'));
             }
-            if (controller.signal.aborted || err?.code === 'GOG_RUNTIME_CANCELLED') {
+            if (controller.signal.aborted || err?.code === 'GOG_RUNTIME_CANCELLED' || err?.code === 'GOG_DOWNLOAD_CANCELLED') {
                 if (active.stopReason === 'stall') {
-                    this.writeDiagnostics(task, active, 'stall', {
-                        normalizedErrorCode: 'GOG_DOWNLOAD_STALLED',
-                    });
+                    this.writeDiagnostics(task, active, 'stall', { normalizedErrorCode: 'GOG_DOWNLOAD_STALLED' });
                 }
                 throw makeDownloadError('GOG_DOWNLOAD_CANCELLED', 'GOG download was stopped.');
             }
             if (err?.code && !['GOG_RUNTIME_PROCESS_FAILED', 'GOG_RUNTIME_MISSING', 'GOG_RUNTIME_INVALID'].includes(err.code)) {
+                err.providerDiagnosticPath = err.providerDiagnosticPath || active.diagnosticPath || null;
                 this.writeDiagnostics(task, active, 'failure', {
                     normalizedErrorCode: err.code,
                     technicalMessage: redactGogSecrets(err?.message || '').slice(0, 1000),
+                    failure: err.failure || null,
                 });
+                if (err.code === 'GOG_STALE_INSTALL_MANIFEST' || err.code === 'GOG_STALE_MANIFEST_QUARANTINE_FAILED') {
+                    this.logManifestLifecycle('GOG_DOWNLOAD_FINAL_FAILURE', task, {
+                        errorCode: err.code,
+                        failure: err.failure || null,
+                        diagnosticPath: active.diagnosticPath || null,
+                    }, 'warn');
+                }
                 throw err;
             }
             const failure = this.diagnoseFailure(task, err, active, failureContext);
@@ -352,11 +567,65 @@ class GogDownloadAdapter {
             });
             throw normalized;
         } finally {
-            if (process.env.BADDEL_GOG_DOWNLOAD_DEBUG === '1') {
-                this.writeDiagnostics(task, active, 'debug-final', {});
-            }
+            if (process.env.BADDEL_GOG_DOWNLOAD_DEBUG === '1') this.writeDiagnostics(task, active, 'debug-final', {});
             this.active.delete(task.id);
+            active.resolveLifecycleStopped?.();
+            await this.diagnosticRecorder?.flush?.(task.id).catch?.(() => {});
         }
+    }
+
+    logManifestLifecycle(eventType, task, payload = {}, level = 'info') {
+        const safePayload = redactManifestPayload(payload);
+        if (process.env.BADDEL_GOG_DOWNLOAD_DEBUG === '1' || process.env.BADDEL_DOWNLOAD_PROGRESS_DIAGNOSTICS === '1') {
+            const method = level === 'warn' ? 'warn' : 'info';
+            console[method]?.(`[${eventType}]`, safePayload);
+        }
+        this.diagnosticRecorder?.record?.(task?.id, 'progressPipeline', eventType, safePayload, {
+            flush: eventType === 'GOG_DOWNLOAD_FINAL_FAILURE' || eventType === 'GOG_DOWNLOAD_COMPLETED',
+        });
+    }
+
+    recordProviderEvent(task, sessionId, event = {}, authoritativeGapMs = null) {
+        this.diagnosticRecorder?.record?.(task.id, 'providerEvents', 'GOG_PROVIDER_EVENT', {
+            sessionId: sessionId || task.progressSessionId || null,
+            stage: event.stage || event.phase || null,
+            rawLineType: event.eventType || 'unknown',
+            authoritativeTransfer: event.authoritativeTransfer === true,
+            authoritativeOverallProgressGapMs: authoritativeGapMs,
+            progressPercent: event.progressPercent ?? null,
+            providerReportedPercent: event.providerReportedPercent ?? null,
+            downloadedBytes: event.downloadedBytes ?? null,
+            totalBytes: event.totalBytes ?? null,
+            writtenBytes: event.writtenBytes ?? null,
+            rawDownloadedBytes: event.rawDownloadedBytes ?? null,
+            rawDownloadSpeedBps: event.rawDownloadSpeedBps ?? null,
+            decompressionSpeedBps: event.decompressionSpeedBps ?? null,
+            diskWriteSpeedBps: event.diskWriteSpeedBps ?? null,
+            diskUsageBps: event.diskUsageBps ?? event.diskWriteSpeedBps ?? null,
+            diskReadSpeedBps: event.diskReadSpeedBps ?? null,
+            telemetryState: event.telemetryState || null,
+            networkState: event.networkState || null,
+            etaSeconds: event.etaSeconds ?? null,
+        });
+    }
+
+    recordNormalizedProgress(task, sessionId, progress = {}) {
+        this.diagnosticRecorder?.record?.(task.id, 'progressPipeline', 'NORMALIZE_PROGRESS', {
+            sessionId: sessionId || task.progressSessionId || null,
+            authoritativeTransfer: progress.authoritativeTransfer === true,
+            providerDownloadedBytes: progress.providerDownloadedBytes ?? null,
+            providerTotalBytes: progress.providerTotalBytes ?? null,
+            writtenBytes: progress.writtenBytes ?? null,
+            rawDownloadedBytes: progress.rawDownloadedBytes ?? null,
+            rawDownloadSpeedBps: progress.rawDownloadSpeedBps ?? null,
+            decompressionSpeedBps: progress.decompressionSpeedBps ?? null,
+            diskWriteSpeedBps: progress.diskWriteSpeedBps ?? null,
+            diskUsageBps: progress.diskUsageBps ?? progress.diskWriteSpeedBps ?? null,
+            telemetryState: progress.telemetryState || null,
+            networkState: progress.networkState || null,
+            progressPercent: progress.progressPercent ?? null,
+            providerReportedPercent: progress.providerReportedPercent ?? null,
+        });
     }
 
     diagnoseFailure(task, err, active, context = {}) {
@@ -417,7 +686,7 @@ class GogDownloadAdapter {
         return null;
     }
 
-    async runDownloadAttempt({ active, args, controller, forward, onProgress, capabilities, runtimeEnv, task, validated, forceGen }) {
+    async runDownloadAttempt({ active, args, controller, forward, onProgress, capabilities, runtimeEnv, task, validated, forceGen, operation = 'download', attemptEvidence = null }) {
         const executionInfo = {
             pid: null,
             processStartedAt: null,
@@ -441,7 +710,7 @@ class GogDownloadAdapter {
             this.logExecutionPlan({
                 task,
                 capabilities,
-                operation: 'download',
+                operation,
                 validated,
                 forceGen,
                 runtimeEnv,
@@ -462,10 +731,17 @@ class GogDownloadAdapter {
                     executionInfo.pid = pid || null;
                     executionInfo.processStartedAt = new Date().toISOString();
                     active.processInfo = { ...executionInfo };
+                    this.diagnosticRecorder?.mark?.(task.id, 'GOG_PROCESS_STARTED', {
+                        sessionId: task.progressSessionId || null,
+                        processPid: pid || null,
+                        processStatus: 'running',
+                    });
                     onProgress({
                         status: DOWNLOAD_STATUSES.DOWNLOADING,
                         stage: 'downloading',
-                        statusMessage: forceGen ? 'GOG compatibility download started.' : 'GOG download started.',
+                        statusMessage: operation === 'repair' ? 'GOG verification and repair started.'
+                            : operation === 'update' ? 'GOG update started.'
+                                : forceGen ? 'GOG compatibility download started.' : 'GOG download started.',
                         sessionId: task.progressSessionId || null,
                         processPid: pid || null,
                         processStartedAt: executionInfo.processStartedAt,
@@ -473,7 +749,9 @@ class GogDownloadAdapter {
                     });
                 },
             });
-            await active.execution;
+            const result = await active.execution;
+            if (attemptEvidence) attemptEvidence.exitCode = Number(result?.code ?? 0);
+            return result;
         } catch (err) {
             if (startupTimedOut) {
                 const timeoutError = makeDownloadError('GOG_DOWNLOAD_START_TIMEOUT', safeMessage('GOG_DOWNLOAD_START_TIMEOUT'));
@@ -481,7 +759,7 @@ class GogDownloadAdapter {
                     task,
                     capabilities,
                     validated,
-                    operation: 'download',
+                    operation,
                     forceGen,
                     runtimeEnv,
                     normalized: timeoutError,
@@ -496,7 +774,7 @@ class GogDownloadAdapter {
                 task,
                 capabilities,
                 validated,
-                operation: 'download',
+                operation,
                 forceGen,
                 runtimeEnv,
                 normalized: normalizeGogError(err),
@@ -567,6 +845,12 @@ class GogDownloadAdapter {
                 eventType: parsed?.eventType || 'unmatched',
                 line: line.slice(0, 500),
             });
+            this.diagnosticRecorder?.record?.(active.taskId, 'providerEvents', 'GOG_PROVIDER_MESSAGE', {
+                stream,
+                message: line.slice(0, 500),
+                processPid: active.processInfo?.pid || null,
+                processStatus: active.stopReason ? 'stopping' : 'running',
+            });
             if (active.diagnostics.length > DIAGNOSTIC_RING_LIMIT) {
                 active.diagnostics.splice(0, active.diagnostics.length - DIAGNOSTIC_RING_LIMIT);
             }
@@ -603,7 +887,9 @@ class GogDownloadAdapter {
         if (!active) return { requested: false, exitConfirmed: true, stoppedAt: new Date().toISOString() };
         active.stopReason = options.reason || 'pause';
         active.controller.abort();
-        return waitForExecutionStop(active.execution, 5000, active.processInfo);
+        const result = await waitForExecutionStop(active.execution, 5000, active.processInfo);
+        if (result.exitConfirmed) await waitForLifecycleStop(active.lifecycleStopped, 1000, result);
+        return result;
     }
 
     async cancel(taskId, options = {}) {
@@ -612,6 +898,7 @@ class GogDownloadAdapter {
         active.stopReason = options.reason || 'cancel';
         active.controller.abort();
         const result = await waitForExecutionStop(active.execution, 5000, active.processInfo);
+        if (result.exitConfirmed) await waitForLifecycleStop(active.lifecycleStopped, 1000, result);
         if (active.stopReason === 'stall') {
             const diagnosticPath = this.writeDiagnostics(active.task, active, 'stall', {
                 normalizedErrorCode: 'GOG_DOWNLOAD_STALLED',
@@ -698,9 +985,12 @@ function redactGogSecrets(value) {
 }
 
 function normalizeProgress(event = {}, capabilities = {}) {
+    // Generic installation chatter cannot advance the queue before provider exit.
+    if (event.eventType === 'log' && (event.stage === 'installing' || event.stage === 'finalizing')) event = { ...event, stage: 'downloading', phase: 'downloading' };
     const next = {
         stage: event.stage || event.phase || 'downloading',
         statusMessage: friendlyProgressMessage(event),
+        providerActivity: redactGogSecrets(event.message || '').slice(0, 240),
         runtimeVersion: capabilities.runtimeVersion || null,
     };
     if (event.stage === 'verifying') next.status = DOWNLOAD_STATUSES.VERIFYING;
@@ -783,6 +1073,125 @@ function isCompleteTransfer(transfer = {}) {
     );
 }
 
+function makeAttemptState(task = {}) {
+    const finalTransfer = {
+        downloadedBytes: Number.isFinite(Number(task.downloadedBytes)) ? Number(task.downloadedBytes) : null,
+        totalBytes: Number.isFinite(Number(task.totalBytes)) ? Number(task.totalBytes) : null,
+        source: 'checkpoint',
+    };
+    return {
+        meaningfulProgressSeen: false,
+        finalTransfer,
+        expectedTotalBytes: hasValidAuthoritativeTransfer(finalTransfer) ? Number(finalTransfer.totalBytes) : null,
+        lastPercent: Number(task.progressPercent) || 0,
+        lastAuthoritativeDiagnosticAt: null,
+    };
+}
+
+function makeStaleManifestEvidence(attempt) {
+    return {
+        attempt,
+        exitCode: null,
+        bytesTransferred: 0,
+        existingManifestLoaded: false,
+        noPatchFallback: false,
+        zeroChanges: false,
+        nothingToDo: false,
+        outputTail: '',
+    };
+}
+
+function updateStaleManifestEvidence(evidence, chunk) {
+    evidence.outputTail = `${evidence.outputTail}${String(chunk || '')}`.slice(-8192);
+    if (/Creating Manifest instance from existing manifest/i.test(evidence.outputTail)) evidence.existingManifestLoaded = true;
+    if (/No patch found, falling back to chunk based updates/i.test(evidence.outputTail)) evidence.noPatchFallback = true;
+    if (/Deleted:\s*0\s+New:\s*0\s+Changed:\s*0/i.test(evidence.outputTail)) evidence.zeroChanges = true;
+    if (/\bNothing to do\b/i.test(evidence.outputTail)) evidence.nothingToDo = true;
+}
+
+function updateAttemptBytes(evidence, progress = {}) {
+    for (const value of [progress.providerDownloadedBytes, progress.downloadedBytes, progress.rawDownloadedBytes, progress.writtenBytes]) {
+        const bytes = Number(value);
+        if (Number.isFinite(bytes) && bytes > evidence.bytesTransferred) evidence.bytesTransferred = bytes;
+    }
+}
+
+function hasStrongNothingToDoEvidence(evidence = {}) {
+    return evidence.nothingToDo === true &&
+        (evidence.existingManifestLoaded === true || evidence.zeroChanges === true);
+}
+
+function staleEvidenceSummary(evidence = {}) {
+    return {
+        existingManifestLoaded: evidence.existingManifestLoaded === true,
+        noPatchFallback: evidence.noPatchFallback === true,
+        zeroChanges: evidence.zeroChanges === true,
+        nothingToDo: evidence.nothingToDo === true,
+    };
+}
+
+function staleAttemptSummary(evidence = {}) {
+    return {
+        attempt: Number(evidence.attempt) || null,
+        exitCode: Number.isFinite(Number(evidence.exitCode)) ? Number(evidence.exitCode) : null,
+        bytesTransferred: Number(evidence.bytesTransferred) || 0,
+        indicators: staleEvidenceSummary(evidence),
+    };
+}
+
+function makeStaleManifestFailure({ recoveryEvidence, retryEvidence, postRun, diagnosticPath }) {
+    const err = makeDownloadError(
+        'GOG_STALE_INSTALL_MANIFEST',
+        'GOG could not rebuild the installation state for this folder. Retry the download or choose a new folder.'
+    );
+    err.retryable = true;
+    err.providerDiagnosticPath = diagnosticPath || null;
+    err.failure = {
+        code: 'GOG_STALE_INSTALL_MANIFEST',
+        category: 'stale_install_manifest',
+        userMessage: err.message,
+        technicalSummary: 'A stale GOGDL install manifest was quarantined, but the single clean recovery attempt transferred no game data.',
+        retryable: true,
+        suggestedAction: 'retry-download',
+        evidence: {
+            firstAttempt: recoveryEvidence?.firstAttempt || null,
+            retryAttempt: retryEvidence ? staleAttemptSummary(retryEvidence) : null,
+            preflight: recoveryEvidence?.preflight || null,
+            postRetryInstallation: postRun || null,
+        },
+    };
+    return err;
+}
+
+function makeGogCompletionReceipt({ capabilities, transfer, verification, bytesTransferred, completionMode, staleManifestRecovered, buildId = null }) {
+    return {
+        provider: 'gog',
+        processExitCode: 0,
+        completionConfirmed: true,
+        transfer,
+        verification,
+        bytesTransferred: Number(bytesTransferred) || 0,
+        completionMode,
+        staleManifestRecovered: staleManifestRecovered === true,
+        diagnosticCode: null,
+        completedAt: new Date().toISOString(),
+        runtimeVersion: capabilities.runtimeVersion || null,
+        buildId: buildId || null,
+    };
+}
+
+function redactManifestPayload(value) {
+    if (Array.isArray(value)) return value.map(redactManifestPayload);
+    if (!value || typeof value !== 'object') return typeof value === 'string' ? redactGogSecrets(value) : value;
+    const out = {};
+    for (const [key, child] of Object.entries(value)) {
+        out[key] = /token|authorization|cookie|password|secret|auth/i.test(key)
+            ? '[REDACTED]'
+            : redactManifestPayload(child);
+    }
+    return out;
+}
+
 function scanInstallDirectory({ fsSync, pathModule, installPath }) {
     const result = {
         exists: false,
@@ -831,25 +1240,10 @@ function scanInstallDirectory({ fsSync, pathModule, installPath }) {
 
 function friendlyProgressMessage(event = {}) {
     const stage = event.stage || event.phase || 'downloading';
-    const eta = Number(event.etaSeconds);
-
-    const etaText = Number.isFinite(eta) && eta > 0
-        ? ` · ${formatDuration(eta)} left`
-        : '';
-
-    if (stage === 'verifying') {
-        return `Verifying files${etaText}`;
-    }
-
-    if (stage === 'installing') {
-        return 'Finishing installation';
-    }
-
-    if (stage === 'preparing') {
-        return 'Preparing download';
-    }
-
-    return `Downloading${etaText}`;
+    if (stage === 'verifying') return 'Verifying files';
+    if (stage === 'installing' || stage === 'finalizing') return 'Finalizing installation';
+    if (stage === 'preparing') return 'Preparing download';
+    return 'Downloading compressed data';
 }
 
 function formatDuration(seconds) {
@@ -879,6 +1273,7 @@ async function waitForExecutionStop(execution, timeoutMs, processInfo = null) {
         execution.catch((err) => {
             base.exitCode = err?.details?.code ?? null;
             base.signal = err?.details?.signal ?? null;
+            if (err?.code === 'GOG_RUNTIME_STOP_NOT_CONFIRMED') base.exitConfirmed = false;
         }),
         new Promise(resolve => setTimeout(() => {
             timedOut = true;
@@ -891,6 +1286,23 @@ async function waitForExecutionStop(execution, timeoutMs, processInfo = null) {
     }
     base.stoppedAt = new Date().toISOString();
     return base;
+}
+
+async function waitForLifecycleStop(lifecycleStopped, timeoutMs, result) {
+    if (!lifecycleStopped) return result;
+    let timedOut = false;
+    await Promise.race([
+        lifecycleStopped,
+        new Promise(resolve => setTimeout(() => {
+            timedOut = true;
+            resolve();
+        }, timeoutMs)),
+    ]);
+    if (timedOut) {
+        result.exitConfirmed = false;
+        result.timedOut = true;
+    }
+    return result;
 }
 
 function classifyGogError(err) {
@@ -962,6 +1374,8 @@ function safeMessage(code, raw = '') {
     if (code === 'GOG_MANIFEST_RESOLUTION_FAILED') return 'Baddel could not resolve the GOG download manifest. Retry or relink the account.';
     if (code === 'GOG_DOWNLOAD_START_TIMEOUT') return 'The GOG download did not start in time. Check the connection or relink the account.';
     if (code === 'GOG_DOWNLOAD_NO_PROGRESS') return 'GOG opened the download manager but stopped before transferring files. Retry the download, or choose a new empty install folder.';
+    if (code === 'GOG_STALE_INSTALL_MANIFEST') return 'GOG could not rebuild the installation state for this folder. Retry the download or choose a new folder.';
+    if (code === 'GOG_STALE_MANIFEST_QUARANTINE_FAILED') return 'Baddel could not safely prepare GOG installation state for a clean retry.';
     if (code === 'DOWNLOAD_INCOMPLETE_TRANSFER') return 'The download stopped before the full game was transferred. Retry the download.';
     if (code === 'DOWNLOAD_VERIFICATION_FAILED') return 'Baddel could not verify the downloaded game files. Retry or choose a new folder.';
     if (code === 'DOWNLOAD_INSTALLATION_EMPTY') return 'The install folder does not contain a completed game installation.';

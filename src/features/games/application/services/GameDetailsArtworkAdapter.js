@@ -5,18 +5,20 @@ const _gameDetailsArtworkRoot = typeof window !== 'undefined' ? window : globalT
 const _gameArtworkResolver = (typeof require === 'function')
     ? require('./GameArtworkResolver')
     : _gameDetailsArtworkRoot.BaddelGameArtworkResolver;
+const _artworkSchema = (typeof require === 'function')
+    ? require('./GameArtworkSchema')
+    : _gameDetailsArtworkRoot.BaddelGameArtworkSchema;
+const _readModel = (typeof require === 'function')
+    ? require('./GameArtworkReadModel')
+    : _gameDetailsArtworkRoot.BaddelGameArtworkReadModel;
 
 const { resolveGameArtwork } = _gameArtworkResolver;
 
-const COVER_ALIASES = Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage', 'coverImage']);
-const HERO_ALIASES = Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl']);
-const LOGO_ALIASES = Object.freeze(['logo', 'logoUrl', 'defaultLogo', 'logoImage']);
+const COVER_ALIASES = _artworkSchema.TYPE_ALIASES.cover;
+const HERO_ALIASES = _artworkSchema.TYPE_ALIASES.hero;
+const LOGO_ALIASES = _artworkSchema.TYPE_ALIASES.logo;
 
-const LEGACY_DETAILS_ORDER = Object.freeze({
-    cover: Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage', 'coverImage']),
-    hero: Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl']),
-    logo: Object.freeze(['logo', 'logoUrl', 'defaultLogo', 'logoImage']),
-});
+const LEGACY_DETAILS_ORDER = _artworkSchema.TYPE_ALIASES;
 
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -135,6 +137,7 @@ function resolveGameDetailsArtwork({
     metaData = null,
     resolver = _safeResolve,
 } = {}) {
+    const normalizedCache = _readModel?.runtimeCacheArtwork?.(game, game, cacheArtwork) || cacheArtwork;
     const fallback = legacyGameDetailsArtwork({ game, metaData: metaData || metadataArtwork, placeholders });
     let resolved = null;
     try {
@@ -144,7 +147,7 @@ function resolveGameDetailsArtwork({
             creatorArtwork,
             platformArtwork,
             metadataArtwork,
-            cacheArtwork,
+            cacheArtwork: normalizedCache,
             placeholders,
         });
     } catch {
@@ -152,11 +155,29 @@ function resolveGameDetailsArtwork({
     }
 
     const output = {};
+    const canonicalModel = _readModel?.buildGameArtworkReadModel?.({
+        displayGame: game,
+        canonicalGame: game,
+        metadataArtwork,
+        platformArtwork,
+        cacheArtwork: normalizedCache,
+    }) || null;
     for (const type of ['cover', 'hero', 'logo']) {
         const item = resolved?.[type];
-        output[type] = _validResultItem(item)
-            ? Object.freeze({ ...item, usedFallback: false, fallbackValue: fallback[type].value })
-            : fallback[type];
+        const canonicalItem = canonicalModel?.[type] || null;
+        const remotePending = _validResultItem(item) && /^https?:\/\//i.test(item.value) && item.source !== 'settings' && item.source !== 'creator';
+        const rejectedGogScannerLogo = type === 'logo' && canonicalItem?.identity?.platform === 'gog' && canonicalItem?.originalSource === 'none';
+        if (_validResultItem(item) && !remotePending && !rejectedGogScannerLogo) {
+            output[type] = Object.freeze({ ...canonicalItem, ...item, effectiveValue: item.value, availability: 'available', pending: false, terminal: false, usedFallback: false, fallbackValue: fallback[type].value });
+        } else if ((remotePending || rejectedGogScannerLogo) && canonicalItem) {
+            output[type] = Object.freeze({
+                ...canonicalItem,
+                value: canonicalItem.effectiveValue,
+                usedFallback: false,
+            });
+        } else {
+            output[type] = fallback[type];
+        }
     }
     return Object.freeze(output);
 }

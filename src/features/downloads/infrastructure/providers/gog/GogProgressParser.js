@@ -222,6 +222,7 @@ function parseDiskSpeed(line) {
 
 function phaseFrom(lower) {
     if (/verif|hash|repair|integrity/.test(lower)) return 'verifying';
+    if (/unpack|decompress|writing|download|progress|chunk/.test(lower)) return 'downloading';
     if (/install|apply|finaliz/.test(lower)) return 'installing';
     if (/download|progress|chunk|manifest|file/.test(lower)) return 'downloading';
     if (/auth|login|token|license|owned/.test(lower)) return 'preparing';

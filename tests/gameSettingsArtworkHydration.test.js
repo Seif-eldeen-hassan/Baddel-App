@@ -10,7 +10,7 @@ const ROOT = path.join(__dirname, '..');
 const ADD_GAME_MODAL_JS = fs.readFileSync(path.join(ROOT, 'src/js/addGameModal.js'), 'utf8');
 const ARTWORK_SYNC_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/artwork-sync.js'), 'utf8');
 const CONTEXT_JS = fs.readFileSync(path.join(ROOT, 'src/js/app/game-context-actions.js'), 'utf8');
-const { resolveArtworkCacheKeys } = require('../src/features/games/application/services/GameArtworkReadModel');
+const { resolveArtworkCacheKeys, resolveCanonicalArtworkIdentity } = require('../src/features/games/application/services/GameArtworkReadModel');
 
 function extractFunction(source, name) {
     const marker = `function ${name}`;
@@ -56,6 +56,37 @@ test('resolveArtworkCacheKeys uses strong identity aliases and excludes title/na
     assert.equal(keys.includes('Fall Guys Title'), false);
 });
 
+
+test('shared artwork identity resolves Epic records across library and purchase shapes', () => {
+    const library = {
+        platform: 'epic',
+        accountId: 'account-123',
+        appName: 'JustCause4',
+        namespace: 'justcause4',
+        catalogItemId: 'catalog-456',
+        offerId: 'offer-789',
+        title: 'Just Cause 4 Reloaded',
+    };
+    const purchase = {
+        platform: 'epic',
+        accountId: 'account-123',
+        namespace: 'justcause4',
+        catalogItemId: 'catalog-456',
+        offerId: 'offer-789',
+        name: 'Just Cause 4 Reloaded',
+    };
+    const libraryIdentity = resolveCanonicalArtworkIdentity(library);
+    const purchaseIdentity = resolveCanonicalArtworkIdentity(purchase);
+    assert.equal(libraryIdentity.platform, 'epic');
+    assert.equal(purchaseIdentity.platform, 'epic');
+    assert.equal(libraryIdentity.canonicalGameId, purchaseIdentity.canonicalGameId);
+    assert.ok(purchaseIdentity.strongAliases.includes('offer-789'));
+
+    const keys = resolveArtworkCacheKeys(purchase, library);
+    assert.ok(keys.includes(libraryIdentity.canonicalGameId));
+    assert.equal(keys.includes('Just_Cause_4_Reloaded'), false);
+    assert.equal(keys.includes('title:justcause4reloaded'), false);
+});
 test('__baddelLoadCachedArtworkForGame tries strong keys and returns matched disk cache hits', async () => {
     const calls = [];
     const sandbox = {

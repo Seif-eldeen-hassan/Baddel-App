@@ -382,7 +382,7 @@ test('future createSyncConnectors dependency categories remain source-visible in
             'fetchSteamOwnedGamesWithRetry',
         ],
         epicLegendaryHelpers: [
-            'LEGENDARY_BIN',
+            'inspectLegendaryRuntime',
             'runLegendary',
             'openEpicLoginWindow',
             'getLegendaryConfPath',

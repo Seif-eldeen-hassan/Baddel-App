@@ -195,7 +195,7 @@ test('main.js calls accountShortcuts.registerAll on startup', () => {
 test('main.js calls accountShortcuts.unregisterAll in before-quit', () => {
     const quitBlock = MAIN_JS.slice(
         MAIN_JS.indexOf("app.on('before-quit'"),
-        MAIN_JS.indexOf("app.on('before-quit'") + 400
+        MAIN_JS.indexOf("app.on('before-quit'") + 1600
     );
     assert.match(quitBlock, /accountShortcuts\.unregisterAll/);
 });

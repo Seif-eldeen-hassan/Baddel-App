@@ -220,7 +220,9 @@ test('get-state IPC, connectors, and public API remain stable', () => {
     assert.match(source, /ipcMainRef\.handle\(['"]platform-sync:get-state['"]/);
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_platformSyncState\)\s*\}/);
     assert.match(source, /return\s+\{\s*status:\s*['"]success['"],\s*state:\s*_clonePlain\(_getPlatformSyncState\(platform\)\)\s*\}/);
-    assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
+    assert.doesNotMatch(source, /all-games-cover-cached/);
+    assert.match(mainSource, /new\s+ColdCoverBootstrapService\(\{/);
+    assert.match(mainSource, /webContents\?\.send\(['"]artwork-cold-cover-bootstrap:batch['"],\s*payload\)/);
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);

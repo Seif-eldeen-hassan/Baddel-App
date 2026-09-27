@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: file: app: baddel-cache:; style-src 'self'; script-src 'self'">
+    <meta name="viewport" content="width=1920, initial-scale=1">
+    <title>Baddel Vault Showcase</title>
+    <link rel="stylesheet" href="css/vault-export.css">
+</head>
+<body>
+    <main id="showcase" class="showcase" aria-label="Baddel Epic Vault showcase">
+        <header class="showcase-header">
+            <div class="brand-row">
+                <img class="brand-mark" src="../assets/app_icon.png" alt="">
+                <div><span class="brand-name">BADDEL</span><span class="brand-kicker">EPIC VAULT SHOWCASE</span></div>
+                <div class="export-dates"><time id="generatedDate" class="generated-date"></time><time id="priceDataDate" class="price-data-date" hidden></time></div>
+            </div>
+            <div class="title-row">
+                <div><h1>My Epic Vault</h1><p id="displayName" hidden></p></div>
+                <div id="countSummary" class="count-summary"></div>
+            </div>
+            <section id="financeGrid" class="finance-grid" aria-label="Vault totals"></section>
+        </header>
+        <div id="sections"></div>
+        <footer class="showcase-footer" data-export-marker="footer">
+            <img src="../assets/app_icon.png" alt="">
+            <div><p>Create your own Vault showcase with <strong>BADDEL</strong></p><span>Download Baddel at <b>baddel.live</b></span></div>
+        </footer>
+    </main>
+    <script src="js/vault-export-renderer.js"></script>
+</body>
+</html>

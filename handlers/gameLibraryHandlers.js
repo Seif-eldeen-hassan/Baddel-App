@@ -61,11 +61,17 @@ module.exports.register = function registerGameLibraryHandlers(ipcMain, deps) {
         return renameGame(id, name);
     });
 
-    ipcMain.handle('scan-all-games', async () => {
-        const games = await scanAllGames();
-        const platforms = [...new Set(games.map(g => g.platform).filter(Boolean))];
-        analytics.logLibraryScanned(games.length, platforms).catch(() => {});
-        return games;
+    let scanAllGamesInFlight = null;
+    ipcMain.handle('scan-all-games', () => {
+        if (scanAllGamesInFlight) return scanAllGamesInFlight;
+        scanAllGamesInFlight = (async () => {
+                const games = await scanAllGames();
+                const platforms = [...new Set(games.map(g => g.platform).filter(Boolean))];
+                analytics.logLibraryScanned(games.length, platforms).catch(() => {});
+                return games;
+            })()
+            .finally(() => { scanAllGamesInFlight = null; });
+        return scanAllGamesInFlight;
     });
 
     ipcMain.handle('unhide-all-games', () => unhideAllGames());

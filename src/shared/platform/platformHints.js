@@ -16,7 +16,7 @@ function mapPlatformHint(raw) {
     if (p === 'ubisoft connect' || p === 'ubisoft')                                          return 'ubisoft';
     if (p === 'riot games' || p === 'riot')                                                  return 'riot';
     if (p === 'rockstar' || p === 'rockstar games')                                          return 'rockstar';
-    if (p === 'gog')                                                                         return 'gog';
+    if (p === 'gog' || p === 'gog.com' || p === 'gog galaxy')                                return 'gog';
     if (p === 'battlenet' || p === 'battle.net')                                             return 'battlenet';
     return null;
 }

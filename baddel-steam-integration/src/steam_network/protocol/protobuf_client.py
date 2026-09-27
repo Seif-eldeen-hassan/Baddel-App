@@ -723,38 +723,51 @@ class ProtobufClient:
 
         def product_info_handler(packages, apps):
             for info in packages:
-                self.package_info_handler()
-
                 package_id = str(info.packageid)
-                package_content = vdf.binary_loads(info.buffer[4:])
-                package = package_content.get(package_id)
-
-                if package is None:
-                    continue
-
-                for app in package["appids"].values():
-                    appid = str(app)
-                    self.app_info_handler(package_id=package_id, appid=appid)
-                    apps_to_parse.append(app)
+                try:
+                    package_content = vdf.binary_loads(info.buffer[4:])
+                    package = package_content.get(package_id)
+                    if package is None:
+                        raise KeyError(f"Package {package_id} missing from PICS payload")
+                    for app in package["appids"].values():
+                        appid = str(app)
+                        self.app_info_handler(package_id=package_id, appid=appid)
+                        apps_to_parse.append(app)
+                    self.package_info_handler(package_id)
+                except (KeyError, ValueError, TypeError) as error:
+                    logger.warning("Could not parse package %s: %s", package_id, error)
+                    self.package_info_handler(package_id, failed=True)
 
             for info in apps:
                 app_content = vdf.loads(info.buffer[:-1].decode("utf-8", "replace"))
-                appid = str(app_content["appinfo"]["appid"])
 
                 try:
-                    type_ = app_content["appinfo"]["common"]["type"].lower()
-                    title = app_content["appinfo"]["common"]["name"]
+                    app_info = app_content["appinfo"]
+                    appid = str(app_info["appid"])
+                    if str(app_info.get("public_only", "")).strip() == "1" and not app_info.get("common"):
+                        logger.info("Steam app %s is provider-declared public_only", appid)
+                        self.app_info_handler(
+                            appid=appid,
+                            unavailable_reason="provider_public_only",
+                        )
+                        continue
+
+                    common = app_info["common"]
+                    type_ = common["type"].lower()
+                    title = common["name"]
                     parent = None
 
-                    if "extended" in app_content["appinfo"] and type_ == "dlc":
-                        parent = app_content["appinfo"]["extended"]["dlcforappid"]
-                        logger.debug(f"Retrieved dlc {title} for {parent}")
+                    if type_ == "dlc":
+                        extended = app_info.get("extended") or {}
+                        parent = extended.get("dlcforappid") or common.get("parent")
+                        logger.debug(f"Retrieved dlc {title} for {parent or 'unknown parent'}")
 
                     if type_ == "game":
                         logger.debug(f"Retrieved game {title}")
 
                     self.app_info_handler(appid=appid, title=title, type=type_, parent=parent)
-                except KeyError:
+                except (KeyError, TypeError, ValueError):
+                    appid = str((app_content.get("appinfo") or {}).get("appid", info.appid))
                     logger.warning(f"Unrecognized app structure {app_content}")
                     self.app_info_handler(appid=appid, title="unknown", type="unknown", parent=None)
 

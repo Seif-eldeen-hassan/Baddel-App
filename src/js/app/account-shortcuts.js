@@ -6,6 +6,7 @@
 const PLATFORM_LOGOS = {
     steam:   { img: '../assets/Steam.png',        name: 'Steam',          color: '#1b2838' },
     epic:    { img: '../assets/epic.svg',          name: 'Epic',           color: '#181818', invert: true },
+    gog:     { img: '../assets/gog.png',           name: 'GOG',            color: '#8638e5' },
     ea:      { img: '../assets/ea.png',            name: 'EA App',         color: '#ff6b35' },
     riot:    { img: '../assets/riot.png',          name: 'Riot',           color: '#ff4655' },
     ubisoft: { img: '../assets/Ubisoft.png',       name: 'Ubisoft',        color: '#0070d1', invert: true },

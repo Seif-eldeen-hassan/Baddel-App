@@ -5,6 +5,7 @@ import logging
 import json
 import copy
 import asyncio
+import time
 
 from .cache_proto import ProtoCache
 from .protocol.protobuf_client import SteamLicense
@@ -71,6 +72,27 @@ class GamesCache(ProtoCache):
         self.add_game_lever: bool = False
 
         self._parsing_status = ParsingStatus()
+        self._collection_generation = 0
+        self._expected_package_ids: Set[str] = set()
+        self._completed_package_ids: Set[str] = set()
+        self._expected_app_ids: Set[str] = set()
+        self._pending_app_ids: Set[str] = set()
+        self._completed_app_ids: Set[str] = set()
+        self._failed_package_ids: Set[str] = set()
+        self._failed_app_ids: Set[str] = set()
+        self._duplicate_package_responses = 0
+        self._duplicate_app_responses = 0
+        self._requested_package_ids: Set[str] = set()
+        self._requested_app_ids: Set[str] = set()
+        self._package_retry_counts: Dict[str, int] = {}
+        self._app_retry_counts: Dict[str, int] = {}
+        self._unavailable_app_reasons: Dict[str, str] = {}
+        self._license_discovery_complete = False
+        self._progress_revision = 0
+        self._collection_started_at = time.time()
+        self._last_meaningful_progress_at = self._collection_started_at
+        self._last_progress_kind = 'initialized'
+        self._last_progress_id: Optional[str] = None
 
         # Optional async callback — called once when cache becomes ready.
         # Set by BaddelSteamBridge to push a "cache_ready" event to Electron.
@@ -89,6 +111,27 @@ class GamesCache(ProtoCache):
         self._parsing_status = ParsingStatus()
         self._parsing_status.packages_to_parse = None
         self._parsing_status.apps_to_parse = None
+        self._collection_generation += 1
+        self._expected_package_ids.clear()
+        self._completed_package_ids.clear()
+        self._expected_app_ids.clear()
+        self._pending_app_ids.clear()
+        self._completed_app_ids.clear()
+        self._failed_package_ids.clear()
+        self._failed_app_ids = {
+            app_id for app_id, app in self._storing_map.apps.items()
+            if normalize_app_type(app.type) == 'unknown'
+        }
+        self._duplicate_package_responses = 0
+        self._duplicate_app_responses = 0
+        self._requested_package_ids.clear()
+        self._requested_app_ids.clear()
+        self._package_retry_counts.clear()
+        self._app_retry_counts.clear()
+        self._unavailable_app_reasons.clear()
+        self._license_discovery_complete = False
+        self._collection_started_at = time.time()
+        self._mark_progress('reset')
         self._ready_event.clear()
         logger.info("GamesCache fully reset")
 
@@ -97,16 +140,41 @@ class GamesCache(ProtoCache):
 
     def start_packages_import(self, steam_licenses: List[SteamLicense]):
         package_ids = self.get_package_ids()
-        self._parsing_status.packages_to_parse = 0
+        self._collection_generation += 1
+        self._expected_package_ids.clear()
+        self._completed_package_ids.clear()
+        self._expected_app_ids.clear()
+        self._pending_app_ids.clear()
+        self._completed_app_ids = set(self._storing_map.apps.keys())
+        self._failed_package_ids.clear()
+        self._failed_app_ids = {
+            app_id for app_id, app in self._storing_map.apps.items()
+            if normalize_app_type(app.type) == 'unknown'
+        }
+        self._duplicate_package_responses = 0
+        self._duplicate_app_responses = 0
+        self._requested_package_ids = {str(item.license.package_id) for item in steam_licenses}
+        self._requested_app_ids.clear()
+        self._package_retry_counts.clear()
+        self._app_retry_counts.clear()
+        self._unavailable_app_reasons = {
+            app_id: 'provider_public_only'
+            for app_id, app in self._storing_map.apps.items()
+            if normalize_app_type(app.type) == 'unavailable'
+        }
+        self._license_discovery_complete = True
+        self._collection_started_at = time.time()
+        self._mark_progress('license_discovery', str(len(steam_licenses)))
         # Fix: was passing the set object itself instead of its length
         logger.debug('Licenses to parse: %d, cached package_ids: %d', len(steam_licenses), len(package_ids))
         for steam_license in steam_licenses:
-            if steam_license.license.package_id in package_ids:
+            package_key = str(steam_license.license.package_id)
+            self._expected_package_ids.add(package_key)
+            if package_key in package_ids:
                 continue
-            self._storing_map.licenses.append(License(package_id=str(steam_license.license.package_id),
+            self._storing_map.licenses.append(License(package_id=package_key,
                                              shared=steam_license.shared))
-            self._parsing_status.packages_to_parse += 1
-        self._parsing_status.apps_to_parse = 0
+        self._sync_legacy_counters()
         self._update_ready_state()
 
     def consume_added_games(self):
@@ -139,8 +207,20 @@ class GamesCache(ProtoCache):
                     packages.add(license.package_id)
         return packages
 
-    def update_packages(self):
-        self._parsing_status.packages_to_parse -= 1
+    def update_packages(self, package_id=None):
+        package_key = str(package_id) if package_id is not None else None
+        if package_key:
+            if package_key in self._completed_package_ids:
+                self._duplicate_package_responses += 1
+            elif package_key in self._expected_package_ids:
+                self._completed_package_ids.add(package_key)
+                self._failed_package_ids.discard(package_key)
+                self._mark_progress('package_received', package_key)
+        else:
+            unresolved = self._expected_package_ids - self._completed_package_ids
+            if unresolved:
+                self._completed_package_ids.add(next(iter(unresolved)))
+        self._sync_legacy_counters()
         self._update_ready_state()
 
     async def __consume_resolved_apps(self, shared_licenses: bool, apptypes: Union[str, Set[str]]):
@@ -180,21 +260,144 @@ class GamesCache(ProtoCache):
             yield app
 
     def update_license_apps(self, package_id, appid):
-        self._parsing_status.apps_to_parse += 1
+        package_key = str(package_id)
+        app_key = str(appid)
+        already_linked = False
         for license in self._storing_map.licenses:
-            if license.package_id == package_id:
-                license.app_ids.add(appid)
+            if license.package_id == package_key:
+                already_linked = app_key in license.app_ids
+                license.app_ids.add(app_key)
+        was_expected = app_key in self._expected_app_ids
+        self._expected_app_ids.add(app_key)
+        self._requested_app_ids.add(app_key)
+        if app_key not in self._storing_map.apps:
+            self._pending_app_ids.add(app_key)
+        if not was_expected:
+            self._mark_progress('app_discovered', app_key)
+        self._sync_legacy_counters()
+        self._update_ready_state()
 
     def update_app_title(self, appid, title, type, parent):
-        for license in self._storing_map.licenses:
-            if appid in license.app_ids:
-                self._parsing_status.apps_to_parse -= 1
-        new_app = App(appid=appid, title=title, type=type, parent=parent)
-        self._storing_map.apps[appid] = new_app
+        app_key = str(appid)
+        first_response = app_key not in self._completed_app_ids
+        if not first_response:
+            self._duplicate_app_responses += 1
+        self._completed_app_ids.add(app_key)
+        self._pending_app_ids.discard(app_key)
+        if normalize_app_type(type) == 'unknown':
+            self._failed_app_ids.add(app_key)
+            self._unavailable_app_reasons[app_key] = 'unrecognized_or_public_only_record'
+        else:
+            self._failed_app_ids.discard(app_key)
+            self._unavailable_app_reasons.pop(app_key, None)
+        if first_response:
+            self._mark_progress('app_received', app_key)
+        new_app = App(appid=app_key, title=title, type=type, parent=parent)
+        self._storing_map.apps[app_key] = new_app
         if self.add_game_lever and new_app not in self._sent_apps:
             self._apps_added.append(new_app)
 
+        self._sync_legacy_counters()
         self._update_ready_state()
+
+    def update_app_unavailable(self, appid, reason):
+        app_key = str(appid)
+        first_response = app_key not in self._completed_app_ids
+        if not first_response:
+            self._duplicate_app_responses += 1
+        self._completed_app_ids.add(app_key)
+        self._pending_app_ids.discard(app_key)
+        self._failed_app_ids.discard(app_key)
+        self._unavailable_app_reasons[app_key] = str(reason)
+        if first_response:
+            self._mark_progress('app_unavailable', app_key)
+        self._storing_map.apps[app_key] = App(
+            appid=app_key,
+            title='Unavailable Steam entitlement',
+            type='unavailable',
+            parent=None,
+        )
+        self._sync_legacy_counters()
+        self._update_ready_state()
+
+    def record_package_failure(self, package_id):
+        package_key = str(package_id)
+        first_failure = package_key not in self._completed_package_ids
+        self._failed_package_ids.add(package_key)
+        self._completed_package_ids.add(package_key)
+        if first_failure:
+            self._mark_progress('package_parse_failed', package_key)
+        self._sync_legacy_counters()
+        self._update_ready_state()
+
+    def _mark_progress(self, kind: str, identifier: Optional[str] = None):
+        self._progress_revision += 1
+        self._last_meaningful_progress_at = time.time()
+        self._last_progress_kind = kind
+        self._last_progress_id = str(identifier) if identifier is not None else None
+
+    def record_recovery_request(self, package_ids, app_ids):
+        for package_id in package_ids:
+            key = str(package_id)
+            self._requested_package_ids.add(key)
+            self._package_retry_counts[key] = self._package_retry_counts.get(key, 0) + 1
+        for app_id in app_ids:
+            key = str(app_id)
+            self._requested_app_ids.add(key)
+            self._app_retry_counts[key] = self._app_retry_counts.get(key, 0) + 1
+        if package_ids or app_ids:
+            self._ready_event.clear()
+
+    def recovery_candidates(self):
+        pending_packages = self._expected_package_ids - self._completed_package_ids
+        retry_packages = pending_packages | self._failed_package_ids
+        retry_apps = self._pending_app_ids | self._failed_app_ids
+        return sorted(retry_packages), sorted(retry_apps)
+
+    def collection_status(self):
+        now = time.time()
+        pending_packages = self._expected_package_ids - self._completed_package_ids
+        received_apps = self._expected_app_ids & self._completed_app_ids
+        resolved_apps = received_apps - self._failed_app_ids
+        complete = self._parsing_status.packages_to_parse == 0 and self._parsing_status.apps_to_parse == 0 and not self._failed_package_ids and not self._failed_app_ids
+        reasons = []
+        if pending_packages: reasons.append('missing_package_responses')
+        if self._pending_app_ids: reasons.append('missing_app_responses')
+        if self._failed_package_ids: reasons.append('package_parse_failures')
+        if self._failed_app_ids: reasons.append('unknown_app_records')
+        return {
+            'generation': self._collection_generation, 'terminal': self._ready_event.is_set(), 'complete': complete,
+            'licenseDiscoveryComplete': self._license_discovery_complete,
+            'expectedPackages': len(self._expected_package_ids), 'completedPackages': len(self._completed_package_ids), 'pendingPackages': len(pending_packages),
+            'expectedApps': len(self._expected_app_ids), 'completedApps': len(self._expected_app_ids & self._completed_app_ids), 'pendingApps': len(self._pending_app_ids),
+            'failedPackages': len(self._failed_package_ids), 'failedApps': len(self._failed_app_ids),
+            'unavailableApps': len(self._unavailable_app_reasons),
+            'requestedPackages': len(self._requested_package_ids), 'requestedApps': len(self._requested_app_ids),
+            'receivedApps': len(received_apps), 'resolvedApps': len(resolved_apps),
+            'duplicatePackageResponses': self._duplicate_package_responses, 'duplicateAppResponses': self._duplicate_app_responses,
+            'expectedPackageIds': sorted(self._expected_package_ids), 'requestedPackageIds': sorted(self._requested_package_ids),
+            'receivedPackageIds': sorted(self._completed_package_ids), 'pendingPackageIds': sorted(pending_packages),
+            'failedPackageIds': sorted(self._failed_package_ids), 'expectedAppIds': sorted(self._expected_app_ids),
+            'requestedAppIds': sorted(self._requested_app_ids), 'receivedAppIds': sorted(received_apps),
+            'resolvedAppIds': sorted(resolved_apps), 'pendingAppIds': sorted(self._pending_app_ids),
+            'failedAppIds': sorted(self._failed_app_ids),
+            'unavailableAppIds': sorted(self._unavailable_app_reasons),
+            'unavailableAppReasons': dict(self._unavailable_app_reasons),
+            'packageRetryCounts': dict(self._package_retry_counts), 'appRetryCounts': dict(self._app_retry_counts),
+            'progressRevision': self._progress_revision, 'collectionStartedAt': self._collection_started_at,
+            'lastMeaningfulProgressAt': self._last_meaningful_progress_at,
+            'lastMeaningfulProgressAgeMs': max(0, int((now - self._last_meaningful_progress_at) * 1000)),
+            'lastProgressKind': self._last_progress_kind, 'lastProgressId': self._last_progress_id,
+            'reasons': reasons,
+        }
+
+    async def wait_collection_terminal(self, timeout=None):
+        await asyncio.wait_for(self._ready_event.wait(), timeout)
+        return self.collection_status()
+
+    def _sync_legacy_counters(self):
+        self._parsing_status.packages_to_parse = len(self._expected_package_ids - self._completed_package_ids)
+        self._parsing_status.apps_to_parse = len(self._pending_app_ids)
 
     def _update_ready_state(self):
         if self._parsing_status.packages_to_parse == 0 and self._parsing_status.apps_to_parse == 0:

@@ -6,6 +6,7 @@
 // help-feedback.js resolve at call time.
 
 async function openSettingsModal() {
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'settings', view: 'settings' }).catch?.(() => {});
     const modal  = document.getElementById('settingsModal');
     const toggle = document.getElementById('analyticsToggle');
 
@@ -73,24 +74,60 @@ async function _qsLoadSettings() {
 }
 
 async function qsToggleEnabled(checkbox) {
-    if (!window.electronAPI?.quickSwitcher) return;
+    // The catch restores with checkbox.checked = prev so UI matches persisted state.
+    const quickSwitcher = window.electronAPI?.quickSwitcher;
+    if (!quickSwitcher) return;
     const prev = !checkbox.checked;
-    try {
-        await window.electronAPI.quickSwitcher.setSettings({ enabled: checkbox.checked });
-    } catch { checkbox.checked = prev; }
+    let result;
+    try { result = await quickSwitcher.setSettings({ enabled: checkbox.checked }); }
+    catch (error) {
+        checkbox.checked = prev;
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+            feature: 'quick_switcher', setting: 'enabled', enabled: !prev,
+            result: 'failed', error_code: error,
+        }).catch?.(() => {});
+        return;
+    }
+    const failed = result?.status === 'error';
+    window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+        feature: 'quick_switcher', setting: 'enabled', enabled: checkbox.checked,
+        result: failed ? 'failed' : 'success',
+    }).catch?.(() => {});
+    if (failed) checkbox.checked = prev;
 }
 
 async function qsChangePosition(select) {
     if (!window.electronAPI?.quickSwitcher) return;
-    try { await window.electronAPI.quickSwitcher.setSettings({ position: select.value }); } catch {}
+    try {
+        const result = await window.electronAPI.quickSwitcher.setSettings({ position: select.value });
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+            feature: 'quick_switcher', setting: 'position', result: result?.status === 'error' ? 'failed' : 'success',
+        }).catch?.(() => {});
+    } catch (error) {
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+            feature: 'quick_switcher', setting: 'position', result: 'failed', error_code: error,
+        }).catch?.(() => {});
+    }
 }
 
 async function qsToggleCloseAfter(checkbox) {
     if (!window.electronAPI?.quickSwitcher) return;
     const prev = !checkbox.checked;
     try {
-        await window.electronAPI.quickSwitcher.setSettings({ closeAfterSwitch: checkbox.checked });
-    } catch { checkbox.checked = prev; }
+        const result = await window.electronAPI.quickSwitcher.setSettings({ closeAfterSwitch: checkbox.checked });
+        const failed = result?.status === 'error';
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+            feature: 'quick_switcher', setting: 'close_after_switch', enabled: checkbox.checked,
+            result: failed ? 'failed' : 'success',
+        }).catch?.(() => {});
+        if (failed) checkbox.checked = prev;
+    } catch (error) {
+        checkbox.checked = prev;
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+            feature: 'quick_switcher', setting: 'close_after_switch', enabled: !prev,
+            result: 'failed', error_code: error,
+        }).catch?.(() => {});
+    }
 }
 
 async function qsChangeHotkey() {
@@ -255,6 +292,10 @@ async function toggleStartup(checkbox) {
                 checkbox.checked = result.enabled;
             }
             const verified = (result && typeof result.enabled === 'boolean') ? result.enabled : requested;
+            window.electronAPI?.trackFeatureEvent?.('settings_changed', {
+                feature: 'settings', setting: 'launch_at_startup', enabled: verified,
+                result: result?.status === 'error' || result?.status === 'mismatch' ? 'failed' : 'success',
+            }).catch?.(() => {});
             checkbox.dataset.currentState = String(verified);
             if (result?.status === 'mismatch' || result?.status === 'error') {
                 showToast(
@@ -270,6 +311,7 @@ async function toggleStartup(checkbox) {
             }
         }
     } catch (err) {
+        window.electronAPI?.trackFeatureEvent?.('settings_changed', { feature: 'settings', setting: 'launch_at_startup', enabled, result: 'failed', error_code: err }).catch?.(() => {});
         console.error('[Startup] toggle failed:', err);
         checkbox.checked = !enabled;
         checkbox.dataset.currentState = String(!enabled);

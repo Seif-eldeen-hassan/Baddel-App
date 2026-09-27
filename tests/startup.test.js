@@ -135,7 +135,7 @@ test('main.js: isStartupLaunch is logged at startup', () => {
 
 test('main.js: ready-to-show does not unconditionally call mainWindow.show()', () => {
     const rtIdx = MAIN_JS.indexOf("mainWindow.once('ready-to-show'");
-    const block = MAIN_JS.slice(rtIdx, rtIdx + 400);
+    const block = MAIN_JS.slice(rtIdx, rtIdx + 700);
     // show() must be guarded — not the first statement
     assert.match(block, /isStartupLaunch/, 'ready-to-show must check isStartupLaunch');
     // show() should appear after the isStartupLaunch guard
@@ -144,6 +144,26 @@ test('main.js: ready-to-show does not unconditionally call mainWindow.show()', (
     assert.ok(showIdx > guardIdx, 'show() must come after isStartupLaunch check');
 });
 
+test('main.js: maximizes the hidden main window before loadFile and only shows it from ready-to-show', () => {
+    const createStart = MAIN_JS.indexOf('function createWindow()');
+    const createEnd = MAIN_JS.indexOf('// -- Webview security: navigation + popup hardening', createStart);
+    const block = MAIN_JS.slice(createStart, createEnd);
+    const maximizeIdx = block.indexOf('mainWindow.maximize()');
+    const loadIdx = block.indexOf('mainWindow.loadFile(');
+    const readyIdx = block.indexOf("mainWindow.once('ready-to-show'");
+    assert.ok(maximizeIdx > -1 && maximizeIdx < loadIdx, 'maximize must happen while hidden before loadFile');
+    assert.ok(loadIdx < readyIdx, 'ready-to-show must be registered after the initial load starts');
+    const readyBlock = block.slice(readyIdx, readyIdx + 500);
+    assert.doesNotMatch(readyBlock, /maximize\(/, 'ready-to-show must not maximize and show back-to-back');
+    assert.match(readyBlock, /if \(isStartupLaunch\)[\s\S]*else[\s\S]*mainWindow\.show\(\)/, 'show remains guarded by startup-to-tray');
+});
+
+test('dashboard provides critical full-viewport loader centering before external CSS', () => {
+    const head = HTML.slice(0, HTML.indexOf('</head>'));
+    assert.match(head, /html,\s*body\s*\{[^}]*width:\s*100%[^}]*height:\s*100%[^}]*margin:\s*0/);
+    assert.match(head, /#mainLoader\s*\{[^}]*position:\s*fixed[^}]*inset:\s*0[^}]*display:\s*grid[^}]*place-items:\s*center/);
+    assert.ok(head.indexOf('critical-loader-layout') < head.indexOf('css/dashboard.css'), 'critical loader layout must precede the main stylesheet');
+});
 test('main.js: ready-to-show logs when launched hidden to tray', () => {
     const rtIdx = MAIN_JS.indexOf("mainWindow.once('ready-to-show'");
     const block = MAIN_JS.slice(rtIdx, rtIdx + 600);
@@ -598,6 +618,17 @@ test('app.js: library-updated readiness is handled inside the existing debounced
     const processBlock = APP_JS.slice(processStart, processStart + 1700);
     assert.match(processBlock, /_handleStartupLibraryUpdatedPayload\(mergedGames\)/, 'startup readiness must observe the existing library-updated pipeline');
     assert.match(processBlock, /if \(startupHandled\)[\s\S]*return;/, 'initial scan result must not render structural Home twice');
+});
+
+test('app.js: first background scan refreshes Installed count before startup fast-path return', () => {
+    const processStart = APP_JS.indexOf('async function _processLibraryUpdatedPayload');
+    const processBlock = APP_JS.slice(processStart, processStart + 1900);
+    const commitIdx = processBlock.indexOf('allGamesData = mergedGames');
+    const countIdx = processBlock.indexOf('updateSmartSidebarCounts()');
+    const startupIdx = processBlock.indexOf('_handleStartupLibraryUpdatedPayload(mergedGames)');
+    assert.ok(commitIdx > -1, 'library snapshot must be committed');
+    assert.ok(countIdx > commitIdx, 'Installed count refresh must consume the committed snapshot');
+    assert.ok(startupIdx > countIdx, 'Installed count must refresh before the startup fast path can return');
 });
 
 test('app.js: library-updated defers transient Installed count drops before replacing allGamesData', () => {

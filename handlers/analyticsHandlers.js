@@ -48,4 +48,9 @@ module.exports.register = function registerAnalyticsHandlers(ipcMain, deps) {
     ipcMain.handle('analytics-log-feedback', () => {
         analytics.logFeedbackSent().catch(() => {});
     });
+
+    ipcMain.handle('analytics-track-feature', (event, eventName, properties = {}) => {
+        if (event.senderFrame && event.sender.mainFrame && event.senderFrame !== event.sender.mainFrame) return false;
+        return analytics.track(eventName, properties).catch(() => false);
+    });
 };

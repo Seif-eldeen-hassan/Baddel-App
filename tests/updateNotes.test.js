@@ -681,6 +681,76 @@ test('main.js: v1.1.4 slides include image paths under assets/update-notes/1.1.4
     assert.ok(!block.includes('assets/update-notes/1.1.4/feature6.png'), 'feature6.png must not exist in v1.1.4 slides');
 });
 
+// ─── v1.2.0 full-width poster tour ──────────────────────────────────────────
+
+test('main.js: v1.2.0 uses seven poster-only slides in numeric order', () => {
+    const start = MAIN_JS.indexOf("'1.2.0':");
+    const block = MAIN_JS.slice(start, start + 1800);
+    assert.ok(start !== -1, 'v1.2.0 update notes entry missing');
+    assert.match(block, /posterOnly:\s*true/);
+    const paths = [...block.matchAll(/assets\/update-notes\/1\.2\.0\/(\d)-poster\.png/g)].map(match => Number(match[1]));
+    assert.deepEqual(paths, [1, 2, 3, 4, 5, 6, 7]);
+});
+
+test('v1.2.0 poster assets exist and are exactly 2048x768 PNGs', () => {
+    for (let index = 1; index <= 7; index++) {
+        const imagePath = path.join(__dirname, '..', 'src', 'assets', 'update-notes', '1.2.0', `${index}-poster.png`);
+        const bytes = fs.readFileSync(imagePath);
+        assert.equal(bytes.readUInt32BE(16), 2048, `${index}-poster width`);
+        assert.equal(bytes.readUInt32BE(20), 768, `${index}-poster height`);
+    }
+});
+
+test('protected build copies update-note posters into the packaged assets path', () => {
+    const buildScript = fs.readFileSync(
+        path.join(__dirname, '..', 'scripts', 'build-protected.js'),
+        'utf8',
+    );
+    assert.match(
+        buildScript,
+        /path\.join\(ROOT, 'src', 'assets', 'update-notes'\)[\s\S]*path\.join\(DEST, 'assets', 'update-notes'\)/,
+    );
+});
+
+test('v1.2.0 feature slides spotlight Downloads, Vault, Stores, and GOG', () => {
+    const start = MAIN_JS.indexOf("'1.2.0':");
+    const block = MAIN_JS.slice(start, start + 1800);
+    for (const selector of ['#nav-downloads', '#nav-vault-overview', '#nav-stores', '#nav-gog']) {
+        assert.ok(block.includes(selector), `${selector} spotlight missing`);
+    }
+});
+
+test('poster tour supports clickable spotlight proxies and resumable exploration', () => {
+    assert.match(HELP_JS, /function _applyTourSpotlight\s*\(/);
+    assert.match(HELP_JS, /function _suspendFeatureTourForExplore\s*\(/);
+    assert.match(HELP_JS, /function _resumeFeatureTour\s*\(/);
+    assert.ok(HELP_JS.includes('update-tour-spotlight-proxy'));
+    assert.ok(HELP_JS.includes('update-tour-resume'));
+});
+
+test('poster tour preserves the complete 8:3 artwork without cropping', () => {
+    const start = CSS.indexOf('.update-notes-dialog.tour-mode.poster-tour-mode');
+    const block = CSS.slice(start, start + 1800);
+    assert.ok(start !== -1, 'poster tour CSS missing');
+    assert.match(block, /aspect-ratio:\s*8\s*\/\s*3/);
+    assert.match(block, /object-fit:\s*contain/);
+});
+
+test('poster tour stays a centered medium dialog instead of filling the screen', () => {
+    const start = CSS.indexOf('.update-notes-dialog.tour-mode.poster-tour-mode');
+    const block = CSS.slice(start, start + 500);
+    assert.match(block, /width:\s*min\(1200px,/);
+    assert.match(block, /max-height:\s*calc\(100vh\s*-\s*96px\)/);
+});
+
+test('poster tour uses the logo green with a borderless soft-elevation card', () => {
+    const start = CSS.indexOf('.update-notes-dialog.tour-mode.poster-tour-mode');
+    const block = CSS.slice(start, start + 2300);
+    assert.match(block, /border:\s*0/);
+    assert.ok(block.includes('#12ce18'), 'logo green missing from poster controls');
+    assert.ok(!block.includes('0 30px 100px'), 'old slab-like shadow must not remain');
+});
+
 // ─── Tour engine in help-feedback.js ─────────────────────────────────────────
 
 test('help-feedback.js: _renderFeatureTour function exists', () => {

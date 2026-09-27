@@ -5,28 +5,20 @@ const _playLauncherArtworkRoot = typeof window !== 'undefined' ? window : global
 const _gameArtworkResolver = (typeof require === 'function')
     ? require('./GameArtworkResolver')
     : _playLauncherArtworkRoot.BaddelGameArtworkResolver;
+const _artworkSchema = (typeof require === 'function')
+    ? require('./GameArtworkSchema')
+    : _playLauncherArtworkRoot.BaddelGameArtworkSchema;
 
 const { resolveGameArtwork } = _gameArtworkResolver;
 
-const COVER_ALIASES = Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage', 'coverImage']);
-const HERO_ALIASES = Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl']);
-const LOGO_ALIASES = Object.freeze(['logo', 'logoUrl', 'defaultLogo', 'logoImage']);
+const COVER_ALIASES = _artworkSchema.TYPE_ALIASES.cover;
+const HERO_ALIASES = _artworkSchema.TYPE_ALIASES.hero;
+const LOGO_ALIASES = _artworkSchema.TYPE_ALIASES.logo;
 
 const LEGACY_PLAY_LAUNCHER_ORDER = Object.freeze({
-    cover: Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage', 'coverImage']),
-    hero: Object.freeze([
-        'heroImage',
-        'hero',
-        'defaultHero',
-        'background',
-        'heroUrl',
-        'backgroundUrl',
-        'image',
-        'cover',
-        'coverUrl',
-        'defaultImage',
-    ]),
-    logo: Object.freeze(['logo', 'defaultLogo', 'logoUrl', 'logoImage']),
+    cover: COVER_ALIASES,
+    hero: HERO_ALIASES,
+    logo: LOGO_ALIASES,
 });
 
 function _hasValue(value) {

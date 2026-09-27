@@ -125,27 +125,27 @@ test('game-context-actions.js: showContextMenu includes toggleTimeTracking item 
 });
 
 test('game-context-actions.js: showContextMenu includes triggerPlay entry', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 5000);
     assert.match(fn, /triggerPlay\s*\(\)/);
 });
 
 test('game-context-actions.js: showContextMenu includes openGameSettings entry', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 5000);
     assert.match(fn, /openGameSettings\s*\(/);
 });
 
 test('game-context-actions.js: showContextMenu includes triggerRemove entry with explicit id', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 5000);
     assert.match(fn, /triggerRemove\s*\(/);
 });
 
 test('game-context-actions.js: showContextMenu sets display:block on the menu element', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 5000);
     assert.match(fn, /style\.display\s*=\s*['"]block['"]/);
 });
 
 test('game-context-actions.js: showContextMenu clamps horizontal position when near right edge', () => {
-    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 2600);
+    const fn = extractFn(GAME_CONTEXT_JS, 'function showContextMenu(', 5000);
     assert.match(fn, /window\.innerWidth/);
     assert.match(fn, /style\.left/);
     assert.match(fn, /style\.top/);

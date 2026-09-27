@@ -61,6 +61,7 @@ function validateDownloadCompletion(task = {}, receipt = {}) {
             executablePath: nullableString(verification.executablePath),
             manifestFound: nullableBoolean(verification.manifestFound),
         },
+        buildId: nullableString(receipt.buildId),
         diagnosticCode: receipt.diagnosticCode || null,
         completedAt: receipt.completedAt || new Date().toISOString(),
     };
@@ -72,10 +73,36 @@ function makeDownloadError(code, message) {
     return err;
 }
 
-function makeCompletionPatch(receipt = {}) {
+function isAuthoritativeDownloadTransferSource(source) {
+    return ['gogdl-overall-progress', 'legendary-runtime-transfer', 'legendary-completion-transfer', 'legendary-info-manifest', 'gog-public-windows-manifest', 'gogdl-info'].includes(String(source || ''));
+}
+
+function makeCompletionPatch(receipt = {}, task = {}) {
     const transfer = receipt.transfer || {};
     const verification = receipt.verification || {};
+    const resumedSessionRelative = Number(task.resumeBaseDownloadedBytes) > 0 &&
+        (task.downloadedBytesSource === 'resume-base-plus-session' || task.progressMode === 'session-relative');
+    const displayedDownloadedBytes = resumedSessionRelative
+        ? Math.max(Number(transfer.downloadedBytes) || 0, Number(task.downloadedBytes) || 0, Number(task.checkpointDownloadedBytes) || 0)
+        : transfer.downloadedBytes;
+    const displayedTotalBytes = resumedSessionRelative
+        ? Math.max(Number(transfer.totalBytes) || 0, Number(task.totalBytes) || 0, Number(task.checkpointTotalBytes) || 0, displayedDownloadedBytes)
+        : transfer.totalBytes;
+    const diskBasedTransfer = /filesystem|verified-disk|installed/i.test(String(transfer.source || ''));
+    const authoritativeTransfer = receipt.provider === 'epic'
+        ? !diskBasedTransfer
+        : isAuthoritativeDownloadTransferSource(transfer.source);
+    const taskDownloadIsAuthoritative = receipt.provider !== 'gog' || isAuthoritativeDownloadTransferSource(task.downloadSizeSource || task.sizeSource);
+    const existingDownload = taskDownloadIsAuthoritative && task.downloadSizeBytes > 0 ? task.downloadSizeBytes : null;
+    const completionSizes = ['epic', 'gog'].includes(receipt.provider) ? {
+        downloadSizeBytes: existingDownload || (authoritativeTransfer ? transfer.totalBytes : null),
+        downloadSizeSource: existingDownload ? task.downloadSizeSource : authoritativeTransfer ? (receipt.provider === 'epic' ? transfer.source || 'legendary-completion-transfer' : transfer.source) : null,
+        installedDiskSizeBytes: verification.actualBytes > 0 ? verification.actualBytes : task.installedDiskSizeBytes,
+        installedSizeSource: verification.actualBytes > 0 ? 'verified-filesystem' : task.installedSizeSource,
+        buildVersion: receipt.buildId || task.buildVersion || null,
+    } : {};
     return {
+        ...completionSizes,
         providerCompletionReceipt: receipt,
         completionConfirmed: true,
         verificationStatus: verification.status || null,
@@ -88,10 +115,10 @@ function makeCompletionPatch(receipt = {}) {
         verificationExecutablePath: verification.executablePath ?? null,
         resolvedExecutablePath: verification.executablePath ?? null,
         verificationManifestFound: verification.manifestFound ?? null,
-        downloadedBytes: transfer.downloadedBytes,
-        totalBytes: transfer.totalBytes,
-        transferDownloadedBytes: transfer.downloadedBytes,
-        transferTotalBytes: transfer.totalBytes,
+        downloadedBytes: displayedDownloadedBytes,
+        totalBytes: displayedTotalBytes,
+        transferDownloadedBytes: displayedDownloadedBytes,
+        transferTotalBytes: displayedTotalBytes,
         progressPercent: 100,
         progressSource: transfer.source || 'provider-receipt',
         totalBytesSource: transfer.source || 'provider-receipt',

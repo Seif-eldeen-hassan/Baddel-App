@@ -164,6 +164,44 @@ test('GOG adapter rejects unverified local or generic ids before gogdl', async (
     }
 });
 
+test('GOG maintenance invokes actual update and repair subcommands with verified identity', async () => {
+    const dir = tempDir();
+    try {
+        writeAccount(dir);
+        for (const operationKind of ['update', 'repair']) {
+            const runtime = makeRuntime({ chunks: [], writeInstallFiles: false });
+            const installPath = path.join(dir, 'Games', operationKind);
+            const providerInstallPath = path.join(installPath, 'Provider Game');
+            fs.mkdirSync(providerInstallPath, { recursive: true });
+            fs.writeFileSync(path.join(providerInstallPath, 'Game.exe'), Buffer.alloc(100));
+            const manifestPath = path.join(dir, 'gog', 'gogdl-config', 'heroic_gogdl', 'manifests');
+            fs.mkdirSync(manifestPath, { recursive: true });
+            fs.writeFileSync(path.join(manifestPath, '2099051765'), JSON.stringify({ installDirectory: 'Provider Game', buildId: '58654342451764486' }));
+            const adapter = adapterFor(dir, runtime);
+            const receipt = await adapter.start(verifiedTask({ operationKind, installPath }));
+            const spawn = runtime.calls.find(([kind, args]) => kind === 'spawn' && args.includes(operationKind));
+            assert.ok(spawn, `${operationKind} must use its gogdl subcommand`);
+            assert.equal(spawn[1][2], operationKind);
+            assert.equal(spawn[1][spawn[1].indexOf('--path') + 1], providerInstallPath);
+            assert.equal(receipt.completionConfirmed, true);
+            assert.equal(receipt.buildId, '58654342451764486');
+        }
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('GOG update check compares persisted installed build with freshly verified Windows build', async () => {
+    const dir = tempDir();
+    try {
+        const adapter = adapterFor(dir, makeRuntime(), {
+            identityResolver: { resolveForQueue: async task => ({ ...task, gogProductId: '2099051765', verifiedBuildId: 'new-build', verifiedBuildGeneration: 2 }) },
+        });
+        const result = await adapter.checkForUpdate(verifiedTask({ verifiedBuildId: 'old-build' }));
+        assert.equal(result.installedBuildId, 'old-build');
+        assert.equal(result.targetBuildId, 'new-build');
+        assert.equal(result.updateAvailable, true);
+    } finally { fs.rmSync(dir, { recursive: true, force: true }); }
+});
+
 test('GOG adapter uses force-gen 1 only when resolver selected a generation 1 build', async () => {
     const dir = tempDir();
     try {
@@ -212,7 +250,7 @@ test('GOG adapter rejects a zero-exit process that never reports transfer progre
     const dir = tempDir();
     try {
         writeAccount(dir);
-        const runtime = makeRuntime({ chunks: [] });
+        const runtime = makeRuntime({ chunks: [], writeInstallFiles: false });
         const adapter = adapterFor(dir, runtime);
         const progress = [];
         await assert.rejects(
@@ -234,6 +272,7 @@ test('GOG adapter rejects info-only output even when the process exits successfu
         writeAccount(dir);
         const runtime = makeRuntime({
             chunks: ['[GENERIC_DOWNLOAD_MANAGER] INFO: Depot version: 2 [V2] INFO: Initialized V2 Download Manager\n'],
+            writeInstallFiles: false,
         });
         const adapter = adapterFor(dir, runtime);
         await assert.rejects(
@@ -259,6 +298,35 @@ test('GOG pause and cancel abort while the process is starting', async () => {
         } finally {
             fs.rmSync(dir, { recursive: true, force: true });
         }
+    }
+});
+
+test('GOG adapter does not report exit confirmation when runtime stop is unconfirmed', async () => {
+    const dir = tempDir();
+    try {
+        const adapter = adapterFor(dir, makeRuntime());
+        const controller = new AbortController();
+        const stopError = Object.assign(new Error('stop not confirmed'), {
+            code: 'GOG_RUNTIME_STOP_NOT_CONFIRMED',
+            details: { pid: 321 },
+        });
+        adapter.active.set('dl_stop_unconfirmed', {
+            controller,
+            execution: new Promise((_resolve, reject) => setImmediate(() => reject(stopError))),
+            processInfo: { pid: 321 },
+            stopReason: null,
+            lifecycleStopped: new Promise(() => {}),
+            taskId: 'dl_stop_unconfirmed',
+            task: { id: 'dl_stop_unconfirmed', platform: 'gog' },
+            diagnostics: [],
+            diagnosticPath: null,
+        });
+        const result = await adapter.cancel('dl_stop_unconfirmed');
+        assert.equal(result.exitConfirmed, false);
+        assert.equal(result.timedOut, false);
+        assert.equal(result.pid, 321);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
     }
 });
 
@@ -311,6 +379,7 @@ test('GOG adapter ignores generic size pairs that are not authoritative progress
         writeAccount(dir);
         const runtime = makeRuntime({
             chunks: ['Downloading 58.9% 57 MB / 2.1 GB 195 KB/s ETA 00:30:00\n'],
+            writeInstallFiles: false,
         });
         const adapter = adapterFor(dir, runtime);
         const progress = [];
@@ -392,6 +461,31 @@ test('GOG diagnostics redact raw secrets and classifier avoids broad fallback ma
     ));
     assert.equal(infoOnly.code, 'GOG_DOWNLOAD_NO_PROGRESS');
     assert.equal(infoOnly.message.includes('GENERIC_DOWNLOAD_MANAGER'), false);
+});
+
+test('GOG provider diagnostics retain stream and PID while sanitizing messages', () => {
+    const dir = tempDir();
+    try {
+        const recorded = [];
+        const adapter = adapterFor(dir, makeRuntime(), {
+            diagnosticRecorder: { record(...args) { recorded.push(args); } },
+        });
+        adapter.recordDiagnosticLines({
+            taskId: 'dl_diag_message',
+            diagnostics: [],
+            processInfo: { pid: 456 },
+            stopReason: null,
+        }, 'provider says access_token=hidden-value\n', 'stderr');
+        const [, section, eventType, payload] = recorded[0];
+        assert.equal(section, 'providerEvents');
+        assert.equal(eventType, 'GOG_PROVIDER_MESSAGE');
+        assert.equal(payload.stream, 'stderr');
+        assert.equal(payload.processPid, 456);
+        assert.doesNotMatch(payload.message, /hidden-value/);
+        assert.match(payload.message, /\[REDACTED\]/);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
 });
 
 test('GOG download adapter rejects missing auth and non-GOG tasks', async () => {

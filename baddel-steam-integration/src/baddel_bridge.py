@@ -108,7 +108,6 @@ from steam_network.protocol.steam_types import ProtoUserInfo
 # ── Replacements for galaxy.api types (simple dicts instead) ─────────────────
 # We don't use GOG SDK at all — everything is plain Python dicts/JSON.
 
-GAME_CACHE_IS_READY_TIMEOUT = 50
 GAME_DOES_NOT_SUPPORT_LAST_PLAYED_VALUE = 86400
 
 AVATAR_URL_TEMPLATE = "https://steamcdn-a.akamaihd.net/steamcommunity/public/images/avatars/{}/{}_full.jpg"
@@ -173,6 +172,8 @@ class BaddelSteamBridge:
         self._persistent_storage_state = PersistentCacheState()
         self._persistent_cache: Dict[str, Any] = {}
         self._credentials: Dict[str, Any] = {}   # stored by Electron, passed back on restart
+        self._pending_password_login: Optional[tuple] = None
+        self._last_email_challenge_at = 0.0
 
         self._authentication_cache = AuthenticationCache()
         self._user_info_cache = UserInfoCache()
@@ -194,9 +195,16 @@ class BaddelSteamBridge:
         _main_loop = asyncio.get_event_loop()
 
         async def _on_games_cache_ready():
-            logger.info("Games cache is ready — pushing cache_ready event to Electron")
+            collection = self._games_cache.collection_status()
             steam_id = str(self._user_info_cache.steam_id) if self._user_info_cache.steam_id else None
-            await self._push_event("cache_ready", {"status": "ready", "steamAccountId": steam_id})
+            event = "cache_ready" if collection["complete"] else "cache_incomplete"
+            logger.info("Games cache terminal: account=%s complete=%s generation=%s", steam_id, collection["complete"], collection["generation"])
+            await self._push_event(event, {
+                "status": "ready" if collection["complete"] else "partial",
+                "steamAccountId": steam_id,
+                "sessionGeneration": collection["generation"],
+                "completeness": collection,
+            })
 
         def _on_games_cache_ready_threadsafe():
             _main_loop.call_soon_threadsafe(
@@ -344,8 +352,12 @@ class BaddelSteamBridge:
                 is_running = False
             elif req_id and _steam_ids_equal(req_id, cur_id):
                 logger.info(f"Already authenticated as {cur_id}. Skipping re-login.")
-                # نبعت إشعار للـ JavaScript إن الداتا جاهزة عشان ميهنجش
-                asyncio.create_task(self._push_event("cache_ready", {"status": "ready", "steamAccountId": cur_id}))
+                collection = self._games_cache.collection_status()
+                if collection["complete"] and collection["terminal"]:
+                    asyncio.create_task(self._push_event("cache_ready", {
+                        "status": "ready", "steamAccountId": cur_id,
+                        "sessionGeneration": collection["generation"], "completeness": collection,
+                    }))
                 return self._authenticated_response()
 
         # 3. لو مش شغال، ابدأ الاتصال
@@ -361,9 +373,16 @@ class BaddelSteamBridge:
     async def _authenticate_with_token(self, creds: Dict) -> Dict:
         self._user_info_cache.from_dict(creds)
         if self._user_info_cache.is_initialized():
-            await self._websocket_client.communication_queues["websocket"].put(
-                {"mode": AuthCall.TOKEN}
-            )
+            transport_ready = await self._websocket_client.wait_until_connected(180)
+            if not transport_ready:
+                logger.warning("Steam transport was unavailable before token authentication")
+                return self._need_login_response()
+            await self._websocket_client.communication_queues["websocket"].put({
+                "mode": AuthCall.TOKEN,
+                "username": self._user_info_cache.account_username,
+                "steam_id": self._user_info_cache.steam_id,
+                "refresh_token": self._user_info_cache.refresh_token,
+            })
             result = await self._get_auth_step()
             if result == UserActionRequired.NoActionRequired:
                 return self._authenticated_response()
@@ -393,6 +412,8 @@ class BaddelSteamBridge:
         }
 
     def _authenticated_response(self) -> Dict:
+        self._pending_password_login = None
+        self._last_email_challenge_at = 0.0
         # Must be string: Steam IDs exceed JS Number.MAX_SAFE_INTEGER — JSON numbers corrupt in Electron.
         sid = self._user_info_cache.steam_id
         return {
@@ -406,6 +427,8 @@ class BaddelSteamBridge:
         Called by Electron when the embedded login page redirects.
         Returns same shape as authenticate().
         """
+        if str(end_uri).startswith("baddel://auth/resend-email"):
+            return await self.resend_steam_guard_email()
         if DisplayUriHelper.LOGIN.EndUri() in end_uri:
             return await self._handle_login_finished(credentials)
         elif DisplayUriHelper.TWO_FACTOR_MAIL.EndUri() in end_uri:
@@ -454,6 +477,7 @@ class BaddelSteamBridge:
     async def start_password_login(self, username: str, password: str) -> Dict:
         """Start a password-based login. Mirrors _handle_login_finished but takes args directly."""
         pwd = self._sanitize(password)
+        self._pending_password_login = (str(username), pwd)
         await self._websocket_client.communication_queues["websocket"].put(
             {"mode": AuthCall.RSA_AND_LOGIN, "username": username, "password": pwd}
         )
@@ -471,6 +495,7 @@ class BaddelSteamBridge:
                         "loginUrl": DisplayUriHelper.TWO_FACTOR_MOBILE.GetStartUri(),
                         "endUriRegex": DisplayUriHelper.TWO_FACTOR_MOBILE.GetEndUriRegex()}
             elif method == TwoFactorMethod.EmailCode:
+                self._last_email_challenge_at = asyncio.get_running_loop().time()
                 return {"status": "need_2fa", "method": "email",
                         "loginUrl": DisplayUriHelper.TWO_FACTOR_MAIL.GetStartUri(),
                         "endUriRegex": DisplayUriHelper.TWO_FACTOR_MAIL.GetEndUriRegex()}
@@ -481,6 +506,28 @@ class BaddelSteamBridge:
         return {"status": "need_login",
                 "loginUrl": DisplayUriHelper.LOGIN.GetStartUri(True),
                 "endUriRegex": DisplayUriHelper.LOGIN.GetEndUriRegex()}
+
+    async def resend_steam_guard_email(self) -> Dict:
+        if not self._pending_password_login:
+            return {"status": "need_login", "message": "Password login must be restarted"}
+        now = asyncio.get_running_loop().time()
+        remaining = max(0, int(60 - (now - self._last_email_challenge_at)))
+        if remaining > 0:
+            return {"status": "cooldown", "retryAfterSeconds": remaining}
+        username, password = self._pending_password_login
+        await self._websocket_client.communication_queues["websocket"].put(
+            {"mode": AuthCall.RSA_AND_LOGIN, "username": username, "password": password}
+        )
+        result = await self._get_auth_step()
+        if result != UserActionRequired.TwoFactorRequired:
+            return {"status": "error", "message": "Steam did not create a new email challenge"}
+        allowed = self._authentication_cache.two_factor_allowed_methods
+        if not any(method == TwoFactorMethod.EmailCode for method, _ in allowed):
+            return {"status": "error", "message": "Email confirmation is not available for this challenge"}
+        self._last_email_challenge_at = now
+        return {"status": "need_2fa", "method": "email", "resent": True,
+                "loginUrl": DisplayUriHelper.TWO_FACTOR_MAIL.GetStartUri(),
+                "endUriRegex": DisplayUriHelper.TWO_FACTOR_MAIL.GetEndUriRegex()}
 
     async def submit_steam_guard_code(self, code: str, method: str) -> Dict:
         """Submit a Steam Guard email or mobile code."""
@@ -525,6 +572,7 @@ class BaddelSteamBridge:
 
         user = params["username"][0]
         pwd = self._sanitize(params["password"][0])
+        self._pending_password_login = (str(user), pwd)
 
         await self._websocket_client.communication_queues["websocket"].put(
             {"mode": AuthCall.RSA_AND_LOGIN, "username": user, "password": pwd}
@@ -632,12 +680,45 @@ class BaddelSteamBridge:
 
     # ── Owned Games ───────────────────────────────────────────────────────────
 
-    async def get_owned_games(self) -> Dict:
-        """Returns full owned games list after cache is ready."""
+    def get_collection_status(self) -> Dict:
+        collection = self._games_cache.collection_status()
+        steam_id = str(self._user_info_cache.steam_id) if self._user_info_cache.steam_id else None
+        transport = self._websocket_client.collection_transport_status() if self._websocket_client else {'connected': False, 'requestsActive': False}
+        return {
+            'status': 'complete' if collection['complete'] else ('terminal_incomplete' if collection['terminal'] else 'collecting'),
+            'steamAccountId': steam_id,
+            'sessionGeneration': collection['generation'],
+            'authenticationComplete': bool(self._user_info_cache.is_initialized()),
+            'licenseDiscoveryComplete': collection['licenseDiscoveryComplete'],
+            'runtime': {
+                'fingerprint': 'steam-readiness-recovery-v1',
+                'executable': sys.executable,
+                'bridgeScript': os.path.abspath(__file__),
+                'frozen': bool(getattr(sys, 'frozen', False)),
+            },
+            'completeness': collection,
+            'transport': transport,
+        }
+
+    async def recover_collection(self, expected_generation=None) -> Dict:
+        if not self._websocket_client:
+            return {'status': 'transport_unavailable'}
+        result = await self._websocket_client.recover_game_collection(expected_generation)
+        return {**result, 'steamAccountId': str(self._user_info_cache.steam_id) if self._user_info_cache.steam_id else None}
+
+    async def get_owned_games(self, expected_generation=None) -> Dict:
+        """Returns games only from the exact collection generation already validated by Electron."""
         if not self._user_info_cache.steam_id:
             return {"status": "error", "message": "Not authenticated"}
 
-        await self._games_cache.wait_ready(GAME_CACHE_IS_READY_TIMEOUT)
+        collection = self._games_cache.collection_status()
+        generation_matches = expected_generation is None or int(expected_generation) == int(collection['generation'])
+        if not generation_matches:
+            collection = {**collection, 'complete': False,
+                          'reasons': list(dict.fromkeys([*collection.get('reasons', []), 'stale_generation']))}
+        elif not collection['terminal']:
+            collection = {**collection, 'complete': False,
+                          'reasons': list(dict.fromkeys([*collection.get('reasons', []), 'not_ready']))}
         self._games_cache.add_game_lever = True
 
         games = []
@@ -649,10 +730,20 @@ class BaddelSteamBridge:
                 "platform": "steam",
                 "steamAppType": app.type,
             })
-        self._owned_games_parsed = True
-        self._persistent_cache["games"] = self._games_cache.dump()
+        if collection["complete"]:
+            self._owned_games_parsed = True
+            self._persistent_cache["games"] = self._games_cache.dump()
 
-        return {"status": "success", "games": games}
+        steam_id = str(self._user_info_cache.steam_id)
+        return {
+            "status": "success" if collection["complete"] else "partial",
+            "games": games,
+            "steamAccountId": steam_id,
+            "sessionGeneration": collection["generation"],
+            "complete": collection["complete"],
+            "completeness": collection,
+            "terminationReason": "complete" if collection["complete"] else ("stale_generation" if not generation_matches else "incomplete"),
+        }
 
     # ── Friends ───────────────────────────────────────────────────────────────
 
@@ -1285,6 +1376,7 @@ class BaddelBridgeServer:
     def __init__(self):
         self._bridge: Optional[BaddelSteamBridge] = None
         self._stdout_lock = asyncio.Lock()
+        self._request_tasks: Dict[Any, asyncio.Task] = {}
 
     async def _send(self, obj: Dict):
         async with self._stdout_lock:
@@ -1302,6 +1394,8 @@ class BaddelBridgeServer:
 
         try:
             result = await self._dispatch(method, params)
+            if isinstance(result, dict) and req_id is not None:
+                result.setdefault("requestId", req_id)
             return {"id": req_id, "result": result}
         except Exception as e:
             logger.exception(f"Error handling {method}")
@@ -1309,6 +1403,14 @@ class BaddelBridgeServer:
 
     async def _dispatch(self, method: str, params: Dict) -> Any:
         b = self._bridge
+
+        if method == "cancel_request":
+            target_id = params.get("requestId")
+            task = self._request_tasks.get(target_id)
+            if task and not task.done():
+                task.cancel()
+                return {"status": "cancelled", "requestId": target_id}
+            return {"status": "not_pending", "requestId": target_id}
 
         if method == "ping":
             return "pong"
@@ -1342,6 +1444,9 @@ class BaddelBridgeServer:
                 params.get("password", "")
             )
 
+        elif method == "resend_steam_guard_email":
+            return await b.resend_steam_guard_email()
+
         elif method == "submit_steam_guard_code":
             return await b.submit_steam_guard_code(
                 params.get("code", ""),
@@ -1351,8 +1456,14 @@ class BaddelBridgeServer:
         elif method == "poll_auth_status":
             return await b.poll_auth_status()
 
+        elif method == "get_collection_status":
+            return b.get_collection_status()
+
+        elif method == "recover_collection":
+            return await b.recover_collection(params.get("expectedGeneration"))
+
         elif method == "get_owned_games":
-            return await b.get_owned_games()
+            return await b.get_owned_games(params.get("expectedGeneration"))
 
         elif method == "get_friends":
             return await b.get_friends()
@@ -1413,8 +1524,12 @@ class BaddelBridgeServer:
                     logger.error(f"Invalid JSON: {e}")
                     continue
 
-                # Handle each request in a separate task so we don't block
-                asyncio.create_task(self._handle_and_send(req))
+                # Handle each request independently and retain it for explicit cancellation.
+                task = asyncio.create_task(self._handle_and_send(req))
+                request_id = req.get("id")
+                if request_id is not None:
+                    self._request_tasks[request_id] = task
+                    task.add_done_callback(lambda _, rid=request_id: self._request_tasks.pop(rid, None))
 
         finally:
             tick_task.cancel()
@@ -1426,8 +1541,11 @@ class BaddelBridgeServer:
                 await self._bridge.shutdown()
 
     async def _handle_and_send(self, req: Dict):
-        response = await self._handle(req)
-        await self._send(response)
+        try:
+            response = await self._handle(req)
+            await self._send(response)
+        except asyncio.CancelledError:
+            await self._send({"id": req.get("id"), "error": "operation_cancelled"})
 
     async def _tick_loop(self):
         while True:

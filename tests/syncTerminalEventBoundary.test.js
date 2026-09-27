@@ -105,7 +105,9 @@ test('platformSync still owns terminal event emission and adjacent runtime seams
     assert.match(source, /function\s+_emitPlatformSyncState\s*\(/);
     assert.match(source, /function\s+_emitLinkState\s*\(/);
     assert.match(source, /function\s+_emitLibraryUpdated\s*\(/);
-    assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
+    assert.doesNotMatch(source, /all-games-cover-cached/);
+    assert.match(mainSource, /new\s+ColdCoverBootstrapService\(\{/);
+    assert.match(mainSource, /webContents\?\.send\(['"]artwork-cold-cover-bootstrap:batch['"],\s*payload\)/);
 
     assert.match(source, /SyncLogQueue/);
     assert.match(source, /LinkStateEmitter/);

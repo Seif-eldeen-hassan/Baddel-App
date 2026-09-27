@@ -1,0 +1,3 @@
+Verifying files: 98.00%
+Installing prerequisites
+Finalizing installation

@@ -101,7 +101,21 @@ function makeFakeSteamBridge(options = {}) {
         },
         async getOwnedGames() {
             calls.getOwnedGames++;
-            return ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            const response = ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            if (response.status !== 'success') return response;
+            const steamAccountId = String(
+                response.steamAccountId
+                || options.lastSessionSteamId
+                || response.games?.[0]?.ownedByAccountIds?.[0]
+                || 's1'
+            );
+            return {
+                ...response,
+                complete: response.complete ?? true,
+                steamAccountId,
+                sessionGeneration: response.sessionGeneration ?? 1,
+                completeness: response.completeness || { complete: response.complete ?? true, terminal: true },
+            };
         },
         deleteCredentialsForAccount() {},
         async waitForCredentials() {
@@ -221,7 +235,7 @@ function loadPlatformSync(userData, overrides = {}) {
                 shell: { openExternal: async () => {} },
             };
         }
-        if (request === 'child_process') return { execFile: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }) };
+        if (request === 'child_process') return { spawn: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }), execFile: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }) };
         if (request === './steamBridge') return steamBridge;
         if (request === './services/baddelApi') return baddelApi;
         if (request === './analytics') return analytics;

@@ -15,6 +15,7 @@ const {
     isEpicPlayableGameEntry,
     isEpicSyncedGameAllowed,
     resolveEpicAccountIdentity,
+    isEpicFallbackDisplayName,
 } = require('../platformSyncShared');
 
 test('orderAccountsForSync prioritizes the active session account', () => {
@@ -811,6 +812,12 @@ test('resolveEpicAccountIdentity: no id and no display name gives Epic Account f
     const { displayName, source } = resolveEpicAccountIdentity({}, null, null);
     assert.equal(displayName, 'Epic Account');
     assert.equal(source, 'fallback');
+});
+
+test('isEpicFallbackDisplayName detects the ID-derived name left by an interrupted Epic link', () => {
+    assert.equal(isEpicFallbackDisplayName('Epic a1b2c3d4'), true);
+    assert.equal(isEpicFallbackDisplayName('Epic Account'), true);
+    assert.equal(isEpicFallbackDisplayName('RealPlayerName'), false);
 });
 
 // ─── Epic link result shape ───────────────────────────────────────────────────

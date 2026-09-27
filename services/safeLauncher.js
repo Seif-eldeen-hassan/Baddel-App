@@ -102,7 +102,7 @@ async function openProtocolUrl(rawUrl) {
  *
  * @param {string} rawPath
  * @param {string[]} [args]
- * @param {{ cwd?: string }} [options]
+ * @param {{ cwd?: string, requireSpawnConfirmation?: boolean }} [options]
  * @returns {Promise<{ ok: boolean, pid?: number, error?: Error }>}
  */
 function launchExecutable(rawPath, args = [], options = {}) {
@@ -150,6 +150,12 @@ function launchExecutable(rawPath, args = [], options = {}) {
         setTimeout(() => {
             if (settled) return;
             settled = true;
+            if (options.requireSpawnConfirmation) {
+                const error = new Error('Windows did not confirm that the process started.');
+                error.code = 'LAUNCH_CONFIRMATION_TIMEOUT';
+                resolve({ ok: false, error });
+                return;
+            }
             resolve({ ok: true, pid: child.pid, assumed: true });
         }, 1200);
     });

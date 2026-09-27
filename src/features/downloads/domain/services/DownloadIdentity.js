@@ -27,7 +27,8 @@ function buildDownloadIdentity(payload = {}) {
         : '';
 
     if (!platform || !accountId || !providerId) return null;
-    return `${platform}:${accountId}:${providerId}:${installPath}`;
+    const accountScope = String(payload.installProvider || '').toLowerCase() === 'legendary' ? 'shared-install' : accountId;
+    return `${platform}:${accountScope}:${providerId}:${installPath}`;
 }
 
 function makeDownloadTaskId(identityKey) {

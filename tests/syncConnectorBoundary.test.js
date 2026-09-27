@@ -71,7 +71,7 @@ function loadPlatformSyncShapeOnly() {
             };
         }
         if (request === 'child_process') {
-            return { execFile: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }) };
+            return { spawn: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }), execFile: () => ({ stdout: { on() {} }, stderr: { on() {} }, on() {} }) };
         }
         if (request === './analytics') {
             return {
@@ -209,3 +209,4 @@ test('platformSync still owns connector method implementations and current platf
         assert.match(source, new RegExp(`['"]${channel}['"]`));
     }
 });
+

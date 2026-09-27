@@ -5,7 +5,7 @@ const MB = 1024 * 1024;
 const DEFAULT_AUTOMATIC_BUDGET_BYTES = 64 * MB;
 const DEFAULT_DATA_SAVER_AUTOMATIC_BUDGET_BYTES = 16 * MB;
 
-const INTERACTIVE_PRIORITIES = new Set(['game-details', 'visible']);
+const INTERACTIVE_PRIORITIES = new Set(['game-details', 'visible', 'library-cover-hydration']);
 const AUTOMATIC_PRIORITIES = new Set(['prewarm', 'background']);
 
 class ArtworkBandwidthPolicy {

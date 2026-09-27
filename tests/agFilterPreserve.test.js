@@ -160,8 +160,8 @@ test('_agRenderAccountFilterOptions logs when account is dropped', () => {
 
 {
     // Scope the search to the onLibraryUpdated handler body only
-    const handlerIdx = ACC_JS.indexOf('window.electronAPI.onLibraryUpdated(async ()');
-    assert.ok(handlerIdx !== -1, 'onLibraryUpdated handler not found');
+    const handlerIdx = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (');
+    assert.ok(handlerIdx !== -1, 'platform-library-committed handler not found');
     const handlerBody = ACC_JS.slice(handlerIdx, handlerIdx + 16000);
 
     test('onLibraryUpdated: takes filterSnapshot before DOM mutations', () => {
@@ -259,7 +259,7 @@ test('renderAllGamesView with preserveFilters: snapshots before full-cache _agRe
 test('renderAllGamesView with preserveFilters: calls _applyAgFilters instead of raw render', () => {
     const fnStart = ACC_JS.indexOf('window.renderAllGamesView = async function');
     const body = ACC_JS.slice(fnStart, fnStart + 9000);
-    assert.match(body, /options\.preserveFilters[\s\S]{0,200}_applyAgFilters/);
+    assert.match(body, /options\.preserveFilters[\s\S]{0,1200}_applyAgFilters/);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -267,7 +267,7 @@ test('renderAllGamesView with preserveFilters: calls _applyAgFilters instead of 
 // ─────────────────────────────────────────────────────────────────────────────
 
 test('onLibraryUpdated no-accounts path calls renderAllGamesView with preserveFilters', () => {
-    const handlerIdx = ACC_JS.indexOf('window.electronAPI.onLibraryUpdated(async ()');
+    const handlerIdx = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (');
     const handlerBody = ACC_JS.slice(handlerIdx, handlerIdx + 1500);
     // The no-accounts early path (when _agNoLinkedAccounts) must pass preserveFilters
     assert.match(handlerBody, /renderAllGamesView\(\{[^}]*preserveFilters/);

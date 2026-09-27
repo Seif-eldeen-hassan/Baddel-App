@@ -39,7 +39,7 @@ const RENDERER_EVENT_CHANNELS = [
     'platform-sync:failed',
     'platform-sync:link-state-changed',
     'library-updated',
-    'all-games-cover-cached',
+    'artwork-cold-cover-bootstrap:batch',
 ];
 
 function readSource(filePath) {
@@ -362,8 +362,10 @@ test('link-state emitter is extracted while platformSync owns remaining event he
 
 test('renderer event channels and send payload shapes remain source-visible', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const mainSource = readSource(MAIN_JS_PATH);
     const eventSource = [
         source,
+        mainSource,
         readSource(STATE_CHANGED_EMITTER_PATH),
         readSource(SYNC_TERMINAL_EVENT_EMITTER_PATH),
         readSource(LINK_STATE_EMITTER_PATH),
@@ -379,8 +381,9 @@ test('renderer event channels and send payload shapes remain source-visible', ()
     assert.match(source, /linkStateEmitter\.emit\(mainWindow,\s*platform,\s*status,\s*message,\s*extra\)/);
     assert.match(source, /syncTerminalEventEmitter\.emitCompleted\(finalState,\s*\{/);
     assert.match(source, /syncTerminalEventEmitter\.emitFailed\(finalState\)/);
-    assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
-    assert.ok((source.match(/all-games-cover-cached/g) || []).length >= 2, 'cover cache notifications should remain wired for Steam and Epic');
+    assert.doesNotMatch(source, /all-games-cover-cached/);
+    assert.match(mainSource, /new\s+ColdCoverBootstrapService\(\{/);
+    assert.match(mainSource, /webContents\?\.send\(['"]artwork-cold-cover-bootstrap:batch['"],\s*payload\)/);
 });
 
 test('library-updated debounce behavior remains source-visible', () => {

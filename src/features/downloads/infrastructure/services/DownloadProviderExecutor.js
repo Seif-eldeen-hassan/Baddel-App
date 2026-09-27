@@ -23,6 +23,23 @@ class DownloadProviderExecutor {
         return provider.start(task, options);
     }
 
+    async checkForUpdate(task) {
+        const provider = this.findProvider(task);
+        if (!provider?.checkForUpdate) {
+            throw makeDownloadError('DOWNLOAD_UPDATE_UNSUPPORTED', 'This provider cannot check for game updates.');
+        }
+        return provider.checkForUpdate(task);
+    }
+
+    async assertMaintenanceSupported(task, operationKind) {
+        const provider = this.findProvider(task);
+        if (!provider) throw makeDownloadError('DOWNLOAD_PROVIDER_UNAVAILABLE', 'Direct downloads are not available for this provider.');
+        const capabilities = await provider.getCapabilityStatus?.() || {};
+        const supported = operationKind === 'update' ? capabilities.supportsUpdate === true : capabilities.supportsRepair === true;
+        if (!supported) throw makeDownloadError('DOWNLOAD_MAINTENANCE_UNSUPPORTED', `This provider does not support ${operationKind}.`);
+        return capabilities;
+    }
+
     async pause(taskId, options = {}) {
         const results = await Promise.all(this.providers.map(provider => provider?.pause?.(taskId, options)).filter(Boolean));
         return summarizeStopResults(results);

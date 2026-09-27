@@ -1,5 +1,25 @@
 'use strict';
 const { spawn } = require('child_process');
+const nodePath = require('path');
+const gogGalaxyProtocol = require('../services/gogGalaxyProtocol');
+
+function buildExecutableLaunchArgs(executablePath, launchArgs = []) {
+    const args = Array.isArray(launchArgs) ? launchArgs.map(value => String(value)) : [];
+    if (nodePath.basename(String(executablePath || '')).toLowerCase() !== 'scummvm.exe') return args;
+    return [...args.filter(value => !/^--(?:no-)?console(?:=|$)/i.test(value)), '--no-console'];
+}
+
+function resolveTrustedLaunchCommand(trusted = {}, options = {}) {
+    const galaxyCommand = options.preferGalaxyLaunch === true &&
+        trusted.installProvider === 'gog_galaxy' &&
+        gogGalaxyProtocol.isLaunchUrl(trusted.galaxyLaunchCommand)
+        ? trusted.galaxyLaunchCommand
+        : null;
+    return galaxyCommand || trusted.command || trusted.path || '';
+}
+
+module.exports.buildExecutableLaunchArgs = buildExecutableLaunchArgs;
+module.exports.resolveTrustedLaunchCommand = resolveTrustedLaunchCommand;
 
 // deps shape: {
 //   getSavedGames,       ← gameScanner.getSavedGames
@@ -21,7 +41,7 @@ const { spawn } = require('child_process');
 //   startGlobalWatcher   — co-located with the tracking engine in main.js
 
 module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
-    const { getSavedGames, startGameTracking, _detectPlatform, shell, fsSync, path, safeLauncher, analytics, app } = deps;
+    const { getSavedGames, startGameTracking, _detectPlatform, shell, fsSync, path, safeLauncher, analytics, app, launcherPathResolver } = deps;
 
     const _launchInFlight  = new Set();
     const _installInFlight = new Set();
@@ -499,6 +519,10 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
                 name: 'Epic Games Launcher',
                 resolver: _resolveEpicExe,
             },
+            gog: {
+                name: 'GOG Galaxy',
+                resolver: async () => launcherPathResolver?.findLauncherExe?.('gog'),
+            },
         }[platform];
 
         if (!config) {
@@ -539,7 +563,7 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
                 console.warn('[LaunchGame] gameId not found in trusted DB:', gameId);
                 return { status: 'error', code: 'GAME_NOT_FOUND', message: 'Game not found.' };
             }
-            command  = trusted.command || trusted.path || '';
+            command  = resolveTrustedLaunchCommand(trusted, options);
             gamePath = trusted.path    || gamePath     || '';
             gameName = trusted.name    || gameName     || '';
             console.log('[LaunchGame] resolved from trusted DB — gameId:', gameId, 'command:', command);
@@ -697,15 +721,20 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
             if (cleanCmd.includes('://')) {
                 const isEpic  = cleanCmd.startsWith('com.epicgames.launcher://');
                 const isSteam = cleanCmd.startsWith('steam://');
+                const isGog   = cleanCmd.startsWith('goggalaxy://');
+                if (isGog && !gogGalaxyProtocol.isLaunchUrl(cleanCmd)) {
+                    return launchError('GOG_LAUNCH_URL_INVALID', 'Invalid GOG Galaxy launch URL.');
+                }
 
                 const PROCESS_NAMES = {
                     // Do NOT include EpicWebHelper here — it may be running in the background
                     // while the launcher itself is not yet ready to accept a play command.
                     epic:  ['epicgameslauncher.exe'],
                     steam: ['steam.exe', 'steamwebhelper.exe'],
+                    gog:   ['galaxyclient.exe'],
                 };
 
-                const platformKey = isEpic ? 'epic' : isSteam ? 'steam' : null;
+                const platformKey = isEpic ? 'epic' : isSteam ? 'steam' : isGog ? 'gog' : null;
                 const names       = platformKey ? PROCESS_NAMES[platformKey] : [];
 
                 const launchKey = `${platformKey || 'protocol'}:${cleanCmd}`;
@@ -805,7 +834,11 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
             } else if (ext === '.exe') {
                 console.log('[Launch] Branch D — .exe spawn:', cleanCmd);
                 if (!diag.existsCommand) return launchError('PATH_NOT_FOUND', `Executable not found: ${cleanCmd}`);
-                const spawnArgs = (trusted?.launchArgs?.length) ? trusted.launchArgs : (_cmdParsed.parsedArgs || []);
+                const storedArgs = (trusted?.launchArgs?.length) ? trusted.launchArgs : (_cmdParsed.parsedArgs || []);
+                const spawnArgs = buildExecutableLaunchArgs(cleanCmd, storedArgs);
+                if (nodePath.basename(cleanCmd).toLowerCase() === 'scummvm.exe') {
+                    console.log('[Launch][ScummVM] Console disabled with supported --no-console argument');
+                }
                 let spawnCwd;
                 try {
                     const s = diag.launchCwd ? fsSync.statSync(diag.launchCwd) : null;
@@ -850,14 +883,16 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
             fallbackToStore     = true,   // Steam: open store page after install attempts
         } = payload || {};
 
-        const ALLOWED_PLATFORMS = ['steam', 'epic'];
+        const ALLOWED_PLATFORMS = ['steam', 'epic', 'gog'];
         const PROTOCOL_MAP = {
             epic:  'com.epicgames.launcher://',
             steam: 'steam://',
+            gog:   'goggalaxy://',
         };
         const PROCESS_NAMES = {
             epic:  ['epicgameslauncher.exe'],
             steam: ['steam.exe', 'steamwebhelper.exe'],
+            gog:   ['galaxyclient.exe'],
         };
 
         if (!ALLOWED_PLATFORMS.includes(platform)) {
@@ -865,6 +900,9 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
         }
         if (!installUrl || !installUrl.startsWith(PROTOCOL_MAP[platform])) {
             return { ok: false, error: `Invalid install URL for ${platform}: ${installUrl}`, platform, installUrl };
+        }
+        if (platform === 'gog' && !gogGalaxyProtocol.isProductViewUrl(installUrl)) {
+            return { ok: false, code: 'GOG_INSTALL_URL_INVALID', error: 'Invalid GOG Galaxy product-view URL.', platform, installUrl };
         }
 
         const launcherInfo = await _getExternalLauncherInfo(platform);
@@ -939,7 +977,7 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
                 try {
                     await _openProtocolUrlReliable(effectiveInstallUrl, `${platform}-warm-attempt-1`);
                 } catch (shellErr) {
-                    if (/^(steam|com\.epicgames\.launcher):\/\//.test(effectiveInstallUrl)) {
+                    if (/^(steam|com\.epicgames\.launcher|goggalaxy):\/\//.test(effectiveInstallUrl)) {
                         console.warn(`[InstallOpener] shell.openExternal failed, trying start "" fallback:`, shellErr.message);
                         await safeLauncher.openProtocolUrl(effectiveInstallUrl);
                     } else {
@@ -997,7 +1035,7 @@ module.exports.register = function registerLaunchHandlers(ipcMain, deps) {
                 fallbackStoreUsed = true;
             }
 
-            return { ok: true, platform, installUrl: effectiveInstallUrl, attempts, coldStartRetryUsed, forceRetryAfterOpen, fallbackStoreUsed, wasRunning, appid };
+            return { ok: true, code: platform === 'gog' ? 'GOG_PRODUCT_VIEW_DISPATCHED' : undefined, dispatched: true, installStarted: platform === 'gog' ? false : undefined, platform, installUrl: effectiveInstallUrl, attempts, coldStartRetryUsed, forceRetryAfterOpen, fallbackStoreUsed, wasRunning, appid };
         } catch (e) {
             console.error(`[InstallOpener] Error:`, e);
             return { ok: false, error: e.message, platform, installUrl: effectiveInstallUrl, appid };

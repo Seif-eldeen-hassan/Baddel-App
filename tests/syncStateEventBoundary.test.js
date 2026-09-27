@@ -348,10 +348,13 @@ test('state mutation order remains source-visible in start, progress, and finish
     assert.match(finishSource, /state\.lastError\s*=\s*patch\.lastError\s*\|\|\s*null/);
 });
 
-test('platformSync still owns cover notifications and connector method implementations', () => {
+test('platformSync keeps connector methods while cold-cover bootstrap owns cover notifications', () => {
     const source = readSource(PLATFORM_SYNC_PATH);
+    const mainSource = readSource(MAIN_JS_PATH);
 
-    assert.match(source, /_cfWin\.webContents\.send\(['"]all-games-cover-cached['"],\s*payload\)/);
+    assert.doesNotMatch(source, /all-games-cover-cached/);
+    assert.match(mainSource, /new\s+ColdCoverBootstrapService\(\{/);
+    assert.match(mainSource, /webContents\?\.send\(['"]artwork-cold-cover-bootstrap:batch['"],\s*payload\)/);
     assert.match(source, /const\s+steamConnectorMethods\s*=\s*\{/);
     assert.match(source, /const\s+epicConnectorMethods\s*=\s*\{/);
     assert.match(source, /createSyncConnectors/);

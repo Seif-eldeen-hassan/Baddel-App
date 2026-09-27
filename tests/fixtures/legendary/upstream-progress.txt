@@ -1,0 +1,6 @@
+[cli] INFO: Install size: 0.12 MiB
+[cli] INFO: Download size: 0.06 MiB (Compression savings: 50.0%)
+[DLManager] INFO: = Progress: 50.00% (10/20), Running for 00:00:01, ETA: 00:00:01
+[DLManager] INFO:  - Downloaded: 0.03 MiB, Written: 0.06 MiB
+[DLManager] INFO:  + Download - 1.25 MiB/s (raw) / 2.50 MiB/s (decompressed)
+[DLManager] INFO:  + Disk - 0.00 MiB/s (write) / 0.00 MiB/s (read)

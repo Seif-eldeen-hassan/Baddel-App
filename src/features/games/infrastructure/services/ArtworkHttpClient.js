@@ -42,12 +42,14 @@ class ArtworkHttpClient {
         baseDelayMs = 250,
         maxDelayMs = 5000,
         sleep = ms => new Promise(resolve => setTimeout(resolve, ms)),
+        timeoutMs = 15000,
     } = {}) {
         this._fetch = fetchImpl || (typeof fetch === 'function' ? fetch : null);
         this._maxAttempts = Math.max(1, Number(maxAttempts) || 1);
         this._baseDelayMs = Math.max(0, Number(baseDelayMs) || 0);
         this._maxDelayMs = Math.max(this._baseDelayMs, Number(maxDelayMs) || this._baseDelayMs);
         this._sleep = sleep;
+        this._timeoutMs = Math.max(1000, Number(timeoutMs) || 15000);
     }
 
     async fetchImage({ url, etag = null, lastModified = null, maxBytes = DEFAULT_MAX_BYTES } = {}) {
@@ -61,13 +63,12 @@ class ArtworkHttpClient {
         let lastError = null;
         for (let attempt = 1; attempt <= this._maxAttempts; attempt += 1) {
             try {
-                const response = await this._fetch(url, { headers });
-                return await this._handleResponse(response, {
+                return await this._fetchWithTimeout(url, { headers }, response => this._handleResponse(response, {
                     url,
                     attempt,
                     maxBytes,
                     canRetry: attempt < this._maxAttempts,
-                });
+                }));
             } catch (err) {
                 lastError = err;
                 const retryable = err instanceof ArtworkHttpError ? err.retryable : true;
@@ -76,6 +77,83 @@ class ArtworkHttpClient {
             }
         }
         throw lastError;
+    }
+
+    async _fetchWithTimeout(url, options = {}, consume = response => response) {
+        const controller = new AbortController();
+        let timer;
+        const timeout = new Promise((_, reject) => {
+            timer = setTimeout(() => {
+                reject(new ArtworkHttpError(`Artwork request timed out after ${this._timeoutMs}ms.`, { retryable: true }));
+                controller.abort();
+            }, this._timeoutMs);
+        });
+        try {
+            const operation = async () => {
+                let response;
+                try {
+                    response = await this._fetch(url, { ...options, signal: controller.signal });
+                } catch (err) {
+                    const networkCode = err?.cause?.code || err?.code || null;
+                    if (!controller.signal.aborted && /^https:/i.test(String(url || '')) && ['ETIMEDOUT', 'ENETUNREACH', 'EHOSTUNREACH'].includes(networkCode)) {
+                        response = await this._fetchHttpsIpv4(url, { ...options, signal: controller.signal });
+                    } else throw err;
+                }
+                // Keep the same deadline and signal through body consumption.
+                return consume(response);
+            };
+            return await Promise.race([operation(), timeout]);
+        } catch (err) {
+            if (err?.name === 'AbortError') {
+                throw new ArtworkHttpError(`Artwork request timed out after ${this._timeoutMs}ms for ${url}`, {
+                    status: null,
+                    retryable: true,
+                });
+            }
+            throw err;
+        } finally {
+            clearTimeout(timer);
+        }
+    }
+
+    _fetchHttpsIpv4(url, options = {}, redirects = 0) {
+        if (typeof require !== 'function') return Promise.reject(new ArtworkHttpError('IPv4 HTTPS fallback is unavailable.'));
+        const https = require('node:https');
+        const parsed = new URL(String(url));
+        if (parsed.protocol !== 'https:' || parsed.username || parsed.password) {
+            return Promise.reject(new ArtworkHttpError('Artwork IPv4 fallback accepts credential-free HTTPS URLs only.'));
+        }
+        return new Promise((resolve, reject) => {
+            const request = https.get(parsed, { headers: options.headers || {}, family: 4, signal: options.signal }, response => {
+                const status = Number(response.statusCode || 0);
+                const location = response.headers.location;
+                if (status >= 300 && status < 400 && location && redirects < 3) {
+                    response.resume();
+                    let next;
+                    try { next = new URL(location, parsed); } catch { reject(new ArtworkHttpError('Invalid artwork redirect.')); return; }
+                    if (next.protocol !== 'https:' || next.username || next.password) {
+                        reject(new ArtworkHttpError('Artwork redirect must remain credential-free HTTPS.'));
+                        return;
+                    }
+                    this._fetchHttpsIpv4(next.href, options, redirects + 1).then(resolve, reject);
+                    return;
+                }
+                const chunks = [];
+                response.on('data', chunk => chunks.push(Buffer.from(chunk)));
+                response.on('error', reject);
+                response.on('end', () => {
+                    const body = Buffer.concat(chunks);
+                    resolve({
+                        status,
+                        ok: status >= 200 && status < 300,
+                        headers: { get: name => response.headers[String(name || '').toLowerCase()] || null },
+                        arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+                    });
+                });
+            });
+            request.setTimeout(this._timeoutMs, () => request.destroy(new ArtworkHttpError(`Artwork IPv4 request timed out after ${this._timeoutMs}ms.`, { retryable: true })));
+            request.on('error', reject);
+        });
     }
 
     async _handleResponse(response, { url, attempt, maxBytes, canRetry }) {

@@ -166,6 +166,19 @@ test('scripts/build-protected.js: uses esbuild for bundling', () => {
     assert.ok(BUILD_SCR.includes('esbuild'), 'build script must use esbuild');
 });
 
+test('scripts/build-protected.js: protected renderer includes current download and maintenance UI assets', () => {
+    for (const required of [
+        "src/features/games/domain/services/CanonicalProductIdentity.js",
+        "src/js/baddel-menus.js",
+        "src/js/downloads.js",
+        "src/js/install-storage.js",
+        "src/css/downloads.css",
+        "src/css/install-flow.css",
+    ]) {
+        assert.match(BUILD_SCR, new RegExp(required.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+    }
+});
+
 test('scripts/build-protected.js: creates main.bundle.cjs', () => {
     assert.ok(BUILD_SCR.includes('main.bundle.cjs'), 'build script must output main.bundle.cjs');
 });
@@ -235,6 +248,13 @@ test('scripts/build-protected.js: runs audit before electron-builder', () => {
     assert.ok(auditIdx !== -1, 'build script must reference audit-protected-build.js');
     assert.ok(builderIdx !== -1, 'build script must reference electron-builder.protected.json');
     assert.ok(auditIdx < builderIdx, 'audit must run before electron-builder');
+});
+
+
+test('scripts/build-protected.js: rejects ASAR-relative GOG runtime metadata imports', () => {
+    assert.match(BUILD_SCR, /gog-runtime/);
+    assert.ok(BUILD_SCR.includes('version\\.json'), 'build guard must inspect GOG version.json imports');
+    assert.match(BUILD_SCR, /GogRuntimeResolver|process\.resourcesPath|ASAR-relative GOG runtime metadata/);
 });
 
 // ── audit-protected-build.js ──────────────────────────────────────────────────

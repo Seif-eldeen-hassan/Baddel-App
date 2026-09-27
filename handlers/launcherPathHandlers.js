@@ -31,6 +31,12 @@ module.exports.register = function registerLauncherPathHandlers(ipcMain, deps) {
         }
     });
 
+    ipcMain.handle('launcher:get-availability', async (_, platform) => {
+        if (!launcherPathResolver.getPlatformInfo(platform)) return { available: false, code: 'UNSUPPORTED_PLATFORM' };
+        try { const executablePath = await launcherPathResolver.findLauncherExe(platform); return { available: Boolean(executablePath) }; }
+        catch { return { available: false }; }
+    });
+
     // ---- Generic launcher manual path selection (all platforms) ----
     ipcMain.handle('select-launcher-manually', async (_, platform) => {
         const info = launcherPathResolver.getPlatformInfo(platform);

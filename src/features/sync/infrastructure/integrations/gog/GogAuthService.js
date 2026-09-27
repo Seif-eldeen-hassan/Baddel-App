@@ -1,11 +1,37 @@
 'use strict';
 
 const defaultFs = require('fs').promises;
+const defaultFsSync = require('fs');
 const defaultPath = require('path');
 const { redactGogSecrets } = require('./GogRuntime');
 
 const GOG_AUTH_URL = 'https://login.gog.com/auth?client_id=46899977096215655&redirect_uri=https%3A%2F%2Fembed.gog.com%2Fon_login_success%3Forigin%3Dclient&response_type=code&layout=client2';
 const ALLOWED_AUTH_HOSTS = new Set(['login.gog.com', 'auth.gog.com', 'embed.gog.com', 'www.gog.com', 'gog.com']);
+const GOG_AUTH_HEADER_HEIGHT = 84;
+
+function resolveGogAuthShellPath({
+    projectRoot,
+    isPackaged = false,
+    fsSync = defaultFsSync,
+    path = defaultPath,
+} = {}) {
+    const root = String(projectRoot || '').trim();
+    if (!root) {
+        throw new GogAuthError('GOG_AUTH_SHELL_NOT_FOUND', 'GOG authentication shell root is unavailable.');
+    }
+
+    const candidates = isPackaged
+        ? [path.join(root, 'gog-auth-shell.html'), path.join(root, 'src', 'gog-auth-shell.html')]
+        : [path.join(root, 'src', 'gog-auth-shell.html')];
+    const shellPath = candidates.find((candidate) => fsSync.existsSync(candidate));
+    if (!shellPath) {
+        throw new GogAuthError(
+            'GOG_AUTH_SHELL_NOT_FOUND',
+            'GOG authentication shell is missing from the application.'
+        );
+    }
+    return shellPath;
+}
 
 class GogAuthError extends Error {
     constructor(code, message) {
@@ -21,6 +47,27 @@ function extractAuthCode(rawUrl) {
         return parsed.searchParams.get('code') || parsed.hash.match(/[?&]code=([^&]+)/)?.[1] || null;
     } catch {
         return null;
+    }
+}
+
+function isGogAuthCallback(rawUrl) {
+    try {
+        const parsed = new URL(String(rawUrl || ''));
+        return parsed.protocol === 'https:' &&
+            parsed.hostname.toLowerCase() === 'embed.gog.com' &&
+            parsed.pathname === '/on_login_success' &&
+            Boolean(extractAuthCode(parsed.href));
+    } catch {
+        return false;
+    }
+}
+
+function isSafeExternalAuthUrl(rawUrl) {
+    try {
+        const parsed = new URL(String(rawUrl || ''));
+        return parsed.protocol === 'https:' && !parsed.username && !parsed.password;
+    } catch {
+        return String(rawUrl || '') === 'about:blank';
     }
 }
 
@@ -113,19 +160,25 @@ class GogAuthService {
         runtime,
         userDataDir,
         BrowserWindow,
+        WebContentsView,
         session,
         fs = defaultFs,
         path = defaultPath,
         authUrl = GOG_AUTH_URL,
+        shellPath = null,
+        windowIcon = null,
         profileResolver = null,
     } = {}) {
         this.runtime = runtime;
         this.userDataDir = userDataDir;
         this.BrowserWindow = BrowserWindow;
+        this.WebContentsView = WebContentsView;
         this.session = session;
         this.fs = fs;
         this.path = path;
         this.authUrl = authUrl;
+        this.shellPath = shellPath;
+        this.windowIcon = windowIcon;
         this.profileResolver = profileResolver;
     }
 
@@ -162,44 +215,89 @@ class GogAuthService {
     }
 
     async _openLoginWindow(parentWindow, emitState = () => {}) {
-        if (!this.BrowserWindow) {
+        if (!this.BrowserWindow || !this.WebContentsView || !this.shellPath) {
             throw new GogAuthError('GOG_AUTH_FAILED', 'GOG login window is unavailable.');
         }
         emitState('authenticating', 'Opening secure GOG sign-in...');
         return new Promise((resolve, reject) => {
             let settled = false;
+            let shellReady = false;
+            let authReady = false;
             const partition = `temp:gog-auth-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+            const width = 920;
+            const height = 760;
+            let parentBounds = null;
+            try {
+                if (parentWindow && !parentWindow.isDestroyed?.()) parentBounds = parentWindow.getBounds?.() || null;
+            } catch {}
+            const centered = parentBounds ? {
+                x: Math.round(parentBounds.x + (parentBounds.width - width) / 2),
+                y: Math.round(parentBounds.y + (parentBounds.height - height) / 2),
+            } : {};
             const win = new this.BrowserWindow({
-                width: 900,
-                height: 720,
+                width,
+                height,
+                minWidth: 760,
+                minHeight: 620,
+                ...centered,
                 parent: parentWindow || undefined,
                 modal: Boolean(parentWindow),
-                show: true,
-                title: 'Link GOG Account',
+                show: false,
+                frame: false,
+                titleBarStyle: 'hidden',
+                autoHideMenuBar: true,
+                backgroundColor: '#080a09',
+                title: 'Connect GOG Account',
+                ...(this.windowIcon ? { icon: this.windowIcon } : {}),
                 webPreferences: {
                     nodeIntegration: false,
                     contextIsolation: true,
                     sandbox: true,
+                    webSecurity: true,
+                },
+            });
+            win.setMenu?.(null);
+            win.removeMenu?.();
+            win.setMenuBarVisibility?.(false);
+
+            const authView = new this.WebContentsView({
+                webPreferences: {
+                    nodeIntegration: false,
+                    contextIsolation: true,
+                    sandbox: true,
+                    webSecurity: true,
                     partition,
                 },
             });
+            win.contentView.addChildView(authView);
+            const authContents = authView.webContents;
+            const resizeAuthView = () => {
+                if (win.isDestroyed?.()) return;
+                const bounds = win.getContentBounds?.() || { width, height };
+                authView.setBounds({ x: 0, y: GOG_AUTH_HEADER_HEIGHT, width: bounds.width, height: Math.max(1, bounds.height - GOG_AUTH_HEADER_HEIGHT) });
+            };
+            resizeAuthView();
 
-            const cleanup = () => {
+            const cleanup = async () => {
                 try { win.removeAllListeners(); } catch {}
                 try { win.webContents.removeAllListeners(); } catch {}
-                try { this.session?.fromPartition?.(partition)?.clearStorageData?.(); } catch {}
+                try { authContents.removeAllListeners(); } catch {}
+                try { win.contentView.removeChildView(authView); } catch {}
+                try { authContents.close(); } catch {}
+                try { await this.session?.fromPartition?.(partition)?.clearStorageData?.(); } catch {}
             };
-            const settle = (fn) => {
+            const settle = async (fn) => {
                 if (settled) return;
                 settled = true;
-                cleanup();
+                await cleanup();
                 fn();
                 try { if (!win.isDestroyed()) win.close(); } catch {}
             };
             const inspectUrl = (url) => {
+                if (!isGogAuthCallback(url)) return false;
                 const code = extractAuthCode(url);
                 if (code) {
-                    settle(() => resolve(decodeURIComponent(code)));
+                    void settle(() => resolve(decodeURIComponent(code)));
                     return true;
                 }
                 return false;
@@ -208,22 +306,85 @@ class GogAuthService {
                 try { return ALLOWED_AUTH_HOSTS.has(new URL(rawUrl).hostname.toLowerCase()); }
                 catch { return false; }
             };
-
-            win.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
-            win.webContents.on('will-navigate', (event, url) => {
+            const handleNavigation = (event, url) => {
                 if (inspectUrl(url)) return;
-                if (!isAllowed(url)) event.preventDefault();
+                if (!isAllowed(url)) event?.preventDefault?.();
+            };
+            const revealWhenReady = () => {
+                if (!settled && shellReady && authReady && !win.isDestroyed?.()) {
+                    resizeAuthView();
+                    win.show();
+                }
+            };
+            const popupPreferences = {
+                nodeIntegration: false,
+                contextIsolation: true,
+                sandbox: true,
+                webSecurity: true,
+                partition,
+            };
+            const popupDecision = ({ url } = {}) => {
+                if (!isSafeExternalAuthUrl(url)) return { action: 'deny' };
+                return {
+                    action: 'allow',
+                    overrideBrowserWindowOptions: {
+                        parent: win,
+                        modal: true,
+                        show: true,
+                        autoHideMenuBar: true,
+                        backgroundColor: '#080a09',
+                        ...(this.windowIcon ? { icon: this.windowIcon } : {}),
+                        webPreferences: popupPreferences,
+                    },
+                };
+            };
+            const securePopup = (popup) => {
+                try {
+                    popup.setMenu?.(null);
+                    popup.removeMenu?.();
+                    popup.setMenuBarVisibility?.(false);
+                    const contents = popup.webContents;
+                    contents.setWindowOpenHandler?.(popupDecision);
+                    const handlePopupNavigation = (event, url) => {
+                        if (inspectUrl(url)) return;
+                        if (!isSafeExternalAuthUrl(url)) event?.preventDefault?.();
+                    };
+                    contents.on?.('will-navigate', handlePopupNavigation);
+                    contents.on?.('will-redirect', handlePopupNavigation);
+                    contents.on?.('did-navigate', (_event, url) => inspectUrl(url));
+                    contents.on?.('did-navigate-in-page', (_event, url) => inspectUrl(url));
+                } catch {}
+            };
+
+            win.on('resize', resizeAuthView);
+            win.webContents.setWindowOpenHandler?.(() => ({ action: 'deny' }));
+            win.webContents.on('will-navigate', (event, url) => {
+                if (!String(url || '').startsWith('file://')) event.preventDefault();
             });
-            win.webContents.on('will-redirect', (_event, url) => inspectUrl(url));
-            win.webContents.on('did-navigate', (_event, url) => inspectUrl(url));
-            win.webContents.on('did-navigate-in-page', (_event, url) => inspectUrl(url));
-            win.on('closed', () => settle(() => reject(new GogAuthError('GOG_LOGIN_CANCELLED', 'GOG login was cancelled.'))));
-            win.loadURL(this.authUrl).catch((err) => {
-                settle(() => reject(new GogAuthError('GOG_AUTH_FAILED', redactGogSecrets(err?.message || 'Could not open GOG login.'))));
+            win.webContents.once('did-finish-load', () => {
+                shellReady = true;
+                revealWhenReady();
+            });
+            authContents.setWindowOpenHandler(popupDecision);
+            authContents.on('did-create-window', securePopup);
+            authContents.on('will-navigate', handleNavigation);
+            authContents.on('will-redirect', handleNavigation);
+            authContents.on('did-navigate', (_event, url) => inspectUrl(url));
+            authContents.on('did-navigate-in-page', (_event, url) => inspectUrl(url));
+            authContents.once('dom-ready', () => {
+                authReady = true;
+                revealWhenReady();
+            });
+            win.on('closed', () => { void settle(() => reject(new GogAuthError('GOG_LOGIN_CANCELLED', 'GOG login was cancelled.'))); });
+
+            win.loadFile(this.shellPath).catch((err) => {
+                void settle(() => reject(new GogAuthError('GOG_AUTH_FAILED', redactGogSecrets(err?.message || 'Could not open the Baddel GOG sign-in window.'))));
+            });
+            authContents.loadURL(this.authUrl).catch((err) => {
+                void settle(() => reject(new GogAuthError('GOG_AUTH_FAILED', redactGogSecrets(err?.message || 'Could not open GOG login.'))));
             });
         });
     }
-
     async link(parentWindow, emitState = () => {}) {
         await this.runtime.verify();
         const code = await this._openLoginWindow(parentWindow, emitState);
@@ -265,7 +426,10 @@ module.exports = {
     GogAuthError,
     GOG_AUTH_URL,
     extractAuthCode,
+    isGogAuthCallback,
+    isSafeExternalAuthUrl,
     readCredentials,
     readCredentialsFromRuntimeResult,
     mergeProfileCredentials,
+    resolveGogAuthShellPath,
 };

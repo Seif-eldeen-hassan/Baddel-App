@@ -85,7 +85,7 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
                 await quickSwitcher.registerQuickSwitcherHotkey();
                 return { status: 'error', message: 'That shortcut is already in use by another application.' };
             }
-            try { analytics.track('quick_switcher_hotkey_changed'); } catch {}
+            analytics?.track?.('quick_switcher_hotkey_changed', { feature: 'quick_switcher', result: 'success' }).catch?.(() => {});
             return { status: 'ok', accelerator: norm };
         } catch (err) { return ipcValidation.sanitizeErrorForRenderer(err, 'Could not set hotkey.'); }
     });
@@ -115,12 +115,12 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
             ipcValidation.assertString(payload?.platform, 'platform', 20);
             ipcValidation.assertPlatform(payload?.platform, 'platform');
             ipcValidation.assertString(payload?.accountId, 'accountId', 256);
-            try { analytics.track('quick_switcher_switch_attempt', { platform: payload.platform }); } catch {}
+            analytics?.track?.('quick_switcher_switch_attempt', { feature: 'quick_switcher', platform: payload.platform }).catch?.(() => {});
             await switchAccountByPlatform(payload.platform, payload.accountId);
-            try { analytics.track('quick_switcher_switch_success', { platform: payload.platform }); } catch {}
+            analytics?.track?.('quick_switcher_switch_success', { feature: 'quick_switcher', platform: payload.platform }).catch?.(() => {});
             return { status: 'ok' };
         } catch (err) {
-            try { analytics.track('quick_switcher_switch_failed', { platform: payload?.platform }); } catch {}
+            analytics?.track?.('quick_switcher_switch_failed', { feature: 'quick_switcher', platform: payload?.platform, error_code: err }).catch?.(() => {});
             return ipcValidation.sanitizeErrorForRenderer(err, 'Account switch failed.');
         }
     });
@@ -138,11 +138,11 @@ module.exports.register = function registerQuickSwitcherHandlers(ipcMain, deps) 
     ipcMain.handle('quick-switcher:end-game', async (_, payload) => {
         try {
             ipcValidation.assertString(payload?.gameId, 'gameId', 256);
-            try { analytics.track('quick_switcher_end_game_attempt'); } catch {}
+            analytics?.track?.('quick_switcher_end_game_attempt', { feature: 'quick_switcher' }).catch?.(() => {});
             const result = typeof endQuickSwitcherGame === 'function'
                 ? await endQuickSwitcherGame(payload.gameId)
                 : { status: 'error', message: 'End task is not available.' };
-            try { analytics.track('quick_switcher_end_game_result', { status: result?.status || 'unknown' }); } catch {}
+            analytics?.track?.('quick_switcher_end_game_result', { feature: 'quick_switcher', status: result?.status || 'unknown' }).catch?.(() => {});
             return result;
         } catch (err) {
             return ipcValidation.sanitizeErrorForRenderer(err, 'Could not end game.');

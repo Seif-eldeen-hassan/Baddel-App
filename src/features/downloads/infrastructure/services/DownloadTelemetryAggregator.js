@@ -9,10 +9,11 @@ const {
 const DEFAULT_EMIT_INTERVAL_MS = 200;
 const DEFAULT_SAMPLE_WINDOW_MS = 8000;
 const DEFAULT_STALL_WARNING_MS = 30000;
-const DEFAULT_HARD_STALL_MS = 5 * 60 * 1000;
+const DEFAULT_HARD_STALL_MS = 2 * 60 * 1000;
 const DEFAULT_SPEED_STALE_GRACE_MS = 1500;
 const DEFAULT_HISTORY_LIMIT = 90;
-const MIN_ETA_SPEED_BPS = 1024;
+const ACTIVITY_PHASE_DEBOUNCE_MS = 1500;
+const PROVIDER_ETA_FRESH_MS = 5000;
 const TELEMETRY_TERMINAL_STATUSES = new Set(['paused', 'pausing', 'cancelled', 'completed', 'failed']);
 
 class DownloadTelemetryAggregator {
@@ -35,8 +36,8 @@ class DownloadTelemetryAggregator {
         this.stateByTask = new Map();
     }
 
-    reset(taskId, { sessionId = null } = {}) {
-        this.stateByTask.set(String(taskId), this.makeState(sessionId));
+    reset(taskId, { sessionId = null, startedAt = null } = {}) {
+        this.stateByTask.set(String(taskId), this.makeState(sessionId, startedAt));
     }
 
     clear(taskId) {
@@ -48,11 +49,12 @@ class DownloadTelemetryAggregator {
         if (!taskId) return { patch: null, shouldEmit: false, meaningful: false };
         let state = this.stateByTask.get(taskId);
         if (!state || (sample.sessionId && state.sessionId && sample.sessionId !== state.sessionId)) {
-            state = this.makeState(sample.sessionId || state?.sessionId || null);
+            state = this.makeState(sample.sessionId || state?.sessionId || null, sample.timestamp);
             this.stateByTask.set(taskId, state);
         }
 
         const now = Number(sample.timestamp) || Date.now();
+        if (!Number.isFinite(state.sessionStartedAt) || state.sessionStartedAt <= 0 || now < state.sessionStartedAt) state.sessionStartedAt = now;
         const patch = normalizeTelemetryPatch(task, normalizeSample(sample));
         const meaningful = hasAuthoritativeByteProgress(task, patch);
         const status = String(patch.status || task.status || '');
@@ -79,7 +81,6 @@ class DownloadTelemetryAggregator {
             terminal,
             speedStaleGraceMs: this.speedStaleGraceMs,
         });
-
         if (terminal) {
             state.smoothedSpeedBps = 0;
             state.etaSeconds = null;
@@ -88,6 +89,8 @@ class DownloadTelemetryAggregator {
             patch.rawDownloadSpeedBps = Number.isFinite(Number(patch.rawDownloadSpeedBps)) ? Number(patch.rawDownloadSpeedBps) : 0;
             patch.diskWriteSpeedBps = Number.isFinite(Number(patch.diskWriteSpeedBps)) ? Number(patch.diskWriteSpeedBps) : 0;
             patch.etaSeconds = null;
+            patch.etaSource = null;
+            patch.etaUpdatedAt = null;
             patch.networkState = 'idle';
             patch.telemetryState = 'idle';
         }
@@ -102,26 +105,23 @@ class DownloadTelemetryAggregator {
             state.lastEffectiveDownloadSpeedAt = now;
         }
 
-        const downloaded = Number.isFinite(Number(patch.downloadedBytes)) ? Number(patch.downloadedBytes) : Number(task.downloadedBytes);
-        const total = Number.isFinite(Number(patch.totalBytes)) ? Number(patch.totalBytes) : Number(task.totalBytes);
-        if (
-            Number.isFinite(downloaded) &&
-            Number.isFinite(total) &&
-            total > downloaded &&
-            !Number.isFinite(Number(sample.etaSeconds)) &&
-            Number(patch.downloadSpeedBps) >= MIN_ETA_SPEED_BPS &&
-            status === 'downloading'
-        ) {
-            const eta = Math.round((total - downloaded) / Number(patch.downloadSpeedBps));
-            state.etaSeconds = state.etaSeconds == null ? eta : Math.round((state.etaSeconds * 0.75) + (eta * 0.25));
-            patch.etaSeconds = state.etaSeconds;
-        } else if (!terminal && Number.isFinite(Number(sample.etaSeconds))) {
-            patch.etaSeconds = Number(sample.etaSeconds);
-        } else if (terminal) {
+        const providerEta = Number(sample.etaSeconds);
+        if (!terminal && Number.isFinite(providerEta) && providerEta > 0) {
+            state.etaSeconds = providerEta;
+            state.lastProviderEtaAt = now;
+            patch.etaSeconds = providerEta;
+            patch.etaSource = 'provider';
+            patch.etaUpdatedAt = new Date(now).toISOString();
+        } else if (terminal || (state.lastProviderEtaAt && now - state.lastProviderEtaAt >= PROVIDER_ETA_FRESH_MS)) {
+            state.etaSeconds = null;
             patch.etaSeconds = null;
+            patch.etaSource = null;
+            patch.etaUpdatedAt = null;
         }
 
-        applyTransferLivenessPolicy(task, state, patch, now, {
+        applyTransferStageMessage(task, state, patch, { status, terminal, now });
+
+        const liveness = applyTransferLivenessPolicy(task, state, patch, now, {
             status,
             stallWarningMs: this.stallWarningMs,
             hardStallMs: this.hardStallMs,
@@ -142,18 +142,30 @@ class DownloadTelemetryAggregator {
             state.lastPatchKey = key;
         }
 
-        return { patch: assertCoherentProgress(patch), shouldEmit, meaningful };
+        return { patch: assertCoherentProgress(patch), shouldEmit, meaningful, liveness };
     }
 
-    makeState(sessionId = null) {
+    makeState(sessionId = null, startedAt = null) {
+        const suppliedStartedAt = startedAt == null ? null : Number(startedAt);
+        const clockNow = typeof this.clock?.now === 'function'
+            ? Number(this.clock.now())
+            : Number(new this.clock().getTime());
+        const sessionStartedAt = suppliedStartedAt != null && Number.isFinite(suppliedStartedAt)
+            ? suppliedStartedAt
+            : (Number.isFinite(clockNow) ? clockNow : Date.now());
         return {
             sessionId,
+            sessionStartedAt,
             samples: [],
             chartSamples: [],
             lastEmitAt: 0,
             lastPatchKey: '',
             smoothedSpeedBps: null,
             etaSeconds: null,
+            lastProviderEtaAt: null,
+            stableStatusText: null,
+            pendingStatusText: null,
+            pendingStatusSince: null,
             firstProviderOutputAt: null,
             firstAuthoritativeProgressAt: null,
             lastAuthoritativeProgressAt: null,
@@ -165,6 +177,10 @@ class DownloadTelemetryAggregator {
             lastTransferCountersAt: null,
             lastEffectiveDownloadSpeedAt: null,
             lastEffectiveDownloadSpeedBps: null,
+            lastDiskUsageBps: null,
+            currentRawDownloadSpeedBps: null,
+            currentDiskWriteSpeedBps: null,
+            writtenAdvancedInSample: false,
             lastCounterAdvanceAt: null,
             lastPositiveNetworkAt: null,
             lastPositiveDiskAt: null,
@@ -201,8 +217,9 @@ function normalizeTelemetryPatch(task = {}, patch = {}) {
 function normalizeSample(sample = {}) {
     const patch = {};
     for (const key of [
-        'status', 'stage', 'statusMessage', 'progressPercent', 'downloadedBytes',
+        'status', 'stage', 'statusMessage', 'providerActivity', 'progressPercent', 'downloadedBytes',
         'totalBytes', 'verifiedBytes', 'downloadSpeedBps', 'diskUsageBps',
+        'downloadSizeBytes', 'downloadSizeSource',
         'etaSeconds', 'runtimeVersion', 'processPid', 'processStartedAt',
         'processExitedAt', 'providerProgressMode', 'progressSource',
         'providerReportedPercent', 'providerDownloadedBytes', 'providerTotalBytes',
@@ -213,7 +230,10 @@ function normalizeSample(sample = {}) {
         'expectedTotalBytes', 'unexpectedTotalBytes', 'stableTotalBytes',
         'resumeBaseDownloadedBytes', 'sessionDownloadedBytes', 'sessionTotalBytes',
         'progressMode', 'telemetryState',
-        'networkState', 'stallReason', 'retryable', 'retryAfter',
+        'networkState', 'etaSource', 'etaUpdatedAt',
+        'statusTextBeforeDebounce', 'statusTextAfterDebounce', 'statusChangeReason',
+        'networkStateAtPhaseDecision', 'telemetryStateAtPhaseDecision',
+        'stallReason', 'retryable', 'retryAfter',
         'autoResumeEligible', 'errorCode', 'errorMessage',
         'transientProviderWarningCode', 'transientProviderWarningMessage',
         'firstProviderOutputAt', 'firstAuthoritativeProgressAt',
@@ -242,6 +262,7 @@ function appendRuntimeTimingPatch(state, patch) {
     if (lastProviderActivityAt) patch.lastProviderActivityAt = lastProviderActivityAt;
 }
 function updateProviderActivityState(state, patch, now) {
+    state.writtenAdvancedInSample = false;
     if (patch.eventType) {
         if (!state.firstProviderOutputAt) {
             state.firstProviderOutputAt = now;
@@ -259,8 +280,8 @@ function updateProviderActivityState(state, patch, now) {
 
     if (Number.isFinite(rawDownloadedBytes)) {
         if (
-            state.lastRawDownloadedBytes == null ||
-            rawDownloadedBytes !== state.lastRawDownloadedBytes
+            (state.lastRawDownloadedBytes == null && rawDownloadedBytes > 0) ||
+            (state.lastRawDownloadedBytes != null && rawDownloadedBytes > state.lastRawDownloadedBytes)
         ) {
             counterAdvanced = true;
         }
@@ -272,10 +293,11 @@ function updateProviderActivityState(state, patch, now) {
 
     if (Number.isFinite(writtenBytes)) {
         if (
-            state.lastWrittenBytes == null ||
-            writtenBytes !== state.lastWrittenBytes
+            (state.lastWrittenBytes == null && writtenBytes > 0) ||
+            (state.lastWrittenBytes != null && writtenBytes > state.lastWrittenBytes)
         ) {
             counterAdvanced = true;
+            state.writtenAdvancedInSample = true;
         }
 
         state.lastWrittenBytes = writtenBytes;
@@ -288,6 +310,7 @@ function updateProviderActivityState(state, patch, now) {
     }
 
     if (Number.isFinite(rawDownloadSpeedBps)) {
+        state.currentRawDownloadSpeedBps = Math.max(0, rawDownloadSpeedBps);
         if (!state.firstProviderOutputAt) {
             state.firstProviderOutputAt = now;
         }
@@ -300,6 +323,7 @@ function updateProviderActivityState(state, patch, now) {
     }
 
     if (Number.isFinite(diskWriteSpeedBps)) {
+        state.currentDiskWriteSpeedBps = Math.max(0, diskWriteSpeedBps);
         state.lastProviderActivityAt = now;
 
         if (diskWriteSpeedBps > 0) {
@@ -317,6 +341,7 @@ function updateProviderTelemetryState(state, patch, now, historyLimit) {
         state.lastDiskWriteSpeedAt = now;
         patch.telemetryState = Number(patch.diskWriteSpeedBps) > 0 ? 'active' : 'idle';
         patch.diskUsageBps = Number(patch.diskWriteSpeedBps);
+        state.lastDiskUsageBps = patch.diskUsageBps;
     }
     if (Number.isFinite(Number(patch.rawDownloadedBytes)) || Number.isFinite(Number(patch.writtenBytes))) {
         state.lastTransferCountersAt = now;
@@ -349,6 +374,7 @@ function updateProviderTelemetryState(state, patch, now, historyLimit) {
     }
 
     if (incomingDiskSpeed !== null) {
+        state.lastDiskUsageBps = Math.max(0, incomingDiskSpeed);
         state.lastChartDiskSpeedBps =
             smoothChartSpeed(
                 state.lastChartDiskSpeedBps,
@@ -396,9 +422,75 @@ function applyFreshnessPolicy(state, patch, now, { terminal, speedStaleGraceMs }
         if (!state.lastDiskWriteSpeedAt && !state.lastTransferCountersAt) patch.telemetryState = 'measuring';
         else if (now - Math.max(state.lastDiskWriteSpeedAt || 0, state.lastTransferCountersAt || 0) > speedStaleGraceMs) {
             patch.telemetryState = 'stale';
-            patch.diskUsageBps = decaySpeed(patch.diskUsageBps, now, state.lastDiskWriteSpeedAt, speedStaleGraceMs);
+            patch.diskUsageBps = decaySpeed(state.lastDiskUsageBps, now, state.lastDiskWriteSpeedAt, speedStaleGraceMs);
         }
     }
+}
+
+function applyTransferStageMessage(task, state, patch, { status, terminal, now }) {
+    if (terminal || status !== 'downloading') return;
+    const stage = String(patch.stage || task.stage || '').toLowerCase();
+    if (['verifying', 'installing', 'paused', 'pausing', 'failed', 'stalled'].includes(stage)) return;
+    if (patch.errorCode || task.errorCode) return;
+
+    const downloaded = Number.isFinite(Number(patch.downloadedBytes)) ? Number(patch.downloadedBytes) : Number(task.downloadedBytes);
+    const total = Number.isFinite(Number(patch.totalBytes)) ? Number(patch.totalBytes) : Number(task.totalBytes);
+    const providerPercent = Number.isFinite(Number(patch.providerReportedPercent)) ? Number(patch.providerReportedPercent) : Number(patch.progressPercent);
+    const transferComplete = (Number.isFinite(downloaded) && Number.isFinite(total) && total > 0 && downloaded >= total) || providerPercent >= 100;
+    const networkActive = patch.networkState !== 'stale' && Number(state.currentRawDownloadSpeedBps) > 0;
+    const diskActive = patch.telemetryState !== 'stale' && (Number(state.currentDiskWriteSpeedBps) > 0 || state.writtenAdvancedInSample === true);
+    const before = state.stableStatusText || stripEtaFromStatus(task.statusMessage) || 'Preparing download';
+    let candidate = before;
+    let reason = 'no-active-sample-preserve';
+
+    if (transferComplete) {
+        candidate = 'Finalizing installation';
+        reason = 'confirmed-transfer-complete';
+        patch.stage = 'finalizing';
+        patch.etaSeconds = null;
+        patch.etaSource = null;
+        patch.etaUpdatedAt = null;
+    } else if (networkActive && diskActive) {
+        candidate = 'Downloading and unpacking';
+        reason = 'network-and-disk-active';
+    } else if (diskActive) {
+        candidate = 'Writing game files';
+        reason = state.writtenAdvancedInSample ? 'written-bytes-advanced' : 'disk-active';
+    } else if (networkActive) {
+        candidate = 'Downloading compressed data';
+        reason = 'network-active';
+    }
+
+    if (!state.stableStatusText || transferComplete) {
+        state.stableStatusText = candidate;
+        state.pendingStatusText = null;
+        state.pendingStatusSince = null;
+    } else if (candidate === state.stableStatusText) {
+        state.pendingStatusText = null;
+        state.pendingStatusSince = null;
+    } else if (state.pendingStatusText !== candidate) {
+        state.pendingStatusText = candidate;
+        state.pendingStatusSince = now;
+        reason = `debounce-start:${reason}`;
+    } else if (now - state.pendingStatusSince >= ACTIVITY_PHASE_DEBOUNCE_MS) {
+        state.stableStatusText = candidate;
+        state.pendingStatusText = null;
+        state.pendingStatusSince = null;
+        reason = `debounce-commit:${reason}`;
+    } else {
+        reason = `debounce-hold:${reason}`;
+    }
+
+    patch.statusTextBeforeDebounce = before;
+    patch.statusTextAfterDebounce = state.stableStatusText;
+    patch.statusChangeReason = reason;
+    patch.networkStateAtPhaseDecision = patch.networkState || task.networkState || null;
+    patch.telemetryStateAtPhaseDecision = patch.telemetryState || task.telemetryState || null;
+    patch.statusMessage = state.stableStatusText;
+}
+
+function stripEtaFromStatus(value) {
+    return String(value || '').replace(/\s*\u00b7\s*[^|]*left\s*$/i, '').trim();
 }
 
 function applyTransferLivenessPolicy(
@@ -412,32 +504,11 @@ function applyTransferLivenessPolicy(
         hardStallMs,
     }
 ) {
-    if (status !== 'downloading') {
-        return;
-    }
+    const summary = buildLivenessSummary(state, now, { stallWarningMs, hardStallMs });
+    appendLivenessPatch(patch, summary);
+    if (status !== 'downloading') return summary;
 
-    const lastByteMovementAt = Math.max(
-        state.lastAuthoritativeProgressAt || 0,
-        state.lastCounterAdvanceAt || 0
-    );
-
-    const lastIoActivityAt = Math.max(
-        state.lastPositiveNetworkAt || 0,
-        state.lastPositiveDiskAt || 0
-    );
-
-    const lastRealActivityAt = Math.max(
-        lastByteMovementAt,
-        lastIoActivityAt,
-        state.firstProviderOutputAt || 0
-    );
-
-    if (!lastRealActivityAt) {
-        return;
-    }
-
-    const inactiveForMs = now - lastRealActivityAt;
-
+    const inactiveForMs = summary.realActivityStallDurationMs;
     if (inactiveForMs < stallWarningMs) {
         if (
             String(task.stage || '').toLowerCase() === 'stalled' ||
@@ -445,22 +516,12 @@ function applyTransferLivenessPolicy(
         ) {
             patch.stage = 'downloading';
             patch.stallReason = null;
-
-            const currentMessage = String(
-                patch.statusMessage || task.statusMessage || ''
-            );
-
-            if (
-                !currentMessage ||
-                /waiting for provider|provider active|not advancing/i.test(
-                    currentMessage
-                )
-            ) {
+            const currentMessage = String(patch.statusMessage || task.statusMessage || '');
+            if (!currentMessage || /waiting for transfer|provider active|not advancing/i.test(currentMessage)) {
                 patch.statusMessage = 'Downloading game files';
             }
         }
-
-        return;
+        return summary;
     }
 
     patch.statusMessage = 'Waiting for transfer activity';
@@ -468,21 +529,62 @@ function applyTransferLivenessPolicy(
     patch.stallReason = 'no-transfer-activity';
     patch.etaSeconds = null;
     patch.downloadSpeedBps = 0;
+    patch.networkState = 'stale';
 
     if (!state.lastPositiveDiskAt && !state.lastCounterAdvanceAt) {
         patch.telemetryState = 'unsupported';
         patch.diskUsageBps = 0;
-    } else if (patch.telemetryState === 'measuring') {
+    } else {
         patch.telemetryState = 'stale';
+        patch.diskUsageBps = 0;
     }
 
     if (inactiveForMs >= hardStallMs) {
         patch.errorCode = 'GOG_DOWNLOAD_STALLED';
-        patch.errorMessage =
-            'No network, disk, or transfer-counter activity was detected.';
+        patch.errorMessage = 'No network, disk, or transfer-counter activity was detected.';
         patch.retryable = true;
         patch.autoResumeEligible = true;
     }
+    return summary;
+}
+
+function buildLivenessSummary(state, now, { stallWarningMs, hardStallMs }) {
+    const lastRealByteMovementAt = Math.max(
+        state.lastAuthoritativeProgressAt || 0,
+        state.lastCounterAdvanceAt || 0
+    );
+    const lastPositiveIoAt = Math.max(
+        state.lastPositiveNetworkAt || 0,
+        state.lastPositiveDiskAt || 0
+    );
+    const baselineAt = state.sessionStartedAt || now;
+    const lastRealActivityAt = Math.max(lastRealByteMovementAt, lastPositiveIoAt, baselineAt);
+    const providerReferenceAt = state.lastProviderActivityAt || baselineAt;
+    const byteReferenceAt = lastRealByteMovementAt || baselineAt;
+    const realActivityStallDurationMs = Math.max(0, now - lastRealActivityAt);
+    return {
+        sessionId: state.sessionId || null,
+        sessionStartedAt: toIso(baselineAt),
+        lastRealByteMovementAt: toIso(lastRealByteMovementAt),
+        lastPositiveNetworkAt: toIso(state.lastPositiveNetworkAt),
+        lastPositiveDiskAt: toIso(state.lastPositiveDiskAt),
+        lastProviderActivityAt: toIso(state.lastProviderActivityAt),
+        providerSilenceDurationMs: Math.max(0, now - providerReferenceAt),
+        byteStallDurationMs: Math.max(0, now - byteReferenceAt),
+        realActivityStallDurationMs,
+        watchdogWarning: realActivityStallDurationMs >= stallWarningMs,
+        hardStallDecision: realActivityStallDurationMs >= hardStallMs,
+    };
+}
+
+function appendLivenessPatch(patch, summary) {
+    patch.lastRealByteMovementAt = summary.lastRealByteMovementAt;
+    patch.lastPositiveNetworkAt = summary.lastPositiveNetworkAt;
+    patch.lastPositiveDiskAt = summary.lastPositiveDiskAt;
+    patch.providerSilenceDurationMs = summary.providerSilenceDurationMs;
+    patch.byteStallDurationMs = summary.byteStallDurationMs;
+    patch.watchdogWarning = summary.watchdogWarning;
+    patch.hardStallDecision = summary.hardStallDecision;
 }
 
 function smoothChartSpeed(previous, next) {
@@ -534,6 +636,12 @@ function hasTelemetryOnlyChange(patch = {}) {
         'diskReadSpeedBps',
         'telemetryState',
         'networkState',
+        'etaSource',
+        'etaUpdatedAt',
+        'providerActivity',
+        'statusTextBeforeDebounce',
+        'statusTextAfterDebounce',
+        'statusChangeReason',
         'speedHistory',
         'errorCode',
         'errorMessage',
@@ -592,8 +700,11 @@ function stablePatchKey(patch = {}) {
         networkState: patch.networkState || null,
         eta: Number.isFinite(Number(patch.etaSeconds)) ? Math.round(Number(patch.etaSeconds) / 5) : null,
         message: patch.statusMessage || null,
+        providerActivity: patch.providerActivity || null,
         stallReason: patch.stallReason || null,
         errorCode: patch.errorCode || null,
+        watchdogWarning: patch.watchdogWarning === true,
+        hardStallDecision: patch.hardStallDecision === true,
     });
 }
 

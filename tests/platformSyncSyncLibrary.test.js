@@ -117,7 +117,17 @@ function makeFakeSteamBridge(options = {}) {
         },
         async getOwnedGames() {
             calls.getOwnedGames++;
-            return ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            const response = ownedResponses.length ? ownedResponses.shift() : { status: 'success', games: [] };
+            const games = Array.isArray(response.games) ? response.games : [];
+            const complete = response.complete === true || (response.complete == null && response.status === 'success' && games.length > 0);
+            return {
+                ...response,
+                status: complete ? 'success' : (response.status === 'success' ? 'partial' : response.status),
+                complete,
+                steamAccountId: response.steamAccountId || String(options.lastSessionSteamId || ''),
+                sessionGeneration: response.sessionGeneration || 1,
+                completeness: response.completeness || { complete, reasons: complete ? [] : ['test_incomplete'] },
+            };
         },
         deleteCredentialsForAccount(accountId) {
             calls.deleteCredentialsForAccount.push(String(accountId));
@@ -289,7 +299,7 @@ function loadPlatformSync(userData, overrides = {}) {
                 shell: { openExternal: async () => {} },
             };
         }
-        if (request === 'child_process') return { execFile };
+        if (request === 'child_process') return { execFile, spawn: execFile };
         if (request === './steamBridge') return steamBridge;
         if (request === './services/baddelApi') return baddelApi;
         if (request === './analytics') return analytics;
@@ -426,7 +436,7 @@ test('steamConnector.syncLibrary preserves previous cache when Steam returns zer
         assert.equal(result.length, 1);
         assert.equal(result[0].id, 'steam_10');
         assert.equal(readJson(steamCacheFile(userData))[0].id, 'steam_10');
-        assert.equal(steamBridge.calls.getOwnedGames, 2);
+        assert.equal(steamBridge.calls.getOwnedGames, 1);
     } finally {
         rmDir(userData);
     }

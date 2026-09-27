@@ -12,6 +12,7 @@
 
 const path = require('path');
 const fs   = require('fs');
+const { REQUIRED_PROTECTED_FILES } = require('./protected-runtime-contract');
 
 const ROOT = path.resolve(__dirname, '..');
 const DEST = path.join(ROOT, '.protected-build', 'app');
@@ -117,18 +118,7 @@ else pass('No dev-only config files present.');
 
 // ── Required bundle outputs must be present ───────────────────────────────────
 
-const REQUIRED_FILES = [
-    'main.bundle.cjs',
-    'preload.bundle.cjs',
-    'renderer.bundle.js',
-    'index.html',
-    'quick-switcher.html',
-    'package.json',
-    'Logo.ico',
-    'gog-runtime/gogdl.exe',
-    'gog-runtime/version.json',
-    'gog-runtime/LICENSE-GPL-3.0.txt',
-];
+const REQUIRED_FILES = REQUIRED_PROTECTED_FILES;
 for (const f of REQUIRED_FILES) {
     if (fs.existsSync(path.join(DEST, f))) pass(`Required file present: ${f}`);
     else fail(`Required file missing: ${f}`);
@@ -146,7 +136,7 @@ if (fs.existsSync(pkgPath)) {
 
 // ── Obfuscation checks ────────────────────────────────────────────────────────
 
-const OBF_CHECK = ['main.bundle.cjs', 'preload.bundle.cjs', 'renderer.bundle.js'];
+const OBF_CHECK = ['main.bundle.cjs', 'preload.bundle.cjs', 'renderer.bundle.js', 'vault-export-preload.bundle.cjs', 'vault-export.bundle.js'];
 for (const fname of OBF_CHECK) {
     const fpath = path.join(DEST, fname);
     if (fs.existsSync(fpath)) {
@@ -179,6 +169,7 @@ if (!fs.existsSync(nmDir)) {
 const HTML_REFS = [
     { file: 'index.html',          refs: ['renderer.bundle.css', 'renderer.bundle.js'] },
     { file: 'quick-switcher.html', refs: ['qs.bundle.css', 'qs.bundle.js'] },
+    { file: 'vault-export.html',    refs: ['vault-export.bundle.css', 'vault-export.bundle.js'] },
 ];
 for (const { file, refs } of HTML_REFS) {
     const fpath = path.join(DEST, file);

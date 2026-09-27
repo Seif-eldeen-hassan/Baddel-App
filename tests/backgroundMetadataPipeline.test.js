@@ -353,6 +353,10 @@ test('pipeline: full resolve — meta with images → cache.save, imageDownload,
 
     // Renderer notified
     assert.equal(notify.notified.length, 1, 'notifier must fire after successful DB write');
+    assert.equal(notify.notified[0].canonicalGame.id, game.id);
+    assert.deepEqual(notify.notified[0].changedTypes, ['cover', 'hero', 'logo']);
+    assert.match(notify.notified[0].operationId, /^background-artwork-g1-full-resolve-/);
+    assert.deepEqual(notify.notified[0].revisions, {});
 });
 
 test('pipeline: full resolve — meta has no images → cache.save called, no DB write, mrm.resetToIdle', async () => {

@@ -2,6 +2,7 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
+const vm = require('node:vm');
 
 const adapter = require('../src/features/games/application/services/GameDetailsArtworkAdapter');
 
@@ -253,10 +254,77 @@ test('display resolution does not trigger metadata persistence', () => {
     assert.doesNotMatch(helper, /saveFullMetadata|cacheAllAssets|persist/i);
 });
 
+test('Game Details hydrates canonical cached artwork before its initial basic render', async () => {
+    const src = fs.readFileSync(gameDetailsPath, 'utf8');
+    const start = src.indexOf('// Resolve persisted canonical artwork');
+    const end = src.indexOf('// ── 4. Merge launch data', start);
+    assert.ok(start >= 0 && end > start, 'initial canonical hydration block exists');
+    const block = src.slice(start, end);
+    const stages = [];
+    const cacheCalls = [];
+    const canonical = {
+        id: 'canonical-1',
+        image: 'file://db-cover.webp',
+        heroImage: null,
+        logo: null,
+    };
+    const sandbox = {
+        window: {
+            __baddelCanonicalGames: [canonical],
+            BaddelCanonicalArtworkProjection: {
+                projectFromRecords(displayGame, records) {
+                    const record = records.find(item => item.id === displayGame.localGameId);
+                    return record
+                        ? { ...displayGame, ...record, localGameId: record.id, _artworkIdentityMatchReason: 'local-game-id' }
+                        : displayGame;
+                },
+            },
+            electronAPI: {
+                getGameById: async () => { throw new Error('canonical registry should satisfy lookup'); },
+            },
+            async __baddelLoadCachedArtworkForGame(displayGame, canonicalGame, options) {
+                cacheCalls.push({ displayGame, canonicalGame, options });
+                return {
+                    cover: 'file://cache-cover.webp',
+                    hero: 'file://cache-hero.webp',
+                    logo: 'file://cache-logo.webp',
+                };
+            },
+        },
+        _gdWithTimeout: promise => promise,
+        _gdRecordStage: (stage, payload) => stages.push({ stage, payload }),
+        String,
+        Set,
+    };
+    const hydrate = vm.runInNewContext(
+        `(async function hydrateInitial(game) { const tokenStillValid = () => true; ${block}; return game; })`,
+        sandbox,
+    );
+
+    const result = await hydrate({ id: 'display-1', localGameId: 'canonical-1', name: 'Cold Start Game' });
+
+    assert.equal(cacheCalls.length, 1);
+    assert.equal(cacheCalls[0].canonicalGame.id, 'canonical-1');
+    assert.deepEqual(Array.from(cacheCalls[0].options.types), ['cover', 'hero', 'logo']);
+    assert.equal(result.image, 'file://cache-cover.webp');
+    assert.equal(result.heroImage, 'file://cache-hero.webp');
+    assert.equal(result.logo, 'file://cache-logo.webp');
+    assert.ok(stages.some(entry => entry.stage === 'GD_ARTWORK_CACHE_HYDRATED'));
+});
+
 test('_gdApplyExternalPatch re-resolves artwork', () => {
     const src = fs.readFileSync(gameDetailsPath, 'utf8');
     const fn = src.slice(src.indexOf('window._gdApplyExternalPatch'), src.indexOf('window.gdCreatorSave'));
     assert.match(fn, /_gdApplyResolvedArtworkToDom\(_gdCurrentGame,\s*_gdCurrentMeta\)/);
+});
+
+test('canonical artwork commits route into an open Game Details surface', () => {
+    const src = read('src/js/app/artwork-sync.js');
+    const start = src.indexOf('function __baddelCommitCanonicalGameUpdate');
+    const end = src.indexOf('window.__baddelCommitCanonicalGameUpdate', start);
+    const fn = src.slice(start, end);
+    assert.match(fn, /window\._gdApplyExternalPatch/);
+    assert.match(fn, /canonicalGame/);
 });
 
 test('_gdApplyExternalPatch ignores a different game', () => {

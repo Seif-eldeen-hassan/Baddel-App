@@ -232,15 +232,68 @@ function closeTutorialModal() {
 // (showEpicLibraryPanel and _renderEpicLibraryPanel are in platform-panels.js)
 // ============================================================
 
+window.showEpicSyncOptionsDialog = function showEpicSyncOptionsDialog() {
+    return new Promise((resolve) => {
+        const existing = document.getElementById('epicSyncOptionsModal');
+        if (existing) existing.remove();
+        const modal = document.createElement('div');
+        modal.id = 'epicSyncOptionsModal';
+        modal.className = 'epic-sync-options-modal';
+        modal.innerHTML = `
+            <div class="epic-sync-options-card">
+                <div class="epic-sync-options-head">
+                    <img src="../assets/epic.svg" alt="Epic">
+                    <div>
+                        <strong>Sync Epic Account</strong>
+                        <span>Choose exactly what Baddel imports before Epic sign-in starts.</span>
+                    </div>
+                </div>
+                <label class="epic-sync-option locked">
+                    <input type="checkbox" checked disabled>
+                    <span><strong>Sync Epic Games Library</strong><small>Import your owned Epic games into Baddel All Games.</small></span>
+                </label>
+                <label class="epic-sync-option">
+                    <input id="epicSyncCurrentPrices" type="checkbox">
+                    <span><strong>Sync Current Epic Store Prices</strong><small>Fetch current Epic Store prices based on your account region.</small></span>
+                </label>
+                <label class="epic-sync-option sensitive">
+                    <input id="epicSyncPurchaseHistory" type="checkbox">
+                    <span><strong>Import Purchase History</strong><small>Allow Baddel to analyze your Epic purchase history and calculate your actual spending.</small></span>
+                </label>
+                <div class="epic-sync-options-actions">
+                    <button type="button" id="epicSyncOptionsCancel">Cancel</button>
+                    <button type="button" id="epicSyncOptionsContinue">Continue</button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
+        const cleanup = (value) => { modal.remove(); resolve(value); };
+        modal.querySelector('#epicSyncOptionsCancel').onclick = () => cleanup(null);
+        modal.querySelector('#epicSyncOptionsContinue').onclick = () => cleanup({
+            epicSyncOptions: {
+                games: true,
+                currentPrices: !!modal.querySelector('#epicSyncCurrentPrices')?.checked,
+                purchaseHistory: !!modal.querySelector('#epicSyncPurchaseHistory')?.checked,
+            }
+        });
+        modal.addEventListener('click', (event) => { if (event.target === modal) cleanup(null); });
+    });
+}
+
 window.linkEpicLibrary = async function() {
+    const syncOpts = await window.showEpicSyncOptionsDialog();
+    if (!syncOpts) return;
     const content = document.getElementById('epicLibraryContent');
     if (content) content.innerHTML = `<div class="accounts-loading"><div class="acc-spinner"></div><span>Opening Epic login...</span></div>`;
 
     try {
-        const res = await window.electronAPI.platformSyncLink?.('epic');
+        const res = await window.electronAPI.platformSyncLink?.('epic', syncOpts);
         if (res?.status === 'error') throw new Error(res.message);
-        showToast(`Epic linked as ${res?.displayName || 'account'}! Syncing library...`, 'success');
-        await _syncEpicAndRefresh();
+        const count = Number(res?.gamesCount || 0);
+        showToast(`Epic linked as ${res?.displayName || 'account'}${count ? ` and synced ${count} games` : ''}!`, 'success');
+        if (content) await window._renderEpicLibraryPanel?.();
+        _agSafeRenderAllGamesView();
+        hydrateSidebarAllGamesCount('account-sync').catch(() => {});
+        if (typeof invalidateEpicVaultCache === 'function') await invalidateEpicVaultCache(true);
     } catch (err) {
         showToast(`Link failed: ${err.message}`, 'error');
         if (content) await window._renderEpicLibraryPanel?.();
@@ -248,6 +301,8 @@ window.linkEpicLibrary = async function() {
 };
 
 window.syncEpicLibrary = async function() {
+    const syncOpts = await window.showEpicSyncOptionsDialog();
+    if (!syncOpts) return;
     const content = document.getElementById('epicLibraryContent');
     const syncBtn = null; // btn-sync-epic removed; no button to disable
     if (content) content.innerHTML = `<div class="accounts-loading"><div class="acc-spinner"></div><span>Syncing Epic library...</span></div>`;
@@ -256,7 +311,7 @@ window.syncEpicLibrary = async function() {
     if (epicSyncing) epicSyncing.style.display = 'flex';
 
     try {
-        await _syncEpicAndRefresh();
+        await _syncEpicAndRefresh(syncOpts);
     } catch (err) {
         showToast(`Sync failed: ${err.message}`, 'error');
     } finally {
@@ -297,8 +352,32 @@ window.refreshAllGamesView = async function() {
     }
 };
 
-async function _syncEpicAndRefresh() {
-    const res = await window.electronAPI.platformSyncSync?.('epic');
+const AG_BACK_TO_TOP_THRESHOLD = 500;
+window._agSyncBackToTopVisibility = function() {
+    const button = document.getElementById('agBackToTop');
+    const scroller = document.getElementById('mainContentArea');
+    const allGamesView = document.getElementById('allGamesView');
+    if (!button || !scroller) return;
+    const onAllGamesRoute = (typeof currentView === 'undefined' || currentView === 'all-games')
+        && allGamesView?.style.display !== 'none';
+    button.hidden = !onAllGamesRoute || scroller.scrollTop < AG_BACK_TO_TOP_THRESHOLD;
+};
+
+window._agInitBackToTop = function() {
+    const button = document.getElementById('agBackToTop');
+    const scroller = document.getElementById('mainContentArea');
+    if (!button || !scroller || button.dataset.bound === '1') return;
+    button.dataset.bound = '1';
+    scroller.addEventListener('scroll', window._agSyncBackToTopVisibility, { passive: true });
+    button.addEventListener('click', () => {
+        scroller.scrollTop = 0;
+        window._agSyncBackToTopVisibility();
+    });
+    window._agSyncBackToTopVisibility();
+};
+
+async function _syncEpicAndRefresh(syncOpts = {}) {
+    const res = await window.electronAPI.platformSyncSync?.('epic', null, syncOpts);
     if (res?.status === 'error') throw new Error(res.message);
     const count = res?.games?.length || 0;
     showToast(`Synced ${count} Epic games!`, 'success');
@@ -306,8 +385,10 @@ async function _syncEpicAndRefresh() {
     const panel = document.getElementById('epicLibraryPanel');
     if (panel && panel.style.display !== 'none') await window._renderEpicLibraryPanel?.();
 
-    _agSafeRenderAllGamesView();
+    // All Games / Ready to Install are reconciled by the library-updated event.
+    // Sync completion only updates non-library UI here.
     hydrateSidebarAllGamesCount('account-sync').catch(() => {});
+    if (typeof invalidateEpicVaultCache === 'function') await invalidateEpicVaultCache(true);
 }
 
 window.unlinkEpicLibrary = async function() {
@@ -317,11 +398,13 @@ window.unlinkEpicLibrary = async function() {
         'Disconnect',
         async () => {
             try {
-                await window.electronAPI.platformSyncUnlink?.('epic');
+                const result = await window.electronAPI.platformSyncUnlink?.('epic');
+                if (!result || result.status === 'error') throw Object.assign(new Error(result?.message || 'Epic library could not be disconnected.'), { code: result?.code || 'PLATFORM_UNLINK_FAILED' });
                 showToast('Epic library disconnected.', 'success');
                 await window._renderEpicLibraryPanel?.();
                 _agSafeRenderAllGamesView();
                 hydrateSidebarAllGamesCount('account-sync').catch(() => {});
+                if (typeof invalidateEpicVaultCache === 'function') await invalidateEpicVaultCache(true);
             } catch (err) {
                 showToast(`Error: ${err.message}`, 'error');
             }
@@ -552,23 +635,455 @@ function _agIsCreatorArtworkGame(game = {}) {
     return game.customArtworkLocked === true || game.artworkSource === 'creator';
 }
 
+function _agIsManagedArtworkCacheUrl(url) {
+    const value = String(url || '').trim();
+    if (!value.startsWith('file://')) return false;
+    return /[\/](artwork-cache-v2)[\/]/i.test(value) || /artwork-cache-v2%5C/i.test(value) || /artwork-cache-v2\//i.test(value);
+}
+
+function _agIsGridThumbnailUrl(url) {
+    return /[\/]artwork-grid-cache-v1[\/]160x240[\/]/i.test(String(url || '')) || /artwork-grid-cache-v1%5C160x240%5C/i.test(String(url || ''));
+}
+
+function _agGridDisplayCover(cover) {
+    const source = String(cover || '');
+    return window.__agGridThumbnailByCover.get(source) || source;
+}
+
 function _agIsUsableCardCover(url, game = {}) {
     const s = String(url || '').trim();
     if (!s) return false;
 
-    // Creator Mode stores chosen images as data:image base64
-    if (s.startsWith('file://')) return true;
-    if (s.startsWith('data:image/')) return true;
-    if (s.startsWith('blob:')) return true;
-
-    // Allow remote links only when user explicitly chose them in Creator Mode
-    if (_agIsCreatorArtworkGame(game) && /^https?:\/\//i.test(s)) return true;
-
-    // Existing fallback behavior
-    if (game._agRemoteFallbackReady === true && /^https?:\/\//i.test(s)) return true;
-
+    // Renderer-visible All Games covers must already be local/verified. Remote
+    // candidates are inputs for the main-process downloader, never img.src here.
+    if (s.startsWith('file://')) {
+        if (_agIsGridThumbnailUrl(s)) {
+            return window.__agVerifiedArtworkUrls instanceof Set && window.__agVerifiedArtworkUrls.has(s);
+        }
+        if (_agIsManagedArtworkCacheUrl(s)) {
+            return window.__agVerifiedArtworkUrls instanceof Set && window.__agVerifiedArtworkUrls.has(s);
+        }
+        return true;
+    }
+    if (_agIsCreatorArtworkGame(game) && (s.startsWith('data:image/') || s.startsWith('blob:'))) return true;
     return false;
 }
+
+function _agCoverStateFor(game) {
+    if (!game) return null;
+    game._agCoverState = game._agCoverState || { state: 'idle', token: 0, retryCount: 0, lastError: null };
+    return game._agCoverState;
+}
+
+function _agSetCoverState(game, state, patch = {}) {
+    const coverState = _agCoverStateFor(game);
+    if (!coverState) return null;
+    Object.assign(coverState, { state, updatedAt: Date.now() }, patch);
+    return coverState;
+}
+
+
+// Session-level artwork registry: DOM cards are disposable, artwork state is not.
+window.__agArtworkRegistry = window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry : new Map();
+window.__agVerifiedArtworkUrls = window.__agVerifiedArtworkUrls instanceof Set ? window.__agVerifiedArtworkUrls : new Set();
+window.__agGridThumbnailByCover = window.__agGridThumbnailByCover instanceof Map ? window.__agGridThumbnailByCover : new Map();
+window.__agArtworkDiagnostics = window.__agArtworkDiagnostics || {
+    mountedCards: 0,
+    pooledCards: 0,
+    artworkRegistrySize: 0,
+    readyArtworkCount: 0,
+    activeArtworkJobs: 0,
+    queuedArtworkJobs: 0,
+    bulkArtworkLookupCount: 0,
+    cardRemountCacheHits: 0,
+    artworkRestartsOnRemount: 0,
+    rendererDirectRemoteRequests: 0,
+    virtualRenderCount: 0,
+    forcedVirtualRenderCount: 0,
+};
+
+function _agArtworkDiagnosticsBump(field, amount = 1) {
+    const diag = window.__agArtworkDiagnostics || (window.__agArtworkDiagnostics = {});
+    diag[field] = Number(diag[field] || 0) + amount;
+}
+
+function _agArtworkFileExistsForDiagnostics(url) {
+    const src = String(url || '');
+    if (!src.startsWith('file://')) return Promise.resolve(null);
+    if (!window.electronAPI?.probeLocalImage) return Promise.resolve(null);
+    return window.electronAPI.probeLocalImage(src).then(Boolean).catch(() => false);
+}
+
+function _agFindDiagnosticGameForCard(card, fallback = null) {
+    const id = String(card?.dataset?.id || card?.dataset?.gameId || fallback?.id || '');
+    const pools = [window._vs?.items, window._allGamesCache, window._allGamesRawCache, window.allGamesData].filter(Array.isArray);
+    for (const pool of pools) {
+        const found = pool.find(game => String(game?.id || game?.appName || game?.title || '') === id);
+        if (found) return found;
+    }
+    return fallback || null;
+}
+
+function _agAssetHashFromFileUrl(url) {
+    const match = String(url || '').match(/\/assets\/([^\/?#]+)\.(?:webp|png|jpe?g|gif|avif)(?:[?#].*)?$/i);
+    return match ? match[1] : null;
+}
+
+function _agMarkImageAssignment(img, card, game, src, source = 'unknown') {
+    if (!img || !src) return null;
+    const token = String((Number(img.dataset?.artworkAssignmentToken || 0) || 0) + 1);
+    if (img.dataset) {
+        img.dataset.artworkAssignmentToken = token;
+        img.dataset.artworkAssignedSrc = String(src);
+        img.dataset.artworkAssignedGameId = String(game?.id || card?.dataset?.id || '');
+        img.dataset.artworkAssignedAt = String(Date.now());
+    }
+    const assignment = {
+        token,
+        source,
+        assignedAt: Date.now(),
+        src: String(src),
+        cardTokenAtAssignment: card?.dataset?.coverToken || null,
+        cardInstanceToken: card?.dataset?.cardInstanceToken || null,
+        gameId: String(game?.id || card?.dataset?.id || ''),
+        canonicalKey: (() => { try { return _agArtworkKey(game); } catch { return null; } })(),
+        fileExistsAtAssignment: null,
+    };
+    img.__agArtworkAssignment = assignment;
+    _agArtworkFileExistsForDiagnostics(src).then(exists => {
+        assignment.fileExistsAtAssignment = exists;
+    });
+    return assignment;
+}
+
+function _agResetArtworkImageErrorDiagnostics(label = 'manual-reset') {
+    const generation = Number(window.__agArtworkPersistenceEvidence?.generation || 0) + 1;
+    window.__agArtworkPersistenceEvidence = {
+        generation,
+        resetLabel: label,
+        resetAt: Date.now(),
+        imgErrorCount: 0,
+        brokenImages: [],
+        pendingEnrichment: 0,
+    };
+    return window.__agArtworkPersistenceEvidence;
+}
+window.__resetArtworkImageErrorDiagnostics = _agResetArtworkImageErrorDiagnostics;
+
+function _agCanonicalAccountKey(game = {}) {
+    const owners = [
+        game.libraryAccountId,
+        game.ownerAccountId,
+        game.accountId,
+        ...(Array.isArray(game.ownedByAccountIds) ? game.ownedByAccountIds : []),
+        ...(Array.isArray(game.ownerAccountIds) ? game.ownerAccountIds : []),
+        ...(Array.isArray(game.accountKeys) ? game.accountKeys : []),
+    ].filter(Boolean).map(String).sort();
+    return owners[0] || 'all';
+}
+
+function _agCanonicalProductKey(game = {}) {
+    const platform = String(game.platform || game.scannerPlatform || game.platforms?.[0] || 'game')
+        .toLowerCase()
+        .trim() || 'game';
+    if (platform === 'epic') {
+        const namespace = _agIdentityKey(
+            game.namespace ||
+            game.catalogNamespace ||
+            game.sandboxId ||
+            game.epicMetadata?.namespace ||
+            game.allIds?.epic
+        );
+        const catalogItemId = _agIdentityKey(
+            game.catalogItemId ||
+            game.catalog_item_id ||
+            game.catalogId ||
+            game.productId
+        );
+        const appName = _agIdentityKey(game.appName || game.app_name || game.launcherGameId);
+        if (namespace && catalogItemId) return `ns:${namespace}:catalog:${catalogItemId}`;
+        if (catalogItemId) return `catalog:${catalogItemId}`;
+        if (appName) return appName;
+        if (namespace) return namespace;
+        const offerId = _agIdentityKey(game.offerId || game.catalogOfferId || game.offer_id);
+        if (offerId) return `offer:${offerId}`;
+    }
+    const platformId =
+        game.allIds?.[platform] ||
+        game.appName ||
+        game.appid ||
+        game.appId ||
+        game.namespace ||
+        game.catalogNamespace ||
+        game.catalogItemId ||
+        game.offerId ||
+        game.productId ||
+        game.launcherGameId ||
+        game.id;
+    const titleKey = _agLooseIdentityKey(game.title || game.name || game.originalTitle || game.originalName || '');
+    return _agIdentityKey(platformId) || (titleKey ? `title:${titleKey}` : 'unknown');
+}
+
+function _agArtworkKey(game = {}) {
+    const canonicalResolver = window.BaddelGameArtworkReadModel?.resolveCanonicalArtworkIdentity;
+    if (typeof canonicalResolver === 'function') {
+        try {
+            const canonicalGameId = canonicalResolver(game)?.canonicalGameId;
+            if (canonicalGameId) return String(canonicalGameId);
+        } catch (_) {}
+    }
+    const platform = String(game.platform || game.scannerPlatform || game.platforms?.[0] || 'game')
+        .toLowerCase()
+        .trim() || 'game';
+    return `${platform}:${_agCanonicalAccountKey(game)}:${_agCanonicalProductKey(game)}`;
+}
+
+function _agArtworkAliasesForGame(game = {}) {
+    const aliases = new Set();
+    try { _agCollectIdentityKeys(game).forEach(key => aliases.add(String(key))); } catch {}
+    try { _agCoverCacheKeys(game).forEach(key => aliases.add(String(key))); } catch {}
+    const canonical = _agArtworkKey(game);
+    if (canonical) aliases.add(canonical);
+    return [...aliases].filter(Boolean);
+}
+
+function _agArtworkRecordFor(game, create = true) {
+    if (!game) return null;
+    const key = _agArtworkKey(game);
+    if (!key) return null;
+    const registry = window.__agArtworkRegistry;
+    let record = registry.get(key);
+    if (!record && create) {
+        record = {
+            status: 'unknown',
+            localUrl: null,
+            cacheKey: key,
+            sourceRevision: null,
+            attempts: 0,
+            nextRetryAt: 0,
+            lastError: null,
+            promise: null,
+            generation: 0,
+            aliases: new Set(),
+            candidates: [],
+            candidateIndex: 0,
+            metadataComplete: false,
+        };
+        registry.set(key, record);
+    }
+    if (record) {
+        record.aliases = record.aliases instanceof Set ? record.aliases : new Set(record.aliases || []);
+        _agArtworkAliasesForGame(game).forEach(alias => record.aliases.add(alias));
+    }
+    return record;
+}
+
+function _agPatchMountedArtwork(game, url) {
+    url = _agGridDisplayCover(url);
+    const key = _agGameKey(game);
+    let patched = 0;
+    const card = window._vs?.visibleCardsByGameId instanceof Map ? window._vs.visibleCardsByGameId.get(key) : null;
+    if (card) patched += _agPatchCardCover(card, url);
+    const grid = document.getElementById('allGamesGrid');
+    const selectorId = _agCssEscape(String(game.id || game.appName || game.title || key || ''));
+    const img = grid?.querySelector?.(`[data-id="${selectorId}"] .native-lazy-load`);
+    if (img) {
+        img.onload = null;
+        img.onerror = null;
+        if (img.getAttribute('src') !== url) img.src = url;
+        img.dataset.src = url;
+        img.style.display = '';
+        img.classList.add('loaded');
+        img.classList.remove('loading', 'skeleton');
+        patched++;
+    }
+    return patched;
+}
+
+function _agSetArtworkReady(game, localUrl, source = 'unknown') {
+    if (!game || !_agIsUsableCardCover(localUrl, game)) return false;
+    const record = _agArtworkRecordFor(game);
+    if (!record) return false;
+    const changed = record.status !== 'ready' || record.localUrl !== localUrl;
+    record.status = 'ready';
+    record.localUrl = String(localUrl);
+    record.cacheKey = record.cacheKey || _agArtworkKey(game);
+    record.lastError = null;
+    record.promise = null;
+    record.nextRetryAt = 0;
+    record.generation += changed ? 1 : 0;
+    record.readySource = source;
+    record.metadataComplete = true;
+    record.localFileVerified = true;
+
+    game.coverUrl = record.localUrl;
+    game.image = record.localUrl;
+    game.defaultImage = record.localUrl;
+    game._agCoverPipelineDone = true;
+    game._agCoverInFlight = false;
+    game._agRemoteFallbackReady = false;
+    game._agArtworkWarmSource = source;
+    game._agLocalRetryCount = 999;
+    _agSetCoverState(game, 'ready', { url: record.localUrl, lastError: null });
+    try {
+        const id = String(game.id || game.appName || game.title || '');
+        if (id) {
+            const key = 'cover_' + id;
+            if (_agIsManagedArtworkCacheUrl(record.localUrl)) {
+                localStorage.removeItem(key);
+                window.__agVerifiedArtworkUrls.add(record.localUrl);
+            }
+            else localStorage.setItem(key, record.localUrl);
+        }
+    } catch {}
+    if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+    _agPatchMountedArtwork(game, record.localUrl);
+    return changed;
+}
+
+function _agApplyReadyArtworkToGame(game) {
+    const record = _agArtworkRecordFor(game, false);
+    if (!record || record.status !== 'ready') return false;
+    if (record.localFileVerified === true && _agIsManagedArtworkCacheUrl(record.localUrl)) {
+        window.__agVerifiedArtworkUrls.add(record.localUrl);
+    }
+    if (!_agIsUsableCardCover(record.localUrl, game)) {
+        if (_agIsManagedArtworkCacheUrl(record.localUrl)) _agInvalidateArtworkRecord(game, 'managed-cache-unverified');
+        return false;
+    }
+    game.coverUrl = record.localUrl;
+    game.image = record.localUrl;
+    game.defaultImage = record.localUrl;
+    game._agCoverPipelineDone = true;
+    game._agCoverInFlight = false;
+    game._agRemoteFallbackReady = false;
+    _agSetCoverState(game, 'ready', { url: record.localUrl, lastError: null });
+    return true;
+}
+
+function _agInvalidateArtworkRecord(game, reason = 'invalid-local-file') {
+    const record = _agArtworkRecordFor(game, false);
+    if (!record || record.status !== 'ready') return false;
+    record.status = 'retry_wait';
+    record.localUrl = null;
+    record.localFileVerified = false;
+    record.lastError = reason;
+    record.nextRetryAt = Date.now() + 1500;
+    record.generation += 1;
+    game._agCoverPipelineDone = false;
+    game._agCoverInFlight = false;
+    game.coverUrl = null;
+    if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+    return true;
+}
+
+async function _agVerifyLocalArtworkUrl(url) {
+    if (!url || !String(url).startsWith('file://')) return false;
+    if (!window.electronAPI?.probeLocalImage) return true;
+    try { return await window.electronAPI.probeLocalImage(url); } catch { return false; }
+}
+
+function _agArtworkCandidateUrlsFromGame(game = {}) {
+    const urls = [];
+    const add = (value) => {
+        const url = String(value || '').trim();
+        if (!url || !/^https?:\/\//i.test(url)) return;
+        if (!urls.includes(url)) urls.push(url);
+    };
+    [
+        game.coverUrl,
+        game.image,
+        game.defaultImage,
+        game.cover,
+        game.posterImage,
+        game.verticalCover,
+        game.verticalCoverUrl,
+        game.boxArt,
+        game.boxArtUrl,
+    ].forEach(add);
+    if (Array.isArray(game.keyImages)) {
+        game.keyImages.forEach((img) => add(img?.url || img?.href || img?.src));
+    }
+    [
+        game.coverCandidates,
+        game.artworkCandidates,
+        game.remoteCandidates,
+        game.remoteCoverCandidates,
+    ].forEach((candidates) => {
+        if (!Array.isArray(candidates)) return;
+        candidates.forEach((candidate) => {
+            if (typeof candidate === 'string') add(candidate);
+            else add(candidate?.url || candidate?.href || candidate?.src);
+        });
+    });
+    return urls;
+}
+
+function _agIsIpcErrorResult(value) {
+    return !!(value && typeof value === 'object' && value.status === 'error');
+}
+
+function _agSetArtworkTerminalError(game, code, message) {
+    const record = _agArtworkRecordFor(game);
+    if (!record) return null;
+    record.status = 'terminal_error';
+    record.lastError = message || code || 'terminal artwork error';
+    record.errorCode = code || 'ARTWORK_TERMINAL_ERROR';
+    record.promise = null;
+    record.nextRetryAt = 0;
+    record.attempts = Math.min(5, Math.max(0, Number(record.attempts || 0)));
+    game._agCoverInFlight = false;
+    game._agCoverPipelineDone = false;
+    if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+    _agArtworkDiagnosticsBump('terminalErrorCount');
+    _agSetCoverState(game, 'terminal_error', { lastError: record.lastError, errorCode: record.errorCode });
+    return record;
+}
+
+function _agScheduleArtworkRetry(game, tier, reason = 'transient-failure') {
+    const record = _agArtworkRecordFor(game);
+    if (!record) return;
+    const attempts = Math.max(0, Number(record.attempts || 0));
+    if (attempts >= 5) {
+        record.status = record.metadataComplete ? 'no_source' : 'terminal_error';
+        record.attempts = 5;
+        record.lastError = reason;
+        record.errorCode = record.status === 'terminal_error' ? 'ARTWORK_MAX_ATTEMPTS' : record.errorCode;
+        record.promise = null;
+        record.nextRetryAt = 0;
+        if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+        return;
+    }
+    const delay = Math.min(30000, 1200 * Math.pow(2, attempts));
+    record.status = 'retry_wait';
+    record.nextRetryAt = Date.now() + delay;
+    record.lastError = reason;
+    record.promise = null;
+    game._agCoverInFlight = false;
+    game._agCoverPipelineDone = false;
+    if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+    setTimeout(() => {
+        const latest = _agArtworkRecordFor(game, false);
+        if (!latest || latest.status !== 'retry_wait' || latest.nextRetryAt > Date.now()) return;
+        _agEnqueueByPriority(tier === 1 ? [game] : null, tier === 2 ? [game] : null, tier === 3 ? [game] : null);
+    }, delay);
+}
+
+function _agRefreshArtworkDiagnostics() {
+    const diag = window.__agArtworkDiagnostics || (window.__agArtworkDiagnostics = {});
+    const registry = window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry : new Map();
+    diag.mountedCards = window._vs?.visibleCardsByGameId instanceof Map ? window._vs.visibleCardsByGameId.size : 0;
+    diag.pooledCards = window._vs?.cardPool instanceof Map ? window._vs.cardPool.size : 0;
+    diag.artworkRegistrySize = registry.size;
+    diag.readyArtworkCount = [...registry.values()].filter(r => r?.status === 'ready' && r.localUrl).length;
+    diag.activeArtworkJobs = _agT1Active + _agT2Active + _agT3Active;
+    diag.queuedArtworkJobs = _agViewportCoverQueue.length + _agBufferCoverQueue.length + _agBackgroundCoverQueue.length;
+    diag.terminalErrorCount = [...registry.values()].filter(r => r?.status === 'terminal_error').length;
+    diag.maxArtworkAttempts = Math.max(0, ...[...registry.values()].map(r => Number(r?.attempts || 0)));
+    diag.rendererDirectRemoteRequests = 0;
+    return diag;
+}
+window._agGetArtworkDiagnostics = _agRefreshArtworkDiagnostics;
 
 function _agCssEscape(val) {
     if (typeof CSS !== 'undefined' && CSS.escape) return CSS.escape(String(val));
@@ -792,24 +1307,108 @@ async function buildAllGamesLibraryProjection({
         rawResolved: _rawResolved,
         libraryGames,
         count: libraryGames.length,
+        platformSnapshots: [],
+        revision: '',
+        stale: false,
+        authoritativeEmpty: libraryGames.length === 0,
     };
 }
 
-async function _agReadCachedAllGamesProjection() {
+window.__agCommittedAllGamesSnapshot = window.__agCommittedAllGamesSnapshot || null;
+window.__agAllGamesSnapshotGeneration = window.__agAllGamesSnapshotGeneration || 0;
+
+function _agProjectionRevision(platformSnapshots = []) {
+    return platformSnapshots
+        .map(s => `${s.platform || '?'}:${s.revision || 0}:${s.stale ? 'stale' : 'fresh'}:${s.authoritativeEmpty ? 'empty' : 'data'}`)
+        .join('|');
+}
+
+function _agCanCommitProjection(projection, source = 'unknown') {
+    const previous = window.__agCommittedAllGamesSnapshot;
+    if (!projection || !Array.isArray(projection.libraryGames)) return false;
+    const staleEmptyPlatform = (projection.platformSnapshots || []).some(s => s?.stale && Array.isArray(s.games) && s.games.length === 0 && !s.authoritativeEmpty);
+    if (previous?.count > 0 && projection.count === 0 && staleEmptyPlatform) {
+        console.warn(`[AllGamesSnapshot] Ignored transient empty projection from ${source}; keeping last committed ${previous.count} games.`);
+        return false;
+    }
+    return true;
+}
+
+function _agCommitAllGamesProjection(projection, source = 'unknown') {
+    if (!_agCanCommitProjection(projection, source)) return window.__agCommittedAllGamesSnapshot;
+    const committed = {
+        ...projection,
+        committedAt: Date.now(),
+        source,
+        revision: projection.revision || _agProjectionRevision(projection.platformSnapshots),
+    };
+    window.__agCommittedAllGamesSnapshot = committed;
+    window._allGamesRawCache = committed.rawResolved;
+    window._allGamesCache = committed.libraryGames;
+    _agInvalidateLocalCoverResolution('platform-projection-committed');
+    _agPublishAllGamesCount(committed.count, source);
+    const _rtiGames = _agComputeReadyToInstallGamesFromCache();
+    if (_rtiGames !== null) _agPublishReadyToInstallState(_rtiGames, source);
+        _agStartColdCoverBootstrap(committed.libraryGames, source);
+    return committed;
+}
+
+function _agStartColdCoverBootstrap(games, source = 'all-games-projection') {
+    const list = (Array.isArray(games) ? games : []).filter(Boolean);
+    if (!list.length || !window.electronAPI?.startColdCoverBootstrap) return;
+    const signature = list.map(_agArtworkKey).filter(Boolean).sort().join('|');
+    window.__agColdCoverBootstrap = window.__agColdCoverBootstrap || { signature: '', timer: null };
+    if (window.__agColdCoverBootstrap.signature === signature) return;
+    window.__agColdCoverBootstrap.signature = signature;
+    if (window.__agColdCoverBootstrap.timer) clearTimeout(window.__agColdCoverBootstrap.timer);
+    window.__agColdCoverBootstrap.timer = setTimeout(() => {
+        window.__agColdCoverBootstrap.timer = null;
+        window.electronAPI.startColdCoverBootstrap(list, { reason: `cold-cover-bootstrap:${source}` }).catch?.(() => {});
+    }, 0);
+}
+
+async function _agPatchColdBootstrapBatch(payload = {}) {
+    const changed = Array.isArray(payload.changedCanonicalIds) ? payload.changedCanonicalIds.filter(Boolean) : [];
+    if (!changed.length || !Array.isArray(window._allGamesCache) || !window.electronAPI?.getCachedImagesBulk) return 0;
+    const changedSet = new Set(changed.map(String));
+    const candidates = window._allGamesCache.filter((game) => {
+        const key = _agArtworkKey(game);
+        if (changedSet.has(String(key))) return true;
+        return _agArtworkAliasesForGame(game).some(alias => changedSet.has(String(alias)));
+    });
+    if (!candidates.length) return 0;
+    const changedCount = await _agApplyBulkCachedCovers(candidates, 'cold-cover-bootstrap-batch');
+    if (changedCount) {
+        _agRebindCachedCards(candidates);
+        _agEnsureVirtualGridIntegrity('cold-cover-bootstrap-batch');
+    }
+    return changedCount;
+}
+
+if (window.electronAPI?.onColdCoverBootstrapBatch && !window.__agColdCoverBootstrapBatchAttached) {
+    window.__agColdCoverBootstrapBatchAttached = true;
+    window.electronAPI.onColdCoverBootstrapBatch((payload) => {
+        _agPatchColdBootstrapBatch(payload).catch(() => {});
+    });
+}
+async function _agReadCachedAllGamesProjection(options = {}) {
+    const overrideSnapshots = new Map((options.platformSnapshots || []).filter(item => item?.platform).map(item => [String(item.platform), item]));
     const status = typeof window.electronAPI?.platformSyncStatus === 'function'
         ? await window.electronAPI.platformSyncStatus().catch(() => ({}))
         : {};
     const cachedPlatformGames = [];
     const accountMetadata = { epic: [], steam: [], gog: [] };
+    const platformSnapshots = [];
 
     if (status?.epic === true) {
         const epicAccountsRes = typeof window.electronAPI?.platformSyncGetAccounts === 'function'
             ? await window.electronAPI.platformSyncGetAccounts('epic').catch(() => ({}))
             : {};
         accountMetadata.epic = epicAccountsRes?.accounts || [];
-        const epicRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
-            ? await window.electronAPI.platformSyncGetCached('epic').catch(() => ({}))
-            : {};
+        const epicRes = overrideSnapshots.get("epic") || (typeof window.electronAPI?.platformSyncGetCached === "function"
+            ? await window.electronAPI.platformSyncGetCached("epic").catch(() => ({}))
+            : {});
+        if (epicRes?.status === 'success') platformSnapshots.push(epicRes);
         if (epicRes?.games) cachedPlatformGames.push(...epicRes.games);
     }
     if (status?.steam === true) {
@@ -817,9 +1416,10 @@ async function _agReadCachedAllGamesProjection() {
             ? await window.electronAPI.platformSyncGetAccounts('steam').catch(() => ({}))
             : {};
         accountMetadata.steam = steamAccountsRes?.accounts || [];
-        const steamRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
-            ? await window.electronAPI.platformSyncGetCached('steam').catch(() => ({}))
-            : {};
+        const steamRes = overrideSnapshots.get("steam") || (typeof window.electronAPI?.platformSyncGetCached === "function"
+            ? await window.electronAPI.platformSyncGetCached("steam").catch(() => ({}))
+            : {});
+        if (steamRes?.status === 'success') platformSnapshots.push(steamRes);
         if (steamRes?.games) cachedPlatformGames.push(...steamRes.games);
     }
     if (status?.gog === true) {
@@ -827,13 +1427,19 @@ async function _agReadCachedAllGamesProjection() {
             ? await window.electronAPI.platformSyncGetAccounts('gog').catch(() => ({}))
             : {};
         accountMetadata.gog = gogAccountsRes?.accounts || [];
-        const gogRes = typeof window.electronAPI?.platformSyncGetCached === 'function'
-            ? await window.electronAPI.platformSyncGetCached('gog').catch(() => ({}))
-            : {};
+        const gogRes = overrideSnapshots.get("gog") || (typeof window.electronAPI?.platformSyncGetCached === "function"
+            ? await window.electronAPI.platformSyncGetCached("gog").catch(() => ({}))
+            : {});
+        if (gogRes?.status === 'success') platformSnapshots.push(gogRes);
         if (gogRes?.games) cachedPlatformGames.push(...gogRes.games);
     }
 
-    return buildAllGamesLibraryProjection({ cachedPlatformGames, accountMetadata });
+    const projection = await buildAllGamesLibraryProjection({ cachedPlatformGames, accountMetadata });
+    projection.platformSnapshots = platformSnapshots;
+    projection.revision = _agProjectionRevision(platformSnapshots);
+    projection.stale = platformSnapshots.some(s => s?.stale);
+    projection.authoritativeEmpty = platformSnapshots.length > 0 && platformSnapshots.every(s => s?.authoritativeEmpty === true);
+    return projection;
 }
 
 function _agPublishAllGamesCount(count, source) {
@@ -854,10 +1460,7 @@ async function hydrateSidebarAllGamesCount(source = 'startup-cache') {
     }
 
     const projection = await _agReadCachedAllGamesProjection();
-    window._allGamesRawCache = projection.rawResolved;
-    window._allGamesCache = projection.libraryGames;
-    _agPublishAllGamesCount(projection.count, source);
-    return projection;
+    return _agCommitAllGamesProjection(projection, source) || projection;
 }
 
 window.buildAllGamesLibraryProjection = buildAllGamesLibraryProjection;
@@ -891,27 +1494,168 @@ const _AG_T1_CONCURRENCY = 6;
 const _AG_T2_CONCURRENCY = 4;
 const _AG_T3_CONCURRENCY = 2;
 
+function _agStartCompleteLibraryCoverHydration(games, reason = 'complete-library-cover-hydration') {
+    const requested = Array.isArray(games) ? games : [];
+    const list = Array.isArray(window._allGamesCache) && window._allGamesCache.length
+        ? window._allGamesCache
+        : requested;
+    if (!list.length) return Promise.resolve(0);
+    const libraryRevision = String(window.__agCommittedAllGamesSnapshot?.revision || 'unversioned');
+    const signature = libraryRevision + '|' + list.map(_agArtworkKey).filter(Boolean).join('|');
+    const state = window.__agApplicationArtworkHydration || (window.__agApplicationArtworkHydration = {
+        signature: '', status: 'idle', promise: null, completed: 0, total: 0, reason: null,
+    });
+    if (state.signature === signature && (state.status === 'running' || state.status === 'complete')) {
+        return state.promise || Promise.resolve(state.completed);
+    }
+    state.signature = signature;
+    state.status = 'scheduled';
+    state.completed = 0;
+    state.total = list.length;
+    state.reason = reason;
+    const run = async () => {
+        state.status = 'running';
+        const chunkSize = 48;
+        let changedTotal = 0;
+        for (let index = 0; index < list.length; index += chunkSize) {
+            while (Number(window.__agForegroundArtworkWarmCount || 0) > 0) {
+                await new Promise(resolve => requestAnimationFrame(() => resolve()));
+            }
+            const chunk = list.slice(index, index + chunkSize);
+            const changedCount = await _agApplyBulkCachedCovers(chunk, reason).catch(() => 0);
+            changedTotal += changedCount;
+            _agScheduleGridThumbnailPreparation(chunk);
+            state.completed = Math.min(list.length, index + chunk.length);
+            if (changedCount && typeof currentView !== 'undefined' && currentView === 'all-games') _agRebindCachedCards(chunk);
+            await new Promise(resolve => requestAnimationFrame(() => resolve()));
+        }
+        try { _agEnqueueAllGamesCovers(list); } catch {}
+        // Thumbnail preparation above hydrates the complete library in bounded
+        // idle batches. A second full-cache probe here used to stat every cover
+        // again and could contend with the next user navigation for seconds.
+        if (!window._vs?._isScrolling && typeof currentView !== 'undefined' && currentView === 'all-games') {
+            _agRebindCachedCards(list);
+            _agEnsureVirtualGridIntegrity('grid-thumbnails-ready');
+        }
+        state.status = 'complete';
+        return changedTotal;
+    };
+    state.promise = new Promise(resolve => setTimeout(resolve, 0)).then(run).catch(error => {
+        state.status = 'failed';
+        state.error = error?.message || String(error);
+        throw error;
+    });
+    return state.promise;
+}
+
+function _agWarmFirstPaintCoversAfterRender(games, { limit = 48, reason = 'all-games-first-paint', generation = null } = {}) {
+    const list = Array.isArray(games) ? games : [];
+    if (!list.length) return Promise.resolve(0);
+    const routeVersion = window._agRouteVersion || 0;
+    const isCurrent = () => generation !== null
+        ? Number(window.__agForegroundArtworkWarmGeneration || 0) === generation
+        : (window._agRouteVersion || 0) === routeVersion;
+    return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))).then(async () => {
+        if (!isCurrent()) return;
+        const foreground = list.slice(0, Math.max(0, Number(limit) || 0));
+        let restored = 0;
+        for (let index = 0; index < foreground.length; index += 48) {
+            const chunk = foreground.slice(index, index + 48);
+            const changed = await _agWarmCachedCoversForGames(chunk, { limit: chunk.length, reason }).catch(() => 0);
+            if (!isCurrent()) return restored;
+            const thumbnails = await _agLoadExistingGridThumbnails(chunk, {
+                limit: chunk.length,
+                waitForPending: true,
+                defer: false,
+            }).catch(() => 0);
+            _agScheduleGridThumbnailPreparation(chunk);
+            if (!changed && !thumbnails) continue;
+            restored += Number(changed || 0) + Number(thumbnails || 0);
+            _agRebindCachedCards(chunk);
+            _agEnsureVirtualGridIntegrity(reason);
+            if (typeof window._vsRender === 'function') window._vsRender(false, reason);
+        }
+        return restored;
+    }).catch(() => 0);
+}
+
+function _agPrioritizeFilteredPoolArtwork(pool) {
+    const list = Array.isArray(pool) ? pool : [];
+    if (!list.length) return 0;
+    const selectedPlatform = String(window._agState?.platform || 'all').toLowerCase();
+    // A selected provider is at most a few hundred records in normal use, so
+    // warm the complete provider view. Mixed/All Games remains capped and keeps
+    // the existing full-library hydration in its lower-priority queue.
+    const limit = Math.min(list.length, selectedPlatform === 'all' ? 144 : 320);
+    const generation = Number(window.__agForegroundArtworkWarmGeneration || 0) + 1;
+    window.__agForegroundArtworkWarmGeneration = generation;
+    const foreground = list.slice(0, limit);
+    window.__agForegroundArtworkKeys = new Set(foreground.map(_agArtworkKey).filter(Boolean));
+    window.__agForegroundArtworkWarmCount = Number(window.__agForegroundArtworkWarmCount || 0) + 1;
+    _agWarmFirstPaintCoversAfterRender(foreground, {
+        limit,
+        reason: `all-games-filter-visible:${selectedPlatform}`,
+        generation,
+    }).finally(() => {
+        window.__agForegroundArtworkWarmCount = Math.max(0, Number(window.__agForegroundArtworkWarmCount || 0) - 1);
+        if (Number(window.__agForegroundArtworkWarmGeneration || 0) === generation) {
+            window.__agForegroundArtworkKeys = new Set();
+        }
+    });
+    return limit;
+}
+window.__agPrioritizeFilteredPoolArtwork = _agPrioritizeFilteredPoolArtwork;
+
 function _agEnqueueAllGamesCovers(games) {
-    if (!window.electronAPI?.getMetadata || !Array.isArray(games) || games.length === 0) return;
-    // Full dataset reset — drain all queues then populate Tier 3 (background)
-    _agViewportCoverQueue.length   = 0;
-    _agBufferCoverQueue.length     = 0;
+    if (!Array.isArray(games) || games.length === 0) return;
+    _agViewportCoverQueue.length = 0;
+    _agBufferCoverQueue.length = 0;
     _agBackgroundCoverQueue.length = 0;
-    games.forEach((g) => _agBackgroundCoverQueue.push(g));
-    _agPumpCoverQueue();
+    if (window.electronAPI?.startColdCoverBootstrap) {
+        window.electronAPI.startColdCoverBootstrap(games, { reason: 'renderer-complete-library-handoff' }).catch?.(() => {});
+    }
+}
+
+function _agQueueArtworkGames(queue, games, { front = false } = {}) {
+    if (!Array.isArray(games) || !games.length) return 0;
+    const queuedKeys = new Set([
+        ..._agViewportCoverQueue,
+        ..._agBufferCoverQueue,
+        ..._agBackgroundCoverQueue,
+    ].map(_agArtworkKey));
+    const accepted = [];
+    for (const game of games) {
+        if (!game) continue;
+        const key = _agArtworkKey(game);
+        if (!key || queuedKeys.has(key) || !_agNeedsLocalCoverWork(game)) continue;
+        const record = _agArtworkRecordFor(game);
+        if (!record) continue;
+        record.status = 'queued';
+        record.lastQueuedAt = Date.now();
+        _agScrollDiagnosticCount('artwork.queueAdditions');
+        queuedKeys.add(key);
+        accepted.push(game);
+        window._vs?._coverQueued?.add(_agGameKey(game));
+    }
+    if (accepted.length) {
+        if (front) queue.unshift(...accepted);
+        else queue.push(...accepted);
+    }
+    return accepted.length;
 }
 
 /**
- * Enqueue games into the correct tier.
- *   viewportGames → Tier 1 (unshift = highest priority within tier)
- *   bufferGames   → Tier 2
- *   bgGames       → Tier 3
+ * Enqueue games into the correct tier with session-level deduplication.
+ *   viewportGames -> Tier 1 (front = highest priority within tier)
+ *   bufferGames   -> Tier 2
+ *   bgGames       -> Tier 3
  */
 function _agEnqueueByPriority(viewportGames, bufferGames, bgGames) {
-    if (viewportGames?.length) _agViewportCoverQueue.unshift(...viewportGames);
-    if (bufferGames?.length)   _agBufferCoverQueue.push(...bufferGames);
-    if (bgGames?.length)       _agBackgroundCoverQueue.push(...bgGames);
-    _agPumpCoverQueue();
+    const added =
+        _agQueueArtworkGames(_agViewportCoverQueue, viewportGames, { front: true }) +
+        _agQueueArtworkGames(_agBufferCoverQueue, bufferGames) +
+        _agQueueArtworkGames(_agBackgroundCoverQueue, bgGames);
+    if (added) _agPumpCoverQueue();
 }
 
 /**
@@ -922,42 +1666,45 @@ function _agEnqueueByPriority(viewportGames, bufferGames, bgGames) {
  * Tier 3 resolve (e.g. a metadata fetch that started before a scroll) from
  * continuing to consume concurrency that should go to newly-visible cards.
  */
+function _agStartArtworkJob(game, tier) {
+    const record = _agArtworkRecordFor(game);
+    if (!record || record.status === 'ready') return null;
+    if (record.promise) return record.promise;
+    if (record.status !== 'queued' && !_agNeedsLocalCoverWork(game)) return null;
+    record.status = 'resolving';
+    const promise = _agResolveCoverForGame(game, tier)
+        .catch((err) => {
+            _agScheduleArtworkRetry(game, tier, err?.message || 'artwork-job-failed');
+        })
+        .finally(() => {
+            if (record.promise === promise) record.promise = null;
+            if (window._vs?._coverQueued) window._vs._coverQueued.delete(_agGameKey(game));
+            game._agCoverInFlight = false;
+            _agRefreshArtworkDiagnostics();
+        });
+    record.promise = promise;
+    return promise;
+}
+
+function _agPumpTier(queue, tier, getActive, setActive, limit) {
+    while (getActive() < limit && queue.length > 0) {
+        const game = queue.shift();
+        const job = _agStartArtworkJob(game, tier);
+        if (!job) continue;
+        setActive(getActive() + 1);
+        job.finally(() => {
+            setActive(Math.max(0, getActive() - 1));
+            _agPumpCoverQueue();
+        });
+    }
+}
+
 function _agPumpCoverQueue() {
-    // ── Tier 1 — viewport ────────────────────────────────────────────────────
-    while (_agT1Active < _AG_T1_CONCURRENCY && _agViewportCoverQueue.length > 0) {
-        const game = _agViewportCoverQueue.shift();
-        _agT1Active++;
-        _agResolveCoverForGame(game, 1).finally(() => {
-            _agT1Active--;
-            _agPumpCoverQueue();
-        });
-    }
-
-    // Tier 2 is blocked while ANY Tier 1 work exists (queued or in-flight)
+    _agPumpTier(_agViewportCoverQueue, 1, () => _agT1Active, (v) => { _agT1Active = v; }, _AG_T1_CONCURRENCY);
     if (_agViewportCoverQueue.length > 0 || _agT1Active > 0) return;
-
-    // ── Tier 2 — buffer ──────────────────────────────────────────────────────
-    while (_agT2Active < _AG_T2_CONCURRENCY && _agBufferCoverQueue.length > 0) {
-        const game = _agBufferCoverQueue.shift();
-        _agT2Active++;
-        _agResolveCoverForGame(game, 2).finally(() => {
-            _agT2Active--;
-            _agPumpCoverQueue();
-        });
-    }
-
-    // Tier 3 is blocked while ANY Tier 1 or Tier 2 work exists
+    _agPumpTier(_agBufferCoverQueue, 2, () => _agT2Active, (v) => { _agT2Active = v; }, _AG_T2_CONCURRENCY);
     if (_agBufferCoverQueue.length > 0 || _agT2Active > 0) return;
-
-    // ── Tier 3 — background ──────────────────────────────────────────────────
-    while (_agT3Active < _AG_T3_CONCURRENCY && _agBackgroundCoverQueue.length > 0) {
-        const game = _agBackgroundCoverQueue.shift();
-        _agT3Active++;
-        _agResolveCoverForGame(game, 3).finally(() => {
-            _agT3Active--;
-            _agPumpCoverQueue();
-        });
-    }
+    _agPumpTier(_agBackgroundCoverQueue, 3, () => _agT3Active, (v) => { _agT3Active = v; }, _AG_T3_CONCURRENCY);
 }
 
 /**
@@ -984,37 +1731,195 @@ function _agCoverCacheKeys(game) {
         game.appId,
         game.appName,
         game.namespace,
+        game.productId,
+        game.catalogItemId,
+        game.offerId,
         game.allIds?.steam,
         game.allIds?.epic,
+        game.allIds?.gog,
         game.title,
         game.name,
         normTitle,
     ].filter(Boolean).map(String))];
 }
 
-async function _agGetCachedImageAnyKey(game, type = 'cover') {
-    if (!window.electronAPI?.getCachedImage) return null;
+function _agBulkCoverIdentityForGame(game) {
+    const key = _agArtworkKey(game);
+    const ids = _agArtworkAliasesForGame(game);
+    const candidateManagedLocalUrls = [...new Set([
+        game?.coverUrl,
+        game?.image,
+        game?.defaultImage,
+    ].filter(url => _agIsManagedArtworkCacheUrl(url)).map(String))];
+    return {
+        key,
+        ids,
+        candidateManagedLocalUrls,
+        platform: game?.platform || game?.platforms?.[0] || '',
+        accountId: _agCanonicalAccountKey(game),
+        appName: game?.appName || game?.appid || game?.appId || '',
+        namespace: game?.namespace || game?.allIds?.epic || '',
+        productId: game?.productId || game?.catalogItemId || game?.offerId || '',
+        title: game?.title || game?.name || game?.appName || '',
+    };
+}
 
-    if (type === 'cover' && typeof window.__baddelLoadCachedArtworkForGame === 'function') {
-        const canonicalGame = {
-            id: game?.localGameId || game?.installedId || game?.id || game?.appid || game?.appId || game?.appName,
-        };
-        const cachedArtwork = await window.__baddelLoadCachedArtworkForGame(game, canonicalGame, { types: ['cover'] })
-            .catch(() => null);
-        if (cachedArtwork?.cover && String(cachedArtwork.cover).startsWith('file://')) {
-            return cachedArtwork.cover;
+
+function _agGridThumbnailSourceUrls(games) {
+    return [...new Set((Array.isArray(games) ? games : []).map(game => {
+        const record = _agArtworkRecordFor(game, false);
+        const cover = record?.status === 'ready' ? record.localUrl : (game?.coverUrl || game?.image || game?.defaultImage);
+        return _agIsManagedArtworkCacheUrl(cover) ? String(cover) : '';
+    }).filter(Boolean))];
+}
+
+window.__agPendingGridThumbnailMappings = window.__agPendingGridThumbnailMappings instanceof Map ? window.__agPendingGridThumbnailMappings : new Map();
+window.__agGridThumbnailLoads = window.__agGridThumbnailLoads instanceof Map ? window.__agGridThumbnailLoads : new Map();
+
+function _agAcceptGridThumbnailMappings(images, { deferIfScrolling = true } = {}) {
+    const target = deferIfScrolling && window._vs?._isScrolling
+        ? window.__agPendingGridThumbnailMappings
+        : window.__agGridThumbnailByCover;
+    let accepted = 0;
+    for (const [sourceUrl, thumbnailUrl] of Object.entries(images || {})) {
+        if (!_agIsManagedArtworkCacheUrl(sourceUrl) || !_agIsGridThumbnailUrl(thumbnailUrl)) continue;
+        target.set(sourceUrl, thumbnailUrl);
+        window.__agVerifiedArtworkUrls.add(thumbnailUrl);
+        accepted++;
+    }
+    return accepted;
+}
+
+function _agFlushPendingGridThumbnailMappings() {
+    if (!window.__agPendingGridThumbnailMappings?.size) return 0;
+    const images = Object.fromEntries(window.__agPendingGridThumbnailMappings);
+    window.__agPendingGridThumbnailMappings.clear();
+    return _agAcceptGridThumbnailMappings(images, { deferIfScrolling: false });
+}
+
+async function _agLoadExistingGridThumbnails(games, { limit = 48, waitForPending = false, defer = true } = {}) {
+    if (!window.electronAPI?.getGridArtworkThumbnails) return 0;
+    if (defer && Number.isFinite(limit)) {
+        setTimeout(() => {
+            _agLoadExistingGridThumbnails(games, { limit, waitForPending: false, defer: false })
+                .then(loaded => {
+                    if (loaded && !window._vs?._isScrolling) _agRebindCachedCards((Array.isArray(games) ? games : []).slice(0, limit));
+                })
+                .catch(() => {});
+        }, 0);
+        return 0;
+    }
+    const known = window.__agGridThumbnailByCover;
+    const urls = _agGridThumbnailSourceUrls(games)
+        .filter(url => !known.has(url))
+        .slice(0, Number.isFinite(limit) ? Math.max(0, limit) : undefined);
+    if (!urls.length) return 0;
+
+    const waits = [];
+    const newUrls = [];
+    for (const url of urls) {
+        const pending = window.__agGridThumbnailLoads.get(url);
+        if (pending) {
+            if (waitForPending) waits.push(pending);
+        }
+        else newUrls.push(url);
+    }
+    for (let index = 0; index < newUrls.length; index += 96) {
+        const batch = newUrls.slice(index, index + 96);
+        const request = window.electronAPI.getGridArtworkThumbnails(batch, { createMissing: false })
+            .then(response => _agAcceptGridThumbnailMappings(response?.images, { deferIfScrolling: false }))
+            .catch(() => 0)
+            .finally(() => batch.forEach(url => {
+                if (window.__agGridThumbnailLoads.get(url) === request) window.__agGridThumbnailLoads.delete(url);
+            }));
+        batch.forEach(url => window.__agGridThumbnailLoads.set(url, request));
+        waits.push(request);
+    }
+    const counts = await Promise.all(waits);
+    return counts.reduce((sum, count) => sum + (Number(count) || 0), 0);
+}
+
+const _agGridThumbnailPrepareQueue = [];
+const _agGridThumbnailPrepareQueued = new Set();
+let _agGridThumbnailPrepareActive = false;
+let _agGridThumbnailPrepareTimer = null;
+
+function _agPumpGridThumbnailPreparation() {
+    if (_agGridThumbnailPrepareActive || !_agGridThumbnailPrepareQueue.length) return;
+    if (window._vs?._isScrolling || window._vs?._isFastScrolling) {
+        _agGridThumbnailPrepareTimer = setTimeout(_agPumpGridThumbnailPreparation, 200);
+        return;
+    }
+    _agGridThumbnailPrepareTimer = null;
+    const batch = _agGridThumbnailPrepareQueue.splice(0, 8);
+    batch.forEach(url => _agGridThumbnailPrepareQueued.delete(url));
+    _agGridThumbnailPrepareActive = true;
+    window.electronAPI.getGridArtworkThumbnails(batch, { createMissing: true })
+        .then(response => _agAcceptGridThumbnailMappings(response?.images))
+        .catch(() => null)
+        .finally(() => {
+            _agGridThumbnailPrepareActive = false;
+            _agGridThumbnailPrepareTimer = setTimeout(_agPumpGridThumbnailPreparation, 100);
+        });
+}
+
+function _agScheduleGridThumbnailPreparation(games) {
+    if (!window.electronAPI?.getGridArtworkThumbnails) return;
+    for (const url of _agGridThumbnailSourceUrls(games)) {
+        if (window.__agGridThumbnailByCover.has(url) || _agGridThumbnailPrepareQueued.has(url)) continue;
+        _agGridThumbnailPrepareQueued.add(url);
+        _agGridThumbnailPrepareQueue.push(url);
+    }
+    if (!_agGridThumbnailPrepareTimer && !_agGridThumbnailPrepareActive) {
+        _agGridThumbnailPrepareTimer = setTimeout(_agPumpGridThumbnailPreparation, 150);
+    }
+}
+
+async function _agApplyBulkCachedCovers(games, source = 'disk-cache-bulk', revision = null) {
+    if (!window.electronAPI?.getCachedImagesBulk) return 0;
+    const list = (Array.isArray(games) ? games : []).filter(Boolean);
+    if (!list.length) return 0;
+
+    const identities = [];
+    for (const game of list) {
+        const record = _agArtworkRecordFor(game);
+        if (!record || record.status === 'ready') {
+            _agApplyReadyArtworkToGame(game);
+            continue;
+        }
+        identities.push(_agBulkCoverIdentityForGame(game));
+    }
+    if (!identities.length) return 0;
+
+    _agArtworkDiagnosticsBump('bulkArtworkLookupCount');
+    const response = await window.electronAPI.getCachedImagesBulk(identities, 'cover').catch(() => null);
+    const images = response?.images || {};
+    const results = response?.results || {};
+    window.__agLastBulkArtworkLookup = {
+        cacheGeneration: response?.cacheGeneration || null,
+        hits: Object.values(results).filter(result => result?.fileUrl).length,
+        misses: Object.values(results).filter(result => !result?.fileUrl).length,
+        persistedPathHits: Number(response?.persistedPathHits || 0),
+        backfilledAliases: Number(response?.backfilledAliases || 0),
+    };
+    let changed = 0;
+    for (const game of list) {
+        const key = _agArtworkKey(game);
+        const requestKey = images[key] ? key : _agGameKey(game);
+        const cover = images[requestKey];
+        const resolutionSource = results[requestKey]?.source || source;
+        if (_agApplyCachedCoverToGame(game, cover, resolutionSource)) {
+            const record = _agArtworkRecordFor(game, false);
+            if (record) record.sourceRevision = revision;
+            changed++;
         }
     }
+    _agRefreshArtworkDiagnostics();
+    return changed;
+}
 
-    for (const key of _agCoverCacheKeys(game)) {
-        try {
-            const cached = await window.electronAPI.getCachedImage(key, type);
-            if (cached && String(cached).startsWith('file://')) {
-                return cached;
-            }
-        } catch {}
-    }
-
+async function _agGetCachedImageAnyKey(game, type = 'cover') {
+    if (type === 'cover' && _agApplyReadyArtworkToGame(game)) return game.coverUrl;
     return null;
 }
 
@@ -1022,40 +1927,42 @@ function _agApplyCachedCoverToGame(game, cover, source = 'disk-cache') {
     if (!game || !cover || !String(cover).startsWith('file://')) return false;
     const creatorCover = game.coverUrl || game.image || game.defaultImage;
     if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(creatorCover, game)) return false;
-
-    game.coverUrl = cover;
-    game.image = cover;
-    game.defaultImage = cover;
-    game._agCoverPipelineDone = true;
-    game._agCoverInFlight = false;
-    game._agRemoteFallbackReady = false;
-    game._agArtworkWarmSource = source;
-    try {
-        const id = String(game.id ?? game.appName ?? game.title ?? '');
-        if (id) localStorage.setItem('cover_' + id, cover);
-    } catch {}
-    return true;
+    if (_agIsManagedArtworkCacheUrl(cover)) window.__agVerifiedArtworkUrls.add(cover);
+    return _agSetArtworkReady(game, cover, source);
 }
 
-async function _agWarmCachedCoversForGames(games, { limit = 48, reason = 'all-games-first-paint' } = {}) {
-    const list = (Array.isArray(games) ? games : [])
-        .filter(game => game && !_agHasLocalCover(game))
-        .slice(0, Math.max(0, Number(limit) || 0));
+function _agAcceptVerifiedBulkCover(game, cover, source = 'shared-bulk-cache') {
+    if (!game || !_agIsManagedArtworkCacheUrl(cover)) return false;
+    window.__agVerifiedArtworkUrls.add(cover);
+    return _agSetArtworkReady(game, cover, source);
+}
+window.__baddelAcceptVerifiedBulkCover = _agAcceptVerifiedBulkCover;
+
+function _agProjectReadyArtworkFromAllGames(readyGames) {
+    const sourceGames = Array.isArray(window._allGamesCache) ? window._allGamesCache : [];
+    const coverByAlias = new Map();
+    for (const game of sourceGames) {
+        const cover = game?.coverUrl || game?.image || game?.defaultImage;
+        if (!_agIsUsableCardCover(cover, game)) continue;
+        for (const alias of _agArtworkAliasesForGame(game)) coverByAlias.set(String(alias), cover);
+    }
+    let projected = 0;
+    for (const game of Array.isArray(readyGames) ? readyGames : []) {
+        const creatorCover = game?.coverUrl || game?.image || game?.defaultImage;
+        if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(creatorCover, game)) continue;
+        const cover = _agArtworkAliasesForGame(game).map(alias => coverByAlias.get(String(alias))).find(Boolean);
+        if (cover && _agApplyCachedCoverToGame(game, cover, 'all-games-canonical-projection')) projected += 1;
+    }
+    return projected;
+}
+
+async function _agWarmCachedCoversForGames(games, { limit = 48, reason = 'all-games-first-paint', revision = null } = {}) {
+    const numericLimit = limit === Infinity ? Infinity : Math.max(0, Number(limit) || 0);
+    const source = (Array.isArray(games) ? games : []);
+    const visibleSlice = numericLimit === Infinity ? source : source.slice(0, numericLimit);
+    const list = visibleSlice.filter(game => game && !_agHasLocalCover(game));
     if (!list.length) return 0;
-
-    let changed = 0;
-    let cursor = 0;
-    const concurrency = Math.max(1, Math.min(8, Number(window.__baddelAllGamesCacheWarmConcurrency || 6) || 6));
-    const worker = async () => {
-        while (cursor < list.length) {
-            const game = list[cursor++];
-            const cached = await _agGetCachedImageAnyKey(game, 'cover');
-            if (_agApplyCachedCoverToGame(game, cached, reason)) changed++;
-        }
-    };
-
-    await Promise.all(Array.from({ length: Math.min(concurrency, list.length) }, worker));
-    return changed;
+    return _agApplyBulkCachedCovers(list, reason, revision);
 }
 
 function _agWarmCachedCoversInBackground(games, { skip = 48, reason = 'all-games-background-cache-warm' } = {}) {
@@ -1063,9 +1970,9 @@ function _agWarmCachedCoversInBackground(games, { skip = 48, reason = 'all-games
     if (!list.length) return;
     const run = async () => {
         const changed = await _agWarmCachedCoversForGames(list, { limit: list.length, reason });
-        if (changed && window._vs?.items === games && typeof window._vsRender === 'function') {
+        if (changed && window._vs?.items === games) {
+            _agRebindCachedCards(list);
             _agEnsureVirtualGridIntegrity('all-games-background-cache-warm');
-            window._vsRender(false, 'all-games-background-cache-warm');
         }
     };
     if (typeof requestIdleCallback !== 'undefined') {
@@ -1075,324 +1982,128 @@ function _agWarmCachedCoversInBackground(games, { skip = 48, reason = 'all-games
     }
 }
 
-async function _agResolveCoverForGame(game, tier = 3) {
-    const grid = document.getElementById('allGamesGrid');
-    if (!grid || !game) return;
+function _agInvalidateLocalCoverResolution(reason = 'cache-state-changed') {
+    window.__agLocalCoverResolution = window.__agLocalCoverResolution || { signature: '', promise: null, generation: '' };
+    window.__agLocalCoverResolution.signature = '';
+    window.__agLocalCoverResolution.invalidatedBy = reason;
+}
 
+async function _agResolveLocalCoverPathsForRevision(games, { reason = 'all-games-local-cover-resolution', revision = null } = {}) {
+    const list = Array.isArray(games) ? games : [];
+    if (!list.length) return 0;
+    const baseSignature = String(revision ?? list.map(_agArtworkKey).join('|'));
+    window.__agLocalCoverResolution = window.__agLocalCoverResolution || { signature: '', promise: null, generation: '' };
+    const state = window.__agLocalCoverResolution;
+    const signature = baseSignature + '|' + String(state.generation || 'unknown');
+    if (state.signature === signature) return 0;
+    if (state.promise) {
+        try { await state.promise; } catch {}
+        const nextSignature = baseSignature + '|' + String(state.generation || 'unknown');
+        if (state.signature === nextSignature) return 0;
+    }
+    const run = (async () => {
+        const changed = await _agWarmCachedCoversForGames(list, { limit: Infinity, reason, revision: baseSignature });
+        const lookup = window.__agLastBulkArtworkLookup || {};
+        state.generation = lookup.cacheGeneration || state.generation || '';
+        if (Number(lookup.hits || 0) > 0) {
+            state.signature = baseSignature + '|' + String(state.generation || 'unknown');
+        } else {
+            state.signature = '';
+        }
+        if (changed) {
+            _agRebindCachedCards(list);
+            _agEnsureVirtualGridIntegrity(reason);
+            if (typeof window._vsRender === 'function') window._vsRender(false, reason);
+        }
+        return changed;
+    })();
+    const tracked = run.finally(() => {
+        if (state.promise === tracked) state.promise = null;
+    });
+    state.promise = tracked;
+    return tracked;
+}
+
+async function _agResolveCoverForGame(game, tier = 3) {
+    if (!game) return;
     const id = String(game.id ?? game.appName ?? game.title ?? '');
     if (!id) return;
 
-    // In-flight guard — set synchronously before first await
-    if (game._agCoverPipelineDone || game._agCoverInFlight) return;
+    if (_agApplyReadyArtworkToGame(game)) return;
+
+    const record = _agArtworkRecordFor(game);
+    if (!record || record.status === 'ready') return;
+    if (record.status === 'retry_wait' && record.nextRetryAt > Date.now()) return;
+
     game._agCoverInFlight = true;
-
-    /** Patch the visible card's <img> src in-place */
-    function _patchVisibleCard(url) {
-        const img = grid.querySelector(`[data-id="${_agCssEscape(id)}"] .native-lazy-load`);
-        if (img) {
-            img.src = url;
-            img.style.display = '';
-            img.classList.add('loaded');
-        }
-    }
-
-    /**
-     * Download a single asset (hero or logo) to the local cache as a side-effect.
-     * Does not block the cover pipeline — fires and forgets.
-     * Sets game[field] and the matching localStorage key both for the remote URL
-     * immediately and upgrades to the local file:// path once downloaded.
-     */
-    function _cacheAssetSideEffect(rawUrl, type, field) {
-        // Only skip when the field is already a locally-cached file:// path.
-        // Remote http:// URLs written by applyNormalizedToCache must be downloaded.
-        if (!rawUrl || (game[field] && String(game[field]).startsWith('file://'))) return;
-        game[field] = rawUrl;
-        localStorage.setItem(type + '_' + id, rawUrl);
-        // Only persist to disk for installed games — library-only cards use the remote URL.
-        if (!_agIsInstalled(game)) return;
-        if (window.electronAPI.cacheImage) {
-            window.electronAPI.cacheImage(rawUrl, id, type)
-                .then((local) => {
-                    if (local && String(local).startsWith('file://')) {
-                        game[field] = local;
-                        localStorage.setItem(type + '_' + id, local);
-                    }
-                })
-                .catch(() => {});
-        }
-    }
-
-    /**
-     * Restore hero/logo from localStorage on any fast-path return.
-     * Zero cost — no IPC, no network.
-     */
-    function _restoreHeroLogoFromStorage() {
-        if (!game.heroUrl) { const h = localStorage.getItem('hero_' + id); if (h) game.heroUrl = h; }
-        if (!game.logoUrl) { const l = localStorage.getItem('logo_' + id); if (l) game.logoUrl = l; }
-    }
-    // Creator Mode cover is authoritative.
-// Do NOT let disk cache / metadata / remote fallback replace it.
-const creatorCover = game.coverUrl || game.image || game.defaultImage;
-
-if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(creatorCover, game)) {
-    game.coverUrl = creatorCover;
-    game.image = creatorCover;
-    game.defaultImage = creatorCover;
-
-    game._agCoverPipelineDone = true;
-    game._agCoverInFlight = false;
-    game._agRemoteFallbackReady = true;
-    game._agLocalRetryCount = 999;
-
-    try {
-        localStorage.setItem('cover_' + id, creatorCover);
-    } catch {}
-
-    _patchVisibleCard(creatorCover);
-    _restoreHeroLogoFromStorage();
-    return;
-}
-    const cacheKey = 'cover_' + id;
-    
-
-    // ── FAST PATH: synchronous checks before any await ────────────────────────
-    // 1a. In-memory coverUrl that is a plain http URL (always valid, no probe).
-    // hero/logo may also be remote CDN URLs set by applyNormalizedToCache —
-    // kick off their download as a side-effect so they land in image_cache.
-    const diskFirst = await _agGetCachedImageAnyKey(game, 'cover');
-
-if (diskFirst) {
-    const ok = !window.electronAPI.probeLocalImage || await window.electronAPI.probeLocalImage(diskFirst);
-
-    if (ok) {
-        game.coverUrl = diskFirst;
-        game.image = diskFirst;
-        game.defaultImage = diskFirst;
-        game._agRemoteFallbackReady = false;
-        localStorage.setItem(cacheKey, diskFirst);
-
-        _patchVisibleCard(diskFirst);
-        _restoreHeroLogoFromStorage();
-
-        game._agCoverPipelineDone = true;
-        game._agCoverInFlight = false;
+    if (Number(record.attempts || 0) >= 5) {
+        _agSetArtworkTerminalError(game, 'ARTWORK_MAX_ATTEMPTS', 'Artwork retry limit reached');
         return;
     }
-}
-    if (game.coverUrl && !game.coverUrl.startsWith('file://')) {
-    const remoteCover = game.coverUrl;
+    record.status = 'resolving';
+    record.attempts = Math.min(5, Number(record.attempts || 0) + 1);
 
-    // اعرض remote مؤقتًا فقط، لكن متعتبرش الـ pipeline خلص
-    game._agRemoteFallbackReady = true;
-    game._agRemoteCoverCandidate = remoteCover;
-
-    _patchVisibleCard(remoteCover);
-    _restoreHeroLogoFromStorage();
-    _cacheAssetSideEffect(game.heroUrl || null, 'hero', 'heroUrl');
-    _cacheAssetSideEffect(game.logoUrl || null, 'logo', 'logoUrl');
-
-    game._agCoverPipelineDone = false;
-    game._agCoverInFlight = false;
-
-    // Retry local cache a few times because platformSync may emit/write file:// shortly after
-    game._agLocalRetryCount = Number(game._agLocalRetryCount || 0);
-
-    if (game._agLocalRetryCount < 3) {
-        const retryDelay = [1500, 4000, 8000][game._agLocalRetryCount];
-        game._agLocalRetryCount++;
-
-        setTimeout(async () => {
-            try {
-                const current = String(game.coverUrl || game.image || game.defaultImage || '');
-
-                // خلاص اتحولت file:// من event أو hydrate
-                if (current.startsWith('file://')) {
-                    game._agCoverPipelineDone = true;
-                    game._agCoverInFlight = false;
-                    return;
-                }
-
-                const local = await _agGetCachedImageAnyKey(game, 'cover');
-
-                if (local && String(local).startsWith('file://')) {
-                    game.coverUrl = local;
-                    game.image = local;
-                    game.defaultImage = local;
-                    game._agRemoteFallbackReady = false;
-                    game._agCoverPipelineDone = true;
-                    game._agCoverInFlight = false;
-
-                    localStorage.setItem('cover_' + id, local);
-                    _patchVisibleCard(local);
-
-                    if (window._vs?._coverQueued) {
-                        window._vs._coverQueued.add(id);
-                    }
-
-                    return;
-                }
-
-                // اسمح بمحاولة تانية بعدين
-                if (window._vs?._coverQueued) {
-                    window._vs._coverQueued.delete(id);
-                }
-
-                game._agCoverPipelineDone = false;
-                game._agCoverInFlight = false;
-
-            } catch {
-                game._agCoverInFlight = false;
-            }
-        }, retryDelay);
-    } else {
-        // بعد 3 محاولات، خلاص اعتبر remote fallback نهائي عشان ميعملش loop
-        game._agCoverPipelineDone = true;
-    }
-
-    return;
-}
-
-    // 1b. localStorage http URL — synchronous read, zero cost
-    const lsCached = localStorage.getItem(cacheKey);
-    if (lsCached && lsCached.startsWith('http')) {
-        game.coverUrl = lsCached;
-        _patchVisibleCard(lsCached);
-        _restoreHeroLogoFromStorage();
-        _cacheAssetSideEffect(game.heroUrl || null, 'hero', 'heroUrl');
-        _cacheAssetSideEffect(game.logoUrl || null, 'logo', 'logoUrl');
-        game._agCoverPipelineDone = true;
-        game._agCoverInFlight = false;
+    const creatorCover = game.coverUrl || game.image || game.defaultImage;
+    if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(creatorCover, game)) {
+        _agSetArtworkReady(game, creatorCover, 'creator');
         return;
     }
 
-    // ── ASYNC PATH ────────────────────────────────────────────────────────────
-    const fileOk = async (u) => {
-        if (!u || !String(u).startsWith('file://')) return true;
-        if (!window.electronAPI.probeLocalImage) return true;
-        return window.electronAPI.probeLocalImage(u);
+    const verifyAndReady = async (url, source) => {
+        if (!url || !String(url).startsWith('file://')) return false;
+        record.status = 'verifying';
+        if (await _agVerifyLocalArtworkUrl(url)) {
+            if (_agIsManagedArtworkCacheUrl(url)) window.__agVerifiedArtworkUrls.add(url);
+            _agSetArtworkReady(game, url, source);
+            return true;
+        }
+        _agInvalidateArtworkRecord(game, 'local-file-unavailable');
+        return false;
     };
 
-    try {
-        // Validate existing file:// coverUrl
-        if (game.coverUrl && game.coverUrl.startsWith('file://')) {
-            if (!(await fileOk(game.coverUrl))) {
-                game.coverUrl = null;
-            } else {
-                _patchVisibleCard(game.coverUrl);
-                _restoreHeroLogoFromStorage();
-                _cacheAssetSideEffect(game.heroUrl || null, 'hero', 'heroUrl');
-                _cacheAssetSideEffect(game.logoUrl || null, 'logo', 'logoUrl');
-                game._agCoverPipelineDone = true;
-                return;
-            }
-        }
-
-        // Validate localStorage file:// entry
-        if (lsCached && lsCached.startsWith('file://')) {
-            if (await fileOk(lsCached)) {
-                game.coverUrl = lsCached;
-                _patchVisibleCard(lsCached);
-                _restoreHeroLogoFromStorage();
-                _cacheAssetSideEffect(game.heroUrl || null, 'hero', 'heroUrl');
-                _cacheAssetSideEffect(game.logoUrl || null, 'logo', 'logoUrl');
-                game._agCoverPipelineDone = true;
-                return;
-            } else {
-                localStorage.removeItem(cacheKey);
-            }
-        }
-
-        if (game._agCoverPipelineDone) {
-            if (game.coverUrl) _patchVisibleCard(game.coverUrl);
-            return;
-        }
-
-        // 2. Disk cache (local IPC — fast)
-        if (window.electronAPI.getCachedImage) {
-            try {
-                const disk = await window.electronAPI.getCachedImage(id, 'cover');
-                if (disk && (await fileOk(disk))) {
-                    game.coverUrl = disk;
-                    localStorage.setItem(cacheKey, disk);
-                    _patchVisibleCard(disk);
-
-                    // Also pull hero/logo from disk cache while we're here.
-                    // If hero/logo are remote CDN URLs (not yet local), fall back
-                    // to _cacheAssetSideEffect to download them.
-                    _restoreHeroLogoFromStorage();
-                    if (!game.heroUrl || !String(game.heroUrl).startsWith('file://')) {
-                        const remoteHero = game.heroUrl || null;
-                        window.electronAPI.getCachedImage(id, 'hero').then(async h => {
-                            if (h && await fileOk(h)) { game.heroUrl = h; localStorage.setItem('hero_' + id, h); }
-                            else if (remoteHero) _cacheAssetSideEffect(remoteHero, 'hero', 'heroUrl');
-                        }).catch(() => {});
-                    }
-                    if (!game.logoUrl || !String(game.logoUrl).startsWith('file://')) {
-                        const remoteLogo = game.logoUrl || null;
-                        window.electronAPI.getCachedImage(id, 'logo').then(async l => {
-                            if (l && await fileOk(l)) { game.logoUrl = l; localStorage.setItem('logo_' + id, l); }
-                            else if (remoteLogo) _cacheAssetSideEffect(remoteLogo, 'logo', 'logoUrl');
-                        }).catch(() => {});
-                    }
-
-                    game._agCoverPipelineDone = true;
-                    return;
-                }
-            } catch { /* fall through to metadata */ }
-        }
-
-        // 3. API metadata fetch — the expensive step
-        const meta = await window.electronAPI.getMetadata(game.title || '', _agMetadataHints(game));
-
-        // Pending enrichment: server has data but cover not ready yet — retry later
-        const needsCover = !meta?.cover && !game.coverUrl;
-        if (meta?._serverData && needsCover) {
-            console.log(`[Metadata][Pending] ${game.title} — retrying in 4s...`);
-            game._agCoverInFlight = false;
-            _vs._coverQueued.delete(id);
-            setTimeout(() => {
-                // Re-queue into the same tier so priority is preserved on retry
-                if (tier === 1)      _agViewportCoverQueue.push(game);
-                else if (tier === 2) _agBufferCoverQueue.push(game);
-                else                 _agBackgroundCoverQueue.push(game);
-                _agPumpCoverQueue();
-            }, 4000);
-            return;
-        }
-
-        console.log(`[Metadata][AllGames] ${game.title} -> source: ${meta?.source || 'unknown'}`, meta?.debug || {});
-
-        if (meta?.cover) {
-            game.coverUrl = meta.cover;
-            _patchVisibleCard(meta.cover);
-            localStorage.setItem(cacheKey, meta.cover);
-
-            if (window.electronAPI.cacheImage) {
-                window.electronAPI.cacheImage(meta.cover, id, 'cover')
-                    .then((localUrl) => {
-                        if (localUrl && String(localUrl).startsWith('file://')) {
-                            game.coverUrl = localUrl;
-                            localStorage.setItem(cacheKey, localUrl);
-                            _patchVisibleCard(localUrl);
-                        }
-                    })
-                    .catch(() => {});
-            }
-        }
-
-        // Also cache hero and logo from the same metadata response.
-        // getMetadata() returns heroImage (normalizeServerData alias) or hero.
-        // _cacheAssetSideEffect downloads to image_cache and upgrades to file://.
-        _cacheAssetSideEffect(meta?.heroImage || meta?.hero || null, 'hero', 'heroUrl');
-        _cacheAssetSideEffect(meta?.logo      || null,                'logo', 'logoUrl');
-
-        game._agCoverPipelineDone = true;
-    } catch (e) {
-        console.warn('[AllGames] cover metadata failed', game?.title, e);
-        game._agCoverPipelineDone = true;
-    } finally {
-        game._agCoverInFlight = false;
+    for (const localCandidate of [game.coverUrl, game.image, game.defaultImage]) {
+        if (await verifyAndReady(localCandidate, 'existing-local-cover')) return;
     }
+
+    const cacheKey = 'cover_' + id;
+    try {
+        const stored = localStorage.getItem(cacheKey);
+        if (_agIsManagedArtworkCacheUrl(stored)) {
+            localStorage.removeItem(cacheKey);
+        } else {
+            if (await verifyAndReady(stored, 'local-storage-cover')) return;
+            if (stored && String(stored).startsWith('file://')) localStorage.removeItem(cacheKey);
+        }
+    } catch {}
+
+    const remoteCandidates = _agArtworkCandidateUrlsFromGame(game);
+    record.candidates = remoteCandidates;
+    record.metadataComplete = false;
+
+    if (window.electronAPI?.boostColdCoverBootstrap) {
+        record.status = 'promoted';
+        try {
+            await window.electronAPI.boostColdCoverBootstrap([game], {
+                reason: tier === 1 ? 'all-games-visible-cover-boost' : 'all-games-buffer-cover-boost',
+                priority: tier === 1 ? 'visible' : (tier === 2 ? 'buffer' : 'prefetch'),
+                concurrency: tier === 1 ? 3 : 1,
+            });
+        } catch (err) {
+            record.lastError = err?.message || 'cover-boost-failed';
+        }
+        game._agCoverInFlight = false;
+        return;
+    }
+
+    if (!remoteCandidates.length) {
+        record.status = 'metadata_pending';
+        _agSetCoverState(game, 'metadata_pending', { lastError: 'main-bootstrap-awaiting-metadata' });
+    } else {
+        record.status = 'queued_main';
+        _agSetCoverState(game, 'queued_main', { lastError: null });
+    }
+    game._agCoverInFlight = false;
+
 }
 
 // ── User-library game classifier ──────────────────────────────────────────────
@@ -1508,6 +2219,12 @@ window.isCanonicalReadyToInstallReady = function() {
 };
 
 async function navigateToAllGames(opts = {}) {
+    if (!opts.preserveFilters && !opts.restoreState) {
+        window.electronAPI?.trackFeatureEvent?.('feature_viewed', {
+            feature: 'library',
+            view: window.agReadyOnly ? 'ready_to_install' : 'all_games',
+        }).catch?.(() => {});
+    }
     // Route version token: each navigation captures its own token.
     // After every await, stale callers check the token and exit without touching the DOM.
     window._agRouteVersion = (window._agRouteVersion || 0) + 1;
@@ -1559,9 +2276,10 @@ async function navigateToAllGames(opts = {}) {
     if (!opts.restoreState && typeof currentFilters !== 'undefined') {
         currentFilters.collectionId = null;
     }
+    const _agWarmActivation = _agCanWarmActivateAllGames(opts);
     {
         const _main = document.getElementById('mainContentArea');
-        if (_main && !opts.restoreState?.scrollTop) {
+        if (_main && !opts.restoreState?.scrollTop && !_agWarmActivation) {
             _main.style.scrollBehavior = 'auto';
             _main.scrollTop = 0;
         }
@@ -1583,7 +2301,7 @@ async function navigateToAllGames(opts = {}) {
     // ── 5. Install route skeleton synchronously (no stale cards visible) ─────────
     // Must run AFTER _hideAllViews (which calls _agExitEmptyPageMode and resets grid
     // styles) and AFTER display='block' so the skeleton is immediately visible.
-    _agBeginAllGamesRoute(opts);
+    const _agRouteActivation = _agBeginAllGamesRoute(opts);
 
     try {
         // ── 6. Restore filter UI state (synchronous) ─────────────────────────────
@@ -1654,19 +2372,41 @@ async function navigateToAllGames(opts = {}) {
                     return; // finally → _agEndAllGamesRoute(); listener re-renders when ready
                 }
 
-                // resetScroll=false because scrollTop was already set to 0 in step 2;
-                // for back-navigation we'll restore the saved position after render.
-                _applyAgFilters({ resetScroll: !opts.restoreState?.scrollTop });
+                // A normal restart usually enters this populated-cache fast path.
+                // Restore verified local artwork before rendering; no Sync event is involved.
+                const cacheWarmLimit = Number(window.__baddelAllGamesFirstPaintWarmLimit ?? 48);
+
+                if (window.agReadyOnly && typeof window.getCanonicalReadyToInstallGames === 'function') {
+                    const readyGames = window.getCanonicalReadyToInstallGames();
+                    if (Array.isArray(readyGames)) _agProjectReadyArtworkFromAllGames(readyGames);
+                }
+
+                const visibleGames = window.agReadyOnly && typeof window.getCanonicalReadyToInstallGames === 'function'
+                    ? (window.getCanonicalReadyToInstallGames() || [])
+                    : window._allGamesCache;
+                await _agWarmCachedCoversForGames(visibleGames, {
+                    limit: cacheWarmLimit,
+                    reason: window.agReadyOnly ? 'ready-to-install-before-first-paint' : 'all-games-before-first-paint',
+                });
+                await _agLoadExistingGridThumbnails(visibleGames);
+                if (window._agRouteVersion !== _myRouteToken) return;
+                _applyAgFilters({
+                    resetScroll: !opts.restoreState?.scrollTop && _agRouteActivation !== 'warm',
+                    reason: _agRouteActivation === 'warm' ? 'warm-navigation' : 'navigate-cache',
+                    allowWarmReuse: _agRouteActivation === 'warm',
+                });
+                _agStartCompleteLibraryCoverHydration(visibleGames, window.agReadyOnly
+                    ? 'ready-to-install-application-hydration'
+                    : 'all-games-application-hydration');
 
                 if (opts.restoreState?.scrollTop) {
-                    // Double-rAF: ensure _vsRender has completed its first pass
                     requestAnimationFrame(() => requestAnimationFrame(() => {
                         const el = document.getElementById('mainContentArea');
                         if (el) el.scrollTop = opts.restoreState.scrollTop;
                         if (typeof window._vsRender === 'function') window._vsRender(false, 'scroll-restore');
                     }));
                 }
-                return; // finally → _agEndAllGamesRoute()
+                return; // finally -> _agEndAllGamesRoute()
             }
             // Cache only had installed-only games — treat as empty for onboarding.
             if (await _agMaybeRenderEmptyOnboarding('navigateToAllGames-existing-cache')) return;
@@ -1815,7 +2555,7 @@ function _agExitEmptyPageMode(options = {}) {
             grid.style.position       = '';
         }
     }
-    if (list) list.style.display = '';
+    window._agApplyDisplayPrefs?.();
 }
 
 // Idempotent repair helper: restores the grid's position/display/height if the
@@ -1824,19 +2564,18 @@ function _agExitEmptyPageMode(options = {}) {
 function _agEnsureVirtualGridIntegrity(reason) {
     const vs = window._vs;
     if (!vs || !Array.isArray(vs.items) || vs.items.length === 0) return;
-    if (!(vs.cardPool instanceof Map) || vs.cardPool.size === 0) return;
     const grid = document.getElementById('allGamesGrid');
-    if (!grid) return;
-    if (!grid.style.position || grid.style.position === '') {
-        grid.style.position = 'relative';
-    }
-    if (!grid.style.display || grid.style.display === '') {
-        grid.style.display = 'block';
-    }
-    if (vs.totalHeight != null && (!grid.style.height || grid.style.height === '')) {
+    const view = document.getElementById('allGamesView');
+    if (!grid || window._agDisplayPrefs?.viewMode !== 'grid') return;
+    if (typeof currentView !== 'undefined' && currentView !== 'all-games') return;
+    if (view?.style.display === 'none' || getComputedStyle(grid).display === 'none') return;
+    if (!grid.style.position || grid.style.position === '') grid.style.position = 'relative';
+    if (vs.totalHeight != null && vs.totalHeight > 0 && (!grid.style.height || grid.style.height === '')) {
         grid.style.height = vs.totalHeight + 'px';
     }
-    console.log(`[AllGames] _agEnsureVirtualGridIntegrity(${reason}): pos=${grid.style.position} h=${grid.style.height}`);
+    if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
+        console.log(`[AllGames] _agEnsureVirtualGridIntegrity(${reason}): pos=${grid.style.position} h=${grid.style.height}`);
+    }
 }
 
 // ── Layout-lock helpers — prevent the grid collapsing to zero during nav ─────
@@ -1870,42 +2609,294 @@ function _agRouteSkeletonHTML() {
     return '<div class="ag-route-skeleton"><div class="acc-spinner"></div><span>Loading library…</span></div>';
 }
 
+function _agGameKey(game) {
+    return String(game?.id ?? game?.appName ?? game?.title ?? '');
+}
+
+function _agItemKeyList(items) {
+    return (Array.isArray(items) ? items : []).map(_agGameKey);
+}
+
+function _agHasLiveVirtualGrid() {
+    return !!(
+        window._vs
+        && Array.isArray(_vs.items)
+        && _vs.items.length > 0
+        && _vs.lifecycle === 'warm'
+        && _vs.totalHeight > 0
+    );
+}
+
+function _agShouldPreserveVirtualGrid() {
+    return _agHasLiveVirtualGrid() && !window._agNoLinkedAccounts;
+}
+window._agShouldPreserveVirtualGrid = _agShouldPreserveVirtualGrid;
+
+function _agComputeVirtualTotalHeight(itemCount = _vs.items.length) {
+    if (!_vs.cols || !_vs.rowH || itemCount <= 0) return 0;
+    const totalRows = Math.ceil(itemCount / _vs.cols);
+    return Math.max(0, totalRows * _vs.rowH - _vs.gap);
+}
+
+function _agApplyVirtualGridGeometry(grid = document.getElementById('allGamesGrid')) {
+    if (!grid || !_vs.totalHeight) return;
+    grid.style.position = 'relative';
+    grid.style.display = 'block';
+    grid.style.height = _vs.totalHeight + 'px';
+}
+
+function _agCanWarmActivateAllGames(opts = {}) {
+    if (opts.forceCold || opts.stableLayout || opts.suppressInitialLoading) return false;
+    if (opts.restoreState) return false;
+    if (window.agReadyOnly) return false;
+    if (!_agHasLiveVirtualGrid()) return false;
+    return Array.isArray(window._allGamesCache) && window._allGamesCache.length > 0;
+}
+
+function _agHasWarmReadyToInstallProjection() {
+    return !!(
+        window.agReadyOnly
+        && (typeof currentView === 'undefined' || currentView === 'all-games')
+        && _agHasLiveVirtualGrid()
+        && window._readyToInstallRenderedGames != null
+    );
+}
+
+function _agCaptureVirtualScrollAnchor(items = _vs.items) {
+    const scroller = _vs.scroller || document.getElementById('mainContentArea');
+    if (!scroller || !_vs.cols || !_vs.rowH || !Array.isArray(items) || !items.length) return null;
+    const relScroll = Math.max(0, Number(scroller.scrollTop || 0) - Number(_vs._gridTop || 0));
+    const row = Math.max(0, Math.floor(relScroll / _vs.rowH));
+    const index = Math.min(items.length - 1, row * _vs.cols);
+    return {
+        gameId: _agGameKey(items[index]),
+        beforeId: index > 0 ? _agGameKey(items[index - 1]) : null,
+        afterId: index + 1 < items.length ? _agGameKey(items[index + 1]) : null,
+        rowOffset: relScroll - row * _vs.rowH,
+        rawScrollTop: Number(scroller.scrollTop || 0),
+    };
+}
+
+function _agRestoreVirtualScrollAnchor(anchor, items = _vs.items) {
+    const scroller = _vs.scroller || document.getElementById('mainContentArea');
+    if (!scroller || !anchor || !_vs.cols || !_vs.rowH || !Array.isArray(items) || !items.length) return false;
+    const keys = _agItemKeyList(items);
+    let index = keys.indexOf(anchor.gameId);
+    if (index < 0 && anchor.afterId) index = keys.indexOf(anchor.afterId);
+    if (index < 0 && anchor.beforeId) index = keys.indexOf(anchor.beforeId);
+    if (index < 0) {
+        scroller.scrollTop = Math.min(anchor.rawScrollTop || 0, Math.max(0, (_vs.totalHeight || 0) - scroller.clientHeight));
+        return false;
+    }
+    const row = Math.floor(index / _vs.cols);
+    const maxTop = Math.max(0, (_vs.totalHeight || 0) - scroller.clientHeight);
+    scroller.scrollTop = Math.max(0, Math.min(maxTop, (_vs._gridTop || 0) + row * _vs.rowH + (anchor.rowOffset || 0)));
+    return true;
+}
+
+function _agPruneCardCacheForItems(items) {
+    if (!(_vs.cardCache instanceof Map)) return;
+    const ids = new Set(_agItemKeyList(items));
+    for (const [id] of _vs.cardCache) {
+        if (!ids.has(String(id))) {
+            _vs.cardCache.delete(id);
+            _vs._coverQueued.delete(id);
+        }
+    }
+    for (const [id, card] of _vs.retainedCards) {
+        if (ids.has(String(id))) continue;
+        _vs.retainedCards.delete(id);
+        _vs.retainedCardBytes = Math.max(0, _vs.retainedCardBytes - Number(card?._vsRetainedBytes || 0));
+        if (card) {
+            _vsClearCardCoverForRebind(card, null);
+            card._vsBoundGame = null;
+            card._vsRetainedBytes = 0;
+            _vs.freeCards.push(card);
+        }
+    }
+}
+
+function _agRebindCachedCards(items) {
+    if (!(_vs.cardCache instanceof Map) || !Array.isArray(items)) return 0;
+    const byId = new Map(items.map((game) => [_agGameKey(game), game]));
+    let changed = 0;
+    for (const [id, card] of _vs.cardCache.entries()) {
+        const game = byId.get(String(id));
+        if (!game) continue;
+        _vsBindCard(card, game);
+        changed++;
+    }
+    return changed;
+}
+
+function _agRebuildVisibleCardMap() {
+    if (!(_vs.visibleCardsByGameId instanceof Map)) _vs.visibleCardsByGameId = new Map();
+    _vs.visibleCardsByGameId.clear();
+    for (const rowEl of _vs.cardPool.values()) {
+        rowEl.querySelectorAll?.('.game-card[data-id]').forEach((card) => {
+            const id = String(card.dataset.id || '');
+            if (id) _vs.visibleCardsByGameId.set(id, card);
+        });
+    }
+    return _vs.visibleCardsByGameId;
+}
+
+function _agBoundCardCacheToMountedRows() {
+    const visible = _agRebuildVisibleCardMap();
+    if (!(_vs.cardCache instanceof Map)) return;
+    for (const [id] of _vs.cardCache) {
+        if (!visible.has(String(id))) _vs.cardCache.delete(id);
+    }
+}
+
+function _vsCardDecodedBytes(card) {
+    const img = _vsCardRefs(card).img;
+    const source = img?.getAttribute('src') || '';
+    if (!source) return 0;
+    if (_agIsGridThumbnailUrl(source)) return 160 * 240 * 4;
+    const width = Number(img.naturalWidth || 384);
+    const height = Number(img.naturalHeight || 576);
+    return Math.max(0, width * height * 4);
+}
+
+function _vsEvictRetainedCardsToBudget() {
+    while (_vs.retainedCardBytes > _vs.retainedCardBudgetBytes && _vs.retainedCards.size || _vs.retainedCards.size > _vs.retainedCardLimit) {
+        const oldestId = _vs.retainedCards.keys().next().value;
+        const card = _vs.retainedCards.get(oldestId);
+        _vs.retainedCards.delete(oldestId);
+        _vs.retainedCardBytes = Math.max(0, _vs.retainedCardBytes - Number(card?._vsRetainedBytes || 0));
+        if (card) {
+            _vsClearCardCoverForRebind(card, null);
+            card._vsBoundGame = null;
+            card._vsRetainedBytes = 0;
+            _vs.freeCards.push(card);
+        }
+        _vs.retainedCardStats.evictions++;
+    }
+}
+
+function _vsRetainCard(card, id) {
+    if (!card || !id) { if (card) _vs.freeCards.push(card); return; }
+    const previous = _vs.retainedCards.get(id);
+    if (previous && previous !== card) {
+        _vs.retainedCardBytes = Math.max(0, _vs.retainedCardBytes - Number(previous._vsRetainedBytes || 0));
+        _vsClearCardCoverForRebind(previous, null);
+        previous._vsBoundGame = null;
+        _vs.freeCards.push(previous);
+    }
+    _vs.retainedCards.delete(id);
+    card._vsRetainedBytes = _vsCardDecodedBytes(card);
+    _vs.retainedCards.set(id, card);
+    _vs.retainedCardBytes += card._vsRetainedBytes;
+    _vs.retainedCardStats.peakBytes = Math.max(_vs.retainedCardStats.peakBytes, _vs.retainedCardBytes);
+    _vsEvictRetainedCardsToBudget();
+}
+
+function _vsReleaseRow(rowIdx, rowEl) {
+    if (!rowEl) return 0;
+    let released = 0;
+    const cards = Array.from(rowEl.children || []).filter((el) => el?.classList?.contains('game-card'));
+    for (const card of cards) {
+        const id = String(card.dataset?.id || '');
+        if (id) {
+            _vs.cardCache?.delete?.(id);
+            _vs.visibleCardsByGameId?.delete?.(id);
+        }
+        card.dataset.poolState = 'retained';
+        card.remove();
+        _vsRetainCard(card, id);
+        released++;
+    }
+    rowEl.remove();
+    _vs.rowBindings?.delete?.(rowIdx);
+    return released;
+}
+
+function _vsReleaseAllRows() {
+    if (!(_vs.cardPool instanceof Map)) return 0;
+    let released = 0;
+    for (const [rowIdx, rowEl] of Array.from(_vs.cardPool.entries())) {
+        released += _vsReleaseRow(rowIdx, rowEl);
+    }
+    _vs.cardPool.clear();
+    _vs.rowBindings?.clear?.();
+    _vs.cardCache?.clear?.();
+    _vs.visibleCardsByGameId?.clear?.();
+    return released;
+}
+
+function _vsAcquireCard(game) {
+    const gameId = _agGameKey(game);
+    let card = _vs.retainedCards.get(gameId);
+    if (card) {
+        _vs.retainedCards.delete(gameId);
+        _vs.retainedCardBytes = Math.max(0, _vs.retainedCardBytes - Number(card._vsRetainedBytes || 0));
+        card._vsRetainedBytes = 0;
+        _vs.retainedCardStats.hits++;
+        const expectedCover = _agResolveCardCoverPayload(game)?.cover || '';
+        if (card._vsBoundGame !== game || String(card.dataset.coverUrl || '') !== String(expectedCover)) {
+            _vsBindCard(card, game);
+        } else {
+            card._vsBoundGame = game;
+        }
+    } else {
+        _vs.retainedCardStats.misses++;
+        card = _vs.freeCards.pop();
+        if (card) _vsBindCard(card, game);
+        else card = _vsBuildCard(game);
+    }
+    card.dataset.poolState = 'mounted';
+    _vs.cardCache.set(gameId, card);
+    _vs.visibleCardsByGameId.set(gameId, card);
+    return card;
+}
+
 // Synchronous first-paint helper — call AFTER view.style.display='block' and AFTER _hideAllViews.
 // Clears stale virtual-scroll row DOM (without touching cardCache) and installs a stable skeleton.
-function _agBeginAllGamesRoute(opts) {
+function _agBeginAllGamesRoute(opts = {}) {
     const main   = document.getElementById('mainContentArea');
     const view   = document.getElementById('allGamesView');
     const grid   = document.getElementById('allGamesGrid');
     const list   = document.getElementById('allGamesList');
+    const warmActivation = _agCanWarmActivateAllGames(opts);
 
-    // Disable smooth scrolling temporarily so the synchronous reset is instant
     if (main) {
         main._agSavedScrollBehavior = main.style.scrollBehavior;
         main.style.scrollBehavior = 'auto';
     }
 
-    // Remove currently-mounted virtual-scroll row nodes — do NOT wipe cardCache
+    window._agApplyDisplayPrefs?.({ routeActive: true });
+
+    if (warmActivation) {
+        _agExitEmptyPageMode({ preserveVirtualGrid: true });
+        _agEnsureVirtualGridIntegrity('warm-route');
+        if (grid) grid.classList.remove('ag-empty-mode', 'ag-ready-empty-grid');
+        if (view) view.classList.remove('ag-first-paint-lock');
+        document.body.classList.remove('ag-route-pending');
+        return 'warm';
+    }
+
     _vs.cardPool.forEach(row => row.remove());
     _vs.cardPool.clear();
+    _vs.visibleCardsByGameId?.clear?.();
     _vs.renderedStart = -1;
     _vs.renderedEnd   = -1;
     _vs.cols          = 0;
+    _vs.totalHeight   = 0;
+    _vs.lifecycle     = 'invalidated';
     _vs._gridTopDirty = true;
 
-    if (list) list.style.display = 'none';
-
-    // Install a stable skeleton — same height as the viewport so nothing collapses
     if (grid) {
         grid.classList.remove('ag-empty-mode');
         grid.style.position  = 'relative';
         grid.style.height    = '';
         grid.style.minHeight = 'calc(100vh - 180px)';
-        grid.style.display   = 'block';
-        grid.innerHTML       = _agRouteSkeletonHTML();
+        if (window._agDisplayPrefs?.viewMode === 'grid') grid.innerHTML = _agRouteSkeletonHTML();
     }
 
     document.body.classList.add('ag-route-pending');
     if (view) view.classList.add('ag-first-paint-lock');
+    return 'cold';
 }
 
 // Tear down route lock — safe to call multiple times.
@@ -1957,8 +2948,9 @@ function _agRenderEmptyOnboarding() {
     // Keep list hidden during empty onboarding
     if (list) list.style.display = 'none';
 
-    const steamClick = "openPlatformsModal('steam')";
-    const epicClick  = "openPlatformsModal('epic')";
+    const steamClick = "syncEmptyLibraryPlatform('steam')";
+    const epicClick  = "syncEmptyLibraryPlatform('epic')";
+    const gogClick   = "syncEmptyLibraryPlatform('gog')";
 
     const linkIcon = `<svg width="11" height="11" viewBox="0 0 24 24" fill="none"
         stroke="currentColor" stroke-width="2.5"
@@ -1972,7 +2964,7 @@ function _agRenderEmptyOnboarding() {
     panel.innerHTML = `
         <h2 class="ag-empty-heading">Your Game Library Starts Here</h2>
         <p class="ag-empty-sub">
-            Connect your Steam or Epic Games account to browse,
+            Connect your Steam, Epic Games, or GOG account to browse,
             track and launch your entire collection in one place.
         </p>
 
@@ -1989,7 +2981,7 @@ function _agRenderEmptyOnboarding() {
                 </p>
                 <button class="ag-pc-btn" onclick="${steamClick}">
                     ${linkIcon}
-                    Connect Steam
+                    Sync Steam
                 </button>
             </div>
 
@@ -2004,7 +2996,22 @@ function _agRenderEmptyOnboarding() {
                 </p>
                 <button class="ag-pc-btn" onclick="${epicClick}">
                     ${linkIcon}
-                    Connect Epic
+                    Sync Epic
+                </button>
+            </div>
+
+            <div class="ag-platform-card">
+                <div class="ag-pc-logo">
+                    <img src="../assets/gog.png" alt="GOG">
+                    <span class="ag-pc-platform-name">GOG Library</span>
+                </div>
+                <p class="ag-pc-desc">
+                    Link your GOG account and sync your owned games
+                    through Baddel's existing library connection.
+                </p>
+                <button class="ag-pc-btn" onclick="${gogClick}">
+                    ${linkIcon}
+                    Sync GOG
                 </button>
             </div>
 
@@ -2018,9 +3025,11 @@ async function _agHasLinkedSteamOrEpicAccounts() {
     try {
         const steamRes     = await window.electronAPI?.platformSyncGetAccounts?.('steam');
         const epicRes      = await window.electronAPI?.platformSyncGetAccounts?.('epic');
+        const gogRes       = await window.electronAPI?.platformSyncGetAccounts?.('gog');
         const steamAccounts = steamRes?.accounts || [];
         const epicAccounts  = epicRes?.accounts  || [];
-        return steamAccounts.length > 0 || epicAccounts.length > 0;
+        const gogAccounts   = gogRes?.accounts   || [];
+        return steamAccounts.length > 0 || epicAccounts.length > 0 || gogAccounts.length > 0;
     } catch (err) {
         console.warn('[AllGamesEmpty] account check failed:', err);
         return false;
@@ -2078,9 +3087,10 @@ window.renderAllGamesView = async function(options = {}) {
     const status = await window.electronAPI.platformSyncStatus?.().catch(() => ({}));
     const isEpicLinked = status?.epic === true;
     const isSteamLinked = status?.steam === true;
+    const isGogLinked = status?.gog === true;
 
     // 2. No accounts linked — show onboarding panel.
-    if (!isEpicLinked && !isSteamLinked) {
+    if (!isEpicLinked && !isSteamLinked && !isGogLinked) {
         window._allGamesRendering = false;
         _agPublishAllGamesCount(0, 'account-sync');
         _agSetToolbarVisible(false);
@@ -2096,8 +3106,9 @@ window.renderAllGamesView = async function(options = {}) {
     _agSetEmptyPageMode(false);
     _agSetToolbarVisible(true);
     _agHideEpicBanner();
-    // Restore grid to normal card-layout mode (in case we're coming from empty state)
-    _agResetAllGamesGridMode();
+    // Restore grid to normal card-layout mode. If a warm virtual grid is alive,
+    // keep its phantom geometry; navigation visibility must not own layout teardown.
+    _agResetAllGamesGridMode({ preserveVirtualGrid: _agShouldPreserveVirtualGrid() });
 
     // If the caller already installed a route skeleton, don't replace it with
     // another loading row — the skeleton is stable and avoids a double-flash.
@@ -2118,17 +3129,11 @@ window.renderAllGamesView = async function(options = {}) {
         });
         window._allGamesRawCache = _rawResolved;
         window._allGamesCache    = _agGetUserLibraryGames(_rawResolved);
+        const readyGames = _agComputeReadyToInstallGamesFromCache();
+        if (readyGames !== null) _agPublishReadyToInstallState(readyGames, 'cached-platform-projection');
 
-        if (window._vs?.cardCache) window._vs.cardCache.clear();
+        _agPruneCardCacheForItems(window._allGamesCache);
         const warmLimit = Number(window.__baddelAllGamesFirstPaintWarmLimit ?? 48);
-        await _agWarmCachedCoversForGames(window._allGamesCache, {
-            limit: warmLimit,
-            reason: 'all-games-first-paint',
-        });
-        _agWarmCachedCoversInBackground(window._allGamesCache, {
-            skip: warmLimit,
-            reason: 'all-games-background-cache-warm',
-        });
 
         _agPublishAllGamesCount(window._allGamesCache.length, 'render-all-games');
         // Snapshot filters before account option rebuild may reset _agState.account.
@@ -2150,7 +3155,10 @@ window.renderAllGamesView = async function(options = {}) {
         // When preserving filters, use _applyAgFilters so the existing platform/
         // sort/account/installedOnly state is applied rather than rendering raw cache.
         if (options.preserveFilters) {
+            await _agWarmCachedCoversForGames(window._allGamesCache, { limit: warmLimit, reason: 'all-games-preserve-filters-before-first-paint' });
+            await _agLoadExistingGridThumbnails(window._allGamesCache);
             _applyAgFilters({ resetScroll: false, reason: 'renderAllGamesView-preserve-filters' });
+            _agStartCompleteLibraryCoverHydration(window._allGamesCache, 'all-games-preserve-filters-application-hydration');
             return;
         }
 
@@ -2159,16 +3167,19 @@ window.renderAllGamesView = async function(options = {}) {
             && typeof window.getCanonicalReadyToInstallGames === 'function') {
             const readyGames = window.getCanonicalReadyToInstallGames();
             if (Array.isArray(readyGames)) {
-                await _agWarmCachedCoversForGames(readyGames, {
-                    limit: Number(window.__baddelAllGamesFirstPaintWarmLimit ?? 48),
-                    reason: 'ready-to-install-first-paint',
-                });
+                _agProjectReadyArtworkFromAllGames(readyGames);
+                await _agWarmCachedCoversForGames(readyGames, { limit: warmLimit, reason: 'ready-to-install-before-first-paint' });
+                await _agLoadExistingGridThumbnails(readyGames);
                 _renderAllGamesViewModeAware(readyGames);
+                _agStartCompleteLibraryCoverHydration(readyGames, 'ready-to-install-application-hydration');
                 return;
             }
         }
 
+        await _agWarmCachedCoversForGames(window._allGamesCache, { limit: warmLimit, reason: 'all-games-before-first-paint' });
+        await _agLoadExistingGridThumbnails(window._allGamesCache);
         _renderAllGamesViewModeAware(window._allGamesCache);
+        _agStartCompleteLibraryCoverHydration(window._allGamesCache, 'all-games-application-hydration');
     } catch (err) {
         grid.innerHTML = `<div style="color:#e74c3c; padding:24px;">Error loading library: ${err.message}</div>`;
     }
@@ -2279,19 +3290,129 @@ function _agRestoreFilterState(snapshot, options = {}) {
 }
 
 // ── Refresh grid when library updates from main process ────────
+function _agStartSyncCommitRendererTrace(payload = {}) {
+    const trace = { syncRunId: payload?.syncRunId || null, platform: payload?.platform || null, receivedAt: Date.now(), activeView: typeof currentView !== "undefined" ? currentView : null, completion: { coverCachedEventsReceived: 0 }, renderer: { stages: [], frameGaps: [], longTasks: [] } };
+    const start = performance.now();
+    window.__agActiveSyncCommitTrace = trace;
+    let lastFrame = start;
+    let rafId = null;
+    let stopped = false;
+    const tick = (now) => {
+        if (stopped) return;
+        trace.renderer.frameGaps.push(now - lastFrame);
+        lastFrame = now;
+        if (now - start < 5000) rafId = requestAnimationFrame(tick);
+    };
+    rafId = requestAnimationFrame(tick);
+    let observer = null;
+    try {
+        observer = new PerformanceObserver((list) => {
+            for (const entry of list.getEntries()) trace.renderer.longTasks.push({ startTime: entry.startTime, duration: entry.duration, name: entry.name });
+        });
+        observer.observe({ entryTypes: ["longtask"] });
+    } catch {}
+    setTimeout(() => {
+        stopped = true;
+        if (rafId) cancelAnimationFrame(rafId);
+        try { observer?.disconnect?.(); } catch {}
+        trace.completedAt = Date.now();
+        trace.activeViewAtCompletion = typeof currentView !== "undefined" ? currentView : null;
+        trace.renderer.maxFrameGapMs = trace.renderer.frameGaps.reduce((max, value) => Math.max(max, value || 0), 0);
+        trace.renderer.longTasksOver50ms = trace.renderer.longTasks.filter((task) => Number(task.duration || 0) > 50).length;
+        if (window.__agActiveSyncCommitTrace === trace) window.__agActiveSyncCommitTrace = null;
+        console.log("BADDEL_SYNC_COMMIT_RENDERER_TRACE", JSON.stringify(trace));
+    }, 5100);
+    return trace;
+}
+
+function _agRendererTraceStage(trace, name, startedAt, extra = {}) {
+    if (!trace) return;
+    trace.renderer.stages.push({ name, durationMs: performance.now() - startedAt, ...extra });
+}
+
+function _agSchedulePostCommitHydration(reason = "platform-library-committed-idle") {
+    if (window.__agPostCommitHydrationTimer) return;
+    const run = async () => {
+        window.__agPostCommitHydrationTimer = null;
+        try { await _agHydrateCachedCoversIntoAllGames(); }
+        catch (err) { console.warn("[AllGames] Deferred post-commit hydration failed:", err?.message || err); }
+    };
+    if (typeof requestIdleCallback !== "undefined") window.__agPostCommitHydrationTimer = requestIdleCallback(() => { run(); }, { timeout: 1500 });
+    else window.__agPostCommitHydrationTimer = setTimeout(run, 250);
+}
+
+function _agScheduleDeferredSyncProjection(payload = {}, trace = null) {
+    if (window.__agDeferredSyncProjectionTimer) return;
+    const run = async () => {
+        window.__agDeferredSyncProjectionTimer = null;
+        const started = performance.now();
+        try {
+            const projection = await _agReadCachedAllGamesProjection({ platformSnapshots: [payload].filter(item => item?.platform) });
+            _agRendererTraceStage(trace, "background.projection", started, { count: projection?.count || 0 });
+            if (!_agCanCommitProjection(projection, "platform-library-committed-background")) return;
+            _agCommitAllGamesProjection(projection, "platform-library-committed-background");
+        } catch (err) { console.warn("[AllGames] Deferred sync projection failed:", err?.message || err); }
+    };
+    if (typeof requestIdleCallback !== "undefined") window.__agDeferredSyncProjectionTimer = requestIdleCallback(() => { run(); }, { timeout: 2000 });
+    else window.__agDeferredSyncProjectionTimer = setTimeout(run, 300);
+}
+
+function _agRenderEpicEnrichmentIndicator(states = window.__epicProgressiveStates || {}) {
+    const indicator = document.getElementById('epicEnrichmentIndicator');
+    if (!indicator) return;
+    const values = Object.values(states || {});
+    const active = values.filter((state) => state?.overallStatus === 'library_ready_enriching');
+    const partial = values.filter((state) => state?.overallStatus === 'partial');
+    if (active.length) {
+        const prices = active.some((state) => ['pending', 'running'].includes(state?.phases?.prices?.status));
+        const history = active.some((state) => ['pending', 'running', 'waiting_for_auth'].includes(state?.phases?.purchaseHistory?.status));
+        const detail = prices && history ? 'prices and history' : (prices ? 'prices' : 'history');
+        indicator.textContent = `Epic library ready · Updating ${detail}`;
+        indicator.className = 'epic-enrichment-indicator is-active';
+    } else if (partial.length) {
+        indicator.textContent = 'Epic library ready · Some details need attention';
+        indicator.className = 'epic-enrichment-indicator is-warning';
+    } else {
+        indicator.textContent = '';
+        indicator.className = 'epic-enrichment-indicator';
+    }
+}
+
+if (window.electronAPI?.onEpicSyncProgress && !window.__agEpicProgressListenerAttached) {
+    window.__agEpicProgressListenerAttached = true;
+    window.__epicProgressiveStates = window.__epicProgressiveStates || {};
+    window.electronAPI.onEpicSyncProgress((payload = {}) => {
+        const accountId = String(payload.accountId || '');
+        const existing = window.__epicProgressiveStates[accountId];
+        const incomingRevision = Number(payload.libraryRevision ?? payload.state?.revision ?? 0);
+        const existingRevision = Number(existing?.revision || 0);
+        if (incomingRevision < existingRevision) return;
+        if (incomingRevision === existingRevision && existing?.syncRunId && payload.syncRunId && String(existing.syncRunId) !== String(payload.syncRunId)) return;
+        if (payload.cancelled) delete window.__epicProgressiveStates[accountId];
+        else if (payload.state) window.__epicProgressiveStates[accountId] = payload.state;
+        _agRenderEpicEnrichmentIndicator();
+    });
+    window.electronAPI.platformSyncGetEpicProgressState?.().then((result) => {
+        window.__epicProgressiveStates = result?.state || {};
+        _agRenderEpicEnrichmentIndicator();
+    }).catch?.(() => {});
+}
+
 // Guard: register only once — navigating back and forth would stack listeners
 // and trigger multiple concurrent re-renders per event.
-if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttached) {
+const _agSubscribePlatformLibraryCommitted = window.electronAPI.onPlatformLibraryCommitted || window.electronAPI.onLibraryUpdated;
+if (_agSubscribePlatformLibraryCommitted && !window._allGamesLibraryListenerAttached) {
     window._allGamesLibraryListenerAttached = true;
-    window.electronAPI.onLibraryUpdated(async () => {
-        // Use the scroll-preserve helper from app.js; fall back to a no-op wrapper
-        // if it is not yet available (should not happen in normal load order).
-        const _preserve = typeof window._preserveActiveScrollDuring === 'function'
-            ? window._preserveActiveScrollDuring
-            : (reason, fn) => fn();
-
-        return _preserve('accounts-library-updated', async () => {
-            const view = document.getElementById('allGamesView');
+    _agSubscribePlatformLibraryCommitted(async (payload = {}) => {
+        const __syncTrace = _agStartSyncCommitRendererTrace(payload);
+        const __eventStart = performance.now();
+        _agScrollDiagnosticCount('events.libraryUpdated');
+        _agRendererTraceStage(__syncTrace, "event.received", __eventStart, { activeView: typeof currentView !== "undefined" ? currentView : null });
+        const _agRefreshGeneration = ++window.__agAllGamesSnapshotGeneration;
+        // All Games / Ready to Install virtualized updates own their own semantic
+        // scroll anchor. Do not wrap this flow in raw scrollTop preservation; that
+        // can defeat anchor restoration when sync inserts/removes items above view.
+        const view = document.getElementById('allGamesView');
             const viewVisible = view && view.style.display === 'block';
 
             // Always rebuild cache so canonical ready state stays current,
@@ -2313,9 +3434,21 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
 
                 console.log('[AllGames] Library updated — refreshing cache' + (viewVisible ? ' and view' : ' (background)'));
 
-                const projection = await _agReadCachedAllGamesProjection();
+                if (!viewVisible) {
+                    _agRendererTraceStage(__syncTrace, "background.deferred", performance.now(), { reason: "view-not-visible" });
+                    _agScheduleDeferredSyncProjection(payload, __syncTrace);
+                    return;
+                }
+
+                const __projectionStart = performance.now();
+                const projection = await _agReadCachedAllGamesProjection({ platformSnapshots: [payload].filter(item => item?.platform) });
+                _agRendererTraceStage(__syncTrace, "projection.read-and-merge", __projectionStart, { count: projection?.count || 0 });
+                if (_agRefreshGeneration !== window.__agAllGamesSnapshotGeneration) return;
+                if (!_agCanCommitProjection(projection, 'platform-library-committed')) return;
                 let newCache = projection.rawResolved;
+                const __overrideStart = performance.now();
                 newCache = _agDedupeDelegatedLaunchProducts(await _agApplyInstalledCreatorOverrides(newCache));
+                _agRendererTraceStage(__syncTrace, "projection.installed-overrides", __overrideStart, { count: newCache.length });
                 newCache.forEach(g => {
                     if (g?.librarySource === 'synced-account') {
                         g._agSource     = 'platform-sync';
@@ -2333,15 +3466,12 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     if (old?._agHeroLogoDone)      g._agHeroLogoDone      = old._agHeroLogoDone;
                 });
 
-                window._allGamesRawCache = newCache;
-                window._allGamesCache    = _agGetUserLibraryGames(newCache);
-                _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
-
-                // Publish canonical ready state — this is the single authoritative update.
-                const _rtiGames = _agComputeReadyToInstallGamesFromCache();
-                if (_rtiGames !== null) {
-                    _agPublishReadyToInstallState(_rtiGames, 'library-updated');
-                }
+                _agCommitAllGamesProjection({
+                    ...projection,
+                    rawResolved: newCache,
+                    libraryGames: _agGetUserLibraryGames(newCache),
+                    count: _agGetUserLibraryGames(newCache).length,
+                }, 'platform-library-committed');
 
                 // DOM updates only when the all-games view is visible.
                 if (!viewVisible) return;
@@ -2377,8 +3507,8 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                 if (_bgPoolUnchanged) {
                     // Visible pool is identical — skip all DOM resets. Only patch
                     // covers and update non-layout UI so row wrappers stay anchored.
-                    await _agHydrateCachedCoversIntoAllGames();
-                    _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
+                    _agSchedulePostCommitHydration("platform-library-committed-unchanged");
+                    _agPublishAllGamesCount(window._allGamesCache.length, 'platform-library-committed');
                     _agRenderAccountFilterOptions(window._allGamesCache);
                     // Restore filter state — _agRenderAccountFilterOptions may have
                     // silently reset _agState.account if account keys changed during sync.
@@ -2392,12 +3522,10 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     window._agNoLinkedAccounts = false;
                     _agSetEmptyPageMode(false);
                     _agSetToolbarVisible(true);
-                    _agResetAllGamesGridMode();
+                    _agEnsureVirtualGridIntegrity('background-pool-changed-before-render');
                 }
 
-                await _agHydrateCachedCoversIntoAllGames();
-
-                _agPublishAllGamesCount(window._allGamesCache.length, 'library-updated');
+                _agPublishAllGamesCount(window._allGamesCache.length, 'platform-library-committed');
 
                 _agRenderAccountFilterOptions(window._allGamesCache);
 
@@ -2414,32 +3542,18 @@ if (window.electronAPI.onLibraryUpdated && !window._allGamesLibraryListenerAttac
                     }));
                 }
 
-                const scroller = document.getElementById('mainContentArea');
-                const keepScrollTop = scroller ? scroller.scrollTop : 0;
-
+                const __renderStart = performance.now();
                 const _rendered = _applyAgFilters({ resetScroll: false, reason: 'background-library-updated-preserve-filters' });
+                _agRendererTraceStage(__syncTrace, "render.apply-filters", __renderStart, { rendered: _rendered !== false });
+                _agSchedulePostCommitHydration("platform-library-committed-after-render");
 
                 if (window.baddel_debug_vs) {
                     const _dbgPool = _agBuildFilteredPool({ cache: _agGetUserLibraryGames(window._allGamesCache || []), useCanonical: false });
-                    console.log('[AGFILTER] apply result count=' + _dbgPool.length);
+                    console.log('[AGFILTER] apply result count=' + _dbgPool.length + ' rendered=' + (_rendered !== false));
                 }
-
-                if (_rendered !== false) {
-                    if (scroller) {
-                        requestAnimationFrame(() => {
-                            scroller.scrollTop = keepScrollTop;
-                            if (typeof window._vsRender === 'function') {
-                                window._vsRender(false, 'background-update');
-                            }
-                        });
-                    } else if (typeof window._vsRender === 'function') {
-                        window._vsRender(false, 'background-update');
-                    }
-                }
-            } catch (err) {
-                console.warn('[AllGames] Silent refresh failed:', err.message);
-            }
-        });
+        } catch (err) {
+            console.warn('[AllGames] Silent refresh failed:', err.message);
+        }
     });
 }
 
@@ -2507,47 +3621,18 @@ function _agMatchesCoverPayload(game, payload) {
 
 function _agApplyCoverToGame(game, cover) {
     if (!game || !cover) return false;
-
+    _agInvalidateLocalCoverResolution('cover-cached-event');
     const nextCover = String(cover || '');
     if (!nextCover) return false;
-    // Never overwrite Creator Mode artwork with sync/cache events
-const currentCreatorCover = game.coverUrl || game.image || game.defaultImage;
-
-if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(currentCreatorCover, game)) {
-    game._agCoverPipelineDone = true;
-    game._agCoverInFlight = false;
-    game._agLocalRetryCount = 999;
-    return false;
-}
-
-    const changed =
-        game.coverUrl !== nextCover ||
-        game.image !== nextCover ||
-        game.defaultImage !== nextCover ||
-        game._agCoverPipelineDone !== true ||
-        game._agRemoteFallbackReady !== false;
-
-    game.coverUrl = nextCover;
-    game.image = nextCover;
-    game.defaultImage = nextCover;
-
-    // Important: once the local file:// cover arrives, remote fallback is no longer needed.
-    game._agRemoteFallbackReady = false;
-    game._agCoverPipelineDone = true;
-    game._agCoverInFlight = false;
-    game._agLocalRetryCount = 999;
-
-    const id = String(game.id || game.appName || game.title || '');
-    if (id && window._vs?._coverQueued) {
-        window._vs._coverQueued.add(id);
+    const currentCreatorCover = game.coverUrl || game.image || game.defaultImage;
+    if (_agIsCreatorArtworkGame(game) && _agIsUsableCardCover(currentCreatorCover, game)) {
+        _agSetArtworkReady(game, currentCreatorCover, 'creator');
+        return false;
     }
-
-    try {
-        localStorage.setItem('cover_' + id, nextCover);
-    } catch {}
-
-    return changed;
+    if (_agIsManagedArtworkCacheUrl(nextCover)) window.__agVerifiedArtworkUrls.add(nextCover);
+    return _agSetArtworkReady(game, nextCover, 'cover-cached-event');
 }
+
 
 function _agPatchCardCover(card, cover) {
     if (!card || !cover) return 0;
@@ -2581,6 +3666,7 @@ function _agPatchCardCover(card, cover) {
     });
 
     card.classList.remove('loading', 'skeleton', 'is-loading');
+    card.querySelector?.('.game-card-img-wrap')?.classList.add('cover-ready');
     card.dataset.coverUrl = nextCover;
 
     return patched;
@@ -2601,7 +3687,7 @@ function _agPatchVisibleCoverDom(payload, cover) {
     ].join(',');
 
     document.querySelectorAll(selectors).forEach((card) => {
-        const fakeGame = {
+        const fakeGame = card._vsBoundGame || {
             id: card.dataset.gameId || card.dataset.id,
             appid: card.dataset.appid,
             appId: card.dataset.appId,
@@ -2661,9 +3747,9 @@ if (window.electronAPI?.onAllGamesCoverCached) {
             }
 
             // 3) Patch cardCache cards that might not currently be mounted in DOM.
-            if (window._vs?.cardCache instanceof Map) {
-                for (const [key, card] of window._vs.cardCache.entries()) {
-                    const fakeGame = {
+            if (window._vs?.visibleCardsByGameId instanceof Map) {
+                for (const [key, card] of window._vs.visibleCardsByGameId.entries()) {
+                    const fakeGame = card._vsBoundGame || {
                         id: card.dataset.gameId || card.dataset.id || key,
                         appid: card.dataset.appid,
                         appId: card.dataset.appId,
@@ -2722,28 +3808,747 @@ const _vs = {
     gap: 20,            // gap between cards (must match CSS gap)
     renderedStart: -1,  // first rendered row index
     renderedEnd: -1,    // last rendered row index
+    totalHeight: 0,     // current phantom grid height owned by the virtual scroller
+    dataRevision: 0,    // increments when the rendered item projection changes
+    lifecycle: 'uninitialized', // uninitialized | warm | invalidated
     raf: null,          // pending requestAnimationFrame handle
     scroller: null,     // the scrollable element
     sentinel: null,     // top spacer div
-    cardPool: new Map(), // rowIndex → rowEl DOM node
-    cardCache: new Map(), // gameId → card DOM node — survives scroll cycles
-    _coverQueued: new Set(), // gameIds already queued for cover fetch
+    cardPool: new Map(), // rowIndex -> rowEl DOM node
+    rowBindings: new Map(), // rowIndex -> game keys currently bound into that row
+    freeCards: [], // detached recyclable card DOM nodes
+    cardCache: new Map(), // visible gameId -> currently mounted card DOM node
+    visibleCardsByGameId: new Map(), // patch-only lookup for mounted cards
+    retainedCards: new Map(), // gameId -> detached card, bounded by decoded-image bytes
+    retainedCardBytes: 0,
+    retainedCardBudgetBytes: 96 * 1024 * 1024,
+    retainedCardLimit: 512,
+    retainedCardStats: { hits: 0, misses: 0, evictions: 0, peakBytes: 0 },
+    _coverQueued: new Set(), // gameIds queued or in-flight for cover fetch
     // ── Scroll-speed / settle tracking ──────────────────────────────────────
     _gridTop: 0,         // cached grid offsetTop relative to scroller — avoid rAF layout reads
     _gridTopDirty: true, // re-measure gridTop on next render if true
     _lastScrollTop: 0,   // last known scrollTop — used to detect fast scroll
     _scrollSpeed: 0,     // exponentially-smoothed scroll speed (px/frame)
     _scrollSettleTimer: null, // timer to run background cover work after scroll settles
-    _isScrolling: false, // true while user is actively scrolling fast
+    _isScrolling: false, // true while scroll events are actively arriving
+    _isFastScrolling: false, // hysteresis-controlled fast-scroll mode
+    _lastFrameTs: 0,
 };
 window._vs = _vs;
+
+const AG_VS_FAST_BUFFER_ROWS = 2;
+const AG_VS_NORMAL_BUFFER_ROWS = 4;
+const AG_VS_FAST_ENTER_PX = 70;
+const AG_VS_FAST_LEAVE_PX = 20;
+const AG_VS_SCROLL_SETTLE_MS = 170;
+
+function _agScrollPerfEnabled() {
+    try { return typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_scroll_perf') === '1'; } catch { return false; }
+}
+
+function _agSetActiveScrollState(active) {
+    const nextActive = active === true;
+    if (window.__agGridArtworkScrollActive !== nextActive) {
+        window.__agGridArtworkScrollActive = nextActive;
+        window.electronAPI?.setGridArtworkScrollActive?.(nextActive);
+        if (!nextActive) _agFlushPendingGridThumbnailMappings();
+    }
+    const grid = document.getElementById('allGamesGrid');
+    const view = document.getElementById('allGamesView');
+    grid?.classList?.toggle('ag-is-scrolling', !!active);
+    view?.classList?.toggle('ag-is-scrolling', !!active);
+}
+
+function _agLogScrollPerf(data = {}) {
+    if (!_agScrollPerfEnabled()) return;
+    const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+    const frameDelta = _vs._lastFrameTs ? now - _vs._lastFrameTs : 0;
+    _vs._lastFrameTs = now;
+    const droppedFrames = frameDelta > 20 ? Math.max(0, Math.round(frameDelta / 16.67) - 1) : 0;
+    console.debug('[AG_SCROLL_PERF]', { frameDelta: Math.round(frameDelta * 10) / 10, droppedFrames, ...data });
+}
+
+
+function _agScrollDiagnosticActive() {
+    return window.__agScrollDiagnosticActive || null;
+}
+
+function _agScrollDiagnosticCount(field, amount = 1) {
+    const diag = _agScrollDiagnosticActive();
+    if (!diag) return;
+    diag.counters[field] = Number(diag.counters[field] || 0) + amount;
+}
+
+function _agScrollDiagnosticPush(field, value) {
+    const diag = _agScrollDiagnosticActive();
+    if (!diag) return;
+    if (!Array.isArray(diag.samples[field])) diag.samples[field] = [];
+    diag.samples[field].push(value);
+}
+
+function _agScrollDiagnosticSnapshot(label) {
+    const diag = _agScrollDiagnosticActive();
+    if (!diag) return;
+    const grid = document.getElementById('allGamesGrid');
+    const scroller = window._vs?.scroller || document.getElementById('mainContentArea');
+    const registry = window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry : new Map();
+    const nodeCount = document.getElementsByTagName('*').length;
+    const mountedCardCount = grid?.querySelectorAll?.('.game-card')?.length || 0;
+    const rowCount = window._vs?.cardPool instanceof Map ? window._vs.cardPool.size : 0;
+    const heap = performance?.memory ? {
+        usedJSHeapSize: performance.memory.usedJSHeapSize,
+        totalJSHeapSize: performance.memory.totalJSHeapSize,
+        jsHeapSizeLimit: performance.memory.jsHeapSizeLimit,
+    } : null;
+    diag.snapshots.push({
+        label,
+        atMs: Math.round(performance.now() - diag.startedAt),
+        nodeCount,
+        mountedCardCount,
+        rowCount,
+        cardCacheSize: window._vs?.cardCache instanceof Map ? window._vs.cardCache.size : 0,
+        artworkRegistrySize: registry.size,
+        readyArtworkCount: [...registry.values()].filter(r => r?.status === 'ready' && r.localUrl).length,
+        scrollTop: scroller?.scrollTop || 0,
+        scrollHeight: scroller?.scrollHeight || 0,
+        clientHeight: scroller?.clientHeight || 0,
+        renderedStart: window._vs?.renderedStart ?? null,
+        renderedEnd: window._vs?.renderedEnd ?? null,
+        cols: window._vs?.cols || 0,
+        rowH: window._vs?.rowH || 0,
+        heap,
+    });
+    diag.max.mountedCards = Math.max(diag.max.mountedCards, mountedCardCount);
+    diag.max.domNodes = Math.max(diag.max.domNodes, nodeCount);
+}
+
+function _agScrollDiagnosticPercentile(values, percentile) {
+    if (!values.length) return 0;
+    const sorted = [...values].sort((a, b) => a - b);
+    const idx = Math.min(sorted.length - 1, Math.max(0, Math.ceil((percentile / 100) * sorted.length) - 1));
+    return sorted[idx];
+}
+
+function _agScrollDiagnosticSummarizeDurations(values) {
+    const list = values.filter(v => Number.isFinite(v));
+    if (!list.length) return { count: 0, average: 0, p50: 0, p95: 0, p99: 0, max: 0 };
+    const sum = list.reduce((acc, v) => acc + v, 0);
+    return {
+        count: list.length,
+        average: Math.round((sum / list.length) * 100) / 100,
+        p50: Math.round(_agScrollDiagnosticPercentile(list, 50) * 100) / 100,
+        p95: Math.round(_agScrollDiagnosticPercentile(list, 95) * 100) / 100,
+        p99: Math.round(_agScrollDiagnosticPercentile(list, 99) * 100) / 100,
+        max: Math.round(Math.max(...list) * 100) / 100,
+    };
+}
+
+function _agScrollDiagnosticInstalledBuildKind() {
+    try {
+        const ua = navigator.userAgent || '';
+        return {
+            userAgent: ua,
+            electron: /Electron\/(\d+\.\d+\.\d+)/.exec(ua)?.[1] || null,
+            protocol: location.protocol,
+            href: location.href,
+            devLikely: location.protocol !== 'app:' && !/app\.asar/i.test(location.href),
+        };
+    } catch {
+        return { userAgent: '', electron: null, protocol: '', href: '', devLikely: null };
+    }
+}
+
+function _agScrollDiagnosticInstallHooks(diag) {
+    const cleanups = [];
+    const patchMethod = (owner, name, wrapper) => {
+        if (!owner || typeof owner[name] !== 'function') return;
+        const original = owner[name];
+        owner[name] = wrapper(original);
+        cleanups.push(() => { owner[name] = original; });
+    };
+
+    ['getMetadata', 'cacheImage', 'getCachedImage', 'getCachedImagesBulk', 'cacheAllAssets', 'getArtworkDownloadStats'].forEach((name) => {
+        patchMethod(window.electronAPI, name, (original) => function (...args) {
+            _agScrollDiagnosticCount(`ipc.${name}`);
+            if (name === 'cacheImage' || name === 'cacheAllAssets') _agScrollDiagnosticCount('artwork.networkOrCacheRequest');
+            if (name === 'getMetadata') _agScrollDiagnosticCount('artwork.metadataRequests');
+            if (name === 'getCachedImage' || name === 'getCachedImagesBulk') _agScrollDiagnosticCount('artwork.cacheLookups');
+            return original.apply(this, args);
+        });
+    });
+
+    const imgProto = window.HTMLImageElement?.prototype;
+    const srcDescriptor = imgProto ? Object.getOwnPropertyDescriptor(imgProto, 'src') : null;
+    if (imgProto && srcDescriptor?.set && srcDescriptor?.get) {
+        Object.defineProperty(imgProto, 'src', {
+            configurable: true,
+            enumerable: srcDescriptor.enumerable,
+            get: function () { return srcDescriptor.get.call(this); },
+            set: function (value) {
+                const text = String(value || '');
+                _agScrollDiagnosticCount('artwork.imgSrcAssignments');
+                if (text.startsWith('file://')) _agScrollDiagnosticCount('artwork.localFileAssignments');
+                else if (/^https?:\/\//i.test(text)) _agScrollDiagnosticCount('artwork.remoteImgAssignments');
+                return srcDescriptor.set.call(this, value);
+            },
+        });
+        cleanups.push(() => Object.defineProperty(imgProto, 'src', srcDescriptor));
+    }
+
+    patchMethod(imgProto, 'decode', (original) => function (...args) {
+        _agScrollDiagnosticCount('artwork.decodeCalls');
+        const started = performance.now();
+        try {
+            const result = original.apply(this, args);
+            if (result && typeof result.then === 'function') {
+                return result.then((value) => {
+                    _agScrollDiagnosticCount('artwork.decodeCompletions');
+                    _agScrollDiagnosticPush('decodeDurations', performance.now() - started);
+                    return value;
+                }, (err) => {
+                    _agScrollDiagnosticCount('artwork.decodeFailures');
+                    _agScrollDiagnosticPush('decodeDurations', performance.now() - started);
+                    throw err;
+                });
+            }
+            _agScrollDiagnosticCount('artwork.decodeCompletions');
+            return result;
+        } catch (err) {
+            _agScrollDiagnosticCount('artwork.decodeFailures');
+            throw err;
+        }
+    });
+
+    const elementProto = window.Element?.prototype;
+    patchMethod(elementProto, 'getBoundingClientRect', (original) => function (...args) {
+        _agScrollDiagnosticCount('layout.getBoundingClientRectCalls');
+        return original.apply(this, args);
+    });
+
+    const nodeProto = window.Node?.prototype;
+    patchMethod(nodeProto, 'appendChild', (original) => function (child) {
+        _agScrollDiagnosticCount('dom.appendChildCalls');
+        return original.call(this, child);
+    });
+    patchMethod(nodeProto, 'removeChild', (original) => function (child) {
+        _agScrollDiagnosticCount('dom.removeChildCalls');
+        return original.call(this, child);
+    });
+
+    if (typeof MutationObserver !== 'undefined') {
+        const grid = document.getElementById('allGamesGrid');
+        const observer = new MutationObserver((mutations) => {
+            _agScrollDiagnosticCount('dom.mutationObserverCallbacks');
+            _agScrollDiagnosticCount('dom.mutationRecords', mutations.length);
+            for (const m of mutations) {
+                _agScrollDiagnosticCount('dom.addedNodes', m.addedNodes?.length || 0);
+                _agScrollDiagnosticCount('dom.removedNodes', m.removedNodes?.length || 0);
+            }
+        });
+        if (grid) {
+            observer.observe(grid, { childList: true, subtree: true, attributes: true, attributeFilter: ['src', 'class', 'style', 'data-src'] });
+            cleanups.push(() => observer.disconnect());
+        }
+    }
+
+    if (typeof ResizeObserver !== 'undefined') {
+        const grid = document.getElementById('allGamesGrid');
+        const ro = new ResizeObserver((entries) => {
+            _agScrollDiagnosticCount('layout.resizeObserverCallbacks');
+            _agScrollDiagnosticCount('layout.resizeObserverEntries', entries.length);
+        });
+        if (grid) {
+            ro.observe(grid);
+            cleanups.push(() => ro.disconnect());
+        }
+    }
+
+    if (typeof PerformanceObserver !== 'undefined') {
+        try {
+            const longTaskObserver = new PerformanceObserver((list) => {
+                for (const entry of list.getEntries()) {
+                    _agScrollDiagnosticCount('frame.longTasks');
+                    _agScrollDiagnosticPush('longTaskDurations', entry.duration || 0);
+                }
+            });
+            longTaskObserver.observe({ entryTypes: ['longtask'] });
+            cleanups.push(() => longTaskObserver.disconnect());
+        } catch {}
+        try {
+            const shiftObserver = new PerformanceObserver((list) => {
+                for (const entry of list.getEntries()) {
+                    if (entry.hadRecentInput) continue;
+                    _agScrollDiagnosticCount('layout.layoutShifts');
+                    _agScrollDiagnosticPush('layoutShiftValues', entry.value || 0);
+                }
+            });
+            shiftObserver.observe({ type: 'layout-shift', buffered: true });
+            cleanups.push(() => shiftObserver.disconnect());
+        } catch {}
+    }
+
+    return () => cleanups.reverse().forEach(fn => { try { fn(); } catch {} });
+}
+
+function _agScrollDiagnosticApplyScenario(scenario) {
+    const grid = document.getElementById('allGamesGrid');
+    const view = document.getElementById('allGamesView');
+    const style = document.createElement('style');
+    style.id = 'ag-scroll-diagnostic-style';
+    if (scenario === 'A') {
+        style.textContent = `
+            #allGamesView.ag-scroll-diag-placeholder .native-lazy-load { display:none !important; }
+            #allGamesView.ag-scroll-diag-placeholder .agc-placeholder { display:flex !important; }
+            #allGamesView.ag-scroll-diag-placeholder .agc-badges-strip,
+            #allGamesView.ag-scroll-diag-placeholder .agc-top-gradient { display:none !important; }
+            #allGamesView.ag-scroll-diag-placeholder .agc-card { box-shadow:none !important; transform:none !important; filter:none !important; }
+        `;
+        view?.classList?.add('ag-scroll-diag-placeholder');
+    } else if (scenario === 'B') {
+        style.textContent = `
+            #allGamesView.ag-scroll-diag-cached-basic .agc-badges-strip,
+            #allGamesView.ag-scroll-diag-cached-basic .agc-top-gradient { display:none !important; }
+            #allGamesView.ag-scroll-diag-cached-basic .agc-card { box-shadow:none !important; transform:none !important; filter:none !important; }
+        `;
+        view?.classList?.add('ag-scroll-diag-cached-basic');
+    }
+    if (style.textContent) document.head.appendChild(style);
+    if (grid) grid.dataset.scrollDiagnosticScenario = scenario;
+    return () => {
+        style.remove();
+        view?.classList?.remove('ag-scroll-diag-placeholder', 'ag-scroll-diag-cached-basic');
+        if (grid) delete grid.dataset.scrollDiagnosticScenario;
+    };
+}
+
+async function _agRunSingleScrollDiagnosticScenario(scenario, options = {}) {
+    const scroller = window._vs?.scroller || document.getElementById('mainContentArea');
+    const grid = document.getElementById('allGamesGrid');
+    if (!scroller || !grid || !window._vs || !Array.isArray(window._vs.items) || !window._vs.items.length) {
+        return { scenario, error: 'All Games virtual grid is not ready' };
+    }
+
+    const durationMs = Math.max(4000, Number(options.durationMs || 20000));
+    const settleMs = Math.max(100, Number(options.settleMs || 350));
+    const diag = {
+        scenario,
+        startedAt: performance.now(),
+        durationMs,
+        build: _agScrollDiagnosticInstalledBuildKind(),
+        config: {
+            totalGames: window._vs.items.length,
+            cols: window._vs.cols || 0,
+            rowH: Math.round((window._vs.rowH || 0) * 100) / 100,
+            renderedStart: window._vs.renderedStart,
+            renderedEnd: window._vs.renderedEnd,
+            scrollHeight: scroller.scrollHeight,
+            clientHeight: scroller.clientHeight,
+        },
+        counters: {},
+        samples: { frameDurations: [], renderDurations: [], scrollHandlerDurations: [], decodeDurations: [], longTaskDurations: [], layoutShiftValues: [] },
+        ranges: [],
+        snapshots: [],
+        max: { mountedCards: 0, domNodes: 0, rowPatchSize: 0 },
+        notes: [],
+    };
+
+    window.__agScrollDiagnosticActive = diag;
+    const cleanupHooks = _agScrollDiagnosticInstallHooks(diag);
+    const cleanupScenario = _agScrollDiagnosticApplyScenario(scenario);
+
+    const originalScrollTop = scroller.scrollTop;
+    scroller.scrollTop = 0;
+    if (typeof window._vsRender === 'function') window._vsRender(false, 'scroll-diagnostic-start');
+    await new Promise(resolve => setTimeout(resolve, settleMs));
+    _agScrollDiagnosticSnapshot('before');
+
+    let rafId = null;
+    let lastFrame = null;
+    const frameLoop = (ts) => {
+        if (lastFrame != null) diag.samples.frameDurations.push(ts - lastFrame);
+        lastFrame = ts;
+        rafId = requestAnimationFrame(frameLoop);
+    };
+    rafId = requestAnimationFrame(frameLoop);
+
+    const fullMaxScroll = Math.max(0, scroller.scrollHeight - scroller.clientHeight);
+    const viewportLimit = Number(options.maxViewports);
+    const maxScroll = Number.isFinite(viewportLimit) && viewportLimit > 0
+        ? Math.min(fullMaxScroll, scroller.clientHeight * viewportLimit)
+        : fullMaxScroll;
+    const half = durationMs / 2;
+    const started = performance.now();
+
+    await new Promise((resolve) => {
+        const tick = (now) => {
+            const elapsed = now - started;
+            const phase = Math.min(1, elapsed / half);
+            const downward = elapsed <= half;
+            const localPhase = downward ? phase : Math.min(1, (elapsed - half) / half);
+            const target = downward ? maxScroll * localPhase : maxScroll * (1 - localPhase);
+            scroller.scrollTop = target;
+            _agScrollDiagnosticCount('scroll.programmaticSteps');
+            if (elapsed < durationMs) requestAnimationFrame(tick);
+            else resolve();
+        };
+        requestAnimationFrame(tick);
+    });
+
+    await new Promise(resolve => setTimeout(resolve, settleMs));
+    _agScrollDiagnosticSnapshot('after');
+    if (rafId != null) cancelAnimationFrame(rafId);
+
+    const frameDurations = diag.samples.frameDurations;
+    const over = (threshold) => frameDurations.filter(v => v > threshold).length;
+    const expectedFrames = durationMs / 16.7;
+    const actualFrames = frameDurations.length;
+    const droppedEstimate = Math.max(0, expectedFrames - actualFrames);
+    const visibleRangeChanges = diag.ranges.length;
+    const uniqueRangeChanges = new Set(diag.ranges.map(r => `${r.firstVisibleRow}-${r.lastVisibleRow}-${r.firstVisRow}-${r.lastVisRow}`)).size;
+
+    const report = {
+        scenario,
+        build: diag.build,
+        config: diag.config,
+        framePerformance: {
+            ..._agScrollDiagnosticSummarizeDurations(frameDurations),
+            framesOver16_7ms: over(16.7),
+            framesOver33ms: over(33),
+            framesOver50ms: over(50),
+            framesOver100ms: over(100),
+            estimatedDroppedFramePercentage: Math.round((droppedEstimate / Math.max(1, expectedFrames)) * 10000) / 100,
+            longTasks: {
+                count: Number(diag.counters['frame.longTasks'] || 0),
+                totalDuration: Math.round((diag.samples.longTaskDurations || []).reduce((a, b) => a + b, 0) * 100) / 100,
+                maxDuration: Math.round(Math.max(0, ...(diag.samples.longTaskDurations || [])) * 100) / 100,
+            },
+        },
+        virtualization: {
+            totalGames: window._vs.items.length,
+            renderedCardCount: grid.querySelectorAll('.game-card').length,
+            mountedCardCount: grid.querySelectorAll('.game-card').length,
+            pooledRowCount: window._vs.cardPool instanceof Map ? window._vs.cardPool.size : 0,
+            cardCacheSize: window._vs.cardCache instanceof Map ? window._vs.cardCache.size : 0,
+            mounts: Number(diag.counters['virtual.rowMounts'] || 0),
+            unmounts: Number(diag.counters['virtual.rowUnmounts'] || 0),
+            rebinds: Number(diag.counters['virtual.cardRebinds'] || 0),
+            cardBuilds: Number(diag.counters['virtual.cardBuilds'] || 0),
+            eventListenersCreated: Number(diag.counters['virtual.cardClickListeners'] || 0),
+            maxCardsMounted: diag.max.mountedCards,
+            visibleRangeChanges,
+            uniqueRangeChanges,
+            fullGridRenders: Number(diag.counters['virtual.fullGridRenders'] || 0),
+            incrementalRangePatches: Number(diag.counters['virtual.incrementalRangePatches'] || 0),
+            skippedRangePatches: Number(diag.counters['virtual.skippedRangePatches'] || 0),
+            maxRowPatchSize: diag.max.rowPatchSize,
+            patchMode: diag.max.rowPatchSize > 3 ? 'page/block rows' : 'one-by-one rows',
+            renderDurations: _agScrollDiagnosticSummarizeDurations(diag.samples.renderDurations),
+            ranges: diag.ranges.slice(0, 12),
+            lastRange: diag.ranges[diag.ranges.length - 1] || null,
+        },
+        artworkBehavior: {
+            imgSrcAssignments: Number(diag.counters['artwork.imgSrcAssignments'] || 0),
+            localFileAssignments: Number(diag.counters['artwork.localFileAssignments'] || 0),
+            remoteImgAssignments: Number(diag.counters['artwork.remoteImgAssignments'] || 0),
+            decodeCalls: Number(diag.counters['artwork.decodeCalls'] || 0),
+            decodeCompletions: Number(diag.counters['artwork.decodeCompletions'] || 0),
+            cacheLookups: Number(diag.counters['artwork.cacheLookups'] || 0),
+            networkArtworkRequests: Number(diag.counters['artwork.networkOrCacheRequest'] || 0),
+            metadataRequests: Number(diag.counters['artwork.metadataRequests'] || 0),
+            queueAdditions: Number(diag.counters['artwork.queueAdditions'] || 0),
+            readyArtworkReapplies: Number(diag.counters['artwork.readyReapplies'] || 0),
+            readyArtworkLost: Number(diag.counters['artwork.readyArtworkLost'] || 0),
+            coverApplySkippedByScenario: Number(diag.counters['artwork.coverApplySkippedByScenario'] || 0),
+            decodeDurations: _agScrollDiagnosticSummarizeDurations(diag.samples.decodeDurations),
+        },
+        renderingAndLayout: {
+            forcedLayoutProxy_getBoundingClientRectCalls: Number(diag.counters['layout.getBoundingClientRectCalls'] || 0),
+            layoutShiftCount: Number(diag.counters['layout.layoutShifts'] || 0),
+            layoutShiftTotal: Math.round((diag.samples.layoutShiftValues || []).reduce((a, b) => a + b, 0) * 10000) / 10000,
+            resizeObserverCallbacks: Number(diag.counters['layout.resizeObserverCallbacks'] || 0),
+            mutationObserverCallbacks: Number(diag.counters['dom.mutationObserverCallbacks'] || 0),
+            mutationRecords: Number(diag.counters['dom.mutationRecords'] || 0),
+            scrollHandlerInvocations: Number(diag.counters['scroll.handlerInvocations'] || 0),
+            scrollHandlerTotalMs: Math.round(Number(diag.counters['scroll.handlerTotalMs'] || 0) * 100) / 100,
+            scrollHandlerDurations: _agScrollDiagnosticSummarizeDurations(diag.samples.scrollHandlerDurations),
+            libraryUpdatedEvents: Number(diag.counters['events.libraryUpdated'] || 0),
+            renderDecisionEvents: Number(diag.counters['events.renderDecision'] || 0),
+        },
+        memoryAndDom: {
+            snapshots: diag.snapshots,
+            maxDomNodes: diag.max.domNodes,
+            maxMountedCards: diag.max.mountedCards,
+            finalDomNodes: document.getElementsByTagName('*').length,
+            finalCardCacheSize: window._vs.cardCache instanceof Map ? window._vs.cardCache.size : 0,
+            finalArtworkRegistrySize: window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry.size : 0,
+            jsHeapBefore: diag.snapshots.find(s => s.label === 'before')?.heap || null,
+            jsHeapAfter: diag.snapshots.find(s => s.label === 'after')?.heap || null,
+        },
+        counters: diag.counters,
+    };
+
+    cleanupHooks();
+    cleanupScenario();
+    window.__agScrollDiagnosticActive = null;
+    scroller.scrollTop = originalScrollTop;
+    if (typeof window._vsRender === 'function') window._vsRender(false, 'scroll-diagnostic-restore');
+    return report;
+}
+
+window.__agScrollDiagnosticEvent = function __agScrollDiagnosticEvent(name, payload = {}) {
+    _agScrollDiagnosticCount(`events.${name}`);
+    if (name === 'renderDecision') _agScrollDiagnosticCount('events.renderDecision');
+};
+
+window.__runAllGamesScrollDiagnostic = async function __runAllGamesScrollDiagnostic(options = {}) {
+    const scenarios = Array.isArray(options.scenarios) && options.scenarios.length ? options.scenarios : ['A', 'B', 'C'];
+    const startedAt = new Date().toISOString();
+    const reports = [];
+    const errors = [];
+    for (const scenario of scenarios) {
+        try {
+            reports.push(await _agRunSingleScrollDiagnosticScenario(String(scenario).toUpperCase(), options));
+        } catch (err) {
+            errors.push({ scenario, message: err?.message || String(err), stack: err?.stack || null });
+        }
+    }
+    const result = {
+        marker: 'BADDEL_SCROLL_DIAGNOSTIC',
+        startedAt,
+        finishedAt: new Date().toISOString(),
+        options: { durationMs: options.durationMs || 20000, scenarios },
+        build: _agScrollDiagnosticInstalledBuildKind(),
+        reports,
+        errors,
+    };
+    console.log('BADDEL_SCROLL_DIAGNOSTIC', JSON.stringify(result));
+    return result;
+};
+
+window.__agArtworkPersistenceEvidence = window.__agArtworkPersistenceEvidence || {
+    generation: 0,
+    resetLabel: 'startup',
+    resetAt: 0,
+    imgErrorCount: 0,
+    brokenImages: [],
+    pendingEnrichment: 0,
+};
+
+if (!window.__agArtworkPersistenceErrorListenerAttached) {
+    window.__agArtworkPersistenceErrorListenerAttached = true;
+    document.addEventListener('error', (event) => {
+        const target = event?.target;
+        if (!target || String(target.tagName || '').toLowerCase() !== 'img') return;
+        const src = target.currentSrc || target.src || target.getAttribute?.('src') || '';
+        const card = target.closest?.('.game-card, .ag-list-row');
+        const evidence = window.__agArtworkPersistenceEvidence || _agResetArtworkImageErrorDiagnostics('auto-init');
+        const assignment = target.__agArtworkAssignment || null;
+        const boundGame = _agFindDiagnosticGameForCard(card, assignment ? { id: assignment.gameId } : null);
+        let canonicalKey = assignment?.canonicalKey || null;
+        try { canonicalKey = canonicalKey || _agArtworkKey(boundGame); } catch {}
+        const record = canonicalKey && window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry.get(canonicalKey) : null;
+        const tokenStillMatched = assignment?.token ? String(target.dataset?.artworkAssignmentToken || '') === String(assignment.token) : null;
+        const cardWasRebound = assignment ? (
+            String(card?.dataset?.id || '') !== String(assignment.gameId || '') ||
+            String(card?.dataset?.coverToken || '') !== String(assignment.cardTokenAtAssignment || '')
+        ) : null;
+        const sample = {
+            timestamp: Date.now(),
+            generation: evidence.generation || 0,
+            cardElementToken: card?.dataset?.cardInstanceToken || null,
+            assignmentToken: assignment?.token || target.dataset?.artworkAssignmentToken || null,
+            currentlyBoundGameIdentity: {
+                id: boundGame?.id || card?.dataset?.id || null,
+                title: boundGame?.title || boundGame?.name || card?.dataset?.gameTitle || target.getAttribute?.('alt') || null,
+                platform: boundGame?.platform || boundGame?.platforms?.[0] || null,
+                appName: boundGame?.appName || null,
+                namespace: boundGame?.namespace || boundGame?.allIds?.epic || null,
+            },
+            canonicalArtworkKey: canonicalKey,
+            imgSrc: src,
+            dataSrc: target.dataset?.src || target.getAttribute?.('data-src') || null,
+            artworkRegistry: record ? { status: record.status || null, localUrl: record.localUrl || null, errorCode: record.errorCode || null, lastError: record.lastError || null, attempts: Number(record.attempts || 0) } : null,
+            bulkAliasLookup: null,
+            assetHash: _agAssetHashFromFileUrl(src),
+            artworkClass: target.classList?.contains?.('native-lazy-load') || target.classList?.contains?.('ag-list-thumb') ? 'cover' : (target.className || '').includes('logo') ? 'logo' : 'unknown',
+            fileExistsAtSrcAssignmentTime: assignment?.fileExistsAtAssignment ?? null,
+            fileExistsAtErrorTime: null,
+            cardReboundBetweenAssignmentAndError: cardWasRebound,
+            errorHandlerTokenStillMatched: tokenStillMatched,
+            classification: 'pending',
+            isFileUrl: String(src || '').startsWith('file://'),
+            alt: target.getAttribute?.('alt') || null,
+            className: target.className || null,
+        };
+        evidence.imgErrorCount += 1;
+        if (evidence.brokenImages.length < 200) evidence.brokenImages.push(sample);
+        evidence.pendingEnrichment = Number(evidence.pendingEnrichment || 0) + 1;
+        (async () => {
+            try {
+                sample.fileExistsAtErrorTime = await _agArtworkFileExistsForDiagnostics(src);
+                const aliases = (() => { try { return _agArtworkAliasesForGame(boundGame); } catch { return []; } })();
+                if (window.electronAPI?.getCachedImagesBulk && aliases.length) {
+                    const lookup = await window.electronAPI.getCachedImagesBulk([{ key: canonicalKey || aliases[0], ids: aliases }], 'cover').catch(() => null);
+                    sample.bulkAliasLookup = lookup?.status === 'success' ? { hit: !!lookup.images?.[canonicalKey || aliases[0]], localUrl: lookup.images?.[canonicalKey || aliases[0]] || null, aliasesTried: aliases } : { hit: false, aliasesTried: aliases };
+                }
+                if (sample.fileExistsAtSrcAssignmentTime === true && sample.fileExistsAtErrorTime === false) sample.classification = 'genuine_physical_file_deletion';
+                else if (sample.fileExistsAtSrcAssignmentTime === false || sample.cardReboundBetweenAssignmentAndError || sample.errorHandlerTokenStillMatched === false) sample.classification = 'stale_dom_src_assignment';
+                else if (sample.bulkAliasLookup && !sample.bulkAliasLookup.hit && record?.status !== 'ready') sample.classification = 'canonical_identity_mismatch';
+                else if (sample.fileExistsAtErrorTime === true) sample.classification = 'decode_or_mime_failure';
+                else sample.classification = 'unknown_img_error';
+            } finally {
+                evidence.pendingEnrichment = Math.max(0, Number(evidence.pendingEnrichment || 0) - 1);
+            }
+        })();
+    }, true);
+}
+
+function _agArtworkPersistenceGameInputs() {
+    const source = Array.isArray(window._vs?.items) && window._vs.items.length
+        ? window._vs.items
+        : (Array.isArray(window._allGamesCache) && window._allGamesCache.length
+            ? window._allGamesCache
+            : (Array.isArray(window.allGamesData) ? window.allGamesData : []));
+    return source.map(game => {
+        let aliases = [];
+        try { aliases = _agArtworkAliasesForGame(game); } catch {}
+        let canonicalKey = null;
+        try { canonicalKey = _agArtworkKey(game); } catch {}
+        let remoteCandidates = [];
+        try { remoteCandidates = _agArtworkCandidateUrlsFromGame(game); } catch {}
+        return {
+            id: game?.id || null,
+            title: game?.title || game?.name || game?.appName || null,
+            name: game?.name || game?.title || null,
+            platform: game?.platform || game?.platforms?.[0] || null,
+            canonicalKey,
+            aliases,
+            remoteCandidates,
+            coverUrl: game?.coverUrl || null,
+            image: game?.image || null,
+            defaultImage: game?.defaultImage || null,
+            storedCoverUrl: game?.storedCoverUrl || null,
+        };
+    });
+}
+
+function _agArtworkPersistenceRendererEvidence() {
+    const grid = document.getElementById('allGamesGrid');
+    const imgs = [...(grid?.querySelectorAll?.('img.native-lazy-load, img.ag-list-thumb, img') || [])];
+    const mountedSources = imgs.map(img => img.currentSrc || img.src || img.getAttribute('src') || '').filter(Boolean);
+    const registry = window.__agArtworkRegistry instanceof Map ? window.__agArtworkRegistry : new Map();
+    const records = [...registry.values()];
+    return {
+        ...window.__agArtworkPersistenceEvidence,
+        mountedImageCount: imgs.length,
+        mountedFileImageCount: mountedSources.filter(src => String(src).startsWith('file://')).length,
+        rendererReceivedNoCachedUrl: records.filter(r => r && r.status !== 'ready' && !r.localUrl).length,
+        canonicalIdentityLookupMiss: records.filter(r => r && (r.status === 'unknown' || r.status === 'no_source')).length,
+        artworkRegistrySize: registry.size,
+        readyArtworkCount: records.filter(r => r?.status === 'ready' && r.localUrl).length,
+        activeArtworkJobs: Number(_agT1Active || 0) + Number(_agT2Active || 0) + Number(_agT3Active || 0),
+        queuedArtworkJobs: _agViewportCoverQueue.length + _agBufferCoverQueue.length + _agBackgroundCoverQueue.length,
+    };
+}
+
+function _agArtworkPersistenceWait(ms = 250) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+async function _agArtworkPersistenceWaitForGrid(timeoutMs = 20000) {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+        if (window._vs && Array.isArray(window._vs.items) && window._vs.items.length > 0) return true;
+        await _agArtworkPersistenceWait(250);
+    }
+    return false;
+}
+
+window.__runArtworkPersistenceAudit = async function(options = {}) {
+    const snapshots = [];
+    const collect = async (label) => {
+        const payload = {
+            label,
+            games: _agArtworkPersistenceGameInputs(),
+            rendererEvidence: _agArtworkPersistenceRendererEvidence(),
+            lifecycle: {
+                currentView: typeof currentView === 'undefined' ? null : currentView,
+                allGamesVisible: document.getElementById('allGamesView')?.style?.display || null,
+                allGamesItemCount: Array.isArray(window._vs?.items) ? window._vs.items.length : 0,
+                allGamesCacheCount: Array.isArray(window._allGamesCache) ? window._allGamesCache.length : 0,
+                allGamesDataCount: Array.isArray(window.allGamesData) ? window.allGamesData.length : 0,
+                collectedAt: new Date().toISOString(),
+            },
+        };
+        const result = await window.electronAPI?.getArtworkPersistenceAudit?.(payload);
+        snapshots.push(result);
+        return result;
+    };
+
+    await collect('startup-current-state-before-navigation');
+
+    if (typeof window.navigateToAllGames === 'function') {
+        await window.navigateToAllGames();
+    } else if (typeof navigateToAllGames === 'function') {
+        await navigateToAllGames();
+    }
+    await _agArtworkPersistenceWaitForGrid();
+    await _agArtworkPersistenceWait(Number(options.settleMs || 500));
+    await collect('after-opening-all-games');
+
+    for (let i = 1; i <= 2; i++) {
+        if (typeof window.navigateToHome === 'function') window.navigateToHome();
+        else if (typeof navigateToHome === 'function') navigateToHome();
+        await _agArtworkPersistenceWait(Number(options.leaveSettleMs || 350));
+        if (typeof window.navigateToAllGames === 'function') await window.navigateToAllGames();
+        else if (typeof navigateToAllGames === 'function') await navigateToAllGames();
+        await _agArtworkPersistenceWaitForGrid();
+        await _agArtworkPersistenceWait(Number(options.settleMs || 500));
+        await collect(`after-reenter-all-games-${i}`);
+    }
+
+    const report = {
+        status: 'success',
+        marker: 'BADDEL_ARTWORK_PERSISTENCE_AUDIT',
+        generatedAt: new Date().toISOString(),
+        snapshots,
+    };
+    console.log('BADDEL_ARTWORK_PERSISTENCE_AUDIT', JSON.stringify(report));
+    return report;
+};
+
+(function _agMaybeAutorunScrollDiagnostic() {
+    if (!window.electronAPI?.getScrollDiagnosticConfig || window.__agScrollDiagnosticAutorunAttached) return;
+    window.__agScrollDiagnosticAutorunAttached = true;
+    setTimeout(async () => {
+        try {
+            const config = await window.electronAPI.getScrollDiagnosticConfig();
+            if (!config?.enabled) return;
+            if (typeof navigateToAllGames === 'function') navigateToAllGames();
+            const deadline = Date.now() + 30000;
+            while (Date.now() < deadline) {
+                if (window._vs && Array.isArray(window._vs.items) && window._vs.items.length > 0) break;
+                await new Promise(resolve => setTimeout(resolve, 250));
+            }
+            const report = await window.__runAllGamesScrollDiagnostic({
+                durationMs: config.durationMs || 20000,
+                scenarios: Array.isArray(config.scenarios) && config.scenarios.length ? config.scenarios : ['A', 'B', 'C'],
+            });
+            await window.electronAPI.writeScrollDiagnosticReport?.(report);
+        } catch (err) {
+            console.error('[ScrollDiagnostic] autorun failed', err?.message || err);
+        }
+    }, 2000);
+})();
 
 function _agLegacyCoverForResolver(game) {
     return game?.coverUrl || game?.image || game?.defaultImage || game?.cover || game?.posterImage || '';
 }
 
 function _agResolveAllGamesCoverDecision(game) {
-    const legacyCover = _agLegacyCoverForResolver(game);
+    let legacyCover = _agLegacyCoverForResolver(game);
+    if (_agIsManagedArtworkCacheUrl(legacyCover)) legacyCover = '';
     const adapter = window.BaddelAllGamesArtworkAdapter;
 
     if (!adapter || typeof adapter.resolveAllGamesArtwork !== 'function') {
@@ -2768,75 +4573,340 @@ function _agResolveAllGamesCoverDecision(game) {
     };
 }
 
-
-function _vsApplyCoverToCard(card, game, force = false) {
-    if (!card || !game) return false;
-
+function _agResolveCardCoverPayload(game) {
+    if (!game) return null;
+    const activeScrollDiag = _agScrollDiagnosticActive();
+    if (activeScrollDiag?.scenario === 'A') {
+        _agScrollDiagnosticCount('artwork.coverApplySkippedByScenario');
+        return null;
+    }
+    _agApplyReadyArtworkToGame(game);
+    const record = _agArtworkRecordFor(game, false);
     const coverDecision = _agResolveAllGamesCoverDecision(game);
-    const rawCover = coverDecision.value;
-    if (!rawCover) return false;
-
-    const cover = String(rawCover || '');
-
-if (!_agIsUsableCardCover(cover, game)) {
-    game._agCoverPipelineDone = false;
-    game._agCoverInFlight = false;
-    return false;
+    const rawCover = (record?.status === 'ready' && record.localUrl) ? record.localUrl : coverDecision.value;
+    const originalCover = String(rawCover || '');
+    const cover = _agGridDisplayCover(originalCover);
+    if (!cover) return null;
+    if (!_agIsUsableCardCover(cover, game)) {
+        game._agCoverPipelineDone = false;
+        game._agCoverInFlight = false;
+        _agScrollDiagnosticCount('artwork.readyArtworkLost');
+        return null;
+    }
+    return { cover, originalCover, gridThumbnail: cover !== originalCover, record, coverDecision, ready: record?.status === 'ready' && record.localUrl === originalCover };
 }
 
-// Creator/data/file covers are already usable; don't let the pipeline refetch over them
-game._agCoverPipelineDone = true;
-game._agCoverInFlight = false;
-    const img = card.querySelector('.native-lazy-load');
-
-    if (!img) return false;
-
-    const currentSrc = img.getAttribute('src') || '';
-
-    if (force || currentSrc !== cover || img.style.display === 'none' || !img.classList.contains('loaded')) {
-        img.onerror = function () {
-            this.onerror = null;
-            this.style.display = 'none';
-            this.classList.remove('loaded');
-
-            const gameId = String(game.id || game.appName || game.title || '');
-            if (gameId && window._vs?._coverQueued) {
-                window._vs._coverQueued.delete(gameId);
-            }
-
-            game._agCoverPipelineDone = false;
-            game._agCoverInFlight = false;
+function _vsCardRefs(card) {
+    if (!card) return {};
+    if (!card._vsRefs) {
+        card._vsRefs = {
+            img: card.querySelector?.('.native-lazy-load'),
+            title: card.querySelector?.('.game-card-title'),
+            badges: card.querySelector?.('.agc-badges-strip'),
+            placeholder: card.querySelector?.('.agc-placeholder, .agc-img-fallback'),
+            imageWrap: card.querySelector?.('.game-card-img-wrap'),
         };
-
-        img.src = cover;
-        img.dataset.src = cover;
-        img.style.display = '';
-        img.classList.add('loaded');
-        img.classList.remove('loading', 'skeleton');
     }
+    return card._vsRefs;
+}
 
-    const placeholder = card.querySelector('.agc-placeholder, .agc-img-fallback');
-    if (placeholder) {
-        placeholder.classList.remove('loading', 'skeleton');
+function _vsClearCardCoverForRebind(card, game) {
+    if (!card) return;
+    const refs = _vsCardRefs(card);
+    const img = refs.img;
+    if (img) {
+        img.onload = null;
+        img.onerror = null;
+        img.removeAttribute('src');
+        img.removeAttribute('data-src');
+        img.style.display = 'none';
+        img.classList.remove('loaded', 'loading', 'skeleton');
     }
+    const placeholder = refs.placeholder;
+    if (placeholder) placeholder.classList.remove('loading', 'skeleton');
+    refs.imageWrap?.classList.remove('cover-ready');
+    card.dataset.coverUrl = '';
+    card._vsLastCoverApplied = false;
+    card._vsPendingCoverUrl = '';
+    card._vsDecodedCoverUrl = '';
+    card._vsCoverBoundGameId = game ? _agGameKey(game) : '';
+}
 
+function _vsCardStillBound(card, game, token) {
+    if (!card || !game) return false;
+    return String(card.dataset.bindingToken || '') === String(token || '')
+        && String(card.dataset.id || '') === String(_agGameKey(game));
+}
+
+function _vsEnsureImageBindState() {
+    if (!_vs.coverDecodeCache) _vs.coverDecodeCache = new Map();
+    if (!_vs.coverDecodeJobs) _vs.coverDecodeJobs = new Map();
+    if (!_vs.coverCommitQueue) _vs.coverCommitQueue = [];
+}
+
+function _vsPruneDecodedCoverCache(limit = 96) {
+    _vsEnsureImageBindState();
+    while (_vs.coverDecodeCache.size > limit) {
+        const first = _vs.coverDecodeCache.keys().next().value;
+        if (!first) break;
+        _vs.coverDecodeCache.delete(first);
+    }
+}
+
+function _vsScheduleCoverCommit() {
+    _vsEnsureImageBindState();
+    if (_vs.coverCommitRaf) return;
+    _vs.coverCommitRaf = requestAnimationFrame(() => {
+        _vs.coverCommitRaf = null;
+        const started = performance.now();
+        let committed = 0;
+        while (_vs.coverCommitQueue.length && committed < 2 && performance.now() - started <= 2) {
+            const job = _vs.coverCommitQueue.shift();
+            const { card, game, token, cover, payload } = job || {};
+            if (!_vsCardStillBound(card, game, token)) continue;
+            const refs = _vsCardRefs(card);
+            const img = refs.img;
+            if (!img) continue;
+            const currentSrc = img.getAttribute('src') || '';
+            if (currentSrc !== cover || img.style.display === 'none') {
+                const gameId = _agGameKey(game);
+                img.onload = null;
+                img.onerror = function () {
+                    if (!_vsCardStillBound(card, game, token)) return;
+                    img.classList.remove('loaded');
+                    img.style.display = 'none';
+                    _agSetCoverState(game, 'retry_wait', { token, failedUrl: cover, lastError: 'image-load-failed' });
+                    if (gameId && window._vs?._coverQueued) window._vs._coverQueued.delete(gameId);
+                };
+                _agMarkImageAssignment(img, card, game, cover, payload?.ready ? 'decoded-ready-commit' : 'decoded-cover-commit');
+                img.src = cover;
+                img.dataset.src = cover;
+                _agArtworkDiagnosticsBump('cardRemountCacheHits');
+            }
+            img.style.display = '';
+            img.classList.add('loaded');
+            img.classList.remove('loading', 'skeleton');
+            const placeholder = refs.placeholder;
+            if (placeholder) placeholder.classList.remove('loading', 'skeleton');
+            refs.imageWrap?.classList.add('cover-ready');
+            card.classList.remove('loading', 'skeleton', 'is-loading');
+            card.dataset.coverUrl = cover;
+            card.dataset.artworkSource = payload?.ready ? 'session-registry' : (payload?.coverDecision?.source || 'decoded-local-cover');
+            card.dataset.artworkReason = payload?.ready ? 'ready artwork registry hit' : (payload?.coverDecision?.reason || 'decoded local cover');
+            card._vsLastCoverApplied = true;
+            card._vsPendingCoverUrl = '';
+            card._vsDecodedCoverUrl = cover;
+            if (!payload?.gridThumbnail && _agIsUsableCardCover(cover, game)) _agSetArtworkReady(game, cover, payload?.ready ? 'decoded-ready-bind' : 'decoded-local-bind');
+            committed++;
+        }
+        if (_vs.coverCommitQueue.length) _vsScheduleCoverCommit();
+    });
+}
+
+function _vsQueueDecodedCoverCommit(card, game, token, cover, payload) {
+    _vsEnsureImageBindState();
+    _vs.coverCommitQueue = _vs.coverCommitQueue.filter(job => job && job.card !== card);
+    _vs.coverCommitQueue.push({ card, game, token, cover, payload });
+    _vsScheduleCoverCommit();
+}
+
+function _vsCommitReadyLocalCover(card, game, token, cover, payload, refs) {
+    const img = refs.img;
+    if (!img || !_vsCardStillBound(card, game, token) || img.getAttribute('src') !== cover) return false;
+    img.style.display = '';
+    img.classList.add('loaded');
+    img.classList.remove('loading', 'skeleton');
+    refs.placeholder?.classList.remove('loading', 'skeleton');
+    refs.imageWrap?.classList.add('cover-ready');
     card.classList.remove('loading', 'skeleton', 'is-loading');
     card.dataset.coverUrl = cover;
-    card.dataset.artworkSource = coverDecision.source || '';
-    card.dataset.artworkReason = coverDecision.reason || '';
-
+    card._vsLastCoverApplied = true;
+    card._vsPendingCoverUrl = '';
+    card._vsDecodedCoverUrl = cover;
+    if (!payload?.gridThumbnail) _agSetArtworkReady(game, cover, 'ready-local-buffer-bind');
     return true;
 }
 
-/** Build one card DOM node for a game */
-function _vsBuildCard(game) {
-    const rawId = game.id || game.appName || game.title || '';
-    const safeId = String(rawId);
+function _vsRequestCoverBind(card, game, priority = 'visible', resolvedPayload = null) {
+    if (!card || !game) return false;
+    const payload = resolvedPayload || _agResolveCardCoverPayload(game);
+    if (!payload?.cover) return false;
+    const cover = payload.cover;
+    const token = String(card.dataset.bindingToken || '');
+    const refs = _vsCardRefs(card);
+    const img = refs.img;
+    if (!img) return false;
+    const currentSrc = img.getAttribute('src') || '';
+    if (currentSrc === cover && img.style.display !== 'none' && img.classList.contains('loaded')) {
+        card._vsLastCoverApplied = true;
+        card.dataset.coverUrl = cover;
+        return true;
+    }
+    if (card._vsPendingCoverUrl === cover) return false;
+    card._vsPendingCoverUrl = cover;
+    if (payload.ready && cover.startsWith('file://')) {
+        img.onload = () => _vsCommitReadyLocalCover(card, game, token, cover, payload, refs);
+        img.onerror = () => {
+            if (!_vsCardStillBound(card, game, token)) return;
+            card._vsPendingCoverUrl = '';
+            _agSetCoverState(game, 'retry_wait', { token, failedUrl: cover, lastError: 'image-load-failed' });
+        };
+        _agMarkImageAssignment(img, card, game, cover, 'ready-local-buffer-bind');
+        img.src = cover;
+        img.dataset.src = cover;
+        if (img.complete && img.naturalWidth > 0) _vsCommitReadyLocalCover(card, game, token, cover, payload, refs);
+        return true;
+    }
+    _vsEnsureImageBindState();
+    _vsPruneDecodedCoverCache();
+    if (_vs.coverDecodeCache.has(cover)) {
+        _vsQueueDecodedCoverCommit(card, game, token, cover, payload);
+        return true;
+    }
+    const existing = _vs.coverDecodeJobs.get(cover);
+    if (existing) {
+        existing.waiters.push({ card, game, token, payload, priority });
+        return true;
+    }
+    const job = { waiters: [{ card, game, token, payload, priority }] };
+    _vs.coverDecodeJobs.set(cover, job);
+    const decoder = new Image();
+    decoder.decoding = 'async';
+    decoder.onload = async () => {
+        try { if (typeof decoder.decode === 'function') await decoder.decode(); } catch {}
+        _vs.coverDecodeJobs.delete(cover);
+        _vs.coverDecodeCache.delete(cover);
+        _vs.coverDecodeCache.set(cover, { width: decoder.naturalWidth || 0, height: decoder.naturalHeight || 0, at: Date.now() });
+        _vsPruneDecodedCoverCache();
+        for (const waiter of job.waiters.splice(0)) {
+            if (_vsCardStillBound(waiter.card, waiter.game, waiter.token)) {
+                _vsQueueDecodedCoverCommit(waiter.card, waiter.game, waiter.token, cover, waiter.payload);
+            }
+        }
+    };
+    decoder.onerror = () => {
+        _vs.coverDecodeJobs.delete(cover);
+        for (const waiter of job.waiters.splice(0)) {
+            if (!_vsCardStillBound(waiter.card, waiter.game, waiter.token)) continue;
+            waiter.card._vsPendingCoverUrl = '';
+            _agSetCoverState(waiter.game, 'retry_wait', { token: waiter.token, failedUrl: cover, lastError: 'predecode-failed' });
+        }
+    };
+    decoder.src = cover;
+    return true;
+}
 
+function _vsBindCoversForRows(firstRow, lastRow, firstVisRow, lastVisRow) {
+    if (!_vs.items?.length || !_vs.cols) return;
+    const from = Math.max(0, firstRow);
+    const to = Math.max(from, lastRow);
+    for (let row = from; row <= to; row++) {
+        const rowEl = _vs.cardPool.get(row);
+        if (!rowEl) continue;
+        const startIdx = row * _vs.cols;
+        const endIdx = Math.min(_vs.items.length, startIdx + _vs.cols);
+        const priority = row >= firstVisRow && row <= lastVisRow ? 'visible' : 'near';
+        for (let i = startIdx; i < endIdx; i++) {
+            const game = _vs.items[i];
+            const card = rowEl.children[i - startIdx];
+            if (card && game && !card._vsLastCoverApplied && !card._vsPendingCoverUrl) {
+                _vsRequestCoverBind(card, game, priority);
+            }
+        }
+    }
+}
+
+function _vsApplyCoverToCard(card, game, force = false) {
+    if (!card || !game) return false;
+    const activeScrollDiag = _agScrollDiagnosticActive();
+    if (activeScrollDiag?.scenario === 'A') {
+        _agScrollDiagnosticCount('artwork.coverApplySkippedByScenario');
+        return false;
+    }
+    _agApplyReadyArtworkToGame(game);
+
+    const record = _agArtworkRecordFor(game, false);
+    const coverDecision = _agResolveAllGamesCoverDecision(game);
+    const rawCover = (record?.status === 'ready' && record.localUrl) ? record.localUrl : coverDecision.value;
+    if (!rawCover) return false;
+
+    const cover = String(rawCover || '');
+    if (!_agIsUsableCardCover(cover, game)) {
+        game._agCoverPipelineDone = false;
+        game._agCoverInFlight = false;
+        _agScrollDiagnosticCount('artwork.readyArtworkLost');
+        return false;
+    }
+
+    const img = card.querySelector('.native-lazy-load');
+    if (!img) return false;
+
+    const gameId = _agGameKey(game);
+    const currentSrc = img.getAttribute('src') || '';
+    const ready = record?.status === 'ready' && record.localUrl === cover;
+
+    if (ready) {
+        _agScrollDiagnosticCount('artwork.readyReapplies');
+        img.onload = null;
+        img.onerror = function () {
+            if (card.dataset.id !== gameId) return;
+            if (_agInvalidateArtworkRecord(game, 'ready-local-img-error')) {
+                _agEnqueueByPriority([game], null, null);
+            }
+        };
+        if (force || currentSrc !== cover || img.style.display === 'none') {
+            _agMarkImageAssignment(img, card, game, cover, 'ready-reapply');
+            img.src = cover;
+            img.dataset.src = cover;
+            _agArtworkDiagnosticsBump('cardRemountCacheHits');
+        }
+        img.style.display = '';
+        img.classList.add('loaded');
+        img.classList.remove('loading', 'skeleton');
+        card.querySelector('.game-card-img-wrap')?.classList.add('cover-ready');
+    } else if (force || currentSrc !== cover || img.style.display === 'none' || !img.classList.contains('loaded')) {
+        const token = String((Number(card.dataset.coverToken || 0) + 1));
+        card.dataset.coverToken = token;
+        img.onload = function () {
+            if (card.dataset.coverToken !== token || card.dataset.id !== gameId) return;
+            img.classList.add('loaded');
+            img.classList.remove('loading', 'skeleton');
+            img.style.display = '';
+            card.querySelector('.game-card-img-wrap')?.classList.add('cover-ready');
+            if (_agIsUsableCardCover(cover, game)) _agSetArtworkReady(game, cover, 'dom-local-load');
+        };
+        img.onerror = function () {
+            if (card.dataset.coverToken !== token || card.dataset.id !== gameId) return;
+            img.classList.remove('loaded');
+            img.style.display = 'none';
+            game._agCoverPipelineDone = false;
+            game._agCoverInFlight = false;
+            _agSetCoverState(game, 'retry_wait', { token, failedUrl: cover, lastError: 'image-load-failed' });
+            if (gameId && window._vs?._coverQueued) window._vs._coverQueued.delete(gameId);
+        };
+        _agSetCoverState(game, 'verifying', { token, url: cover });
+        _agMarkImageAssignment(img, card, game, cover, 'cover-verify');
+        img.src = cover;
+        img.dataset.src = cover;
+        img.style.display = '';
+        img.classList.add('loading');
+        img.classList.remove('loaded', 'skeleton');
+    }
+
+    const placeholder = card.querySelector('.agc-placeholder, .agc-img-fallback');
+    if (placeholder) placeholder.classList.remove('loading', 'skeleton');
+    card.classList.remove('loading', 'skeleton', 'is-loading');
+    card.dataset.coverUrl = cover;
+    card.dataset.artworkSource = ready ? 'session-registry' : (coverDecision.source || '');
+    card.dataset.artworkReason = ready ? 'ready artwork registry hit' : (coverDecision.reason || '');
+    return true;
+}
+
+
+function _agPlatformBadgesHtml(game) {
     const MAX_VISIBLE = 3;
     const visiblePlats = (game.platforms || []).slice(0, MAX_VISIBLE);
     const overflowCount = (game.platforms || []).length - MAX_VISIBLE;
-
     let badgesHtml = visiblePlats.map(plat => {
         const m = PLAT_BADGE_META[plat] || { color: '#888', icon: null, invert: false, label: plat };
         const imgContent = m.icon
@@ -2847,18 +4917,78 @@ function _vsBuildCard(game) {
     if (overflowCount > 0) {
         badgesHtml += `<span class="agc-badge agc-badge-overflow" title="${(game.platforms || []).slice(MAX_VISIBLE).join(', ')}">+${overflowCount}</span>`;
     }
+    return badgesHtml;
+}
 
+function _vsBindCard(card, game) {
+    if (!card || !game) return card;
+    _agScrollDiagnosticCount('virtual.cardRebinds');
+    const rawId = _agGameKey(game);
+    const previousId = String(card.dataset.id || '');
+    const previousCoverUrl = String(card.dataset.coverUrl || '');
+    const bindingToken = String((Number(card.dataset.bindingToken || 0) + 1));
+    card.dataset.bindingToken = bindingToken;
     const isMulti = (game.platforms || []).length > 1;
+    card.classList.toggle('agc-multi', isMulti);
+    card.dataset.id = rawId;
+    card._vsBoundGame = game;
+    card.dataset.gameId = game.id || '';
+    card.dataset.appid = game.appid || game.appId || game.appName || '';
+    card.dataset.appName = game.appName || '';
+    card.dataset.namespace = game.namespace || game.allIds?.epic || '';
+    card.dataset.gameTitle = game.title || game.name || game.appName || '';
+    card.dataset.titleKey = String(game.title || game.name || game.appName || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    const refs = _vsCardRefs(card);
+    const titleEl = refs.title;
+    if (titleEl && titleEl.textContent !== (game.title || '')) titleEl.textContent = game.title || '';
+    const img = refs.img;
+    if (img) img.alt = game.title || '';
+    const badges = refs.badges;
+    if (badges) {
+        const next = _agPlatformBadgesHtml(game);
+        if (badges.innerHTML !== next) badges.innerHTML = next;
+    }
+    const coverPayload = _agResolveCardCoverPayload(game);
+    const keepingSameCover = previousId === rawId
+        && coverPayload?.cover
+        && previousCoverUrl === coverPayload.cover
+        && img
+        && img.getAttribute('src') === coverPayload.cover
+        && img.style.display !== 'none'
+        && img.classList.contains('loaded');
+    if (keepingSameCover) {
+        card._vsLastCoverApplied = true;
+        card._vsPendingCoverUrl = '';
+        card._vsDecodedCoverUrl = coverPayload.cover;
+    } else {
+        _vsClearCardCoverForRebind(card, game);
+    }
+    if (typeof _agDecorateAllGamesCardFields === 'function') _agDecorateAllGamesCardFields(card, game);
+    _vsRequestCoverBind(card, game, 'buffer', coverPayload);
+    return card;
+}
+
+/** Build one card DOM node for a game */
+function _vsBuildCard(game) {
+    _agScrollDiagnosticCount('virtual.cardBuilds');
+    const rawId = game.id || game.appName || game.title || '';
+    const safeId = String(rawId);
+
+    const badgesHtml = _agPlatformBadgesHtml(game);
+    const isMulti = (game.platforms || []).length > 1;
+    _agApplyReadyArtworkToGame(game);
+    const record = _agArtworkRecordFor(game, false);
     const coverDecision = _agResolveAllGamesCoverDecision(game);
-    const rawCover = coverDecision.value || '';
-    const cover = _agIsUsableCardCover(rawCover, game) ? _agAttrUrl(rawCover) : '';
+    const rawCover = (record?.status === 'ready' && record.localUrl) ? record.localUrl : (coverDecision.value || '');
+    const cover = _agScrollDiagnosticActive()?.scenario === 'A' ? '' : (_agIsUsableCardCover(rawCover, game) ? _agAttrUrl(rawCover) : '');
+    const coverReady = !!cover && record?.status === 'ready' && record.localUrl === rawCover;
 
     const card = document.createElement('div');
     card.className = `game-card agc-card${isMulti ? ' agc-multi' : ''}`;
     card.dataset.id = safeId;
-    card.dataset.title = (game.title || '').toLowerCase();
-    card.dataset.platforms = (game.platforms || []).join(',');
-    card.dataset.allIds = JSON.stringify(game.allIds || {});
+    card.dataset.cardInstanceToken = String(Date.now()) + '-' + Math.random().toString(36).slice(2);
+    card.dataset.bindingToken = '1';
+    card._vsBoundGame = game;
     card.dataset.artworkSource = coverDecision.source || '';
     card.dataset.artworkReason = coverDecision.reason || '';
 
@@ -2871,14 +5001,12 @@ function _vsBuildCard(game) {
             </div>
             <img alt="${(game.title || '').replace(/"/g, '&quot;')}"
                  class="game-card-img native-lazy-load"
-                 ${cover ? `src="${cover}"` : ''}
-                 decoding="async"
-                 onload="this.classList.add('loaded')"
-                 onerror="this.onerror=null;this.style.display='none'">
+                 decoding="async" style="display:none">
             <div class="agc-badges-strip">${badgesHtml}</div>
             <div class="agc-top-gradient"></div>
         </div>
         <div class="game-card-info">
+            ${typeof _gameCardUpdateIndicatorHtml === 'function' ? _gameCardUpdateIndicatorHtml(game) : ''}
             <div class="game-card-title">${game.title || ''}</div>
         </div>`;
     
@@ -2890,10 +5018,20 @@ function _vsBuildCard(game) {
     card.dataset.titleKey = String(game.title || game.name || game.appName || '')
         .toLowerCase()
         .replace(/[^a-z0-9]/g, '');
+    card._vsLastCoverApplied = false;
+    _vsCardRefs(card);
 
+    _agScrollDiagnosticCount('virtual.cardClickListeners');
     card.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (typeof openGameDetails === 'function') openGameDetails(safeId);
+        const currentId = String(_agGameKey(card._vsBoundGame) || card.dataset.id || '');
+        if (currentId && typeof openGameDetails === 'function') openGameDetails(currentId);
+    });
+    card.addEventListener('contextmenu', (e) => {
+        const currentId = String(_agGameKey(card._vsBoundGame) || card.dataset.id || '');
+        if (!currentId || typeof showContextMenu !== 'function') return;
+        e.preventDefault();
+        showContextMenu(e.pageX, e.pageY, currentId, card._vsBoundGame?.title || card.dataset.gameTitle || currentId);
     });
 
     // For installed synced entries, stamp the local DB ID onto the game object so
@@ -2965,11 +5103,18 @@ async function _agHydrateCachedCoversIntoAllGames() {
         ].filter(Boolean).forEach(k => coverByKey.set(String(k), cover));
     };
 
-    rawGames.forEach(g => {
+    const canUseHydratedCover = async (cover) => {
+        if (!cover || !String(cover).startsWith('file://')) return false;
+        if (!_agIsManagedArtworkCacheUrl(cover)) return true;
+        return _agVerifyLocalArtworkUrl(cover);
+    };
+
+    for (const g of rawGames) {
         const cover = g.coverUrl || g.image || g.defaultImage;
-        if (!cover || !String(cover).startsWith('file://')) return;
+        if (!await canUseHydratedCover(cover)) continue;
+        if (_agIsManagedArtworkCacheUrl(cover)) window.__agVerifiedArtworkUrls.add(cover);
         addKeys(g, cover);
-    });
+    }
 
     const patchList = (list) => {
         let changed = 0;
@@ -3028,7 +5173,7 @@ if (g.customArtworkLocked === true && (g.artworkSource === 'settings' || g.artwo
             const card = window._vs.cardCache.get(gameId);
             if (card && game.coverUrl) {
                 _vsApplyCoverToCard(card, game, true);
-                window._vs._coverQueued.add(gameId);
+                window._vs._coverQueued.delete(gameId);
                 patchedCards++;
             }
         });
@@ -3049,7 +5194,14 @@ if (g.customArtworkLocked === true && (g.artworkSource === 'settings' || g.artwo
 /** Measure columns and row height from the live grid */
 function _vsMeasure(grid) {
     // cols: count how many columns CSS auto-fill created by checking card widths
+    const view = document.getElementById('allGamesView');
     const gridW = grid.clientWidth;
+    const rectW = grid.getBoundingClientRect().width;
+    const visible = window._agDisplayPrefs?.viewMode === 'grid'
+        && (typeof currentView === 'undefined' || currentView === 'all-games')
+        && view?.style.display !== 'none'
+        && getComputedStyle(grid).display !== 'none';
+    if (!visible || gridW < 80 || rectW < 80) return null;
     // Read density from display prefs so card size actually changes
     const densityMinW = { compact: 120, normal: 160, large: 210 };
     const gridDensity = (window._agDisplayPrefs && window._agDisplayPrefs.gridDensity) || 'normal';
@@ -3062,45 +5214,48 @@ function _vsMeasure(grid) {
     return { cols, rowH };
 }
 function _agHasLocalCover(game) {
-    return [
-        game?.coverUrl,
-        game?.image,
-        game?.defaultImage,
-    ].some((u) => _agIsUsableCardCover(u, game));
+    if (_agApplyReadyArtworkToGame(game)) return true;
+    return [game?.coverUrl, game?.image, game?.defaultImage]
+        .some((u) => _agIsUsableCardCover(u, game));
 }
+
 
 function _agNeedsLocalCoverWork(game) {
     if (!game) return false;
+    if (window.__agForegroundArtworkKeys instanceof Set
+        && window.__agForegroundArtworkKeys.has(_agArtworkKey(game))) return false;
+    const record = _agArtworkRecordFor(game);
+    if (record?.status === 'ready' && record.localUrl) return false;
+    if (record?.status === 'terminal_error' || record?.status === 'no_source') return false;
+    if (Number(record?.attempts || 0) >= 5) return false;
+    if (record?.promise) return false;
+    if (record?.status === 'queued' || record?.status === 'resolving' || record?.status === 'downloading' || record?.status === 'verifying') return false;
+    if (record?.status === 'retry_wait' && record.nextRetryAt > Date.now()) return false;
     if (_agHasLocalCover(game)) return false;
-    if (game._agCoverPipelineDone) return false;
-    if (game._agCoverInFlight) return false;
     return true;
 }
+
 
 function _agCanQueueCover(game, gameId) {
     if (!_agNeedsLocalCoverWork(game)) return false;
-
+    const record = _agArtworkRecordFor(game);
     const now = Date.now();
-    const lastQueuedAt = Number(game._agQueuedAt || 0);
-
-    // لو لسه متضاف قريب، بلاش loop سريع
-    if (window._vs?._coverQueued?.has(gameId) && now - lastQueuedAt < 2500) {
-        return false;
-    }
-
-    // لو stuck في queued بس مش inFlight ومش done، افتحه يتجرب تاني
-    if (window._vs?._coverQueued?.has(gameId)) {
-        window._vs._coverQueued.delete(gameId);
-    }
-
+    const lastQueuedAt = Number(record?.lastQueuedAt || game._agQueuedAt || 0);
+    if (window._vs?._coverQueued?.has(gameId) && now - lastQueuedAt < 2500) return false;
+    if (window._vs?._coverQueued?.has(gameId)) window._vs._coverQueued.delete(gameId);
+    if (record) record.lastQueuedAt = now;
     game._agQueuedAt = now;
     window._vs?._coverQueued?.add(gameId);
-
     return true;
 }
 
+
 /** Main render function — called on every scroll tick */
 function _vsRender(forceRemeasure = false, reason = 'unknown') {
+    const __scrollDiagRenderStart = _agScrollDiagnosticActive() ? performance.now() : 0;
+    _agArtworkDiagnosticsBump('virtualRenderCount');
+    if (forceRemeasure) _agScrollDiagnosticCount('virtual.fullGridRenders');
+    if (forceRemeasure) _agArtworkDiagnosticsBump('forcedVirtualRenderCount');
     if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
         const _dbgGrid     = document.getElementById('allGamesGrid');
         const _dbgScroller = _vs.scroller || document.getElementById('mainContentArea');
@@ -3116,23 +5271,32 @@ function _vsRender(forceRemeasure = false, reason = 'unknown') {
     const grid = document.getElementById('allGamesGrid');
     const scroller = _vs.scroller || document.getElementById('mainContentArea');
     if (!grid || !scroller || _vs.items.length === 0) return;
+    const view = document.getElementById('allGamesView');
+    if (window._agDisplayPrefs?.viewMode !== 'grid'
+        || (typeof currentView !== 'undefined' && currentView !== 'all-games')
+        || view?.style.display === 'none'
+        || getComputedStyle(grid).display === 'none') return;
 
     // Measure on first render or when forced (filter/resize)
     if (forceRemeasure || _vs.cols === 0) {
         const m = _vsMeasure(grid);
+        if (!m) {
+            _vs.cols = 0;
+            _vs.rowH = 0;
+            _vs._gridTopDirty = true;
+            return;
+        }
         _vs.cols = m.cols;
         _vs.rowH = m.rowH;
         _vs.scroller = scroller;
 
         // Set grid to position:relative with total phantom height
         const totalRows = Math.ceil(_vs.items.length / _vs.cols);
-        grid.style.position = 'relative';
-        grid.style.height = (totalRows * _vs.rowH - _vs.gap) + 'px';
-        grid.style.display = 'block'; // override CSS grid temporarily for absolute positioning
+        _vs.totalHeight = _agComputeVirtualTotalHeight(_vs.items.length);
+        _agApplyVirtualGridGeometry(grid);
 
-        // Detach all row wrappers from DOM but keep cardCache alive
-        _vs.cardPool.forEach(rowEl => rowEl.remove());
-        _vs.cardPool.clear();
+        // Detach row wrappers while preserving reusable card DOM nodes.
+        _vsReleaseAllRows();
         _vs.renderedStart = -1;
         _vs.renderedEnd = -1;
 
@@ -3151,22 +5315,26 @@ function _vsRender(forceRemeasure = false, reason = 'unknown') {
     }
 
     const totalRows = Math.ceil(_vs.items.length / _vs.cols);
+    _vs.totalHeight = _agComputeVirtualTotalHeight(_vs.items.length);
+    _agApplyVirtualGridGeometry(grid);
     const scrollTop = scroller.scrollTop;
 
     // ── Scroll-speed tracking ─────────────────────────────────────────────────
-    const scrollDelta = Math.abs(scrollTop - _vs._lastScrollTop);
+    const previousScrollTop = Number(_vs._lastScrollTop || 0);
+    const scrollDirection = scrollTop > previousScrollTop ? 1 : (scrollTop < previousScrollTop ? -1 : (_vs._lastScrollDirection || 1));
+    _vs._lastScrollDirection = scrollDirection;
+    const scrollDelta = Math.abs(scrollTop - previousScrollTop);
     _vs._lastScrollTop = scrollTop;
     // Exponential moving average — fast scroll → high speed, settle → decays to 0
     _vs._scrollSpeed = _vs._scrollSpeed * 0.6 + scrollDelta * 0.4;
-    const isFastScrolling = _vs._scrollSpeed > 40; // px/frame threshold
+    if (!_vs._isFastScrolling && _vs._scrollSpeed > AG_VS_FAST_ENTER_PX) _vs._isFastScrolling = true;
+    else if (_vs._isFastScrolling && _vs._scrollSpeed < AG_VS_FAST_LEAVE_PX) _vs._isFastScrolling = false;
+    const isFastScrolling = _vs._isFastScrolling;
 
     const viewportH = scroller.clientHeight;
 
-    // ── Adaptive buffer: smaller during fast scroll to reduce DOM work ────────
-    const rowsPerViewport = Math.ceil(viewportH / (_vs.rowH || 1));
-    const BUFFER_ROWS = isFastScrolling
-        ? Math.max(2, Math.ceil(rowsPerViewport * 0.5))   // lean buffer while flying
-        : Math.max(8, Math.ceil(rowsPerViewport * 1.5));   // generous buffer when settled
+    // Stable buffer with hysteresis: avoid 2↔8+ row expansion thrash while scrolling.
+    const BUFFER_ROWS = isFastScrolling ? AG_VS_FAST_BUFFER_ROWS : AG_VS_NORMAL_BUFFER_ROWS;
 
     // Which rows are visible?
     const relScroll = Math.max(0, scrollTop - _vs._gridTop);
@@ -3176,21 +5344,53 @@ function _vsRender(forceRemeasure = false, reason = 'unknown') {
     const firstVisibleRow = Math.max(0, firstVisRow - BUFFER_ROWS);
     const lastVisibleRow  = Math.min(totalRows - 1, lastVisRow + BUFFER_ROWS);
 
-    // Nothing changed — skip all DOM work
-    if (firstVisibleRow === _vs.renderedStart && lastVisibleRow === _vs.renderedEnd) return;
+    // Nothing changed — skip all DOM work. Scroll-settle is tracked in _vsOnScroll().
+    if (firstVisibleRow === _vs.renderedStart && lastVisibleRow === _vs.renderedEnd) {
+        _agRefreshArtworkDiagnostics();
+        _agScrollDiagnosticCount('virtual.skippedRangePatches');
+        _agLogScrollPerf({
+            reason,
+            rowMounts: 0,
+            rowRemovals: 0,
+            bufferRows: BUFFER_ROWS,
+            scrollSpeed: Math.round(_vs._scrollSpeed),
+            fast: isFastScrolling,
+            skipped: true,
+            liveRows: _vs.cardPool.size,
+            cardCacheSize: _vs.cardCache.size,
+            totalHeight: Math.round(_vs.totalHeight || 0),
+        });
+        if (!isFastScrolling) {
+            _agScheduleColdCoverPriorityBoost(
+                _vsCollectGamesInRows(firstVisRow, lastVisRow),
+                [],
+                []
+            );
+        }
+        if (__scrollDiagRenderStart) _agScrollDiagnosticPush('renderDurations', performance.now() - __scrollDiagRenderStart);
+        return;
+    }
+
+    let rowRemovals = 0;
+    let rowMounts = 0;
 
     // ── Remove rows that scrolled out of the buffer window ───────────────────
     for (const [rowIdx, rowEl] of _vs.cardPool) {
         if (rowIdx < firstVisibleRow || rowIdx > lastVisibleRow) {
-            rowEl.remove();
+            _vsReleaseRow(rowIdx, rowEl);
             _vs.cardPool.delete(rowIdx);
+            rowRemovals++;
         }
     }
+
+    if (rowRemovals) _agScrollDiagnosticCount('virtual.rowUnmounts', rowRemovals);
 
     // ── Mount rows that scrolled into the buffer window ───────────────────────
     // Collect games needing cover, separated by tier — queued AFTER the loop.
     const viewportNeedCover = [];   // Tier 1 — actually visible
     const bufferNeedCover   = [];   // Tier 2 — in render buffer but not visible
+
+    const rowFragment = document.createDocumentFragment();
 
     for (let row = firstVisibleRow; row <= lastVisibleRow; row++) {
         if (_vs.cardPool.has(row)) {
@@ -3221,44 +5421,60 @@ function _vsRender(forceRemeasure = false, reason = 'unknown') {
 
         const isVisibleRow = row >= firstVisRow && row <= lastVisRow;
 
+        const boundKeys = [];
         rowGames.forEach((game) => {
-        const gameId = String(game.id || game.appName || game.title || '');
+            const gameId = _agGameKey(game);
+            const card = _vsAcquireCard(game);
+            const coverApplied = !!card._vsLastCoverApplied;
 
-        // Reuse cached card DOM node
-        let card = _vs.cardCache.get(gameId);
-        if (!card) {
-            card = _vsBuildCard(game);
-            _vs.cardCache.set(gameId, card);
-        }
+            rowEl.appendChild(card);
+            boundKeys.push(gameId);
 
-        // مهم جدًا:
-        // حتى لو الكارت cached أو gameId موجود في _coverQueued،
-        // لو الداتا دلوقتي فيها coverUrl لازم نركبه على الـ DOM.
-        const coverApplied = _vsApplyCoverToCard(card, game, false);
-
-        rowEl.appendChild(card);
-
-        if (coverApplied) {
-            _vs._coverQueued.add(gameId);
-            return;
-        }
-
-        // Collect cover work — do NOT queue inside this hot loop
-        if (_agCanQueueCover(game, gameId)) {
-            if (isVisibleRow) {
-                viewportNeedCover.push(game);
-            } else {
-                bufferNeedCover.push(game);
+            if (coverApplied) {
+                _vs._coverQueued.delete(gameId);
+                return;
             }
-        }
-    });
 
-        grid.appendChild(rowEl);
+            // Collect cover work — do NOT queue inside this hot loop
+            if (_agCanQueueCover(game, gameId)) {
+                if (isVisibleRow) {
+                    viewportNeedCover.push(game);
+                } else {
+                    bufferNeedCover.push(game);
+                }
+            }
+        });
+        _vs.rowBindings.set(row, boundKeys);
+
+        rowFragment.appendChild(rowEl);
         _vs.cardPool.set(row, rowEl);
+        rowMounts++;
     }
+
+    if (rowMounts) grid.appendChild(rowFragment);
 
     _vs.renderedStart = firstVisibleRow;
     _vs.renderedEnd   = lastVisibleRow;
+    if (rowMounts || rowRemovals) {
+        _agScrollDiagnosticCount('virtual.incrementalRangePatches');
+        _agScrollDiagnosticCount('virtual.rowMounts', rowMounts);
+        const activeDiag = _agScrollDiagnosticActive();
+        if (activeDiag) {
+            activeDiag.max.rowPatchSize = Math.max(activeDiag.max.rowPatchSize, rowMounts + rowRemovals);
+            activeDiag.ranges.push({
+                atMs: Math.round(performance.now() - activeDiag.startedAt),
+                firstVisRow,
+                lastVisRow,
+                firstVisibleRow,
+                lastVisibleRow,
+                rowMounts,
+                rowRemovals,
+                cardPoolSize: _vs.cardPool.size,
+                mountedCards: document.getElementById('allGamesGrid')?.querySelectorAll?.('.game-card')?.length || 0,
+                fast: isFastScrolling,
+            });
+        }
+    }
 
     // ── Defer all cover queue work outside the hot render path ───────────────
     if (viewportNeedCover.length || bufferNeedCover.length) {
@@ -3271,17 +5487,128 @@ function _vsRender(forceRemeasure = false, reason = 'unknown') {
         }
     }
 
-    // ── Scroll-settle timer: fire richer prefetch once user stops scrolling ───
-    if (_vs._scrollSettleTimer) clearTimeout(_vs._scrollSettleTimer);
-    _vs._scrollSettleTimer = setTimeout(() => {
-        _vs._isScrolling = false;
-        _vs._scrollSpeed = 0;
-        _vsOnScrollSettle();
-    }, 150);
-    _vs._isScrolling = true;
+    if (_vs.cardCache.size !== _vs.visibleCardsByGameId.size) {
+        _agBoundCardCacheToMountedRows();
+    }
+
+    if (!isFastScrolling) {
+        _agScheduleColdCoverPriorityBoost(
+            _vsCollectGamesInRows(firstVisRow, lastVisRow),
+            [
+                ..._vsCollectGamesInRows(firstVisibleRow, firstVisRow - 1),
+                ..._vsCollectGamesInRows(lastVisRow + 1, lastVisibleRow),
+            ],
+            []
+        );
+    }
+
+    const nearRows = isFastScrolling ? 1 : 2;
+    if (scrollDirection >= 0) {
+        _vsBindCoversForRows(firstVisRow, Math.min(totalRows - 1, lastVisRow + nearRows), firstVisRow, lastVisRow);
+    } else {
+        _vsBindCoversForRows(Math.max(0, firstVisRow - nearRows), lastVisRow, firstVisRow, lastVisRow);
+    }
+
+    _agRefreshArtworkDiagnostics();
+    _agLogScrollPerf({
+        reason,
+        rowMounts,
+        rowRemovals,
+        bufferRows: BUFFER_ROWS,
+        scrollSpeed: Math.round(_vs._scrollSpeed),
+        fast: isFastScrolling,
+        range: `${firstVisibleRow}-${lastVisibleRow}`,
+        liveRows: _vs.cardPool.size,
+        cardCacheSize: _vs.cardCache.size,
+        visibleCards: _vs.visibleCardsByGameId.size,
+        totalHeight: Math.round(_vs.totalHeight || 0),
+    });
+    if (__scrollDiagRenderStart) _agScrollDiagnosticPush('renderDurations', performance.now() - __scrollDiagRenderStart);
 }
 window._vsRender = _vsRender;
 
+function _vsCollectGamesInRows(fromRow, toRow) {
+    const out = [];
+    if (!_vs.items.length || !_vs.cols) return out;
+    const first = Math.max(0, Number(fromRow) || 0);
+    const last = Math.min(Math.ceil(_vs.items.length / _vs.cols) - 1, Number(toRow) || 0);
+    for (let row = first; row <= last; row++) {
+        const startIdx = row * _vs.cols;
+        const endIdx = Math.min(_vs.items.length, startIdx + _vs.cols);
+        for (let i = startIdx; i < endIdx; i++) {
+            const game = _vs.items[i];
+            if (game && !_agHasLocalCover(game)) out.push(game);
+        }
+    }
+    return out;
+}
+
+function _agScheduleColdCoverPriorityBoost(viewportGames = [], bufferGames = [], prefetchGames = []) {
+    if (!window.electronAPI?.boostColdCoverBootstrap) return;
+    const compact = (items) => {
+        const seen = new Set();
+        const out = [];
+        for (const game of Array.isArray(items) ? items : []) {
+            const key = _agArtworkKey(game) || _agGameKey(game);
+            if (!key || seen.has(key) || _agHasLocalCover(game)) continue;
+            seen.add(key);
+            out.push(game);
+        }
+        return out;
+    };
+    const visible = compact(viewportGames);
+    const buffer = compact(bufferGames);
+    const prefetch = compact(prefetchGames);
+    if (!visible.length && !buffer.length && !prefetch.length) return;
+
+    window.__agColdCoverBoost = window.__agColdCoverBoost || { timer: null, visible: new Map(), buffer: new Map(), prefetch: new Map(), signature: '' };
+    const state = window.__agColdCoverBoost;
+    visible.forEach(game => state.visible.set(_agArtworkKey(game) || _agGameKey(game), game));
+    buffer.forEach(game => {
+        const key = _agArtworkKey(game) || _agGameKey(game);
+        if (!state.visible.has(key)) state.buffer.set(key, game);
+    });
+    prefetch.forEach(game => {
+        const key = _agArtworkKey(game) || _agGameKey(game);
+        if (!state.visible.has(key) && !state.buffer.has(key)) state.prefetch.set(key, game);
+    });
+
+    const signature = [state.visible, state.buffer, state.prefetch]
+        .map(map => Array.from(map.keys()).sort().join(','))
+        .join('|');
+    if (signature === state.signature && state.timer) return;
+    state.signature = signature;
+    if (state.timer) clearTimeout(state.timer);
+    state.timer = setTimeout(() => {
+        state.timer = null;
+        const flushVisible = Array.from(state.visible.values());
+        const flushBuffer = Array.from(state.buffer.values());
+        const flushPrefetch = Array.from(state.prefetch.values());
+        state.visible.clear();
+        state.buffer.clear();
+        state.prefetch.clear();
+        const restoreThenBoost = async (games, priority) => {
+            if (!games.length) return;
+            // A bootstrap cache hit does not emit a download-completed event.
+            // Restore these rows directly instead of waiting for sequential
+            // whole-library hydration to eventually reach the viewport.
+            try {
+                if (await _agApplyBulkCachedCovers(games, `all-games-${priority}-cache`)) {
+                    _agRebindCachedCards(games);
+                }
+            } catch (_) { /* A failed cache lookup must not prevent downloading. */ }
+            const missing = games.filter(game => !_agHasLocalCover(game));
+            if (missing.length) await window.electronAPI.boostColdCoverBootstrap(missing, {
+                priority, reason: `all-games-${priority}-artwork`,
+            });
+        };
+        // Finish the viewport lookup before admitting lower-priority reads.
+        // Concurrent buffer/prefetch IPC used to delay the visible response.
+        restoreThenBoost(flushVisible, 'visible').catch(() => {})
+            .then(() => restoreThenBoost(flushBuffer, 'buffer')).catch(() => {})
+            .then(() => restoreThenBoost(flushPrefetch, 'prefetch')).catch(() => {});
+    }, 75);
+}
 /**
  * Defer cover work out of the scroll frame.
  * viewportNeedCover → Tier 1 (viewport queue) via tight setTimeout(0)
@@ -3320,7 +5647,7 @@ function _vsOnScrollSettle() {
     const scrollTop = scroller.scrollTop;
     const viewportH = scroller.clientHeight;
     const rowsPerViewport = Math.ceil(viewportH / (_vs.rowH || 1));
-    const BUFFER_ROWS  = Math.max(8, Math.ceil(rowsPerViewport * 1.5));
+    const BUFFER_ROWS  = AG_VS_NORMAL_BUFFER_ROWS;
     const PREFETCH_ROWS = Math.max(6, Math.ceil(rowsPerViewport * 1.0));
 
     const relScroll    = Math.max(0, scrollTop - _vs._gridTop);
@@ -3358,6 +5685,18 @@ function _vsOnScrollSettle() {
     collect(firstPrefRow, firstBufRow - 1, prefetchNeedCover);
     collect(lastBufRow  + 1, lastPrefRow,  prefetchNeedCover);
 
+    _agScheduleColdCoverPriorityBoost(
+        _vsCollectGamesInRows(firstVisRow, lastVisRow),
+        [
+            ..._vsCollectGamesInRows(firstBufRow, firstVisRow - 1),
+            ..._vsCollectGamesInRows(lastVisRow + 1, lastBufRow),
+        ],
+        [
+            ..._vsCollectGamesInRows(firstPrefRow, firstBufRow - 1),
+            ..._vsCollectGamesInRows(lastBufRow + 1, lastPrefRow),
+        ]
+    );
+
     // Viewport fires immediately; buffer/prefetch deferred to idle
     if (viewportNeedCover.length) {
         setTimeout(() => _agEnqueueByPriority(viewportNeedCover, null, null), 0);
@@ -3374,7 +5713,32 @@ function _vsOnScrollSettle() {
 
 /** Throttled scroll handler using rAF */
 function _vsOnScroll() {
-    if (_vs.raf) return;
+    const __scrollDiagHandlerStart = _agScrollDiagnosticActive() ? performance.now() : 0;
+    _agScrollDiagnosticCount('scroll.handlerInvocations');
+    _vs._isScrolling = true;
+    _agSetActiveScrollState(true);
+    if (_vs._scrollSettleTimer) clearTimeout(_vs._scrollSettleTimer);
+    _vs._scrollSettleTimer = setTimeout(() => {
+        _vs._isScrolling = false;
+        _vs._isFastScrolling = false;
+        _vs._scrollSpeed = 0;
+        _agSetActiveScrollState(false);
+        _vsOnScrollSettle();
+    }, AG_VS_SCROLL_SETTLE_MS);
+
+    if (_vs.raf) {
+        if (__scrollDiagHandlerStart) {
+            const __dt = performance.now() - __scrollDiagHandlerStart;
+            _agScrollDiagnosticCount('scroll.handlerTotalMs', __dt);
+            _agScrollDiagnosticPush('scrollHandlerDurations', __dt);
+        }
+        return;
+    }
+    if (__scrollDiagHandlerStart) {
+        const __dt = performance.now() - __scrollDiagHandlerStart;
+        _agScrollDiagnosticCount('scroll.handlerTotalMs', __dt);
+        _agScrollDiagnosticPush('scrollHandlerDurations', __dt);
+    }
     _vs.raf = requestAnimationFrame(() => {
         _vs.raf = null;
         _vsRender(false, 'scroll');
@@ -3383,56 +5747,96 @@ function _vsOnScroll() {
 
 /** Initialize or reinitialize virtual scroll with a new dataset */
 function _vsInit(items, resetScroll = true) {
-    const prevItemIds = new Set(_vs.items.map(g => String(g.id || g.appName || g.title || '')));
-    const newItemIds  = new Set(items.map(g => String(g.id || g.appName || g.title || '')));
+    items = Array.isArray(items) ? items : [];
+    const prevKeys = _agItemKeyList(_vs.items);
+    const newKeys = _agItemKeyList(items);
+    const sameOrderedDataset = prevKeys.length === newKeys.length && prevKeys.every((id, idx) => id === newKeys[idx]);
+    const anchor = resetScroll ? null : _agCaptureVirtualScrollAnchor(_vs.items);
 
-    // Only wipe the card-level cache if the dataset changed significantly
-    // (e.g. filter changed). On pure scroll re-inits keep the cache intact.
-    const datasetChanged = prevItemIds.size !== newItemIds.size ||
-        [...newItemIds].some(id => !prevItemIds.has(id));
-
-    if (datasetChanged) {
-        // Remove cached cards that no longer appear in the new dataset
-        for (const [id, card] of _vs.cardCache) {
-            if (!newItemIds.has(id)) {
-                _vs.cardCache.delete(id);
-                _vs._coverQueued.delete(id);
-            }
-        }
-    }
-
+    _agPruneCardCacheForItems(items);
     _vs.items = items;
-    _vs.cols = 0; // force remeasure
-    _vs.renderedStart = -1;
-    _vs.renderedEnd = -1;
-    _vs.cardPool.forEach(rowEl => rowEl.remove());
-    _vs.cardPool.clear();
-    // Reset scroll-speed tracking so settle logic starts fresh
-    _vs._lastScrollTop = 0;
-    _vs._scrollSpeed = 0;
-    _vs._isScrolling = false;
-    _vs._gridTopDirty = true;
-    if (_vs._scrollSettleTimer) { clearTimeout(_vs._scrollSettleTimer); _vs._scrollSettleTimer = null; }
+    _vs.dataRevision += 1;
+    _vs.lifecycle = items.length ? 'warm' : 'uninitialized';
+    _vs.scroller = _vs.scroller || document.getElementById('mainContentArea');
 
     const grid = document.getElementById('allGamesGrid');
     const scroller = document.getElementById('mainContentArea');
     if (!grid || !scroller) return;
+    _vs.scroller = scroller;
 
-    // Attach scroll listener only once
     if (!_vs._scrollBound) {
         scroller.addEventListener('scroll', _vsOnScroll, { passive: true });
         window.addEventListener('resize', () => {
-            // On resize, invalidate cached gridTop and remeasure
             _vs._gridTopDirty = true;
-            if (_vs.items.length > 0) _vsRender(true, 'window-resize');
+            const view = document.getElementById('allGamesView');
+            if (_vs.items.length > 0
+                && window._agDisplayPrefs?.viewMode === 'grid'
+                && (typeof currentView === 'undefined' || currentView === 'all-games')
+                && view?.style.display !== 'none') {
+                _vsRender(true, 'window-resize');
+            }
         });
         _vs._scrollBound = true;
     }
 
-    if (resetScroll) scroller.scrollTop = 0;
+    if (!items.length) {
+        _vs.totalHeight = 0;
+        _vs.renderedStart = -1;
+        _vs.renderedEnd = -1;
+        _vsReleaseAllRows();
+        return;
+    }
 
-    // Initial render
-    _vsRender(true, 'vs-init');
+    grid.classList.remove('ag-empty-mode', 'ag-ready-empty-grid');
+    grid.style.position = 'relative';
+    if (window._agDisplayPrefs?.viewMode !== 'grid') return;
+
+    const needsMeasure = resetScroll || _vs.cols === 0 || _vs.rowH === 0;
+    if (needsMeasure) {
+        const m = _vsMeasure(grid);
+        if (!m) {
+            _vs.cols = 0;
+            _vs.rowH = 0;
+            _vs._gridTopDirty = true;
+            return;
+        }
+        _vs.cols = m.cols;
+        _vs.rowH = m.rowH;
+        _vs._gridTopDirty = true;
+    }
+
+    _vs.totalHeight = _agComputeVirtualTotalHeight(items.length);
+    _agApplyVirtualGridGeometry(grid);
+
+    if (_vs._gridTopDirty) {
+        _vs._gridTop = grid.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop;
+        _vs._gridTopDirty = false;
+    }
+
+    if (sameOrderedDataset && !resetScroll) {
+        _agRebindCachedCards(items);
+        _agEnsureVirtualGridIntegrity('vs-update-same-dataset');
+        _vsRender(false, 'vs-update-same-dataset');
+        return;
+    }
+
+    _vsReleaseAllRows();
+    _vs.renderedStart = -1;
+    _vs.renderedEnd = -1;
+    _vs._lastScrollTop = scroller.scrollTop || 0;
+    _vs._scrollSpeed = 0;
+    _vs._isScrolling = false;
+    _vs._isFastScrolling = false;
+    _agSetActiveScrollState(false);
+    if (_vs._scrollSettleTimer) { clearTimeout(_vs._scrollSettleTimer); _vs._scrollSettleTimer = null; }
+
+    if (resetScroll) {
+        scroller.scrollTop = 0;
+    } else {
+        _agRestoreVirtualScrollAnchor(anchor, items);
+    }
+
+    _vsRender(false, 'vs-init');
 }
 
 /** The main entry point — replaces old _renderAllGamesGrid */
@@ -3446,41 +5850,29 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
         );
     }
 
-    // Capture current rendered height before resetting so we can hold a floor
-    // and prevent the grid collapsing to zero during the innerHTML swap.
-    const previousHeight = grid.offsetHeight || parseFloat(grid.style.minHeight) || 0;
-
-    // Reset grid to normal state (clear old virtual DOM)
-    // Also removes ag-empty-mode if we're coming from the empty onboarding state
-    _agResetAllGamesGridMode();
-
-    // Restore a height floor so the page does not jump while content is swapped
-    if (previousHeight > 0) grid.style.minHeight = previousHeight + 'px';
-
-    grid.innerHTML = '';
-    grid.style.position = 'relative';
-    grid.style.height = '';
+    const hasGames = Array.isArray(games) && games.length > 0;
+    _agResetAllGamesGridMode({ preserveVirtualGrid: hasGames && _agShouldPreserveVirtualGrid() });
     grid.classList.remove('ag-ready-empty-grid');
-    _vs.cardPool.clear();
-    _vs.cols = 0;
-    _vs._gridTopDirty = true;
 
-    // Full dataset wipe (e.g. navigating away and back): clear card cache and cover queue tracker.
-    // On filter/sort changes we keep the cache so cards aren't rebuilt and images don't reload.
     if (fullReset) {
+        _vsReleaseAllRows();
+        _vs.freeCards.length = 0;
         _vs.cardCache.clear();
         _vs._coverQueued.clear();
     }
 
-    if (!games || games.length === 0) {
+    if (!hasGames) {
         if (window._agNoLinkedAccounts) return;
         grid.style.minHeight = '';
+        grid.style.height = '';
+        grid.style.position = '';
         _vs.items = [];
+        _vs.totalHeight = 0;
+        _vs.lifecycle = 'uninitialized';
         _vs.cols = 0;
         _vs.renderedStart = -1;
         _vs.renderedEnd = -1;
-        _vs.cardPool.forEach(rowEl => rowEl.remove());
-        _vs.cardPool.clear();
+        _vsReleaseAllRows();
         _vs._gridTopDirty = true;
         if (_vs._scrollSettleTimer) {
             clearTimeout(_vs._scrollSettleTimer);
@@ -3495,19 +5887,36 @@ function _renderAllGamesGrid(games, resetScroll = true, fullReset = false) {
                         <line x1="8" y1="12" x2="16" y2="12"></line>
                     </svg>
                     <div class="empty-title">... It's quiet in here ...</div>
-                    <div class="empty-subtext">No ready-to-install games found. Try changing your filters or connect Steam or Epic accounts.</div>
+                    <div class="empty-subtext">No ready-to-install games found. Try changing your filters or sync a connected library.</div>
+                    <div class="ag-inline-empty-actions">
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('steam')">Sync Steam</button>
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('epic')">Sync Epic</button>
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('gog')">Sync GOG</button>
+                    </div>
                 </div>
             `;
         } else {
-            grid.innerHTML = '<div class="accounts-empty ag-inline-empty"><p>No games found.</p></div>';
+            grid.innerHTML = `
+                <div class="empty-state ag-inline-empty">
+                    <div class="empty-title">No games found.</div>
+                    <div class="empty-subtext">Sync a connected library to refresh your games.</div>
+                    <div class="ag-inline-empty-actions">
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('steam')">Sync Steam</button>
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('epic')">Sync Epic</button>
+                        <button class="ag-pc-btn" onclick="syncEmptyLibraryPlatform('gog')">Sync GOG</button>
+                    </div>
+                </div>`;
         }
         _updateAgCount(0);
         return;
     }
 
+    if (grid.querySelector('.ag-route-skeleton, .ag-stable-loading-panel, .accounts-loading, .accounts-empty, .empty-state')) {
+        grid.innerHTML = '';
+    }
+
     _updateAgCount(games.length);
     _vsInit(games, resetScroll);
-    // Release layout lock after virtual scroll initialises first batch
     _agUnlockAllGamesLayout();
 }
 
@@ -3520,6 +5929,7 @@ function _updateAgCount(n) {
 window._agState = { platform: 'all', sort: 'title_asc', search: '', account: 'all' };
 
 window.setAgPlatformFilter = function(platform, btn) {
+    window.electronAPI?.trackFeatureEvent?.('filter_changed', { feature: 'all_games', filter: 'platform', platform }).catch?.(() => {});
     window._agState.platform = platform;
     document.querySelectorAll('.ag-pill').forEach(p => p.classList.remove('active'));
     if (btn) btn.classList.add('active');
@@ -3527,11 +5937,13 @@ window.setAgPlatformFilter = function(platform, btn) {
 };
 
 window.setAgSort = function(value) {
+    window.electronAPI?.trackFeatureEvent?.('sort_changed', { feature: 'all_games', sort: value }).catch?.(() => {});
     window._agState.sort = value;
     _applyAgFilters();
 };
 
 window.setAgAccountFilter = function(value, labelText) {
+    window.electronAPI?.trackFeatureEvent?.('filter_changed', { feature: 'all_games', filter: 'account', mode: value === 'all' ? 'all' : 'single' }).catch?.(() => {});
     const normalizedValue = value || 'all';
     window._agState.account = normalizedValue;
     const selectedText = document.getElementById('selectedAgAccountText');
@@ -3565,6 +5977,10 @@ window.filterAllGames = function() {
     // Update search clear button visibility
     if (typeof window._agUpdateSearchClear === 'function') window._agUpdateSearchClear();
     _applyAgFilters();
+    clearTimeout(window._agAnalyticsSearchTimer);
+    window._agAnalyticsSearchTimer = setTimeout(() => {
+        window.electronAPI?.trackFeatureEvent?.('search_used', { feature: 'all_games', query_present: Boolean(window._agState.search) }).catch?.(() => {});
+    }, 700);
 };
 
 // ── Installed-resolution map ──────────────────────────────────────────────────
@@ -3721,12 +6137,22 @@ function _agBuildFilteredPool({ cache, useCanonical }) {
             }
             return Number(game?.lastQualifiedPlayed || game?.lastPlayed || 0) || 0;
         };
+        const compareTitles = (a, b) => String(a.title || a.name || '').localeCompare(String(b.title || b.name || ''));
+        // These resolvers can perform alias/local-install matching. Calling them
+        // from the comparator repeats that work O(n log n) times and previously
+        // degraded into multi-second sorts for large libraries.
+        const metrics = new Map(pool.map(game => {
+            const shared = typeof window._agPlaytimeSortMetrics === 'function'
+                ? window._agPlaytimeSortMetrics(game)
+                : { playtime: playtimeOf(game), lastPlayed: lastPlayedOf(game) };
+            return [game, shared];
+        }));
         pool.sort((a, b) => {
-            const ptDiff = playtimeOf(b) - playtimeOf(a);
+            const ptDiff = metrics.get(b).playtime - metrics.get(a).playtime;
             if (ptDiff !== 0) return ptDiff;
-            const lpDiff = lastPlayedOf(b) - lastPlayedOf(a);
+            const lpDiff = metrics.get(b).lastPlayed - metrics.get(a).lastPlayed;
             if (lpDiff !== 0) return lpDiff;
-            return String(a.title || a.name || '').localeCompare(String(b.title || b.name || ''));
+            return compareTitles(a, b);
         });
     } else if (sort === 'multi_first') {
         pool.sort((a, b) =>
@@ -3763,6 +6189,10 @@ function _applyAgFilters(options = {}) {
         && typeof window.isCanonicalReadyToInstallReady === 'function'
         && !window.isCanonicalReadyToInstallReady()) {
         console.log('[ReadyCount] _applyAgFilters blocked RTI render; canonical not ready');
+        if (_agHasWarmReadyToInstallProjection()) {
+            _agEnsureVirtualGridIntegrity('warm-rti-canonical-pending');
+            return false;
+        }
         _agRenderReadyToInstallLoading();
         return;
     }
@@ -3808,16 +6238,31 @@ function _applyAgFilters(options = {}) {
 
     // Skip rerender when a background sync fires with an unchanged visible pool.
     const _newSig = _agComputePoolSignature(pool);
-    if (options.reason === 'background-library-updated'
-        && _newSig === window._agLastRenderedPoolSignature) {
-        console.log('[AllGames] background update skipped visible rerender: signature unchanged');
+    const unchangedVisibleProjection = _newSig === window._agLastRenderedPoolSignature;
+    const isBackgroundLibraryUpdate = String(options.reason || '').startsWith('background-library-updated');
+    if ((isBackgroundLibraryUpdate || options.allowWarmReuse)
+        && unchangedVisibleProjection) {
+        if (typeof localStorage !== 'undefined' && localStorage.getItem('baddel_debug_vs') === '1') {
+            console.log('[AllGames] visible projection unchanged; reused warm virtual grid:', options.reason || 'unknown');
+        }
+        _agRebindCachedCards(pool);
+        _agEnsureVirtualGridIntegrity(options.reason || 'projection-unchanged');
+        if (typeof window._vsRender === 'function') window._vsRender(false, options.reason || 'projection-unchanged');
         return false;
     }
     window._agLastRenderedPoolSignature = _newSig;
 
+    _agPrioritizeFilteredPoolArtwork(pool);
     _renderAllGamesViewModeAware(pool, resetScroll);
     return true;
 }
+
+window.syncEmptyLibraryPlatform = function syncEmptyLibraryPlatform(platform) {
+    const target = ['steam', 'epic', 'gog'].includes(String(platform || '').toLowerCase())
+        ? String(platform).toLowerCase()
+        : 'steam';
+    if (typeof window.openPlatformsModal === 'function') window.openPlatformsModal(target);
+};
 
 // Display preference functions (AG_DISPLAY_DEFAULTS, _agLoadDisplayPrefs,
 // _agSaveDisplayPrefs, _agApplyDisplayPrefs, setAgViewMode, setAgDensity,
@@ -4055,12 +6500,14 @@ const _origNavigateToAllGames_display = navigateToAllGames;
     window.navigateToAllGames = async function(opts) {
         await _origNav(opts);
         window._agApplyDisplayPrefs?.();
+        window._agSyncBackToTopVisibility?.();
     };
 })();
 
 // Also apply on DOMContentLoaded in case All Games is the first view
 document.addEventListener('DOMContentLoaded', () => {
     window._agApplyDisplayPrefs?.();
+    window._agInitBackToTop?.();
     // Init sticky toolbar observer
     if (typeof window._agInitStickyToolbar === 'function') window._agInitStickyToolbar();
     // Init search clear button visibility
@@ -4368,25 +6815,27 @@ window._renderInstalledViewModeAware = function(games) {
     const _origApplyFilters = window.applyFilters || (typeof applyFilters === 'function' ? applyFilters : null);
     if (!_origApplyFilters) return;
     window.applyFilters = function() {
-        _origApplyFilters.apply(this, arguments);
-        // Only act when Installed Games is the active view
-        const igView = document.getElementById('installedGamesView');
-        if (!igView || igView.style.display === 'none') return;
-        const prefs = window._igDisplayPrefs;
-        // Re-apply display prefs so CSS class toggles survive grid re-renders
-        window._igApplyDisplayPrefs?.();
-        // Keep result count in toolbar updated
-        const grid = document.getElementById('gamesGrid');
-        const countEl = document.getElementById('igResultCount');
-        if (grid && countEl) {
-            const cnt = grid.querySelectorAll('.game-card').length;
-            countEl.textContent = cnt > 0 ? `${cnt} games` : '';
-        }
-        // If list mode is active, rebuild the list from current card data
-        if (prefs && prefs.viewMode === 'list') {
-            const currentGames = _igGetCurrentFilteredGames();
-            _renderInstalledGamesList(currentGames);
-        }
+        const afterRender = () => {
+            // Only act when Installed Games is the active view
+            const igView = document.getElementById('installedGamesView');
+            if (!igView || igView.style.display === 'none') return;
+            const prefs = window._igDisplayPrefs;
+            // Re-apply display prefs so CSS class toggles survive grid re-renders
+            window._igApplyDisplayPrefs?.();
+            // Keep result count in toolbar updated
+            const grid = document.getElementById('gamesGrid');
+            const countEl = document.getElementById('igResultCount');
+            if (grid && countEl) {
+                const cnt = grid.querySelectorAll('.game-card').length;
+                countEl.textContent = cnt > 0 ? `${cnt} games` : '';
+            }
+            // If list mode is active, rebuild the list from current card data
+            if (prefs && prefs.viewMode === 'list') {
+                const currentGames = _igGetCurrentFilteredGames();
+                _renderInstalledGamesList(currentGames);
+            }
+        };
+        return Promise.resolve(_origApplyFilters.apply(this, arguments)).finally(afterRender);
     };
 })();
 

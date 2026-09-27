@@ -1,5 +1,57 @@
 'use strict';
 
+const https = require('node:https');
+
+const gogHttpsAgent = new https.Agent({ keepAlive: true, family: 4 });
+
+function defaultGogFetch(input, init = {}, redirectCount = 0) {
+    const url = input instanceof URL ? input : new URL(String(input));
+    return new Promise((resolve, reject) => {
+        const request = https.request(url, {
+            method: init.method || 'GET',
+            headers: init.headers || {},
+            agent: gogHttpsAgent,
+            family: 4,
+        }, (response) => {
+            const status = Number(response.statusCode || 0);
+            const location = response.headers.location;
+            if (location && status >= 300 && status < 400 && redirectCount < 5) {
+                response.resume();
+                const nextUrl = new URL(location, url);
+                const nextHeaders = { ...(init.headers || {}) };
+                if (nextUrl.origin !== url.origin) {
+                    delete nextHeaders.Authorization;
+                    delete nextHeaders.authorization;
+                }
+                resolve(defaultGogFetch(nextUrl, { ...init, headers: nextHeaders }, redirectCount + 1));
+                return;
+            }
+            const chunks = [];
+            response.on('data', (chunk) => chunks.push(chunk));
+            response.once('error', reject);
+            response.once('end', () => {
+                const body = Buffer.concat(chunks);
+                resolve({
+                    ok: status >= 200 && status < 300,
+                    status,
+                    headers: { get: (name) => response.headers[String(name || '').toLowerCase()] || null },
+                    json: async () => JSON.parse(body.toString('utf8')),
+                    text: async () => body.toString('utf8'),
+                    arrayBuffer: async () => body.buffer.slice(body.byteOffset, body.byteOffset + body.byteLength),
+                });
+            });
+        });
+        const abort = () => request.destroy(Object.assign(new Error('The operation was aborted'), { name: 'AbortError', code: 'ABORT_ERR' }));
+        if (init.signal) {
+            if (init.signal.aborted) abort();
+            else init.signal.addEventListener('abort', abort, { once: true });
+            request.once('close', () => init.signal.removeEventListener('abort', abort));
+        }
+        request.once('error', reject);
+        request.end(init.body);
+    });
+}
+
 class GogApiError extends Error {
     constructor(code, message, details = {}) {
         super(message);
@@ -14,13 +66,28 @@ function isTransientStatus(status) {
     return status === 408 || status === 429 || (status >= 500 && status <= 599);
 }
 
+function isTransientGogError(error) {
+    return isTransientStatus(error?.status) || error?.details?.transient === true ||
+        ['GOG_LIBRARY_TIMEOUT', 'GOG_LIBRARY_NETWORK_ERROR'].includes(error?.code);
+}
+
+function retryAfterMs(response) {
+    const raw = response?.headers?.get?.('retry-after');
+    if (!raw) return null;
+    const seconds = Number(raw);
+    if (Number.isFinite(seconds) && seconds >= 0) return Math.min(30000, seconds * 1000);
+    const at = Date.parse(raw);
+    return Number.isFinite(at) ? Math.max(0, Math.min(30000, at - Date.now())) : null;
+}
+
 class GogApiClient {
     constructor({
-        fetchImpl = globalThis.fetch,
+        fetchImpl = defaultGogFetch,
         baseUrl = 'https://galaxy-library.gog.com',
         sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms)),
         timeoutMs = 15000,
         maxRetries = 2,
+        random = Math.random,
     } = {}) {
         if (typeof fetchImpl !== 'function') {
             throw new TypeError('GogApiClient requires fetch');
@@ -30,11 +97,13 @@ class GogApiClient {
         this.sleep = sleep;
         this.timeoutMs = timeoutMs;
         this.maxRetries = maxRetries;
+        this.random = random;
     }
 
     async _requestJson(url, { accessToken, signal } = {}) {
         const controller = new AbortController();
-        const timer = setTimeout(() => controller.abort(), this.timeoutMs);
+        let timedOut = false;
+        const timer = setTimeout(() => { timedOut = true; controller.abort(); }, this.timeoutMs);
         const abort = () => controller.abort();
         if (signal) {
             if (signal.aborted) controller.abort();
@@ -48,7 +117,7 @@ class GogApiClient {
                 signal: controller.signal,
             });
             if (!res.ok) {
-                throw new GogApiError('GOG_LIBRARY_REQUEST_FAILED', `GOG library request failed with HTTP ${res.status}`, { status: res.status });
+                throw new GogApiError('GOG_LIBRARY_REQUEST_FAILED', `GOG library request failed with HTTP ${res.status}`, { status: res.status, retryAfterMs: retryAfterMs(res), transient: isTransientStatus(res.status) });
             }
             const body = await res.json();
             if (!body || typeof body !== 'object') {
@@ -57,10 +126,13 @@ class GogApiClient {
             return body;
         } catch (err) {
             if (err.name === 'AbortError') {
-                throw new GogApiError('GOG_LIBRARY_REQUEST_FAILED', 'GOG library request timed out or was cancelled.');
+                if (!timedOut) throw new GogApiError('GOG_REQUEST_CANCELLED', 'GOG request was cancelled.', { transient: false });
+                throw new GogApiError('GOG_LIBRARY_TIMEOUT', 'GOG library request timed out.', { transient: true, networkCode: 'ETIMEDOUT' });
             }
             if (err instanceof GogApiError) throw err;
-            throw new GogApiError('GOG_LIBRARY_REQUEST_FAILED', err?.message || 'GOG library request failed.');
+            const networkCode = String(err?.code || err?.cause?.code || 'NETWORK_ERROR');
+            const transient = ['ETIMEDOUT', 'ECONNRESET', 'ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN', 'UND_ERR_CONNECT_TIMEOUT', 'UND_ERR_SOCKET'].includes(networkCode);
+            throw new GogApiError('GOG_LIBRARY_NETWORK_ERROR', err?.message || 'GOG library request failed.', { transient, networkCode });
         } finally {
             clearTimeout(timer);
             if (signal) signal.removeEventListener('abort', abort);
@@ -179,7 +251,7 @@ class GogApiClient {
         }
     }
 
-    async fetchLibraryReleases({ userId, accessToken, refreshAuth = null, signal = null } = {}) {
+    async fetchLibraryReleases({ userId, accessToken, refreshAuth = null, signal = null, stats = null } = {}) {
         if (!userId || !accessToken) {
             throw new GogApiError('GOG_AUTH_EXPIRED', 'GOG credentials are missing or expired.');
         }
@@ -196,6 +268,7 @@ class GogApiClient {
             while (true) {
                 try {
                     const body = await this._requestJson(url, { accessToken, signal });
+                    if (stats) stats.numberOfPages = (stats.numberOfPages || 0) + 1;
                     releases.push(...this._extractItems(body));
                     pageToken = body.next_page_token || body.nextPageToken || null;
                     break;
@@ -206,9 +279,11 @@ class GogApiClient {
                         accessToken = refreshedCredentials?.accessToken || accessToken;
                         continue;
                     }
-                    if (!isTransientStatus(err.status) || attempt >= this.maxRetries) throw err;
+                    if (!isTransientGogError(err) || attempt >= this.maxRetries) throw err;
                     attempt += 1;
-                    await this.sleep(Math.min(250 * Math.pow(2, attempt - 1), 1500));
+                    const backoff = Math.min(250 * Math.pow(2, attempt - 1), 1500);
+                    const jitter = Math.round(backoff * 0.2 * this.random());
+                    await this.sleep(err?.details?.retryAfterMs ?? backoff + jitter);
                 }
             }
         } while (pageToken);
@@ -220,4 +295,6 @@ class GogApiClient {
 module.exports = {
     GogApiClient,
     GogApiError,
+    isTransientGogError,
+    defaultGogFetch,
 };

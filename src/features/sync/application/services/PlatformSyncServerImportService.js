@@ -107,80 +107,66 @@ class PlatformSyncServerImportService {
     }
 
     _applyNormalizedToCache(platform, gameIdExternal, normalized) {
-        this._enqueueWrite(async () => {
+        return this._applyNormalizedBatchToCache(platform, [{ id: gameIdExternal, normalized }]);
+    }
+
+    _applyNormalizedBatchToCache(platform, items = []) {
+        const normalizedItems = (Array.isArray(items) ? items : [])
+            .filter(item => item?.id && item?.normalized && (
+                item.normalized.cover || item.normalized.heroImage || item.normalized.logo || item.normalized.info?.releaseDate
+            ));
+        if (!normalizedItems.length) return Promise.resolve({ updated: 0, writeCount: 0 });
+
+        return this._enqueueWrite(async () => {
             try {
                 const localLibrary = await this.syncCacheRepository.readMergedLibrary(platform);
-                const localIdx = this._findLocalLibraryIndex(platform, localLibrary, gameIdExternal);
+                let updatedCount = 0;
+                const downloads = [];
 
-                if (localIdx === -1) return;
+                for (const item of normalizedItems) {
+                    const localIdx = this._findLocalLibraryIndex(platform, localLibrary, item.id);
+                    if (localIdx === -1) continue;
 
-                const lg = localLibrary[localIdx];
-                let updated = false;
-                if (normalized.cover     && lg.coverUrl !== normalized.cover)     { lg.coverUrl = normalized.cover;     updated = true; }
-                if (normalized.heroImage && lg.heroUrl  !== normalized.heroImage)  { lg.heroUrl  = normalized.heroImage; updated = true; }
-                if (normalized.logo      && lg.logoUrl  !== normalized.logo)       { lg.logoUrl  = normalized.logo;      updated = true; }
-                if (normalized.info?.releaseDate)                                  { lg.releaseYear = normalized.info.releaseDate; updated = true; }
+                    const lg = localLibrary[localIdx];
+                    const normalized = item.normalized;
+                    let updated = false;
+                    if (normalized.cover     && lg.coverUrl !== normalized.cover)     { lg.coverUrl = normalized.cover;     updated = true; }
+                    if (normalized.heroImage && lg.heroUrl  !== normalized.heroImage)  { lg.heroUrl  = normalized.heroImage; updated = true; }
+                    if (normalized.logo      && lg.logoUrl  !== normalized.logo)       { lg.logoUrl  = normalized.logo;      updated = true; }
+                    if (normalized.info?.releaseDate && lg.releaseYear !== normalized.info.releaseDate) { lg.releaseYear = normalized.info.releaseDate; updated = true; }
+                    if (!updated) continue;
 
-                if (updated) {
-                    await this.syncCacheRepository.writeMergedLibrary(platform, localLibrary);
-                    const win = this.getWindow?.();
-                    this.emitLibraryUpdated?.(win);
-                }
-
-                const assetDownloader = this.getAssetDownloader?.();
-                if (assetDownloader && lg.id && (normalized.cover || normalized.heroImage || normalized.logo)) {
-                    const gameId    = lg.id;
-                    const gameTitle = lg.title || gameId;
-                    const assets = {
-                        cover: normalized.cover     || null,
-                        hero:  normalized.heroImage || null,
-                        logo:  normalized.logo      || null,
-                    };
-                    this._consoleLog(
-                        `[EnrichQueueAssets] ${gameTitle} normalized assets ` +
-                        `cover=${!!assets.cover} hero=${!!assets.hero} logo=${!!assets.logo}`
-                    );
-                    if (!assets.hero) {
-                        this._warn(`[EnrichQueueAssets] ${gameTitle} NO HERO in normalized metadata`);
+                    updatedCount += 1;
+                    const assetDownloader = this.getAssetDownloader?.();
+                    if (assetDownloader && lg.id && (normalized.cover || normalized.heroImage || normalized.logo)) {
+                        const gameId = lg.id;
+                        const gameTitle = lg.title || gameId;
+                        const assets = {
+                            cover: normalized.cover || null,
+                            hero: normalized.heroImage || null,
+                            logo: normalized.logo || null,
+                        };
+                        downloads.push({ assetDownloader, assets, gameId, gameTitle });
                     }
-                    assetDownloader(assets, gameId).then(async (cached) => {
-                        if (!cached) return;
-                        this._consoleLog(
-                            `[EnrichQueueAssets] ${gameTitle} cached locally ` +
-                            `cover=${!!cached.cover} hero=${!!cached.hero} logo=${!!cached.logo}`
-                        );
-                        const needsWriteBack = (
-                            (cached.cover && String(cached.cover).startsWith('file://')) ||
-                            (cached.hero  && String(cached.hero ).startsWith('file://')) ||
-                            (cached.logo  && String(cached.logo ).startsWith('file://'))
-                        );
-                        if (!needsWriteBack) return;
-                        this._enqueueWrite(async () => {
-                            try {
-                                const lib2 = await this.syncCacheRepository.readMergedLibrary(platform);
-                                const idx2 = this._findLocalLibraryIndex(platform, lib2, gameIdExternal);
-                                if (idx2 === -1) return;
-                                const entry = lib2[idx2];
-                                let changed = false;
-                                if (cached.cover && String(cached.cover).startsWith('file://')) { entry.coverUrl = cached.cover; changed = true; }
-                                if (cached.hero  && String(cached.hero ).startsWith('file://')) { entry.heroUrl  = cached.hero;  changed = true; }
-                                if (cached.logo  && String(cached.logo ).startsWith('file://')) { entry.logoUrl  = cached.logo;  changed = true; }
-                                if (changed) {
-                                    await this.syncCacheRepository.writeMergedLibrary(platform, lib2);
-                                    this._consoleLog(
-                                        `[EnrichQueueAssets] ${gameTitle} DB/cache backfilled ` +
-                                        `cover=${!!(cached.cover?.startsWith('file://'))} ` +
-                                        `hero=${!!(cached.hero?.startsWith('file://'))} ` +
-                                        `logo=${!!(cached.logo?.startsWith('file://'))}`
-                                    );
-                                    const win2 = this.getWindow?.();
-                                    this.emitLibraryUpdated?.(win2);
-                                }
-                            } catch (e2) { this._warn('[EnrichQueueAssets] write-back error:', e2.message); }
-                        });
-                    }).catch(e => this._warn(`[EnrichQueueAssets] ${gameTitle} download error:`, e.message));
                 }
-            } catch (e) { this._consoleWarn('[BaddelAPI] Cache write error:', e.message); }
+
+                if (!updatedCount) return { updated: 0, writeCount: 0 };
+
+                await this.syncCacheRepository.writeMergedLibrary(platform, localLibrary);
+                const win = this.getWindow?.();
+                this.emitLibraryUpdated?.(win, { platform, changedCount: updatedCount });
+
+                for (const item of downloads) {
+                    item.assetDownloader(item.assets, item.gameId, {
+                        reason: 'platform-sync-metadata-batch',
+                    }).catch(e => this._warn(`[EnrichQueueAssets] ${item.gameTitle} download error:`, e.message));
+                }
+
+                return { updated: updatedCount, writeCount: 1 };
+            } catch (e) {
+                this._consoleWarn('[BaddelAPI] Cache write error:', e.message);
+                return { updated: 0, writeCount: 0, error: e.message };
+            }
         });
     }
 
@@ -387,30 +373,31 @@ class PlatformSyncServerImportService {
         );
 
         const lookupIds = [...needsLookup];
-        let hasNewData = false;
-
-        await this.mapWithConcurrency(lookupIds, 2, async (id) => {
-            try {
-                const existing   = await this.baddelApi.lookupGame({ platform, id }).catch(() => null);
-                const normalized = this.baddelApi.normalizeServerData(existing);
-                if (normalized && (normalized.cover || normalized.heroImage || normalized.logo)) {
-                    this._applyNormalizedToCache(platform, id, normalized);
-                    hasNewData = true;
-                } else if (existing) {
-                    this._waitAndApplyEnrich(platform, id, 10000);
+        const LOOKUP_APPLY_PAGE = 50;
+        for (let i = 0; i < lookupIds.length; i += LOOKUP_APPLY_PAGE) {
+            const page = lookupIds.slice(i, i + LOOKUP_APPLY_PAGE);
+            const normalizedPage = [];
+            await this.mapWithConcurrency(page, 2, async (id) => {
+                try {
+                    const existing = await this.baddelApi.lookupGame({ platform, id }).catch(() => null);
+                    const normalized = this.baddelApi.normalizeServerData(existing);
+                    if (normalized && (normalized.cover || normalized.heroImage || normalized.logo)) {
+                        normalizedPage.push({ id, normalized });
+                    } else if (existing) {
+                        this._waitAndApplyEnrich(platform, id, 10000);
+                    }
+                } catch (err) {
+                    this._consoleWarn(`[BaddelAPI] Post-batch lookup failed for ${id}:`, err.message);
                 }
-            } catch (err) {
-                this._consoleWarn(`[BaddelAPI] Post-batch lookup failed for ${id}:`, err.message);
-            }
-        });
-
-        for (const id of needsPoll) {
-            this._waitAndApplyEnrich(platform, id, 12000);
+            });
+            if (normalizedPage.length) await this._applyNormalizedBatchToCache(platform, normalizedPage);
         }
 
-        if (hasNewData) {
-            const win = this.getWindow?.();
-            this.emitLibraryUpdated?.(win);
+        const pollIds = [...needsPoll];
+        for (let i = 0; i < pollIds.length; i += LOOKUP_APPLY_PAGE) {
+            for (const id of pollIds.slice(i, i + LOOKUP_APPLY_PAGE)) {
+                this._waitAndApplyEnrich(platform, id, 12000);
+            }
         }
     }
 }

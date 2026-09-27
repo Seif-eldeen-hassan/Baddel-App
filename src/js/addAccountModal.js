@@ -7,6 +7,7 @@
 const DONT_ASK_KEYS = {
     steam:   'baddel_dontAsk_add_steam',
     epic:    'baddel_dontAsk_add_epic',
+    gog:     'baddel_dontAsk_add_gog',
     ea:      'baddel_dontAsk_add_ea',
     riot:    'baddel_dontAsk_add_riot',
     ubisoft: 'baddel_dontAsk_add_ubisoft',
@@ -18,6 +19,7 @@ const DONT_ASK_KEYS = {
 const MODAL_LOGOS = {
     steam: `<img src="../assets/Steam.png" alt="Steam" style="width: 32px; height: 32px; object-fit: contain;">`,
     epic: `<img src="../assets/epic.svg" class="invert-on-dark" alt="Epic" style="width: 32px; height: 32px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));">`,
+    gog: `<img src="../assets/gog.png" alt="GOG" style="width: 32px; height: 32px; object-fit: contain;">`,
     ea: `<img src="../assets/ea.png" alt="EA" style="width: 34px; height: 34px; object-fit: contain;">`,
     riot: `<img src="../assets/riot.png" alt="Riot" style="width: 34px; height: 34px; object-fit: contain;">`,
     ubisoft: `<img src="../assets/ubisoft.png" alt="Ubisoft" style="width: 32px; height: 32px; object-fit: contain; filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(255,255,255,0.3));">`,
@@ -75,6 +77,31 @@ const ADD_ACCOUNT_STEPS = {
             },
         ],
         warning: `Do NOT sign out from Epic manually. Always use Baddel to switch accounts to avoid losing saved sessions.`,
+    },
+
+    gog: {
+        accent: '#a970ff',
+        accentDark: '#170b24',
+        willSignOut: true,
+        signOutNote: 'Baddel will safely snapshot the current Galaxy session before opening a clean sign-in.',
+        steps: [
+            {
+                icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h16v16H4z"/><path d="M8 9h8M8 13h5"/></svg>`,
+                title: 'GOG Galaxy Opens',
+                desc: 'Baddel securely saves the live Galaxy state, clears the sign-in session, and opens Galaxy normally.',
+            },
+            {
+                icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="10" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>`,
+                title: 'Sign In and Let the Library Load',
+                desc: 'Sign in to the GOG account you want to save and wait until its Galaxy library has finished loading.',
+            },
+            {
+                icon: `<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 6 6 18M6 6l12 12"/></svg>`,
+                title: 'Fully Close Galaxy',
+                desc: 'Quit GOG Galaxy completely, including its tray icon, then return to Baddel and press “Save Current”.',
+            },
+        ],
+        warning: `If you change your mind, use “Cancel Add” so Baddel can restore the encrypted rollback snapshot.`,
     },
 
     ea: {
@@ -568,15 +595,22 @@ function showPostAddAccountGuide(platform) {
     const btnTextColor = isLight ? '#000' : '#fff';
 
     const riotSpecial = platform === 'riot';
+    const gogSpecial = platform === 'gog';
     const warningText = riotSpecial
         ? 'Before saving: fully close Riot Client from the system tray (right-click tray icon → Quit).'
-        : null;
+        : (gogSpecial ? 'Wait for the library to load, then fully quit GOG Galaxy before saving. Cancel Add restores your previous session.' : null);
 
     const stepList = riotSpecial
         ? [
             'Sign in to your new Riot account in the launcher',
             'Fully quit Riot Client from the system tray',
             'Return here and click "Save Current Account"'
+          ]
+        : gogSpecial
+        ? [
+            'Sign in to the new GOG account and wait for its library to load',
+            'Fully quit GOG Galaxy, including its tray icon',
+            'Return here and click “Save Current Account”'
           ]
         : [
             `Sign in to your new ${escapeHtml(cfg.name)} account`,
@@ -614,6 +648,7 @@ function showPostAddAccountGuide(platform) {
             <button class="pag-btn-secondary" onclick="window.dismissPostAddGuide('${platform}')">
                 I'll do it later
             </button>
+            ${gogSpecial ? `<button class="pag-btn-secondary" onclick="window.dismissPostAddGuide('gog');cancelPendingGogAdd();">Cancel Add</button>` : ''}
         </div>
     `;
 
@@ -648,10 +683,20 @@ async function addNewAccount(platform) {
         showToast(`Opening ${cfg.name}...`, 'success');
 
         try {
-            await cfg.addFn();
+            const result = await cfg.addFn();
+            if (result && (result.status === 'error' || result.success === false || result.ok === false)) {
+                throw Object.assign(new Error(result.message || 'Launcher could not be opened.'), { code: result.code });
+            }
             showPostAddAccountGuide(platform);
         } catch (err) {
-            showToast(`Error: ${err}`, 'error');
+            const code = String(err?.code || '');
+            const missingLauncher = code.endsWith('_NOT_FOUND') || code === 'LAUNCHER_NOT_INSTALLED'
+                || /LAUNCHER_NOT_FOUND|could not be found|locate GalaxyClient\.exe/i.test(String(err?.message || err));
+            if (missingLauncher && typeof showLauncherLocatorDialog === 'function') {
+                await showLauncherLocatorDialog(platform, () => cfg.addFn());
+            } else {
+                showToast(`Error: ${err?.message || err}`, 'error');
+            }
         } finally {
             isAccountProcessing = false;
             addBtns.forEach(btn => {

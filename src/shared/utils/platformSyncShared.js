@@ -146,16 +146,13 @@ function finalizeLibraryForAccounts({ platform, previousGames = [], nextGames = 
         const previousCount = countGamesForAccount(platform, previousGames, accountId);
         const nextCount = countGamesForAccount(platform, sanitizedGames, accountId);
         const result = accountResults[accountId] || {};
-        const shouldPreserve = previousCount > 0 && nextCount === 0 && result.allowZeroGames !== true;
+        // Steam collection now carries an explicit authoritative contract.
+        // Other platforms retain their existing zero/failure recovery behavior.
+        const steamNeedsPreserve = platform === 'steam' && previousCount > 0 && result.authoritative !== true;
+        const legacyLooksUnreliable = result.status !== 'success' || result.rawGamesCount === 0 || result.validationFailed === true;
+        const legacyNeedsPreserve = platform !== 'steam' && previousCount > 0 && nextCount === 0 && result.allowZeroGames !== true && legacyLooksUnreliable;
 
-        if (!shouldPreserve) continue;
-
-        const looksUnreliable =
-            result.status !== 'success' ||
-            result.rawGamesCount === 0 ||
-            result.validationFailed === true;
-
-        if (!looksUnreliable) continue;
+        if (!steamNeedsPreserve && !legacyNeedsPreserve) continue;
 
         const restored = preservePreviousAccountData(platform, previousGames, nextGamesMap, account);
         if (restored > 0) {
@@ -494,14 +491,15 @@ function isEpicSyncedGameAllowed(game) {
 /** Sync statuses that represent transient in-progress states. */
 const TRANSIENT_SYNC_STATUSES = new Set(['queued', 'pending', 'syncing', 'finalizing', 'starting']);
 
-function _isInvalidEpicName(name) {
+function isEpicFallbackDisplayName(name) {
     if (!name) return true;
     const n = String(name).toLowerCase().trim();
     return n === '' ||
         n === 'epic user' ||
         n === 'epic account' ||
         n.startsWith('epic_tmp') ||
-        /^epic epic_tmp/i.test(n);
+        /^epic epic_tmp/i.test(n) ||
+        /^epic [0-9a-f]{6,8}$/i.test(n);
 }
 
 /**
@@ -540,8 +538,8 @@ function resolveEpicAccountIdentity(status, existingAccount = null, tmpId = null
         status?.user?.name,
         status?.email,
         status?.user?.email,
-        !_isInvalidEpicName(existingAccount?.displayName) ? existingAccount?.displayName : null,
-    ].map(v => String(v || '').trim()).filter(v => v && !_isInvalidEpicName(v));
+        !isEpicFallbackDisplayName(existingAccount?.displayName) ? existingAccount?.displayName : null,
+    ].map(v => String(v || '').trim()).filter(v => v && !isEpicFallbackDisplayName(v));
 
     let displayName, source;
     if (candidates.length > 0) {
@@ -630,6 +628,7 @@ module.exports = {
     isEpicPlayableGameEntry,
     isEpicSyncedGameAllowed,
     resolveEpicAccountIdentity,
+    isEpicFallbackDisplayName,
     computeTerminalAccountStatus,
     TRANSIENT_SYNC_STATUSES,
     isRealEpicSwitcherProfile,

@@ -16,6 +16,7 @@ const LAUNCH_HANDLERS_JS = fs.readFileSync(path.join(ROOT, 'handlers', 'launchHa
 const SAFE_LAUNCHER_JS = fs.readFileSync(
     path.join(ROOT, 'services', 'safeLauncher.js'), 'utf8'
 );
+const { buildExecutableLaunchArgs } = require('../handlers/launchHandlers');
 
 // ── Slice anchors ─────────────────────────────────────────────────────────────
 
@@ -117,12 +118,12 @@ test('launch-game: Xbox/UWP branch calls _extractAppsFolderLaunchTarget before _
     assert.ok(extractIdx < launchIdx, '_extractAppsFolderLaunchTarget must precede _launchAppsFolderTarget');
 });
 
-test('launch-game: protocol URL branch calls _getExternalLauncherInfo(platformKey) for steam/epic', () => {
+test('launch-game: protocol URL branch calls _getExternalLauncherInfo(platformKey) for official launchers', () => {
     const protocolIdx = LAUNCH_SRC.indexOf("cleanCmd.includes('://')");
     assert.ok(protocolIdx !== -1, "cleanCmd.includes('://') protocol branch must exist");
     // _getExternalLauncherInfo is called ~37 lines after the protocol branch opener;
     // 2200 chars covers that distance safely with CRLF line endings.
-    const protocolBlock = LAUNCH_SRC.slice(protocolIdx, protocolIdx + 2200);
+    const protocolBlock = LAUNCH_SRC.slice(protocolIdx, protocolIdx + 3000);
     assert.match(protocolBlock, /_getExternalLauncherInfo\(platformKey\)/);
 });
 
@@ -145,7 +146,7 @@ test('launch-game: .exe branch uses safeLauncher.launchExecutable', () => {
     assert.ok(exeIdx !== -1, ".exe branch must exist in handler");
     // safeLauncher.launchExecutable appears ~13 lines into the .exe block; 900 chars
     // covers the spawnArgs + spawnCwd setup that precedes it on CRLF line endings.
-    const exeBlock = LAUNCH_SRC.slice(exeIdx, exeIdx + 900);
+    const exeBlock = LAUNCH_SRC.slice(exeIdx, exeIdx + 1200);
     assert.match(exeBlock, /safeLauncher\.launchExecutable\(/);
 });
 
@@ -162,8 +163,13 @@ test('safeLauncher.launchExecutable spawns with shell: false (never shell: true)
 
 // ─── 4. launcher:open-install-url — contract ─────────────────────────────────
 
-test('launcher:open-install-url: ALLOWED_PLATFORMS is [\'steam\', \'epic\']', () => {
-    assert.match(INSTALL_SRC, /ALLOWED_PLATFORMS\s*=\s*\[\s*'steam'\s*,\s*'epic'\s*\]/);
+test('launcher:open-install-url: allowlist includes Steam, Epic, and GOG only', () => {
+    assert.match(INSTALL_SRC, /ALLOWED_PLATFORMS\s*=\s*\[\s*'steam'\s*,\s*'epic'\s*,\s*'gog'\s*\]/);
+});
+
+test('launcher:open-install-url: GOG accepts only exact numeric product-view URLs', () => {
+    assert.match(INSTALL_SRC, /gogGalaxyProtocol\.isProductViewUrl\(installUrl\)/);
+    assert.match(INSTALL_SRC, /GOG_INSTALL_URL_INVALID/);
 });
 
 test('launcher:open-install-url: rejects platforms not in ALLOWED_PLATFORMS', () => {
@@ -362,7 +368,7 @@ test('launch-game: .exe branch sets launchSuccess = true after safeLauncher.laun
     assert.ok(exeIdx !== -1, ".exe branch must exist in handler");
     // 1500 chars covers the spawnArgs + spawnCwd setup plus the launchSuccess flag
     // including extra indent from the register() wrapper.
-    const exeBlock       = LAUNCH_SRC.slice(exeIdx, exeIdx + 1500);
+    const exeBlock       = LAUNCH_SRC.slice(exeIdx, exeIdx + 1700);
     const spawnIdx       = exeBlock.indexOf('safeLauncher.launchExecutable(');
     const successFlagIdx = exeBlock.indexOf('launchSuccess = true');
     assert.ok(spawnIdx       !== -1, 'safeLauncher.launchExecutable must exist in .exe block');
@@ -408,4 +414,22 @@ test('startGlobalWatcher calls startGameTracking — guards against the watcher 
     // 5500 chars comfortably covers that distance on Windows CRLF line endings.
     const gwSrc = MAIN_JS.slice(gwStart, gwStart + 5500);
     assert.match(gwSrc, /startGameTracking\(/);
+});
+
+
+test('ScummVM launch args disable its console without mutating stored args', () => {
+    const stored = ['--fullscreen', '--console'];
+    const args = buildExecutableLaunchArgs('F:/Games/Sanitarium/ScummVM/scummvm.exe', stored);
+    assert.deepEqual(stored, ['--fullscreen', '--console']);
+    assert.deepEqual(args, ['--fullscreen', '--no-console']);
+});
+
+test('non-ScummVM executable args are unchanged and executable launch remains shell-free', () => {
+    const stored = ['--fullscreen'];
+    assert.deepEqual(buildExecutableLaunchArgs('F:/Games/SYMMETRY/Symmetry.exe', stored), stored);
+    assert.match(LAUNCH_SRC, /buildExecutableLaunchArgs\(cleanCmd, storedArgs\)/);
+    const launchExeIdx = SAFE_LAUNCHER_JS.indexOf('function launchExecutable(');
+    const launchExeBlock = SAFE_LAUNCHER_JS.slice(launchExeIdx, launchExeIdx + 800);
+    assert.match(launchExeBlock, /shell:\s*false/);
+    assert.doesNotMatch(launchExeBlock, /cmd\.exe|shell:\s*true/i);
 });

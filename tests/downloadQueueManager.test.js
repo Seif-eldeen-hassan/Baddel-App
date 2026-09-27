@@ -128,6 +128,45 @@ test('download queue recovers interrupted active task as paused', async () => {
     }
 });
 
+test('queue shutdown stops the active provider once and persists a resumable task', async () => {
+    const dir = tempDir();
+    try {
+        let pauseCount = 0;
+        let rejectStart = null;
+        const manager = new DownloadQueueManager({
+            repository: new JsonDownloadRepository({ userDataDir: dir }),
+            preflight: new DownloadPreflightService(),
+            providerExecutor: {
+                start: async () => new Promise((_resolve, reject) => { rejectStart = reject; }),
+                pause: async () => {
+                    pauseCount += 1;
+                    rejectStart?.(Object.assign(new Error('provider stopped for shutdown'), { code: 'DOWNLOAD_CANCELLED' }));
+                    return { requested: true, exitConfirmed: true };
+                },
+            },
+        });
+        await manager.load();
+        const queued = await manager.queueInstall(payload('Shutdown Resume'));
+        await manager.startNow(queued.task.id);
+        await waitForValue(() => rejectStart);
+
+        await Promise.all([manager.shutdown(), manager.shutdown()]);
+
+        const task = manager.findTask(queued.task.id);
+        assert.equal(pauseCount, 1);
+        assert.equal(task.status, 'paused');
+        assert.equal(task.recoveryReason, 'app-shutdown');
+        assert.match(task.statusMessage, /closed.*resume/i);
+
+        const restored = makeManager(dir);
+        await restored.load();
+        assert.equal(restored.findTask(queued.task.id).status, 'paused');
+        assert.equal(restored.findTask(queued.task.id).downloadedBytes, task.downloadedBytes);
+    } finally {
+        fs.rmSync(dir, { recursive: true, force: true });
+    }
+});
+
 test('resume preserves visible partial progress when provider restarts at zero', async () => {
     const dir = tempDir();
     try {
@@ -771,18 +810,19 @@ test('resume with valid ownership marker preserves partial files and does not re
     }
 });
 
-test('hard stalled provider is stopped, marked retryable, and preserves owned partials', async () => {
+test('first hard stall auto-resumes once and preserves owned partials', async () => {
     const dir = tempDir();
     const installBase = tempDir();
     try {
         let cancelReason = null;
+        let startCount = 0;
         const { DownloadTelemetryAggregator } = require('../src/features/downloads/infrastructure/services/DownloadTelemetryAggregator');
         const manager = new DownloadQueueManager({
             repository: new JsonDownloadRepository({ userDataDir: dir }),
             preflight: new DownloadPreflightService(),
             telemetryAggregator: new DownloadTelemetryAggregator({ emitIntervalMs: 0, stallWarningMs: 1000, hardStallMs: 2000, speedStaleGraceMs: 5000 }),
             providerExecutor: {
-                start: async () => new Promise(() => {}),
+                start: async () => { startCount += 1; return new Promise(() => {}); },
                 cancel: async (_taskId, options = {}) => {
                     cancelReason = options.reason || null;
                     return { exitConfirmed: true };
@@ -817,11 +857,10 @@ test('hard stalled provider is stopped, marked retryable, and preserves owned pa
             eventType: 'download-speed',
             rawDownloadSpeedBps: 0,
         });
-        const task = await waitForTaskStatus(manager, queued.task.id, 'failed');
-        assert.equal(task.errorCode, 'GOG_DOWNLOAD_STALLED');
-        assert.equal(task.retryable, true);
-        assert.equal(task.autoResumeEligible, true);
-        assert.equal(task.stallReason, 'no-authoritative-byte-progress');
+        await waitForValue(() => startCount === 2);
+        const task = manager.findTask(queued.task.id);
+        assert.equal(startCount, 2);
+        assert.equal(task.stallAutoResumeAttempts, 1);
         assert.equal(cancelReason, 'stall');
         assert.equal(fs.existsSync(markerPath), true);
         assert.equal(fs.existsSync(path.join(queued.task.installPath, 'partial.bin')), true);
@@ -993,18 +1032,19 @@ test('provider network exit becomes retryable failed task and preserves partial 
     }
 });
 
-test('hard stall cancels provider and becomes retryable failed task', async () => {
+test('second hard stall becomes retryable failed task without a third start', async () => {
     const dir = tempDir();
     try {
-        let cancelled = false;
+        let cancelCount = 0;
+        let startCount = 0;
         const { DownloadTelemetryAggregator } = require('../src/features/downloads/infrastructure/services/DownloadTelemetryAggregator');
         const manager = new DownloadQueueManager({
             repository: new JsonDownloadRepository({ userDataDir: dir }),
             preflight: new DownloadPreflightService(),
             telemetryAggregator: new DownloadTelemetryAggregator({ stallWarningMs: 5, hardStallMs: 10 }),
             providerExecutor: {
-                start: async () => new Promise(() => {}),
-                cancel: async () => { cancelled = true; return { requested: true, exitConfirmed: true }; },
+                start: async () => { startCount += 1; return new Promise(() => {}); },
+                cancel: async () => { cancelCount += 1; return { requested: true, exitConfirmed: true }; },
             },
         });
         await manager.load();
@@ -1013,8 +1053,13 @@ test('hard stall cancels provider and becomes retryable failed task', async () =
         const sessionId = manager.findTask(queued.task.id).progressSessionId;
         await manager.applyProgress(queued.task.id, { status: 'downloading', eventType: 'download-speed', rawDownloadSpeedBps: 1, sessionId, timestamp: 1000 });
         await manager.applyProgress(queued.task.id, { status: 'downloading', eventType: 'download-speed', rawDownloadSpeedBps: 0, sessionId, timestamp: 1020 });
-        const task = manager.findTask(queued.task.id);
-        assert.equal(cancelled, true);
+        await waitForValue(() => startCount === 2);
+        const secondSessionId = manager.findTask(queued.task.id).progressSessionId;
+        await manager.applyProgress(queued.task.id, { status: 'downloading', eventType: 'download-speed', rawDownloadSpeedBps: 1, sessionId: secondSessionId, timestamp: 2000 });
+        await manager.applyProgress(queued.task.id, { status: 'downloading', eventType: 'download-speed', rawDownloadSpeedBps: 0, sessionId: secondSessionId, timestamp: 2020 });
+        const task = await waitForTaskStatus(manager, queued.task.id, 'failed');
+        assert.equal(cancelCount, 2);
+        assert.equal(startCount, 2);
         assert.equal(task.status, 'failed');
         assert.equal(task.errorCode, 'GOG_DOWNLOAD_STALLED');
         assert.equal(task.retryable, true);

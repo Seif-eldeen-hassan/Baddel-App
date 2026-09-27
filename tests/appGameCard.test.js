@@ -325,9 +325,11 @@ test('createRecentCard: card click opens game details via openGameDetails', () =
     assert.match(body, /fn\s*\(\s*game\.id\s*\)/);
 });
 
-test('createRecentCard: uses safeImageUrl for image src', () => {
+test('createRecentCard: probes and sanitizes Jump Back In image src before assignment', () => {
     const body = extractFn(GAME_CARD_JS, 'function createRecentCard(');
-    assert.match(body, /safeImageUrl\s*\(/);
+    assert.match(GAME_CARD_JS, /function _jbiSafeArtworkValue[\s\S]*safeImageUrl\s*\(/);
+    assert.match(body, /_jbiFirstLoadableArtworkCandidate\(selection\.candidates\)/);
+    assert.doesNotMatch(body, /imgEl\.src\s*=\s*displayImg/);
 });
 
 test('createRecentCard: calls hydrateRecentHeroArtwork when hero is absent', () => {
@@ -463,9 +465,12 @@ test('_agDecorateAllGamesCardFields: includes ag-card-field-installed with is-in
     assert.match(body, /is-not-installed/);
 });
 
-test('_agDecorateAllGamesCardFields: removes previous ag-card-display-overlay before adding new one', () => {
+test('_agDecorateAllGamesCardFields: reuses previous ag-card-display-overlay when rebinding card data', () => {
     const body = extractFn(GAME_CARD_JS, 'function _agDecorateAllGamesCardFields(');
-    assert.match(body, /\.ag-card-display-overlay\b.*remove\s*\(\s*\)/s);
+    assert.match(body, /let overlay = refs\?\.overlay \|\| card\.querySelector\('\.ag-card-display-overlay'\)/);
+    assert.match(body, /card\._agDisplayRefs/);
+    assert.match(body, /if \(!overlay\)/);
+    assert.doesNotMatch(body, /\.ag-card-display-overlay\b.*remove\s*\(\s*\)/s);
 });
 
 // ─────────────────────────────────────────────────────────────────────────────

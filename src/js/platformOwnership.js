@@ -214,13 +214,16 @@ function _poFindLibraryGame(syncedLibrary, game, platform) {
             if (m) return m;
         }
     } else if (platform === 'gog') {
-        const gogId = game.productId || game.allIds?.gog || game.appName || String(game.id || '').replace(/^gog[-_]/i, '');
-        if (gogId) {
-            const m = syncedLibrary.find(lg =>
-                String(lg.productId || lg.allIds?.gog || lg.appName || '').trim() === String(gogId).trim()
-            );
-            if (m) return m;
+        const ids = _poGogProductIds(game);
+        if (ids.size) {
+            const exact = syncedLibrary.filter(lg => [..._poGogProductIds(lg)].some(id => ids.has(id)));
+            if (exact.length === 1) return exact[0];
+            if (exact.length > 1) return null;
         }
+        // GOG title fallback may only identify one exact normalized title. Partial
+        // or fuzzy matches can never grant ownership.
+        const titleMatches = syncedLibrary.filter(lg => _poNormTitle(lg.title || lg.name || '') === gameNorm && gameNorm);
+        return titleMatches.length === 1 ? titleMatches[0] : null;
     }
 
     // Title fallback (any platform)
@@ -230,6 +233,18 @@ function _poFindLibraryGame(syncedLibrary, game, platform) {
     }) || null;
 }
 window._poFindLibraryGame = _poFindLibraryGame;
+
+function _poGogProductIds(game) {
+    const values = [
+        game?.productId, game?.providerProductId, game?.contentSystemProductId,
+        game?.gogProductId, game?.gogGameId, game?.gogId, game?.gogdlAppName,
+        game?.allIds?.gog, game?.allIds?.gogProductId, game?.allIds?.contentSystemProductId,
+    ];
+    const rawId = String(game?.id || '').trim();
+    if (/^gog[-_]\d+$/i.test(rawId)) values.push(rawId.replace(/^gog[-_]/i, ''));
+    return new Set(values.map(value => String(value ?? '').trim()).filter(value => /^\d+$/.test(value)));
+}
+window._poGogProductIds = _poGogProductIds;
 
 // ── Ownership checkers ─────────────────────────────────────────
 // Steam: steamLicensedAccountIds → ownedByAccountIds. NEVER steamDetectedAccountIds.
@@ -252,6 +267,14 @@ function _poEpicOwnsGame(libGame, accountId) {
 }
 window._poEpicOwnsGame = _poEpicOwnsGame;
 
+function _poGogOwnsGame(libGame, accountId) {
+    if (!libGame || accountId == null) return false;
+    const id = String(accountId).normalize('NFKC').trim();
+    return Boolean(id) && Array.isArray(libGame.ownedByAccountIds) &&
+        libGame.ownedByAccountIds.some(ownerId => String(ownerId).normalize('NFKC').trim() === id);
+}
+window._poGogOwnsGame = _poGogOwnsGame;
+
 // ── Normalize a single switcher profile to canonical shape ─────
 function _poNormalizeProfile(platform, raw) {
     if (!raw) return null;
@@ -268,6 +291,16 @@ function _poNormalizeProfile(platform, raw) {
     }
     if (typeof raw === 'string') {
         return { id: raw, displayName: raw, username: raw, avatar: null, platformAccountId: null, _resolvedSyncId: null };
+    }
+    if (platform === 'gog') {
+        return {
+            id: raw.id,
+            displayName: raw.displayName || raw.name || 'GOG Account',
+            username: null,
+            avatar: raw.avatar || null,
+            platformAccountId: raw.platformAccountId || null,
+            _resolvedSyncId: raw.platformAccountId || null,
+        };
     }
     return {
         id:                raw.id || raw.accountId || raw.name,
@@ -307,6 +340,11 @@ window._poAccountAliases = _poAccountAliases;
 
 // Returns true if two account objects refer to the same logical account.
 function _poSameAccount(platform, a, b) {
+    if (platform === 'gog') {
+        const aId = String(a?.platformAccountId || '').trim();
+        const bId = String(b?.platformAccountId || b?.id || '').trim();
+        return Boolean(aId && bId && aId === bId);
+    }
     const aa = _poAccountAliases(platform, a);
     const ab = _poAccountAliases(platform, b);
     for (const x of aa) if (ab.has(x)) return true;
@@ -332,7 +370,8 @@ window._poAccountKey = _poAccountKey;
 function _buildAccountOptionsFromData({ game, platform, mode = 'play', switcherProfiles, syncAccounts, syncedLibrary }) {
     const libGame    = _poFindLibraryGame(syncedLibrary, game, platform);
     const hasLibData = syncedLibrary.length > 0;
-    const ownsGame   = platform === 'steam' ? _poSteamOwnsGame : _poEpicOwnsGame;
+    const ownershipCheckers = { steam: _poSteamOwnsGame, epic: _poEpicOwnsGame, gog: _poGogOwnsGame };
+    const ownsGame = ownershipCheckers[platform] || (() => false);
 
     // ── Switcher accounts ──
     const rows = switcherProfiles.map(profile => {
@@ -371,7 +410,7 @@ function _buildAccountOptionsFromData({ game, platform, mode = 'play', switcherP
             isSynced,
             ownershipStatus,
             actionStatus,
-            enabled: actionStatus === 'ready' || actionStatus === 'sync_to_verify',
+            enabled: actionStatus === 'ready' || (actionStatus === 'sync_to_verify' && platform !== 'gog'),
             inSwitcher:    true,
             notInSwitcher: false,
             syncAccountId: syncAccount ? syncAccount.id : null,
@@ -444,6 +483,7 @@ async function _poFetchSwitcherProfiles(platform) {
     }
     const fetchMap = {
         epic:     () => window.electronAPI.getEpicProfiles?.(),
+        gog:      () => window.electronAPI.getGogProfiles?.(),
         ea:       () => window.electronAPI.getEAProfiles?.(),
         riot:     () => window.electronAPI.getRiotProfiles?.(),
         ubisoft:  () => window.electronAPI.getUbisoftProfiles?.(),
@@ -457,6 +497,10 @@ async function _poFetchSwitcherProfiles(platform) {
 // Prevents a transient empty platformSyncGetAccounts/Cached response from
 // degrading previously-known ready/does_not_own rows to sync_to_verify.
 const _poLastGoodSyncSnapshot = new Map();
+window.invalidatePlatformOwnershipCache = function(platform = null) {
+    if (platform) _poLastGoodSyncSnapshot.delete(platform);
+    else _poLastGoodSyncSnapshot.clear();
+};
 
 // ── Async wrapper — fetches data then calls pure core ──────────
 async function buildPlatformAccountOptions({ game, platform, mode = 'play' }) {
@@ -529,6 +573,64 @@ async function buildPlatformAccountOptions({ game, platform, mode = 'play' }) {
 }
 window.buildPlatformAccountOptions = buildPlatformAccountOptions;
 
+async function buildDirectEpicInstallAccountOptions({ game }) {
+    return buildManagedProviderAccountOptions({ game, platform: 'epic', provider: 'legendary' });
+}
+
+async function buildManagedProviderAccountOptions({ game, platform, provider }) {
+    if (!['epic', 'gog'].includes(platform) || !((platform === 'epic' && provider === 'legendary') || (platform === 'gog' && provider === 'gogdl'))) {
+        throw new Error('Unsupported Baddel-managed provider.');
+    }
+    if (window.electronAPI.downloads?.getDirectEpicAccounts) {
+        const result = platform === 'epic' ? await window.electronAPI.downloads.getDirectEpicAccounts(game) : null;
+        if (result?.status === 'success') return Array.isArray(result.accounts) ? result.accounts : [];
+        if (platform === 'epic') throw new Error(result?.message || 'Could not load Epic install accounts.');
+    }
+    const [accRes, libRes] = await Promise.all([
+        window.electronAPI.platformSyncGetAccounts?.(platform) || Promise.resolve({ accounts: [] }),
+        window.electronAPI.platformSyncGetCached?.(platform) || Promise.resolve({ games: [] }),
+    ]);
+    let accounts = Array.isArray(accRes?.accounts) ? accRes.accounts : [];
+    let library = Array.isArray(libRes?.games) ? libRes.games : [];
+    if (accounts.length > 0 && library.length > 0) {
+        _poLastGoodSyncSnapshot.set(platform, { accounts, games: library, updatedAt: Date.now(), source: 'managed-fresh' });
+    } else {
+        const snapshot = _poLastGoodSyncSnapshot.get(platform);
+        if (snapshot) {
+            accounts = snapshot.accounts;
+            library = snapshot.games;
+        }
+    }
+    const libraryGame = _poFindLibraryGame(library, game, platform);
+    const owners = new Set((libraryGame?.ownedByAccountIds || []).map(String));
+    return accounts.filter(account => {
+        const id = String(account?.id || '').trim();
+        return id && !id.startsWith('ghost-') && (platform !== 'epic' || !id.startsWith('epic_tmp'));
+    }).map(account => {
+        const id = String(account.id);
+        const needsReauth = account.needsReauth === true || account.credentialStatus === 'missing' || account.status === 'needs_reauth';
+        const ownsGame = owners.has(id);
+        const ownershipUnknown = !libraryGame;
+        return {
+            id,
+            syncAccountId: id,
+            username: id,
+            displayName: account.displayName || account.name || ((platform === 'gog' ? 'GOG ' : 'Epic ') + id.slice(-6)),
+            avatar: account.avatar || null,
+            enabled: ownsGame && !needsReauth && !ownershipUnknown,
+            inSwitcher: false,
+            notInSwitcher: false,
+            ownsGame,
+            needsReauth,
+            ownershipStatus: ownershipUnknown ? 'unknown' : (ownsGame ? 'owned' : 'not-owned'),
+            actionStatus: needsReauth ? 'reconnect' : (ownershipUnknown ? 'sync_unknown' : (ownsGame ? 'ready' : 'does_not_own')),
+            libraryGame,
+        };
+    });
+}
+window.buildDirectEpicInstallAccountOptions = buildDirectEpicInstallAccountOptions;
+window.buildManagedProviderAccountOptions = buildManagedProviderAccountOptions;
+
 // ── Shared account row renderer ────────────────────────────────
 // cfg: { idPrefix, makeOnClick(id, platKey), closeModalJs, platKey, platName, platAccent }
 function _poRenderAccountRow(option, cfg) {
@@ -550,14 +652,14 @@ function _poRenderAccountRow(option, cfg) {
                 </div>
                 <div class="pl-account-info">
                     <div class="pl-account-name">${option.displayName}</div>
-                    <div class="pl-account-sub" style="color:rgba(255,255,255,0.3);">Not in Switcher</div>
+                    <div class="pl-account-sub" style="color:rgba(255,255,255,0.3);">${platKey === 'gog' ? 'GOG' : 'Not in Switcher'}</div>
                 </div>
                 <div class="pl-owned-badge pl-badge-owned" style="opacity:0.8;">&#10003; Owned Game</div>
             </div>
             <div class="pl-ghost-tooltip">
                 <div class="pl-ghost-tooltip-title">Account not in Switcher</div>
                 <div class="pl-ghost-tooltip-body">This account owns the game but hasn&rsquo;t been added to your ${platName} Switcher yet.</div>
-                <button class="pl-ghost-go-btn" onclick="${closeModalJs}; selectAccountPlatform('${platKey}');">
+                <button class="pl-ghost-go-btn" onclick="${platKey === 'gog' ? `startTargetedGogSwitcherAdd('${String(option.syncAccountId || '')}')` : `${closeModalJs}; selectAccountPlatform('${platKey}')`};">
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
                     Add to ${platName} Switcher
                 </button>
@@ -572,16 +674,26 @@ function _poRenderAccountRow(option, cfg) {
         badge = `<div class="pl-owned-badge pl-badge-owned">&#10003; Owned</div>`;
     } else if (option.actionStatus === 'does_not_own') {
         badge = `<div class="pl-owned-badge pl-badge-not-owned">&#10007; Not Owned</div>`;
+    } else if (option.actionStatus === 'reconnect') {
+        badge = `<div class="pl-owned-badge pl-badge-not-owned">Reconnect account</div>`;
     } else if (option.actionStatus === 'sync_to_verify') {
         badge = `<div class="pl-owned-badge pl-badge-unknown" title="Sync this account in the Accounts tab to verify ownership">&#8212; Sync to verify</div>`;
+    } else if (option.actionStatus === 'sync_unknown') {
+        badge = `<div class="pl-owned-badge pl-badge-unknown">Ownership Unavailable</div>`;
     }
 
-    const subtitle   = option.username && option.username !== option.displayName
-        ? option.username
-        : (platName || platKey);
+    const subtitle   = platKey === 'gog'
+        ? 'GOG'
+        : (option.username && option.username !== option.displayName
+            ? option.username
+            : (platName || platKey));
     const isDisabled = option.enabled === false;
+    const disabledReason = option.actionStatus === 'reconnect' ? 'Reconnect this account' :
+        option.actionStatus === 'sync_unknown' ? 'Ownership Unavailable' :
+        option.actionStatus === 'sync_to_verify' ? 'Sync to Verify' :
+        'This synced account does not own this game';
     const clickAttr  = isDisabled
-        ? `aria-disabled="true" title="This synced account does not own this game"`
+        ? `aria-disabled="true" title="${disabledReason}"`
         : `onclick="${makeOnClick(option.id, option.platformType || platKey)}"`;
 
     return `
@@ -603,3 +715,33 @@ function _poRenderAccountRow(option, cfg) {
         </div>`;
 }
 window._poRenderAccountRow = _poRenderAccountRow;
+
+window.startTargetedGogSwitcherAdd = async function(syncAccountId) {
+    const id = String(syncAccountId || '').normalize('NFKC').trim();
+    if (!/^[A-Za-z0-9_-]{1,128}$/.test(id)) return;
+    const button = typeof event !== 'undefined' ? event?.currentTarget : null;
+    if (button) button.disabled = true;
+    try {
+        const returnTarget = document.getElementById('gdInstallerModal')
+            ? { kind: 'install', game: typeof _gdCurrentGame !== 'undefined' ? _gdCurrentGame : null }
+            : { kind: 'play', game: typeof _plCurrentGame !== 'undefined' ? _plCurrentGame : null };
+        const result = await window.electronAPI.addNewGogAccount?.(id);
+        if (result?.status === 'error') throw Object.assign(new Error(result.message), { code: result.code });
+        if (typeof showToast === 'function') showToast('Sign in to the selected GOG account in Galaxy, then save it in the GOG Switcher.', 'info');
+        window._pendingGogOwnershipReturn = returnTarget;
+        closePlayLauncher?.();
+        document.getElementById('gdInstallerModal')?.remove();
+        selectAccountPlatform?.('gog');
+    } catch (error) {
+        if (typeof showToast === 'function') showToast(error?.message || 'Could not start the GOG Switcher add flow.', 'error');
+        if (button) button.disabled = false;
+    }
+};
+
+window.addEventListener?.('baddel:gog-switcher-changed', () => {
+    const target = window._pendingGogOwnershipReturn;
+    if (!target?.game) return;
+    window._pendingGogOwnershipReturn = null;
+    if (target.kind === 'install') window._gdOpenInstallPickerForGame?.(target.game);
+    else window.openPlayLauncher?.(target.game);
+});

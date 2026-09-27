@@ -2,6 +2,15 @@
 
 const defaultFs = require('fs').promises;
 const defaultFsSync = require('fs');
+const { AtomicJsonFileStore } = require('../../infrastructure/runtime/AtomicJsonFileStore');
+const { fileURLToPath } = require('url');
+const defaultPath = require('path');
+const {
+    isManagedArtworkCacheFileUrl,
+    isRemoteArtworkUrl,
+    sanitizeMergedLibraryArtwork,
+    fileUrlToPathSafe,
+} = require('../../../games/infrastructure/services/ManagedArtworkPersistence');
 
 class PlatformSyncAssetWriteBackService {
     constructor({
@@ -10,13 +19,18 @@ class PlatformSyncAssetWriteBackService {
         enqueueWrite = null,
         waitForWrites = null,
         logger = {},
+        userDataDir = null,
+        path = defaultPath,
     } = {}) {
         this.fsDeps = fsDeps;
         this.existsFn = existsFn;
         this.enqueueWrite = enqueueWrite;
         this.waitForWrites = waitForWrites;
         this.logger = logger;
+        this.userDataDir = userDataDir;
+        this.path = path;
         this.localWriteQueue = Promise.resolve();
+        this.atomicJson = new AtomicJsonFileStore();
     }
 
     _log(...args) {
@@ -43,6 +57,14 @@ class PlatformSyncAssetWriteBackService {
         await this.localWriteQueue;
     }
 
+    async _writeJson(cacheFile, value) {
+        if (typeof this.fsDeps.writeJson === 'function') {
+            await this.fsDeps.writeJson(cacheFile, value);
+            return;
+        }
+        await this.atomicJson.writeJson(cacheFile, value);
+    }
+
     async _withConcurrency(items, fn, concurrency) {
         if (!items.length || concurrency <= 0) return;
         const queue = [...items];
@@ -57,9 +79,27 @@ class PlatformSyncAssetWriteBackService {
     }
 
     _isFileValid(url) {
-        if (!url || !String(url).startsWith('file://')) return false;
-        const raw = String(url).replace(/^file:\/\/\//, '').replace(/^file:\/\//, '');
-        return this.existsFn(raw);
+        const filePath = fileUrlToPathSafe(url, fileURLToPath);
+        return !!filePath && this.existsFn(filePath);
+    }
+
+    _isManagedCacheUrl(url) {
+        return isManagedArtworkCacheFileUrl(url, { userDataDir: this.userDataDir, path: this.path, fileURLToPath });
+    }
+
+    _isPersistentArtworkUrl(url) {
+        const value = String(url || '').trim();
+        if (!value) return false;
+        if (isRemoteArtworkUrl(value)) return true;
+        if (!value.startsWith('file://')) return false;
+        return !this._isManagedCacheUrl(value);
+    }
+
+    _setRuntimeCover(entry, cover) {
+        if (!cover) return;
+        entry._agResolvedCoverUrl = cover;
+        entry._agCoverPipelineDone = true;
+        entry._agCoverInFlight = false;
     }
 
     _getCover(entry) {
@@ -75,7 +115,7 @@ class PlatformSyncAssetWriteBackService {
         const validLocal = candidates.find((url) => this._isFileValid(url));
         if (validLocal) return validLocal;
 
-        const remote = candidates.find((url) => !String(url).startsWith('file://'));
+        const remote = candidates.find((url) => isRemoteArtworkUrl(url));
         if (remote) return remote;
 
         return candidates[0] || null;
@@ -83,11 +123,12 @@ class PlatformSyncAssetWriteBackService {
 
     _setCover(entry, cover) {
         if (!cover) return;
-        entry.coverUrl = cover;
-        entry.image = cover;
-        entry.defaultImage = cover;
-        entry._agCoverPipelineDone = true;
-        entry._agCoverInFlight = false;
+        if (this._isPersistentArtworkUrl(cover)) {
+            entry.coverUrl = cover;
+            entry.image = cover;
+            entry.defaultImage = cover;
+        }
+        this._setRuntimeCover(entry, cover);
     }
 
     _getGameKey(entry) {
@@ -131,7 +172,7 @@ class PlatformSyncAssetWriteBackService {
                 : payload.coverUrl,
         });
         coverCachedEmitter(payload);
-        this._log(`[CoverWarmup] emitted all-games-cover-cached ${payload.id || payload.appid}/${payload.title}`);
+        this._debug(`[CoverWarmup] emitted all-games-cover-cached ${payload.id || payload.appid}/${payload.title}`);
     }
 
     async cacheLibraryCoversFirst({
@@ -205,7 +246,8 @@ class PlatformSyncAssetWriteBackService {
                     }
 
                     if (changed) {
-                        await this.fsDeps.writeFile(cacheFile, JSON.stringify(lib, null, 2), 'utf8');
+                        const sanitized = sanitizeMergedLibraryArtwork(lib, { userDataDir: this.userDataDir, path: this.path });
+                        await this._writeJson(cacheFile, sanitized.games);
                     }
                 } catch {}
             });
@@ -250,12 +292,12 @@ class PlatformSyncAssetWriteBackService {
                 alreadyReadyCount++;
 
                 this._emitCoverReady(entry, cover, coverCachedEmitter);
-                pushPendingUpdate(entry);
+                if (this._isPersistentArtworkUrl(cover)) pushPendingUpdate(entry);
             }
         }
 
         if (alreadyReadyCount > 0) {
-            this._log(`[CoverWarmup] emitted ${alreadyReadyCount} already-cached covers`);
+            this._debug(`[CoverWarmup] emitted ${alreadyReadyCount} already-cached covers`);
         }
 
         const coverTargets = entries.filter(e => {
@@ -269,9 +311,10 @@ class PlatformSyncAssetWriteBackService {
         });
 
         const total = coverTargets.length;
-        this._log(`[CoverWarmup] queued ${total} covers`);
+        this._debug(`[CoverWarmup] queued ${total} covers`);
 
         let cachedCount = 0;
+        let failedCount = 0;
 
         const processOneCover = async (entry) => {
             const gameId = this._getGameKey(entry);
@@ -287,7 +330,12 @@ class PlatformSyncAssetWriteBackService {
                     sourceKind: String(sourceCover || '').startsWith('file://') ? 'file' : 'remote',
                     sourceCover: String(sourceCover || '').slice(0, 160),
                 });
-                const result = await downloader({ cover: sourceCover }, gameId);
+                const result = await downloader({ cover: sourceCover }, gameId, {
+                    priority: 'library-cover-hydration',
+                    sourceSubsystem: 'platform-sync-cover-warmup',
+                    reason: 'library-cover-hydration',
+                    activeLibraryGameCount: entries.length,
+                });
                 this._debug('DOWNLOAD cover RESULT', {
                     gameId,
                     title: entry.title || entry.appName || entry.name,
@@ -302,20 +350,27 @@ class PlatformSyncAssetWriteBackService {
                     this._setCover(entry, result.cover);
 
                     cachedCount++;
-                    this._log(`[CoverWarmup] cached cover ${cachedCount}/${total} "${entry.title || entry.appName || gameId}" ${result.cover}`);
+                    this._debug(`[CoverWarmup] cached cover ${cachedCount}/${total} "${entry.title || entry.appName || gameId}" ${result.cover}`);
 
                     this._emitCoverReady(entry, result.cover, coverCachedEmitter);
 
-                    pushPendingUpdate(entry);
-                    debounceLibUpdated();
+                    if (this._isPersistentArtworkUrl(result.cover)) {
+                        pushPendingUpdate(entry);
+                        debounceLibUpdated();
+                    }
                 }
             } catch (e) {
                 entry._agCoverInFlight = false;
-                this._log(`[CoverWarmup] cover failed for "${entry.title || entry.appName || gameId}": ${e.message}`);
+                failedCount++;
+                this._debug(`[CoverWarmup] cover failed for "${entry.title || entry.appName || gameId}": ${e.message}`);
             }
         };
 
         await this._withConcurrency(coverTargets, processOneCover, coverConcurrency);
+
+        if (total > 0 || alreadyReadyCount > 0) {
+            this._log(`[CoverWarmup] cached=${cachedCount} alreadyCached=${alreadyReadyCount} queued=${total} failed=${failedCount}`);
+        }
 
         scheduleFlush();
 
@@ -354,13 +409,13 @@ class PlatformSyncAssetWriteBackService {
                 const result = await downloader(assets, gameId);
                 let changed = false;
 
-                if (result?.hero && String(result.hero).startsWith('file://')) {
+                if (result?.hero && String(result.hero).startsWith('file://') && this._isPersistentArtworkUrl(result.hero)) {
                     entry.heroUrl = result.hero;
                     entry.heroImage = result.hero;
                     changed = true;
                 }
 
-                if (result?.logo && String(result.logo).startsWith('file://')) {
+                if (result?.logo && String(result.logo).startsWith('file://') && this._isPersistentArtworkUrl(result.logo)) {
                     entry.logoUrl = result.logo;
                     entry.logo = result.logo;
                     changed = true;
@@ -386,7 +441,8 @@ class PlatformSyncAssetWriteBackService {
                                     lib[idx].logo = entry.logoUrl;
                                 }
 
-                                await this.fsDeps.writeFile(cacheFile, JSON.stringify(lib, null, 2), 'utf8');
+                                const sanitized = sanitizeMergedLibraryArtwork(lib, { userDataDir: this.userDataDir, path: this.path });
+                                await this._writeJson(cacheFile, sanitized.games);
                             }
                         } catch {}
                     });

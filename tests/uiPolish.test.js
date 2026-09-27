@@ -1,4 +1,4 @@
-﻿'use strict';
+'use strict';
 const test   = require('node:test');
 const assert = require('node:assert/strict');
 const fs     = require('node:fs');
@@ -169,15 +169,17 @@ test('GOG platform icon uses the png asset everywhere visible', () => {
     assert.match(GD_JS, /assets\/gog\.png/);
 });
 
-test('GOG sync skips Prime entitlements early and avoids unnecessary store pages', () => {
+test('GOG sync skips Prime entitlements early and reserves store pages for lazy details', () => {
     assert.match(SYNC_JS, /function isGogAmazonPrimeRelease/,
         'GOG sync should detect Prime Gaming entitlement duplicates before enrichment');
     assert.match(SYNC_JS, /if \(isGogAmazonPrimeRelease\(release\)\) return null;[\s\S]{0,260}fetchGamesDbData/,
         'Prime Gaming GOG releases should be skipped before GamesDB/store metadata requests');
     assert.match(SYNC_JS, /function shouldFetchGogStorePage/,
         'GOG store page HTML fetches should be gated behind missing rich product metadata');
-    assert.match(SYNC_JS, /pageUrl && shouldFetchGogStorePage\(storeProduct\)/,
-        'GOG sync should not fetch every store page when product metadata is already useful');
+    assert.match(SYNC_JS, /allowStorePage && pageUrl && shouldFetchGogStorePage\(storeProduct\)/,
+        'GOG store page fetches should require the explicit rich-details policy');
+    assert.match(SYNC_JS, /fetchGogStoreMetadata\([\s\S]{0,500}allowStorePage: false/,
+        'normal GOG library sync must not request store page HTML');
 });
 
 test('Game Details shows GOG platform and account ownership for merged games', () => {
@@ -637,13 +639,15 @@ test('accounts.js: renderAllGamesView calls _agMaybeRenderEmptyOnboarding after 
     assert.ok(cacheIdx < maybeIdx, '_agMaybeRenderEmptyOnboarding called after cache is built');
 });
 
-test('accounts.js: onLibraryUpdated clears empty mode when games arrive', () => {
-    const listenerStart = ACC_JS.indexOf('onLibraryUpdated(async ()');
-    // The handler is large — use a generous window to cover the full changed-pool path.
+test('accounts.js: onLibraryUpdated clears empty mode without destructive grid reset when games arrive', () => {
+    const listenerStart = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (payload = {})');
     const block = ACC_JS.slice(listenerStart, listenerStart + 10000);
     assert.match(block, /window\._allGamesCache\.length > 0/, 'checks _allGamesCache.length after filter');
     assert.match(block, /_agSetEmptyPageMode\(false\)/, '_agSetEmptyPageMode(false) called when games arrive');
-    assert.match(block, /_agResetAllGamesGridMode\(\)/, '_agResetAllGamesGridMode called when games arrive');
+    assert.match(block, /_agEnsureVirtualGridIntegrity\(\s*['"]background-pool-changed-before-render['"]\s*\)/,
+        'background sync preserves mounted virtual geometry before reconciling rows');
+    assert.doesNotMatch(block, /_agResetAllGamesGridMode\s*\(\s*\)/,
+        'background sync must not clear grid height/display when games arrive');
 });
 
 // ─── Steam Link Account fix ───────────────────────────────────────────────────
@@ -1133,11 +1137,11 @@ test('accounts.js: renderAllGamesView marks synced records with _agSource and li
 });
 
 test('accounts.js: onLibraryUpdated background refresh marks synced records', () => {
-    const listenerStart = ACC_JS.indexOf('onLibraryUpdated(async ()');
+    const listenerStart = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (payload = {})');
     // Handler body grew with scroll-preserve wrapper; use a generous slice
     const fn = ACC_JS.slice(listenerStart, listenerStart + 5000);
-    assert.match(fn, /_agSource\s*=\s*'platform-sync'/, 'onLibraryUpdated must set _agSource');
-    assert.match(fn, /librarySource\s*=\s*'synced-account'/, 'onLibraryUpdated must set librarySource');
+    assert.match(fn, /_agSource\s*=\s*'platform-sync'/, 'platform-library-committed handler must set _agSource');
+    assert.match(fn, /librarySource\s*=\s*'synced-account'/, 'platform-library-committed handler must set librarySource');
 });
 
 test('accounts.js: navigateToAllGames sanitizes _allGamesCache at start', () => {
@@ -1201,13 +1205,16 @@ test('accounts.js: _agRouteSkeletonHTML is defined and returns ag-route-skeleton
     assert.match(fn, /ag-route-skeleton/, 'must return ag-route-skeleton HTML');
 });
 
-test('accounts.js: _agBeginAllGamesRoute is defined and clears cardPool without touching cardCache', () => {
+test('accounts.js: _agBeginAllGamesRoute keeps warm virtual grid alive and never clears cardCache', () => {
     assert.match(ACC_JS, /function _agBeginAllGamesRoute\(/,
         '_agBeginAllGamesRoute must be defined');
     const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
-    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
-    assert.match(fn, /cardPool\.forEach/, 'must iterate cardPool to remove row nodes');
-    assert.match(fn, /cardPool\.clear\(\)/, 'must clear cardPool');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2400);
+    assert.match(fn, /warmActivation/, 'must branch between warm and cold activation');
+    const warmBlock = fn.slice(fn.indexOf('if (warmActivation)'), fn.indexOf("return 'warm';") + 14);
+    assert.doesNotMatch(warmBlock, /cardPool\.clear\(\)|innerHTML\s*=/,
+        'warm activation must not clear rows or install skeleton');
+    assert.match(fn, /cardPool\.clear\(\)/, 'cold activation may clear cardPool');
     assert.doesNotMatch(fn, /cardCache\.clear\(\)/, 'must NOT clear cardCache');
 });
 
@@ -1224,10 +1231,13 @@ test('accounts.js: _agBeginAllGamesRoute sets grid minHeight to stable viewport 
     assert.match(fn, /minHeight\s*=\s*['"]calc\(100vh/, 'must set minHeight to calc(100vh...) to prevent collapse');
 });
 
-test('accounts.js: _agBeginAllGamesRoute writes route skeleton into grid', () => {
+test('accounts.js: _agBeginAllGamesRoute writes route skeleton only on cold activation', () => {
     const fnStart = ACC_JS.indexOf('function _agBeginAllGamesRoute');
-    const fn = ACC_JS.slice(fnStart, fnStart + 1500);
-    assert.match(fn, /_agRouteSkeletonHTML\(\)/, 'must use _agRouteSkeletonHTML() as grid content');
+    const fn = ACC_JS.slice(fnStart, fnStart + 2600);
+    const warmIdx = fn.indexOf('if (warmActivation)');
+    const skeletonIdx = fn.indexOf('_agRouteSkeletonHTML()');
+    assert.ok(warmIdx > -1, 'must have warm activation branch');
+    assert.ok(skeletonIdx > warmIdx, 'cold skeleton must come after warm early-return branch');
 });
 
 test('accounts.js: _agEndAllGamesRoute is defined, removes route-lock classes, uses requestAnimationFrame', () => {
@@ -1261,14 +1271,17 @@ test('accounts.js: _agStableLibraryLoadingHTML is defined', () => {
     assert.match(fn, /ag-stable-loading-panel/, 'must return ag-stable-loading-panel HTML');
 });
 
-test('accounts.js: navigateToAllGames resets scrollTop before _hideAllViews (before first paint)', () => {
+test('accounts.js: navigateToAllGames resets scrollTop only for cold activation before _hideAllViews', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
     const fn = ACC_JS.slice(fnStart, fnStart + 8500);
+    const warmIdx = fn.indexOf('_agWarmActivation');
     const scrollIdx = fn.indexOf('scrollTop = 0');
     const hideIdx   = fn.indexOf('_hideAllViews');
+    assert.ok(warmIdx > -1, 'must compute warm activation');
     assert.ok(scrollIdx > -1, 'scrollTop = 0 must appear in navigateToAllGames');
     assert.ok(hideIdx   > -1, '_hideAllViews must appear in navigateToAllGames');
-    assert.ok(scrollIdx < hideIdx, 'scrollTop reset must precede _hideAllViews call');
+    assert.ok(warmIdx < scrollIdx && scrollIdx < hideIdx, 'cold-only scroll reset must precede _hideAllViews');
+    assert.match(fn, /!_agWarmActivation/, 'scroll reset must be gated off for warm activation');
 });
 
 test('accounts.js: navigateToAllGames calls _agBeginAllGamesRoute before renderAllGamesView (full path)', () => {
@@ -1307,11 +1320,13 @@ test('accounts.js: navigateToAllGames wraps async body in try/finally calling _a
     assert.match(fn, /_agEndAllGamesRoute\(\)/, 'finally block must call _agEndAllGamesRoute');
 });
 
-test('accounts.js: navigateToAllGames cache path uses resetScroll controlled by restoreState', () => {
+test('accounts.js: navigateToAllGames cache path keeps scroll on warm activation', () => {
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
-    const fn = ACC_JS.slice(fnStart, fnStart + 8500);
-    assert.match(fn, /resetScroll.*restoreState|restoreState.*resetScroll/,
-        'cache path must pass resetScroll based on restoreState');
+    const fn = ACC_JS.slice(fnStart, fnStart + 9000);
+    assert.match(fn, /resetScroll[\s\S]{0,120}_agRouteActivation !== ['"]warm['"]/,
+        'cache path must pass resetScroll=false for warm activation');
+    assert.match(fn, /allowWarmReuse:\s*_agRouteActivation === ['"]warm['"]/,
+        'cache path must allow unchanged warm projection reuse');
 });
 
 test('accounts.js: renderAllGamesView accepts an options parameter', () => {
@@ -1327,15 +1342,16 @@ test('accounts.js: renderAllGamesView handles suppressInitialLoading option', ()
     assert.match(fn, /_agStableLibraryLoadingHTML\(\)/, 'must call _agStableLibraryLoadingHTML when stableLayout');
 });
 
-test('accounts.js: _renderAllGamesGrid preserves previous height before clearing innerHTML', () => {
+test('accounts.js: _renderAllGamesGrid avoids blanket innerHTML swap for populated virtual datasets', () => {
     const fnStart = ACC_JS.indexOf('function _renderAllGamesGrid');
-    const fn = ACC_JS.slice(fnStart, fnStart + 3400);
-    const heightCapture = fn.indexOf('previousHeight');
-    const resetMode     = fn.indexOf('_agResetAllGamesGridMode');
-    const clear         = fn.indexOf('grid.innerHTML');
-    assert.ok(heightCapture > -1, 'must capture previousHeight');
-    assert.ok(heightCapture < resetMode, 'previousHeight must be captured before _agResetAllGamesGridMode');
-    assert.ok(resetMode < clear,         '_agResetAllGamesGridMode must run before innerHTML clear');
+    const fn = ACC_JS.slice(fnStart, fnStart + 4200);
+    assert.match(fn, /const hasGames = Array\.isArray\(games\) && games\.length > 0/);
+    assert.match(fn, /preserveVirtualGrid: hasGames && _agShouldPreserveVirtualGrid\(\)/);
+    const clearIdx = fn.indexOf("grid.querySelector('.ag-route-skeleton");
+    const vsInitIdx = fn.indexOf('_vsInit(games, resetScroll)');
+    assert.ok(clearIdx > -1 && vsInitIdx > clearIdx, 'only transient placeholders may be cleared before _vsInit');
+    assert.doesNotMatch(fn.slice(0, clearIdx), /previousHeight|minHeight = previousHeight/,
+        'populated render must not rely on height-floor repair before clearing');
 });
 
 test('accounts.js: _renderAllGamesGrid calls _agUnlockAllGamesLayout after _vsInit', () => {
@@ -2153,12 +2169,18 @@ test('Phase 2.4: window.renderAllGamesView definition is unchanged', () => {
         'window.renderAllGamesView definition signature must be unchanged');
 });
 
-test('Phase 2.4: direct renderAllGamesView calls inside navigateToAllGames are preserved', () => {
-    // navigateToAllGames is past the definition so the direct call is safe without a guard
+test('Phase 2.4: navigateToAllGames cache path routes through warm filter reuse', () => {
+    // The cached All Games route should not rebuild the page through renderAllGamesView.
+    // It hands the visible pool to _applyAgFilters so the virtual grid lifecycle can
+    // decide whether this is a warm activation or a real invalidation.
     const fnStart = ACC_JS.indexOf('async function navigateToAllGames');
     const fn = ACC_JS.slice(fnStart, fnStart + 9500);
-    assert.match(fn, /await renderAllGamesView\(/,
-        'navigateToAllGames must still call renderAllGamesView directly (no guard needed)');
+    assert.match(fn, /_agBeginAllGamesRoute\(opts\)/,
+        'navigateToAllGames must classify the route before rendering cached content');
+    assert.match(fn, /allowWarmReuse:\s*_agRouteActivation\s*===\s*['"]warm['"]/,
+        'cached navigation should allow warm virtual grid reuse');
+    assert.doesNotMatch(fn, /await renderAllGamesView\(/,
+        'cached route should avoid full renderAllGamesView rebuilds');
 });
 
 // ── Ready to Install page: startup loading behavior ───────────────────────────
@@ -2521,29 +2543,28 @@ test('scroll: onLibraryUpdated non-home branch still uses _preserveActiveScrollD
 });
 
 test('scroll: accounts.js onLibraryUpdated background path uses resetScroll:false', () => {
-    // The background-sync re-render must not reset the user scroll position
-    const idx = ACC_JS.indexOf('_applyAgFilters({ resetScroll: false })');
-    assert.ok(idx !== -1, 'resetScroll:false not found in accounts.js');
+    const handlerStart = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (payload = {}) => {');
+    assert.ok(handlerStart !== -1, 'platform-library-committed handler not found in accounts.js');
+    const body = ACC_JS.slice(handlerStart, ACC_JS.indexOf('// ── Per-cover instant patch', handlerStart));
+    assert.match(body, /_applyAgFilters\(\{\s*resetScroll:\s*false/);
 });
 
-test('scroll: accounts.js onLibraryUpdated uses window._preserveActiveScrollDuring', () => {
+test('scroll: accounts.js onLibraryUpdated does not use raw scroll preservation wrapper', () => {
     const idx = ACC_JS.indexOf('window._allGamesLibraryListenerAttached');
     assert.ok(idx !== -1, 'library listener guard not found in accounts.js');
-    const handlerBlock = ACC_JS.slice(idx, idx + 500);
-    assert.match(handlerBlock, /window\._preserveActiveScrollDuring/);
+    const handlerBlock = ACC_JS.slice(idx, ACC_JS.indexOf('// ── Per-cover instant patch', idx));
+    assert.doesNotMatch(handlerBlock, /_preserveActiveScrollDuring|accounts-library-updated/);
 });
 
-test('scroll: accounts.js preserve wrapper uses accounts-library-updated reason', () => {
-    assert.match(ACC_JS, /accounts-library-updated/);
-});
-
-test('scroll: accounts.js preserve wrapper surrounds cache rebuild and RTI publish', () => {
-    const idx = ACC_JS.indexOf('accounts-library-updated');
-    assert.ok(idx !== -1, 'accounts-library-updated label not found in accounts.js');
-    // The preserve wrapper async fn is several hundred lines long; use a generous slice
-    const afterLabel = ACC_JS.slice(idx, idx + 10000);
-    assert.match(afterLabel, /_agPublishReadyToInstallState/);
-    assert.match(afterLabel, /_applyAgFilters/);
+test('scroll: accounts.js committed snapshot publishes RTI state before virtual reconciliation', () => {
+    const idx = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (payload = {}) => {');
+    assert.ok(idx !== -1, 'platform-library-committed handler not found in accounts.js');
+    const body = ACC_JS.slice(idx, ACC_JS.indexOf('// ── Per-cover instant patch', idx));
+    const commitIdx = body.indexOf('_agCommitAllGamesProjection');
+    const applyIdx = body.indexOf('_applyAgFilters');
+    assert.ok(commitIdx !== -1 && applyIdx !== -1 && commitIdx < applyIdx,
+        'committed All Games/RTI state must be ready before the visible virtual projection updates');
+    assert.match(ACC_JS, /function _agCommitAllGamesProjection[\s\S]*?_agPublishReadyToInstallState/);
 });
 
 test('scroll: _onCanonicalReady uses resetScroll:false to preserve user position', () => {
@@ -2566,13 +2587,13 @@ test('scroll: navigateToAllGames still resets scroll to 0 for intentional naviga
     assert.match(body, /scrollTop\s*=\s*0/);
 });
 
-test('scroll: accounts.js background re-render saves scrollTop before rendering', () => {
-    // The onLibraryUpdated handler in accounts.js must capture scrollTop
-    const idx = ACC_JS.indexOf('keepScrollTop');
-    assert.ok(idx !== -1, 'keepScrollTop variable not found in accounts.js');
-    // Must be used to restore scroll in a rAF
-    const context = ACC_JS.slice(idx, idx + 700);
-    assert.match(context, /scroller\.scrollTop\s*=\s*keepScrollTop/);
+test('scroll: accounts.js background re-render uses anchor preservation, not raw scrollTop restore', () => {
+    const handlerStart = ACC_JS.indexOf('window.electronAPI.onLibraryUpdated');
+    assert.ok(handlerStart !== -1, 'platform-library-committed handler not found in accounts.js');
+    const body = ACC_JS.slice(handlerStart, ACC_JS.indexOf('// ── Per-cover instant patch', handlerStart));
+    assert.match(body, /resetScroll:\s*false/);
+    assert.match(body, /background-library-updated-preserve-filters/);
+    assert.doesNotMatch(body, /keepScrollTop|scrollTop\s*=\s*keepScrollTop/);
 });
 
 // ── preload.js multi-subscriber onLibraryUpdated tests ───────────────────────
@@ -2930,12 +2951,13 @@ test('accounts.js: _agComputePoolSignature includes mode, filters, and ordered I
     assert.match(body, /\.join\s*\(\s*['"],['"]\s*\)/);
 });
 
-test('accounts.js: _applyAgFilters returns false and logs skip when background signature unchanged', () => {
+test('accounts.js: _applyAgFilters returns false when background or warm signature is unchanged', () => {
     // Use direct source search — extractFnFromSource breaks on default-param {} in signature.
     assert.match(ACC_JS, /background-library-updated/);
+    assert.match(ACC_JS, /allowWarmReuse/);
     assert.match(ACC_JS, /_agLastRenderedPoolSignature/);
     assert.match(ACC_JS, /return\s+false/);
-    assert.match(ACC_JS, /\[AllGames\] background update skipped visible rerender: signature unchanged/);
+    assert.match(ACC_JS, /visible projection unchanged; reused warm virtual grid/);
 });
 
 test('accounts.js: _applyAgFilters updates _agLastRenderedPoolSignature before each real render', () => {
@@ -2956,8 +2978,11 @@ test('accounts.js: onLibraryUpdated does NOT clear cardCache on background updat
     assert.doesNotMatch(slice, /cardCache\s*\.\s*clear\s*\(\s*\)/);
 });
 
-test('accounts.js: onLibraryUpdated skips scroll restore when render was skipped', () => {
-    assert.match(ACC_JS, /_rendered\s*!==\s*false/);
+test('accounts.js: onLibraryUpdated delegates scroll stability to anchor-based _vsInit', () => {
+    const handlerStart = ACC_JS.indexOf('_agSubscribePlatformLibraryCommitted(async (payload = {}) => {');
+    const body = ACC_JS.slice(handlerStart, ACC_JS.indexOf('// ── Per-cover instant patch', handlerStart));
+    assert.match(body, /background-library-updated-preserve-filters/);
+    assert.doesNotMatch(body, /keepScrollTop|scrollTop\s*=\s*keepScrollTop/);
 });
 
 test('app.js: onLibraryUpdated does NOT call applyFilters when currentView === all-games', () => {

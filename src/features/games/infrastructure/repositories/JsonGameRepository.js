@@ -1,6 +1,7 @@
 'use strict';
 
 const { resolveCanonicalGameIdentity } = require('../../application/services/CanonicalGameIdentityResolver');
+const { reconcileManagedInstalledGames, strongIdentity, within } = require('../../domain/services/InstalledGameReconciliation');
 const { pathToFileURL } = require('url');
 const {
     ARTWORK_TYPES,
@@ -220,6 +221,16 @@ class JsonGameRepository {
 
     getGameById(gameId) {
         return this._dbCache.find(g => String(g.id) === String(gameId)) || null;
+    }
+
+    async reconcileManagedInstalledGames(tasks = []) {
+        const result = reconcileManagedInstalledGames(this._dbCache, tasks);
+        if (!result.changed) return result;
+        const temporary = `${this._dbPath}.${process.pid}.reconcile.tmp`;
+        await this._fs.promises.writeFile(temporary, JSON.stringify(result.games, null, 2), 'utf8');
+        await this._fs.promises.rename(temporary, this._dbPath);
+        this._dbCache = result.games;
+        return result;
     }
 
     _normalizeArtworkPath(value) {
@@ -560,17 +571,16 @@ class JsonGameRepository {
         const artLocked      = game.customArtworkLocked === true;
         const serverVerified = (game.artworkSource === 'server-details' && !!game.artworkUpdatedAt) ||
             ARTWORK_TYPES.some(type => stateForGuard[type]?.fallbackSource === 'server-details');
-        const skipArt =
-            (artLocked && source !== 'creator' && source !== 'settings') ||
-            (!force && serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual'));
+        const skipArt = !force && serverVerified && !artLocked && (source === 'pipeline' || source === 'addManual');
+        const canWriteType = (type) => source === 'creator' || source === 'settings' || stateForGuard[type]?.locked !== true;
         const artUpdates = {};
         let perType = {};
         if (!skipArt) {
-            if ('cover' in metadata && metadata.cover) artUpdates.cover = metadata.cover;
-            if (('hero' in metadata || 'heroImage' in metadata) && (metadata.hero || metadata.heroImage)) {
+            if (canWriteType('cover') && 'cover' in metadata && metadata.cover) artUpdates.cover = metadata.cover;
+            if (canWriteType('hero') && ('hero' in metadata || 'heroImage' in metadata) && (metadata.hero || metadata.heroImage)) {
                 artUpdates.hero = metadata.hero || metadata.heroImage;
             }
-            if ('logo' in metadata && metadata.logo) artUpdates.logo = metadata.logo;
+            if (canWriteType('logo') && 'logo' in metadata && metadata.logo) artUpdates.logo = metadata.logo;
         }
 
         if (Object.keys(artUpdates).length > 0) {
@@ -801,7 +811,7 @@ class JsonGameRepository {
      */
     _findUpsertGameIndex(game) {
         const incomingCommand = (game.command || '').replace(/"/g, '').toLowerCase().trim();
-        return this._dbCache.findIndex(g => {
+        const directIndex = this._dbCache.findIndex(g => {
             const existingKey = g.installedGameKey ||
                 (this._keyResolver ? this._keyResolver(g) : null);
             const existingCommand = (g.command || '').replace(/"/g, '').toLowerCase().trim();
@@ -809,6 +819,46 @@ class JsonGameRepository {
                 (game.installedGameKey && existingKey === game.installedGameKey) ||
                 (incomingCommand && existingCommand && incomingCommand === existingCommand);
         });
+        if (directIndex > -1) return directIndex;
+
+        const platform = String(game.scannerPlatform || game.platform || '').toLowerCase();
+        const identity = strongIdentity(game);
+        if (['epic', 'gog'].includes(platform) && identity) {
+            const incomingPaths = [game.installPath, game.path, game.executablePath].filter(Boolean);
+            const managedIndex = this._dbCache.findIndex(record => {
+                const recordPlatform = String(record.scannerPlatform || record.platform || '').toLowerCase();
+                if (recordPlatform !== platform || strongIdentity(record) !== identity) return false;
+                const recordManaged = record.installSource === 'download'
+                    && ['legendary', 'gogdl'].includes(String(record.installProvider || record.installProvenance || ''));
+                const incomingManaged = game.installSource === 'download'
+                    && ['legendary', 'gogdl'].includes(String(game.installProvider || game.installProvenance || ''));
+                const recordPaths = [record.installPath, record.path, record.executablePath].filter(Boolean);
+                return (recordManaged && incomingPaths.some(candidate => within(candidate, record.installPath || record.path)))
+                    || (incomingManaged && recordPaths.some(candidate => within(candidate, game.installPath || game.path)));
+            });
+            if (managedIndex > -1) return managedIndex;
+        }
+
+        // Synced GOG catalog records and independently discovered installations
+        // share only an exact numeric product identity. Attach the first local
+        // install to an otherwise non-local catalog record, while preserving
+        // genuinely distinct installations as separate launch options.
+        const gogId = value => {
+            const id = String(value?.gogProductId || value?.allIds?.gog || value?.providerProductId || '').trim();
+            return /^\d+$/.test(id) ? id : '';
+        };
+        const incomingGogId = platform.includes('gog') ? gogId(game) : '';
+        if (!incomingGogId) return -1;
+        const sameProduct = this._dbCache
+            .map((record, index) => ({ record, index }))
+            .filter(({ record }) => gogId(record) === incomingGogId);
+        const incomingPath = String(game.installPath || game.path || '').replace(/[\\/]+/g, '/').toLowerCase();
+        const exactPath = sameProduct.find(({ record }) =>
+            incomingPath && String(record.installPath || record.path || '').replace(/[\\/]+/g, '/').toLowerCase() === incomingPath
+        );
+        if (exactPath) return exactPath.index;
+        const catalogOnly = sameProduct.filter(({ record }) => !record.executablePath && !record.path && record.isInstalled !== true);
+        return catalogOnly.length === 1 ? catalogOnly[0].index : -1;
     }
 
     hasUpsertMatch(game) {
@@ -820,17 +870,32 @@ class JsonGameRepository {
 
         if (index > -1) {
             const existing = this._dbCache[index];
+            const provenanceRank = { legendary: 3, epic_launcher: 1, gogdl: 3, gog_galaxy: 2, gog_discovered: 1 };
+            const existingProvenance = existing.installProvenance || existing.installProvider;
+            const incomingProvenance = game.installProvenance || game.installProvider;
+            const existingManagedDownload = existing.installSource === 'download'
+                && ['legendary', 'gogdl'].includes(String(existing.installProvider || existing.installProvenance || ''));
+            const incomingManagedDownload = game.installSource === 'download'
+                && ['legendary', 'gogdl'].includes(String(game.installProvider || game.installProvenance || ''));
+            const preserveExistingManagedProvenance = existingManagedDownload && !incomingManagedDownload;
+            const strongestProvenance = (provenanceRank[existingProvenance] || 0) > (provenanceRank[incomingProvenance] || 0)
+                ? existingProvenance : (incomingProvenance || existingProvenance);
             const merged = {
                 ...existing,
                 command:          game.command          || existing.command,
-                path:             game.path             || existing.path,
+                path:             existingManagedDownload ? (existing.path || existing.installPath) : (game.path || existing.path),
                 platform:         game.platform         || existing.platform,
                 launchCommand:    game.launchCommand    || game.command || existing.launchCommand,
-                installSource:    game.installSource    || existing.installSource,
+                installSource:    preserveExistingManagedProvenance
+                    ? 'download' : (game.installSource || existing.installSource),
                 scannerPlatform:  game.scannerPlatform  || existing.scannerPlatform,
                 launcherGameId:   game.launcherGameId   || existing.launcherGameId,
-                installedGameKey: game.installedGameKey || existing.installedGameKey,
+                installedGameKey: existingManagedDownload ? (existing.installedGameKey || game.installedGameKey) : (game.installedGameKey || existing.installedGameKey),
                 executablePath:   game.executablePath   || existing.executablePath,
+                installPath:      existingManagedDownload ? (existing.installPath || existing.path) : (game.installPath || game.path || existing.installPath),
+                launchArgs:       Array.isArray(game.launchArgs) ? game.launchArgs : (existing.launchArgs || []),
+                launchCwd:        game.launchCwd        || existing.launchCwd,
+                galaxyLaunchCommand: game.galaxyLaunchCommand || existing.galaxyLaunchCommand,
                 exeCandidates:    Array.isArray(game.exeCandidates) ? game.exeCandidates : existing.exeCandidates,
                 allIds:           { ...(existing.allIds || {}), ...(game.allIds || {}) },
                 namespace:        game.namespace        || existing.namespace,
@@ -839,6 +904,18 @@ class JsonGameRepository {
                 catalogItemId:    game.catalogItemId    || existing.catalogItemId,
                 packageFamilyName: game.packageFamilyName || existing.packageFamilyName,
                 riotProduct:      game.riotProduct      || existing.riotProduct,
+                gogProductId:     game.gogProductId     || existing.gogProductId,
+                providerProductId: game.providerProductId || existing.providerProductId,
+                canonicalGameId:  game.canonicalGameId || existing.canonicalGameId,
+                gogManifestPath:  game.gogManifestPath || existing.gogManifestPath,
+                discoverySources: [...new Set([...(existing.discoverySources || []), ...(game.discoverySources || [])])],
+                discoveryConfidence: game.discoveryConfidence || existing.discoveryConfidence,
+                installProvenance: preserveExistingManagedProvenance
+                    ? (existing.installProvenance || existing.installProvider) : strongestProvenance,
+                installProvider:  preserveExistingManagedProvenance
+                    ? existing.installProvider
+                    : ((provenanceRank[existing.installProvider] || 0) > (provenanceRank[game.installProvider] || 0)
+                        ? existing.installProvider : (game.installProvider || existing.installProvider)),
                 scanSourceDetail: game.scanSourceDetail || existing.scanSourceDetail,
                 validationWarnings: Array.isArray(game.validationWarnings) ? game.validationWarnings : (existing.validationWarnings || []),
                 installVerified:  game.installVerified  ?? existing.installVerified,

@@ -1,6 +1,6 @@
 // ── Synced Library Suggestions ──────────────────────────────────────────────
 // All state, scoring, rendering, and event handlers for the synced-library
-// suggestions section (Recommended / Steam / Epic filter, featured cinematic
+// suggestions section (Recommended / Steam / Epic / GOG filter, featured cinematic
 // hero panel, game-selector rail, screenshot carousel, art hydration).
 //
 // Loads before app.js. Reads globals from artwork-sync.js (isUsableImageUrl,
@@ -12,7 +12,7 @@
 // SYNCED LIBRARY SUGGESTIONS
 // ============================================================
 
-const _SUGG_PLATFORMS = ['steam', 'epic'];
+const _SUGG_PLATFORMS = ['steam', 'epic', 'gog'];
 let _suggAllGames = [];
 window._suggAllGames = _suggAllGames; // expose for roulette install pool
 let _suggFilter   = 'all';
@@ -33,10 +33,12 @@ let _suggState       = {
     recommendedItems: [],
     steamItems: [],
     epicItems: [],
+    gogItems: [],
     activeFilter: 'all',
 };
 const hydratedGameIds  = new Set();
 const hydratingGameIds = new Set();
+const _suggVisibleHydrationWaiters = new Map();
 // failedImageIds, suggestion art cache, window.__baddelApplyGameCustomOverride,
 // and RTIA hydrator moved to src/js/app/artwork-sync.js
 const _SUGG_HYDRATE_CONCURRENCY = 6;
@@ -61,6 +63,7 @@ function _seededShuffle(arr, seed) {
 const _SUGG_PLAT_CFG = {
     steam:   { name: 'Steam',      img: '../assets/Steam.png',    invert: false },
     epic:    { name: 'Epic Games', img: '../assets/epic.svg',     invert: true  },
+    gog:     { name: 'GOG',        img: '../assets/gog.png',      invert: false },
     ea:      { name: 'EA App',     img: '../assets/ea.png',       invert: false },
     riot:    { name: 'Riot',       img: '../assets/riot.png',     invert: false },
     ubisoft: { name: 'Ubisoft',    img: '../assets/Ubisoft.png',  invert: true  },
@@ -81,12 +84,13 @@ function _suggNormStrict(s) {
 // ── Installed-map probe (reuses accounts.js map, adds Steam prefix variants) ─
 function _suggIsInstalled(syncedGame) {
     if (typeof _agIsInstalled === 'function') {
-        if (_agIsInstalled(syncedGame)) return true;
+        try { if (_agIsInstalled(syncedGame)) return true; } catch (_) { return false; }
         // Local Steam entries can be stored as steam-XXXX or steam_XXXX while
         // synced entries carry only the bare numeric appid — probe both prefixes.
         if (syncedGame._platform === 'steam' && syncedGame.id) {
             const numId = String(syncedGame.id).replace(/^steam[-_]/i, '');
-            const map   = (typeof _agBuildInstalledMap === 'function') ? _agBuildInstalledMap() : null;
+            let map = null;
+            try { map = (typeof _agBuildInstalledMap === 'function') ? _agBuildInstalledMap() : null; } catch (_) {}
             if (map) {
                 if (map.get(`steam-${numId}`) === true) return true;
                 if (map.get(`steam_${numId}`) === true) return true;
@@ -97,7 +101,7 @@ function _suggIsInstalled(syncedGame) {
     // Fallback when accounts.js not yet loaded: walk allGamesData directly
     const local      = Array.isArray(window.allGamesData) ? window.allGamesData : [];
     const rawId      = syncedGame.id ? String(syncedGame.id) : '';
-    const numId      = rawId.replace(/^steam[-_]|^epic[-_]/i, '');
+    const numId      = rawId.replace(/^steam[-_]|^epic[-_]|^gog[-_]/i, '');
     const appName    = syncedGame.appName   ? String(syncedGame.appName)   : '';
     const namespace  = syncedGame.namespace ? String(syncedGame.namespace) : '';
     const strict     = _suggNormStrict(syncedGame.title || '');
@@ -118,9 +122,21 @@ function _suggIsInstalled(syncedGame) {
             if (appName && cmd.includes(appName.toLowerCase())) return true;
             if (namespace && cmd.includes(namespace))           return true;
         }
+        if (platform === 'gog') {
+            const gogIds = typeof window._poGogProductIds === 'function'
+                ? window._poGogProductIds(syncedGame)
+                : new Set([syncedGame.productId, syncedGame.gogProductId, syncedGame.gogdlAppName,
+                    syncedGame.allIds?.gog, numId].map(String).filter(v => /^\d+$/.test(v)));
+            const localGogIds = typeof window._poGogProductIds === 'function'
+                ? window._poGogProductIds(g)
+                : new Set([g.productId, g.gogProductId, g.gogdlAppName, g.allIds?.gog,
+                    String(g.id || '').replace(/^gog[-_]/i, '')].map(String).filter(v => /^\d+$/.test(v)));
+            if ([...gogIds].some(id => localGogIds.has(id))) return true;
+        }
         const sameFam = plt.includes(platform) ||
             (platform === 'epic'  && cmd.includes('com.epicgames')) ||
-            (platform === 'steam' && (cmd.includes('steam://') || plt.includes('steam')));
+            (platform === 'steam' && (cmd.includes('steam://') || plt.includes('steam'))) ||
+            (platform === 'gog' && (plt.includes('gogdl') || cmd.includes('gogdl')));
         if (sameFam && strict && _suggNormStrict(g.name || '') === strict) return true;
     }
     return false;
@@ -131,6 +147,7 @@ function _agPlatFamily(p) {
     p = (p || '').toLowerCase();
     if (p.includes('steam'))                        return 'steam';
     if (p.includes('epic'))                         return 'epic';
+    if (p.includes('gog'))                          return 'gog';
     if (p.includes('riot'))                         return 'riot';
     if (p.includes('ea') || p.includes('origin'))   return 'ea';
     if (p.includes('ubisoft'))                      return 'ubisoft';
@@ -362,6 +379,99 @@ function _suggKey(g) {
     return `${g?._platform || 'unknown'}:${String(g?.id || '')}`;
 }
 
+function _suggProviderIdentity(platform, game = {}) {
+    if (platform === 'steam') return String(game.appName || game.allIds?.steam || game.id || '').replace(/^steam[-_]/i, '');
+    if (platform === 'epic') return String(game.appName || game.launcherGameId || game.id || '').replace(/^epic[-_]/i, '');
+    if (platform === 'gog') {
+        const ids = typeof window._poGogProductIds === 'function' ? window._poGogProductIds(game) : null;
+        if (ids?.size) return String(ids.values().next().value);
+        return String(game.productId || game.gogProductId || game.gogdlAppName || game.allIds?.gog || game.id || '').replace(/^gog[-_]/i, '');
+    }
+    return String(game.id || '');
+}
+
+function _suggProjectionCanonicalKey(game) {
+    const platform = game?._platform || game?.platform || '';
+    const providerId = _suggProviderIdentity(platform, game);
+    if (!providerId) return null;
+    const projection = Array.isArray(window._allGamesRawCache)
+        ? window._allGamesRawCache
+        : (Array.isArray(window._allGamesCache) ? window._allGamesCache : []);
+    const matches = projection.filter((record) => {
+        const value = record?.allIds?.[platform];
+        if (value != null && _suggProviderIdentity(platform, { ...record, id: value, appName: platform === 'epic' || platform === 'steam' ? value : record.appName, productId: platform === 'gog' ? value : record.productId }) === providerId) return true;
+        return String(record?.platform || '').toLowerCase() === platform && _suggProviderIdentity(platform, record) === providerId;
+    });
+    if (matches.length !== 1) return null;
+    const record = matches[0];
+    return String(record.canonicalGameId || record.canonicalId || record.localGameId || record.id || '') || null;
+}
+
+function _suggCanonicalKey(game) {
+    const explicit = game?.canonicalProductKey || game?.canonicalGameId || game?.canonicalId || game?.localGameId;
+    if (explicit) return `canonical:${String(explicit)}`;
+    const serviceIdentity = window.BaddelCanonicalProductIdentity?.deriveCanonicalProductIdentity?.(game);
+    if (serviceIdentity?.productKey) return `product:${serviceIdentity.productKey}`;
+    const projectionKey = _suggProjectionCanonicalKey(game);
+    if (projectionKey) return `library:${projectionKey}`;
+    return _suggKey(game);
+}
+
+function _suggGogInstallable(game) {
+    if (game?._platform !== 'gog') return true;
+    return /^\d+$/.test(_suggProviderIdentity('gog', game));
+}
+
+function _suggMergeCandidates(candidates) {
+    const groups = new Map();
+    for (const candidate of candidates) {
+        const key = _suggCanonicalKey(candidate);
+        const existing = groups.get(key);
+        if (!existing) {
+            groups.set(key, {
+                ...candidate,
+                allIds: { ...(candidate.allIds || {}), [candidate._platform]: _suggProviderIdentity(candidate._platform, candidate) },
+                _canonicalKey: key,
+                _providerVariants: { [candidate._platform]: candidate },
+            });
+            continue;
+        }
+        existing._providerVariants[candidate._platform] = candidate;
+        existing.allIds = { ...(existing.allIds || {}), ...(candidate.allIds || {}), [candidate._platform]: _suggProviderIdentity(candidate._platform, candidate) };
+        existing._ownershipPlatforms = Object.keys(existing._providerVariants);
+        if ((!candidate._cacheStale && existing._cacheStale) || _suggScore(candidate) > _suggScore(existing)) {
+            const variants = existing._providerVariants;
+            groups.set(key, { ...existing, ...candidate, allIds: existing.allIds, _canonicalKey: key, _providerVariants: variants, _ownershipPlatforms: Object.keys(variants) });
+        }
+    }
+    return [...groups.values()].map(game => ({
+        ...game,
+        _ownershipPlatforms: Object.keys(game._providerVariants || {}),
+    }));
+}
+
+function _suggVariantForPlatform(game, platform) {
+    const variant = game?._providerVariants?.[platform];
+    if (!variant) return null;
+    return {
+        ...game,
+        ...variant,
+        _platform: platform,
+        _canonicalKey: game._canonicalKey || _suggCanonicalKey(game),
+        _providerVariants: game._providerVariants,
+        _ownershipPlatforms: game._ownershipPlatforms,
+        allIds: { ...(game.allIds || {}), ...(variant.allIds || {}), [platform]: _suggProviderIdentity(platform, variant) },
+    };
+}
+
+function _suggFindGame(platform, gameId) {
+    for (const game of _suggAllGames) {
+        const variant = _suggVariantForPlatform(game, platform);
+        if (variant && String(variant.id) === String(gameId)) return variant;
+    }
+    return null;
+}
+
 // ── Stale-cache detection via platformSyncGetState ────────────────────────────
 // Returns true when the last sync for this platform ended in a failed/error
 // state: phase==='error', validation.ok===false, or any account status==='error'.
@@ -432,6 +542,8 @@ async function _buildSyncedSuggestions() {
             if (!_suggOwned(platform, tagged, accountIds)) continue;
             dbg.owned++;
 
+            if (!_suggGogInstallable(tagged)) continue;
+
             if (_suggIsInstalled(tagged)) { dbg.installedExcluded++; continue; }
 
             dbg.passed++;
@@ -441,26 +553,10 @@ async function _buildSyncedSuggestions() {
         debugSummary[platform] = dbg;
     }
 
-    // Step 2: cross-platform title dedup — keep the richer entry per strict title.
-    // Same game owned on Steam and Epic → show once (whichever has richer metadata).
-    const titleMap = new Map();
-    const noTitleCandidates = [];
-
-    for (const g of candidates) {
-        const key = _suggNormStrict(g.title || '');
-        if (!key) { noTitleCandidates.push(g); continue; }
-        if (!titleMap.has(key)) {
-            titleMap.set(key, g);
-        } else {
-            const existing = titleMap.get(key);
-            // Prefer non-stale; then richer score; then keep existing on tie.
-            const gBetter = (!g._cacheStale && existing._cacheStale) ||
-                            (_suggScore(g) > _suggScore(existing));
-            if (gBetter) titleMap.set(key, g);
-        }
-    }
-
-    _suggAllGames = [...titleMap.values(), ...noTitleCandidates];
+    // Step 2: merge only through immutable/canonical identity. Provider title
+    // strings are display metadata and are never used to grant ownership or
+    // collapse cards.
+    _suggAllGames = _suggMergeCandidates(candidates);
 
     // Rank: stale entries last, then richest metadata, then alphabetical
     _suggAllGames.sort((a, b) => {
@@ -489,16 +585,26 @@ async function _buildSyncedSuggestions() {
 // ── Shape for the install picker ──────────────────────────────────────────────
 function _suggBuildGame(g) {
     return {
-        id:            g.id,
-        name:          g.title         || 'Unknown',
-        image:         g.image         || g.capsuleImage || '',
-        heroImage:     g.heroImage      || g.image        || '',
-        platform:      g._platform,
-        platforms:     [g._platform],
-        appName:       g.appName        || '',
-        namespace:     g.namespace      || '',
-        catalogItemId: g.catalogItemId  || '',
-        allIds:        g.allIds         || { [g._platform]: g.id },
+        id: g.id,
+        name: g.title || 'Unknown',
+        image: g.image || g.capsuleImage || '',
+        heroImage: g.heroImage || g.image || '',
+        platform: g._platform,
+        platforms: g._ownershipPlatforms || [g._platform],
+        appName: g.appName || '',
+        namespace: g.namespace || '',
+        catalogItemId: g.catalogItemId || '',
+        allIds: g.allIds || { [g._platform]: g.id },
+        canonicalGameId: g.canonicalGameId || g.canonicalId || null,
+        productId:       g.productId || null,
+        providerProductId: g.providerProductId || null,
+        gogProductId:    g.gogProductId || null,
+        contentSystemProductId: g.contentSystemProductId || null,
+        gogdlAppName:    g.gogdlAppName || null,
+        gogIdentity:     g.gogIdentity || null,
+        ownershipPlatforms: g._ownershipPlatforms || [g._platform],
+        ownedByAccountIds: Array.isArray(g.ownedByAccountIds) ? [...g.ownedByAccountIds] : [],
+        providerVariants: g._providerVariants || { [g._platform]: g },
     };
 }
 
@@ -576,13 +682,12 @@ function _suggBuildPool() {
     // This makes refreshes within the same 6-hour window stable.
     const saved = _suggLoadState();
     if (saved && saved.bucket === bucket && saved.filter === _suggFilter && saved.poolKeys?.length) {
-        const all = _suggAllGames;
         const restored = [];
         for (const key of saved.poolKeys) {
             const colon = key.indexOf(':');
             const plat  = key.slice(0, colon);
             const id    = key.slice(colon + 1);
-            const found = all.find(g => g._platform === plat && String(g.id) === id);
+            const found = _suggFindGame(plat, id);
             if (found) restored.push(found);
         }
         if (restored.length > 0) {
@@ -616,7 +721,7 @@ function _suggDedupe(games) {
     const seen = new Set();
     const out = [];
     for (const g of games) {
-        const key = _suggKey(g);
+        const key = g?._canonicalKey || _suggCanonicalKey(g) || _suggKey(g);
         if (!g || seen.has(key)) continue;
         seen.add(key);
         out.push(g);
@@ -630,19 +735,28 @@ function _suggSyncState(bucket) {
         recommendedItems: _suggSelectForFilter('all', bucket),
         steamItems: _suggSelectForFilter('steam', bucket),
         epicItems: _suggSelectForFilter('epic', bucket),
+        gogItems: _suggSelectForFilter('gog', bucket),
         activeFilter: _suggFilter,
     };
 }
 
 function _suggSelectForFilter(filter, bucket) {
     const seed = `baddel_rtipool_${filter}_${bucket}`;
+    const shuffledAll = _seededShuffle(_suggAllGames, seed);
+    const providerPool = _suggAllGames
+        .filter(g => g._platform === filter || g._providerVariants?.[filter])
+        .map(g => _suggVariantForPlatform(g, filter) || g);
     if (filter === 'all') {
-        return _suggDedupe(_seededShuffle(_suggAllGames, seed)).slice(0, _SUGG_POOL_SINGLE);
+        const selected = [];
+        for (const platform of _SUGG_PLATFORMS) {
+            const providerItems = _seededShuffle(_suggAllGames.map(g => _suggVariantForPlatform(g, platform)).filter(Boolean), `${seed}_${platform}`);
+            const selectedKeys = new Set(selected.map(g => g._canonicalKey || _suggCanonicalKey(g)));
+            const candidate = providerItems.find(g => !selectedKeys.has(g._canonicalKey || _suggCanonicalKey(g))) || providerItems[0];
+            if (candidate) selected.push(candidate);
+        }
+        return _suggDedupe([...selected, ...shuffledAll]).slice(0, _SUGG_POOL_SINGLE);
     }
-    return _suggDedupe(_seededShuffle(
-        _suggAllGames.filter(g => g._platform === filter),
-        seed
-    )).slice(0, _SUGG_POOL_SINGLE);
+    return _suggDedupe(_seededShuffle(providerPool, seed)).slice(0, _SUGG_POOL_SINGLE);
 }
 
 // ── Auto-rotation timer management ───────────────────────────────────────────
@@ -673,7 +787,7 @@ window._suggSelectGame = function(idx) {
 
 // ── View Details: open the existing game-details page ────────────────────────
 window.suggViewDetails = function(platform, gameId) {
-    const g = _suggAllGames.find(x => x._platform === platform && String(x.id) === String(gameId));
+    const g = _suggFindGame(platform, gameId) || _suggAllGames.find(x => x._platform === platform && String(x.id) === String(gameId));
     if (!g) return;
     const game = _suggBuildGame(g);
     // Inject the game object so openGameDetails can find it even though
@@ -702,7 +816,33 @@ async function _suggHydrateArt(g, domId, isFeature) {
     // _heroHydrating : a fetch is in-flight right now
     // _heroHydrated  : fetch has completed at least once (hero found or not)
     const hydrateKey = _suggKey(g);
-    if (g._heroHydrated || g._heroHydrating || hydratedGameIds.has(hydrateKey) || hydratingGameIds.has(hydrateKey)) return;
+    const canonicalGame = typeof _bulkArtworkCanonicalGameFor === 'function'
+        ? _bulkArtworkCanonicalGameFor(g)
+        : null;
+    const canonicalGameId = String(canonicalGame?.id || g.canonicalGameId || g.localGameId || g.id);
+    const availability = g.__baddelArtworkAvailability || {};
+    const artworkFields = {
+        cover: g.image || g.defaultImage || g.coverUrl,
+        hero: g.heroImage || g.defaultHero || g.heroUrl,
+        logo: g.logo || g.defaultLogo || g.logoUrl,
+    };
+    const hasManagedArtwork = value => typeof _isCacheBackedNormalArtworkUrl === 'function'
+        ? !!_isCacheBackedNormalArtworkUrl(value)
+        : String(value || '').startsWith('file:');
+    const missingTypes = ['cover', 'hero', 'logo'].filter(type =>
+        !hasManagedArtwork(artworkFields[type]) && availability[type]?.state !== 'terminal-miss'
+    );
+    if (!missingTypes.length && g._metaHydrated) return;
+    if (g._heroHydrating || hydratingGameIds.has(hydrateKey)) {
+        if (domId || isFeature) {
+            const waiters = _suggVisibleHydrationWaiters.get(hydrateKey) || [];
+            if (!waiters.some(waiter => waiter.game === g)) {
+                waiters.push({ game: g, domId, isFeature });
+                _suggVisibleHydrationWaiters.set(hydrateKey, waiters);
+            }
+        }
+        return;
+    }
 
     if (_suggHydrateActive >= _SUGG_HYDRATE_CONCURRENCY) {
         hydratingGameIds.add(hydrateKey);
@@ -731,6 +871,10 @@ async function _suggHydrateArt(g, domId, isFeature) {
 
         if (!meta) {
             // Definite miss — nothing to retry
+            g.__baddelArtworkAvailability = {
+                ...availability,
+                ...Object.fromEntries(missingTypes.map(type => [type, { state: 'terminal-miss', reason: 'metadata-miss', updatedAt: Date.now() }])),
+            };
             g._heroHydrated = true;
             hydratedGameIds.add(hydrateKey);
             return;
@@ -769,6 +913,20 @@ async function _suggHydrateArt(g, domId, isFeature) {
         // Logo: accept meta.logo or meta.defaultLogo
         const incomingLogo = meta.logo || meta.defaultLogo || null;
         if (incomingLogo  && !g.logo)     { g.logo      = incomingLogo; artChanged = true; }
+        const availabilityFor = (value, incoming) => {
+            const local = typeof _isCacheBackedNormalArtworkUrl === 'function'
+                ? _isCacheBackedNormalArtworkUrl(value)
+                : (String(value || '').startsWith('file:') ? value : null);
+            if (local) return 'available';
+            if (incoming || value) return 'pending';
+            return 'terminal-miss';
+        };
+        g.__baddelArtworkAvailability = {
+            ...(g.__baddelArtworkAvailability || {}),
+            cover: { state: availabilityFor(g.image, meta.cover), reason: meta.cover ? 'metadata-hit' : 'metadata-no-cover', updatedAt: Date.now() },
+            hero: { state: availabilityFor(g.heroImage, incomingHero), reason: incomingHero ? 'metadata-hit' : 'metadata-no-hero', updatedAt: Date.now() },
+            logo: { state: availabilityFor(g.logo, incomingLogo), reason: incomingLogo ? 'metadata-hit' : 'metadata-no-logo', updatedAt: Date.now() },
+        };
 
         // ── Rich info fields ─────────────────────────────────────────────────
         const info = meta.info || {};
@@ -799,19 +957,46 @@ async function _suggHydrateArt(g, domId, isFeature) {
 
         // Cache art to disk if possible
         if (artChanged && window.electronAPI.cacheAllAssets) {
+            const cachePriority = (domId || isFeature) ? 'visible' : 'prewarm';
             window.electronAPI.cacheAllAssets(
                 { cover: meta.cover || null, hero: incomingHero || null, logo: incomingLogo || null },
-                g.id,
+                canonicalGameId,
                 {
-                    priority: 'prewarm',
+                    priority: cachePriority,
                     sourceSubsystem: 'synced-suggestions-prewarm-ipc',
                     reason: 'visible-synced-suggestions-prewarm',
                 }
-            ).then(local => {
-                if (local?.cover) g.image     = local.cover;
-                if (local?.hero)  g.heroImage = local.hero;
-                if (local?.logo)  g.logo      = local.logo;
+            ).then(async local => {
+                const localPatch = {
+                    cover: typeof _isCacheBackedNormalArtworkUrl === 'function' ? _isCacheBackedNormalArtworkUrl(local?.cover) : local?.cover,
+                    hero: typeof _isCacheBackedNormalArtworkUrl === 'function' ? _isCacheBackedNormalArtworkUrl(local?.hero) : local?.hero,
+                    logo: typeof _isCacheBackedNormalArtworkUrl === 'function' ? _isCacheBackedNormalArtworkUrl(local?.logo) : local?.logo,
+                };
+                if (localPatch.cover) g.image     = localPatch.cover;
+                if (localPatch.hero)  g.heroImage = localPatch.hero;
+                if (localPatch.logo)  g.logo      = localPatch.logo;
+                const changedTypes = ['cover', 'hero', 'logo'].filter(type => !!localPatch[type]);
+                if (changedTypes.length) {
+                    const nextAvailability = { ...(g.__baddelArtworkAvailability || {}) };
+                    for (const type of changedTypes) {
+                        nextAvailability[type] = { state: 'available', reason: 'cache-commit', updatedAt: Date.now() };
+                    }
+                    g.__baddelArtworkAvailability = nextAvailability;
+                }
                 _suggArtCachePopulate(g); // update cache with local file:// paths
+                if (changedTypes.length && window.electronAPI.saveMetadata) {
+                    const saved = await window.electronAPI.saveMetadata(canonicalGameId, localPatch, {
+                        source: 'synced-suggestions-prewarm',
+                        displayId: g.id,
+                    }).catch(() => null);
+                    if (saved?.updatedGame && typeof window.__baddelCommitCanonicalGameUpdate === 'function') {
+                        window.__baddelCommitCanonicalGameUpdate({
+                            canonicalGame: saved.updatedGame,
+                            changedTypes,
+                            operationId: saved.operationId || `suggestions-${canonicalGameId}-${Date.now()}`,
+                        }, { reason: 'synced-suggestions-cache-commit' });
+                    }
+                }
                 _suggReRenderOne(g, domId, isFeature);
             }).catch(() => {});
         }
@@ -826,6 +1011,19 @@ async function _suggHydrateArt(g, domId, isFeature) {
         g._heroHydrating = false;
         hydratingGameIds.delete(hydrateKey);
         _suggHydrateActive = Math.max(0, _suggHydrateActive - 1);
+        const visibleWaiters = _suggVisibleHydrationWaiters.get(hydrateKey) || [];
+        _suggVisibleHydrationWaiters.delete(hydrateKey);
+        if (visibleWaiters.length) {
+            setTimeout(() => {
+                for (const waiter of visibleWaiters) {
+                    const target = waiter.game;
+                    if (String(g.image || '').startsWith('file:') && !String(target.image || '').startsWith('file:')) target.image = g.image;
+                    if (String(g.heroImage || '').startsWith('file:') && !String(target.heroImage || '').startsWith('file:')) target.heroImage = g.heroImage;
+                    if (String(g.logo || '').startsWith('file:') && !String(target.logo || '').startsWith('file:')) target.logo = g.logo;
+                    _suggHydrateArt(target, waiter.domId, waiter.isFeature);
+                }
+            }, 0);
+        }
     }
 }
 
@@ -879,18 +1077,21 @@ function _suggReRenderOne(g, domId, isFeature) {
         }
         // If no logo and title element is already visible, nothing to change.
     } else {
-        const row = document.getElementById(domId);
-        if (!row) return;
         const artKey     = _suggKey(g);
         const cachedArt  = _suggArtCacheGet(artKey);
         const resolvedArt = _suggResolveArtwork(g, 'suggestions-rail-patch');
         const img        = isUsableImageUrl(resolvedArt.cover?.value || cachedArt?.poster) || getPosterUrl(g);
         const imgFb      = isUsableImageUrl(cachedArt?.poster || resolvedArt.cover?.fallbackValue) || null;
         if (!img) return;
-        const thumbEl = row.querySelector('.srr-thumb');
-        if (thumbEl) { setCardImageStable(thumbEl, img, imgFb); thumbEl.innerHTML = ''; }
-        const artEl = row.querySelector('.sugg-rail-art');
-        if (artEl) { setCardImageStable(artEl, img, imgFb); artEl.innerHTML = ''; }
+        const rows = domId
+            ? [document.getElementById(domId)].filter(Boolean)
+            : Array.from(document.querySelectorAll?.('[data-sugg-key]') || []).filter(row => row.dataset?.suggKey === artKey);
+        for (const row of rows) {
+            const thumbEl = row.querySelector('.srr-thumb');
+            if (thumbEl) { setCardImageStable(thumbEl, img, imgFb); thumbEl.innerHTML = ''; }
+            const artEl = row.querySelector('.sugg-rail-art');
+            if (artEl) { setCardImageStable(artEl, img, imgFb); artEl.innerHTML = ''; }
+        }
     }
 }
 
@@ -1063,6 +1264,7 @@ function _renderSyncedRail(games) {
         const row = document.createElement('div');
         row.className = 'sugg-rail-row' + (isActive ? ' active' : '');
         row.id        = rowId;
+        row.dataset.suggKey = artKey;
         row.setAttribute('tabindex', '0');
         row.setAttribute('role', 'button');
         row.setAttribute('aria-pressed', String(isActive));
@@ -1104,12 +1306,13 @@ function _suggRenderFiltered() {
 
 // ── Filter pills visibility ───────────────────────────────────────────────────
 function _suggUpdatePills() {
-    const hasSteam = _suggAllGames.some(g => g._platform === 'steam');
-    const hasEpic  = _suggAllGames.some(g => g._platform === 'epic');
+    const has = platform => _suggAllGames.some(g => g._platform === platform || g._providerVariants?.[platform]);
     const ps = document.querySelector('.sugg-pill[data-filter="steam"]');
     const pe = document.querySelector('.sugg-pill[data-filter="epic"]');
-    if (ps) ps.style.display = hasSteam ? '' : 'none';
-    if (pe) pe.style.display = hasEpic  ? '' : 'none';
+    const pg = document.querySelector('.sugg-pill[data-filter="gog"]');
+    if (ps) ps.style.display = has('steam') ? '' : 'none';
+    if (pe) pe.style.display = has('epic')  ? '' : 'none';
+    if (pg) pg.style.display = has('gog')   ? '' : 'none';
 }
 
 async function _renderSyncedSuggestionsInner() {
@@ -1181,7 +1384,7 @@ async function _renderSyncedSuggestionsInner() {
         return;
     }
 
-    // Build pools now so _suggState.{recommendedItems,steamItems,epicItems} is
+    // Build pools now so all provider buckets are populated before hydration.
     // populated before we decide what to hydrate.
     _suggBuildPool();
 
@@ -1193,6 +1396,7 @@ async function _renderSyncedSuggestionsInner() {
         ...(_suggState.recommendedItems || []),
         ...(_suggState.steamItems       || []),
         ...(_suggState.epicItems        || []),
+        ...(_suggState.gogItems         || []),
     ]);
     await _rtia_hydrateAll(_visibleReadyItems);
     _hide(loading);
@@ -1242,12 +1446,12 @@ window.setSyncedFilter = function(filter, btn) {
 };
 
 window.suggInstall = function(platform, gameId) {
-    const g = _suggAllGames.find(x => x._platform === platform && String(x.id) === String(gameId));
+    const exact = _suggAllGames.find(g => g._platform === platform && g.id == gameId);
+    const g = exact || _suggFindGame(platform, gameId);
     if (!g) return;
     const game = _suggBuildGame(g);
-    if (typeof window._gdOpenInstallPickerForGame === 'function') {
-        window._gdOpenInstallPickerForGame(game);
-    } else {
+    if (window._gdOpenInstallPickerForGame) window._gdOpenInstallPickerForGame(game);
+    else {
         console.warn('[SyncedSugg] _gdOpenInstallPickerForGame not ready — game-details.js not loaded yet');
     }
 };
@@ -1261,6 +1465,9 @@ window._onSyncLibraryUpdated = function() {
     }
 };
 window.renderSyncedSuggestions = renderSyncedSuggestions;
+window._buildSyncedSuggestions = _buildSyncedSuggestions;
+window._suggSelectForFilter = _suggSelectForFilter;
+window._suggGetState = () => ({ ..._suggState, allGames: [..._suggAllGames] });
 
 // Refresh the home Ready to Install stat whenever canonical count changes.
 try {

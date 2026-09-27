@@ -42,9 +42,11 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
         _clearAllUpdateTimers,
         readUpdateNotesState,
         markUpdateNotesPending,
+        analytics,
     } = deps;
 
     ipcMain.handle('start-update-download', async () => {
+        analytics?.track?.('update_action', { feature: 'updates', action: 'download', result: 'started' }).catch?.(() => {});
         const autoUpdater = getAutoUpdater();
         const mainWindow  = getMainWindow();
         console.log('[AutoUpdater] Download requested — current status:', _updState.status);
@@ -84,9 +86,11 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
         try {
             if (!autoUpdater) throw new Error('autoUpdater failed to initialise — cannot download update');
             await autoUpdater.downloadUpdate();
+            analytics?.track?.('update_action', { feature: 'updates', action: 'download', result: 'success' }).catch?.(() => {});
             console.log('[AutoUpdater] downloadUpdate() resolved');
             return { ok: true };
         } catch (err) {
+            analytics?.track?.('update_action', { feature: 'updates', action: 'download', result: 'failed', error_code: err }).catch?.(() => {});
             _clearAllUpdateTimers();
             _updState.downloading = false;
             _updState.status      = 'error';
@@ -125,6 +129,7 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
         }
 
         setUpdateInstallStarted(true);
+        analytics?.track?.('update_action', { feature: 'updates', action: 'install', result: 'started' }).catch?.(() => {});
 
         const autoUpdater = getAutoUpdater();
         if (!autoUpdater) {
@@ -154,8 +159,7 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
             }
         } catch {}
 
-        // Use the version saved by update-downloaded as first fallback; never fall back to
-        // autoUpdater.currentVersion (the OLD running version) — that would poison pendingVersion.
+        // Never fall back to the old running version; it would poison pendingVersion.
         const savedState    = readUpdateNotesState();
         const targetVersion = _updState.version || savedState.pendingVersion || null;
         if (targetVersion) {
@@ -176,6 +180,7 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
     });
 
     ipcMain.handle('check-for-updates', async () => {
+        analytics?.track?.('update_action', { feature: 'updates', action: 'check', result: 'started' }).catch?.(() => {});
         const autoUpdater = getAutoUpdater();
         if (!autoUpdater) {
             console.warn('[AutoUpdater] checkForUpdates skipped — autoUpdater not initialised');
@@ -183,7 +188,9 @@ module.exports.register = function registerAutoUpdateHandlers(ipcMain, deps) {
         }
         try {
             await autoUpdater.checkForUpdates();
+            analytics?.track?.('update_action', { feature: 'updates', action: 'check', result: 'success' }).catch?.(() => {});
         } catch (err) {
+            analytics?.track?.('update_action', { feature: 'updates', action: 'check', result: 'failed', error_code: err }).catch?.(() => {});
             console.warn('[AutoUpdater] Manual check failed:', err.message);
         }
     });

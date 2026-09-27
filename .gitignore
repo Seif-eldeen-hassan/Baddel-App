@@ -1,41 +1,102 @@
-# dependencies
+# Dependencies and local runtimes
 node_modules/
+python_env/
+.venv/
+venv/
+build-venv/
+__pycache__/
+*.py[cod]
 
-# builds
+# Build and packaging output
 dist/
 build/
 build-tmp/
-build-venv/
-bin/
+.protected-build/
+.protected-asar-extracted/
+reverse-test/
+dist-artwork-diagnostics/
 *.exe
 *.msi
 *.zip
 
-# env / secrets
+# The checked-in launcher binary is an intentional build dependency.
+!bin/
+bin/*
+!bin/legendary.exe
+
+# Environment files, credentials, and signing material
 .env
 .env.*
+!.env.example
 *.key
 *.pem
 *.p12
+*.pfx
+*.keystore
+*.jks
+*.cert
+*.crt
 *.log
 
-# editor / system
+# Editors, operating systems, and local assistants
 .vscode/
 .idea/
+.claude/
+.agents/
+.codex/
+.codex-temp-maintenance/
+AGENTS.md
+CLAUDE.md
+skills-lock.json
 .DS_Store
 Thumbs.db
+desktop.ini
 
-# Claude / local AI files
-.claude/
-
-# caches
+# Caches and temporary files
 .cache/
 .temp/
 tmp/
+*.tmp
+*.tmp.*
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
-# Python
-__pycache__/
-*.pyc
+# Local diagnostics and generated acceptance evidence
+acceptance-checkpoints/
+acceptance-epic-auth/
+artwork-migration-quarantine/
+artwork-session-diagnostics/
+docs/**/*.json
+docs/**/*.xml
+docs/**/*.png
+docs/scroll-traces-*/
+/acceptance-*.json
+/artwork-*.json
+/cold-start-*.json
+/dev-fast-path-*.json
+/launcher-*.json
+/packaged-*.json
+/scroll-diagnostic-*.json
+/electron-node-arg-test.txt
+/gog-*-help.txt
+/gog-*-test.ps1
+/gog-product-*.json
+/repomix-output.xml
+/1
+
+# Local utility scratch space
+.scripts/
+# Internal engineering notes and one-off diagnostic tooling
+docs/
+architecture_execution_roadmap.md
+/*.test.js
+scripts/*diagnostic*
+scripts/diagnose-*
+scripts/inspect-*
+scripts/observe-*
+scripts/profile-*
+scripts/quit-*
+scripts/trace-*
+scripts/check-artwork-*
+scripts/apply-artwork-*

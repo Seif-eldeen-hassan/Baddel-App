@@ -40,6 +40,27 @@ async function saveCollections(data) {
     }
 }
 
+async function remapGameIds(idRemap = {}) {
+    const entries = Object.entries(idRemap || {}).filter(([from, to]) => from && to && from !== to);
+    if (!entries.length) return { status: "success", changed: false };
+    const replacements = new Map(entries.map(([from, to]) => [String(from), String(to)]));
+    const collections = await getCollections();
+    let changed = false;
+    for (const collection of collections) {
+        const before = Array.isArray(collection.gameIds) ? collection.gameIds : [];
+        const after = [...new Set(before.map(id => replacements.get(String(id)) || id))];
+        if (JSON.stringify(before) !== JSON.stringify(after)) {
+            collection.gameIds = after;
+            changed = true;
+        }
+    }
+    if (!changed) return { status: "success", changed: false };
+    const temporary = DATA_FILE + "." + process.pid + ".remap.tmp";
+    await fs.writeFile(temporary, JSON.stringify(collections, null, 2), "utf8");
+    await fs.rename(temporary, DATA_FILE);
+    return { status: "success", changed: true };
+}
+
 async function createCollection(name, imagePath) {
     const collections = await getCollections();
     const newColl = { id: `col_${Date.now()}`, name, image: imagePath || null, gameIds: [] };
@@ -107,4 +128,5 @@ module.exports = {
     deleteCollection,
     reorderCollection,
     updateCollectionDetails,
+    remapGameIds,
 };

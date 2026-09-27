@@ -967,3 +967,27 @@ test('saveQualifiedSession: tracking_disabled blocks session save', async () => 
     assert.equal(res.status, 'tracking_disabled');
     assert.equal(firstGame(engine).totalPlaytime, 0);
 });
+
+
+test('startGlobalScan never stale-clears a Baddel download-owned game', async () => {
+    const engine = makeEngine();
+    seedGames(engine, [{
+        id: 'gog_1207658811',
+        name: 'Sanitarium',
+        platform: 'gog',
+        scannerPlatform: 'gog',
+        installSource: 'download',
+        installedGameKey: 'gog:1207658811',
+        isHidden: false,
+        isInstalled: true,
+        installVerified: true,
+        executablePath: 'F:\\Games\\Sanitarium\\ScummVM\\scummvm.exe',
+    }]);
+    for (const method of ['getSteamGames', 'getEpicGames', 'getRiotGames', 'getUbisoftGames', 'getEAGames', 'getXboxGames']) engine[method] = async () => [];
+    await engine.startGlobalScan();
+    const game = firstGame(engine);
+    assert.equal(game.installSource, 'download');
+    assert.equal(game.isInstalled, true);
+    assert.equal(game.installVerified, true);
+    assert.equal(game.removedFromDiskAt, undefined);
+});

@@ -7,10 +7,10 @@ const path = require('node:path');
 
 const source = fs.readFileSync(path.join(__dirname, '..', 'src/js/downloads.js'), 'utf8');
 
-test('completed download cards render a primary Play action without requiring installedGameId', () => {
-    assert.match(source, /task\.status === 'completed' \? dlButton\(\{ label: 'Play'[\s\S]*action: 'downloadsPlay'/);
+test('completed download cards render Play only through the readiness contract', () => {
+    assert.match(source, /dlTaskReadyToPlay\(task\) \? dlButton\(\{ label: 'Play'[\s\S]*action: 'downloadsPlay'/);
     assert.match(source, /window\.downloadsPlay\s*=\s*async taskId/);
-    assert.match(source, /task\.status !== 'completed'/);
+    assert.match(source, /!dlTaskReadyToPlay\(task\)/);
     assert.match(source, /task\.installedGameId/);
 });
 
@@ -32,7 +32,7 @@ test('Downloads Play resolves completed tasks by provider identity and backfills
 test('Downloads Play can resolve repaired completed records by executable and install path', () => {
     assert.match(source, /const wantedInstallPath = dlPathKey\(task\.installPath\)/);
     assert.match(source, /const wantedExe = dlPathKey\(task\.resolvedExecutablePath \|\| task\.verificationExecutablePath \|\| task\.executablePath\)/);
-    assert.match(source, /const game = await dlResolveInstalledGameForTask\(task\) \|\| dlBuildLaunchGameFromTask\(task\)/);
+    assert.match(source, /game = await dlResolveInstalledGameForTask\(task\) \|\| dlBuildLaunchGameFromTask\(task\)/);
     assert.match(source, /path: task\.path \|\| task\.installPath \|\| executablePath/);
     assert.match(source, /launchCommand: task\.launchCommand \|\| task\.command \|\|/);
 });
@@ -47,6 +47,6 @@ test('Downloads actions cover transitional states and status changes rerender bu
 });
 
 test('Downloads renderer clamps displayed bytes to canonical total', () => {
-    assert.match(source, /Math\.min\(confirmedBytes, canonicalTotal\)/);
-    assert.match(source, /Math\.min\(carriedDisplayedBytes, canonicalTotal\)/);
+    assert.match(source, /Math\.min\(authoritative, totalBytes\)/);
+    assert.doesNotMatch(source, /DOWNLOAD_PRESENTATION_(?:LEAD_BUFFER|MAX_PROJECTION|MIN_LEAD)/);
 });

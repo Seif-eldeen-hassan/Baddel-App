@@ -246,6 +246,70 @@ class DownloadFileSafetyService {
         };
     }
 
+    assertManagedOwnershipProof(task = {}) {
+        if (task.status !== 'completed' || task.uninstallEligible !== true || !task.installedGameId) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_NOT_MANAGED', 'Only completed Baddel-managed games can be uninstalled.');
+        }
+        if (!task.ownershipNonce || !task.partialDeletionMarkerPath || !task.installPath) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'The Baddel ownership proof for this installation is missing.');
+        }
+        const installPath = normalizePath(this.path, task.installPath);
+        const root = this.path.parse(installPath).root;
+        if (!root || samePath(this.path, installPath, root)) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'Baddel will not uninstall a drive root.');
+        }
+        this.assertNotProtected(installPath);
+        this.assertNoLinkOrReparseEscape(installPath);
+        if (task.installRoot) {
+            const installRoot = normalizePath(this.path, task.installRoot);
+            if (samePath(this.path, installPath, installRoot)) {
+                throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'Baddel will not uninstall a library root.');
+            }
+            if (!isSubPath(this.path, installPath, installRoot) && !samePath(this.path, this.path.dirname(installPath), installRoot)) {
+                throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'The game folder is outside its Baddel library root.');
+            }
+        }
+        if (!this.fs.existsSync(installPath) || !this.fs.statSync(installPath).isDirectory()) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'The managed game folder does not exist.');
+        }
+        const expectedMarkerPath = this.path.join(installPath, MARKER_FILE);
+        if (!samePath(this.path, task.partialDeletionMarkerPath, expectedMarkerPath)) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'The ownership marker path does not match this game folder.');
+        }
+        const marker = this.readAndValidateMarker(task, installPath);
+        if (!samePath(this.path, marker.canonicalInstallPath, installPath)) {
+            throw makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'The ownership marker points to a different folder.');
+        }
+        return installPath;
+    }
+
+    assertSafeManagedUninstall(task = {}) {
+        try {
+            const installPath = this.assertManagedOwnershipProof(task);
+            const marker = this.readAndValidateMarker(task, installPath);
+            this.assertDirectoryOwnedByTask(installPath, marker);
+            this.assertNoLinkOrReparseEscape(installPath);
+            return installPath;
+        } catch (cause) {
+            if (cause?.code === 'DOWNLOAD_UNINSTALL_NOT_MANAGED') throw cause;
+            const err = makeDownloadError('DOWNLOAD_UNINSTALL_UNSAFE', 'Baddel could not prove that this exact game folder is safe to uninstall.');
+            err.cause = cause;
+            throw err;
+        }
+    }
+
+    deleteManagedInstall(task = {}) {
+        const installPath = this.assertSafeManagedUninstall(task);
+        try {
+            this.fs.rmSync(installPath, { recursive: true, force: false });
+        } catch (cause) {
+            const err = makeDownloadError('DOWNLOAD_UNINSTALL_DELETE_FAILED', 'Baddel could not remove the game folder. Close the game and try again.');
+            err.cause = cause;
+            throw err;
+        }
+        return { deleted: true, deletedPath: installPath };
+    }
+
     readAndValidateMarker(task, installPath) {
         const markerPath = this.path.join(installPath, MARKER_FILE);
         if (!this.fs.existsSync(markerPath)) {
@@ -398,7 +462,13 @@ class DownloadFileSafetyService {
     getFreeSpaceBytes(targetPath) {
         if (typeof this.fs.statfsSync !== 'function') return null;
         try {
-            const stat = this.fs.statfsSync(targetPath);
+            let existing = targetPath;
+            while (existing && !this.fs.existsSync(existing)) {
+                const parent = this.path.dirname(existing);
+                if (!parent || parent === existing) break;
+                existing = parent;
+            }
+            const stat = this.fs.statfsSync(existing);
             const blockSize = Number(stat.bsize || stat.frsize || 0);
             const availableBlocks = Number(stat.bavail ?? stat.bfree);
             if (!Number.isFinite(blockSize) || !Number.isFinite(availableBlocks)) return null;

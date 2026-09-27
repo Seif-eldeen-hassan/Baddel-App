@@ -83,6 +83,11 @@ class WebSocketClient:
         self._active_protocol_task: Optional[asyncio.Task] = None
         self._active_auth_task: Optional[asyncio.Task] = None
         self._active_auth_lost_future: Optional[Future] = None
+        self._connection_generation = 0
+        self._last_connected_at = None
+        self._last_disconnected_at = None
+        self._automatic_reauth_count = 0
+        self._connected_event = asyncio.Event()
 
     async def run(self, create_future_factory: Callable[[], Future]=asyncio_future):
         #this loop lets us recover from certain errors by restarting the tasks that handle logging in and receiving information from Steam.
@@ -93,10 +98,28 @@ class WebSocketClient:
             auth_lost: Optional[Future] = None
             should_exit = False
             try:
+                is_reconnect = self._connection_generation > 0
                 await self._ensure_connected()
 
                 run_task = asyncio.create_task(self._protocol_client.run())
                 auth_lost = create_future_factory()
+
+                if is_reconnect and self._user_info_cache.is_initialized():
+                    async def reconnect_auth_lost(error):
+                        if not auth_lost.done():
+                            auth_lost.set_exception(error)
+                    logger.warning('Restoring authenticated Steam session after reconnect generation=%d', self._connection_generation)
+                    result = await self._protocol_client.finalize_login(
+                        self._user_info_cache.account_username,
+                        self._user_info_cache.steam_id,
+                        self._user_info_cache.refresh_token,
+                        reconnect_auth_lost,
+                    )
+                    if result != UserActionRequired.NoActionRequired:
+                        raise AuthenticationRequired('Automatic Steam reconnect authentication failed')
+                    self._automatic_reauth_count += 1
+                    logger.info('Authenticated Steam reconnect completed generation=%d', self._connection_generation)
+
                 auth_task = asyncio.create_task(self._all_auth_calls(auth_lost))
                 self._active_protocol_task = run_task
                 self._active_auth_task = auth_task
@@ -128,6 +151,7 @@ class WebSocketClient:
                     logger.info("Connection closed unexpectedly, trying different CM...")
                     self._websocket_list.add_server_to_ignored(self._current_ws_address, timeout_sec=60)
             except websockets.exceptions.ConnectionClosedError as error:
+                self._last_disconnected_at = asyncio.get_running_loop().time()
                 logger.warning("WebSocket disconnected (%d: %s), reconnecting...", error.code, error.reason)
             except websockets.exceptions.InvalidState as error:
                 logger.warning(f"WebSocket is trying to connect... {repr(error)}")
@@ -160,6 +184,7 @@ class WebSocketClient:
                 break
 
     async def _close_socket(self):
+        self._connected_event.clear()
         if self._websocket is not None:
             logger.info("Closing websocket")
             await self._websocket.close()
@@ -190,6 +215,7 @@ class WebSocketClient:
             await self._websocket.wait_closed()
         self._protocol_client = None
         self._websocket = None
+        self._connected_event.clear()
 
     def reset_auth_session(self):
         self._steam_polling_data = None
@@ -225,6 +251,16 @@ class WebSocketClient:
         if self._active_auth_lost_future is auth_lost_future:
             self._active_auth_lost_future = None
 
+    async def wait_until_connected(self, timeout: float = 180.0) -> bool:
+        if self._protocol_client is not None:
+            return True
+        try:
+            await asyncio.wait_for(self._connected_event.wait(), timeout)
+        except asyncio.TimeoutError:
+            logger.warning("Steam transport did not become ready within %.0f seconds", timeout)
+            return False
+        return self._protocol_client is not None
+
     async def _get_protocol_client(self, action: str) -> Optional[ProtocolClient]:
         if self._protocol_client is not None:
             return self._protocol_client
@@ -239,6 +275,22 @@ class WebSocketClient:
         if self._protocol_client is None:
             logger.warning("Protocol client is still unavailable during %s", action)
         return self._protocol_client
+
+    def collection_transport_status(self):
+        return {
+            'connectionGeneration': self._connection_generation,
+            'connected': self._protocol_client is not None and self._active_protocol_task is not None and not self._active_protocol_task.done(),
+            'requestsActive': self._active_protocol_task is not None and not self._active_protocol_task.done(),
+            'lastConnectedAtMonotonic': self._last_connected_at,
+            'lastDisconnectedAtMonotonic': self._last_disconnected_at,
+            'automaticReauthCount': self._automatic_reauth_count,
+        }
+
+    async def recover_game_collection(self, expected_generation=None):
+        protocol_client = self._protocol_client
+        if protocol_client is None or self._active_protocol_task is None or self._active_protocol_task.done():
+            return {'status': 'transport_unavailable', 'transport': self.collection_transport_status()}
+        return await protocol_client.retry_game_collection(expected_generation)
 
     async def get_friends(self):
         await self._friends_cache.wait_ready()
@@ -315,8 +367,11 @@ class WebSocketClient:
                 try:
                     self._websocket = await asyncio.wait_for(websockets.client.connect(ws_address, ssl=self._ssl_context, max_size=MAX_INCOMING_MESSAGE_SIZE), 5)
                     self._protocol_client = ProtocolClient(self._websocket, self._friends_cache, self._games_cache, self._translations_cache, self._stats_cache, self._times_cache, self._authentication_cache, self._user_info_cache, self._local_machine_cache, self.used_server_cell_id)
+                    self._connection_generation += 1
+                    self._last_connected_at = asyncio.get_running_loop().time()
                     logger.info(f'Connected to Steam on CM {ws_address} on cell_id {self.used_server_cell_id}. Sending Hello')
                     await self._protocol_client.finish_handshake()
+                    self._connected_event.set()
                     return
                 except (asyncio.TimeoutError, OSError, websockets.exceptions.InvalidURI, websockets.exceptions.InvalidHandshake):
                     self._websocket_list.add_server_to_ignored(self._current_ws_address, timeout_sec=BLACKLISTED_CM_EXPIRATION_SEC)
@@ -428,8 +483,15 @@ class WebSocketClient:
                     logger.warning("Skipping token login because protocol client is unavailable")
                     ret_code = UserActionRequired.InvalidAuthData
                     continue
+                username = response.get('username', self._user_info_cache.account_username)
+                steam_id = response.get('steam_id', self._user_info_cache.steam_id)
+                refresh_token = response.get('refresh_token', self._user_info_cache.refresh_token)
+                if not username or steam_id is None or not refresh_token:
+                    logger.warning("Rejecting token login with incomplete identity")
+                    ret_code = UserActionRequired.InvalidAuthData
+                    continue
                 logger.info("Finalizing Log in using the new auth refresh token and the classic login call")
-                ret_code = await protocol_client.finalize_login(self._user_info_cache.account_username, self._user_info_cache.steam_id, self._user_info_cache.refresh_token, auth_lost_handler)
+                ret_code = await protocol_client.finalize_login(username, steam_id, refresh_token, auth_lost_handler)
             else:
                 ret_code = UserActionRequired.InvalidAuthData
 

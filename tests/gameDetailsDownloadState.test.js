@@ -29,8 +29,9 @@ test('Game Details renders live download states instead of simulated install pro
     assert.doesNotMatch(source, /_gdSimulateDownload\(\);/);
     assert.match(source, /gdHandleMainAction download-state branch/);
 });
-test('Game Details hides the main action during active downloads and uses card controls', () => {
-    assert.match(source, /if \(playBtn\) playBtn\.style\.display = 'none'/);
+test('Game Details keeps PLAY for maintenance but hides it during active installs and uses card controls', () => {
+    assert.match(source, /const isMaintenance = task\.operationKind === 'update' \|\| task\.operationKind === 'repair'/);
+    assert.match(source, /playBtn\.style\.display = isMaintenance \? 'flex' : 'none'/);
     assert.match(source, /window\.gdDownloadAction\s*=\s*async function/);
     assert.match(source, /downloads\.pause\(taskId\)/);
     assert.match(source, /downloads\.resume\(taskId\)/);

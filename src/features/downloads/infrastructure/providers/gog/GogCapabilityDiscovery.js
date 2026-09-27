@@ -37,6 +37,8 @@ class GogCapabilityDiscovery {
             supportsDownload,
             supportsInfo: commands.includes('info'),
             supportsResume: true,
+            supportsUpdate: commands.includes('update'),
+            supportsRepair: commands.includes('repair'),
             progressOutput: 'stdout-or-stderr',
             requiredDownloadArgs: ['--auth-config-path', 'download', '--path', 'id'],
             flags: {
@@ -62,6 +64,8 @@ class GogCapabilityDiscovery {
                 runtimeVersion: null,
                 supportsDownload: false,
                 supportsResume: false,
+                supportsUpdate: false,
+                supportsRepair: false,
                 reason: err?.code || 'GOG_RUNTIME_UNAVAILABLE',
             };
         }

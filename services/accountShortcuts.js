@@ -15,7 +15,7 @@ const BLOCKED = new Set([
     'Ctrl+Shift+I', 'Ctrl+Shift+J',
 ]);
 
-const VALID_PLATFORMS = new Set(['steam', 'epic', 'ea', 'riot', 'ubisoft', 'discord', 'rockstar']);
+const VALID_PLATFORMS = new Set(['steam', 'epic', 'gog', 'ea', 'riot', 'ubisoft', 'discord', 'rockstar']);
 
 const MODIFIER_NAMES = new Set(['ctrl', 'control', 'commandorcontrol', 'shift', 'alt', 'super', 'meta']);
 const MOD_ORDER = ['Ctrl', 'Shift', 'Alt', 'Super'];
@@ -194,6 +194,16 @@ async function clearShortcut({ platform, accountId }) {
     return { success: true };
 }
 
+async function renameAccount(platform, accountId, accountName) {
+    const data = await _load();
+    const existing = data.shortcuts.find(s => s.platform === platform && s.accountId === accountId);
+    if (!existing) return { success: true };
+    existing.accountName = String(accountName || '').trim();
+    existing.updatedAt = new Date().toISOString();
+    await _save(data);
+    return { success: true };
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────────────
 
 async function registerAll(switchCallback) {
@@ -247,6 +257,7 @@ module.exports = {
     getAll,
     setShortcut,
     clearShortcut,
+    renameAccount,
     validateAccelerator,
     normalizeAccelerator,
     registerAll,

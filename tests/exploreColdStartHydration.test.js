@@ -58,6 +58,7 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
         raf: 0,
         renders: 0,
         navigations: 0,
+        diagnostics: [],
     };
     const games = Array.from({ length: count }, (_, index) => ({
         id: `display-${index}`,
@@ -109,6 +110,11 @@ function makeSandbox({ count = 15, concurrency = 3, cacheHits = 2, special = {} 
     sandbox.window.__baddelExploreHydrationConcurrency = concurrency;
     sandbox.window.__baddelExploreSecondaryHydrationConcurrency = special.secondaryConcurrency || 2;
     sandbox.window.__baddelExploreArtworkRetryDelaysMs = special.retryDelays || [5, 10, 20];
+    if (special.diagnostics) {
+        sandbox.window.BaddelArtworkDiagnostics = {
+            record(event, payload) { calls.diagnostics.push({ event, payload }); },
+        };
+    }
     sandbox.window.addEventListener = (type, handler) => {
         if (!listeners.has(type)) listeners.set(type, []);
         listeners.get(type).push(handler);
@@ -444,6 +450,49 @@ test('secondary hero/logo failure does not delay or remove painted cover', async
     assert.equal(calls.cacheAllAssets.some(call => call.opts.reason === 'explore-secondary-hydration'), true);
 });
 
+test('secondary hydration remains valid when artwork diagnostics are enabled', async () => {
+    const { sandbox, games, cards, calls } = makeSandbox({
+        count: 1,
+        concurrency: 1,
+        cacheHits: 0,
+        special: { delay: 1, diagnostics: true },
+    });
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection(games, { reason: 'diagnostic-cold-start' });
+    cards.set('display-0', makeCard('display-0'));
+    controller.registerCard('display-0', cards.get('display-0'), games[0]);
+
+    await waitForIdle(controller);
+    await waitForSecondaryIdle(controller);
+
+    assert.equal(games[0].heroImage, 'file://canonical-0-hero.webp');
+    assert.equal(games[0].logo, 'file://canonical-0-logo.webp');
+    const result = calls.diagnostics.find(entry => entry.event === 'explore-metadata-result');
+    assert.equal(result?.payload?.coverValue, 'https://cdn/display-0.jpg');
+    assert.equal(result?.payload?.heroValue, 'https://cdn/display-0-hero.jpg');
+    assert.equal(result?.payload?.logoValue, 'https://cdn/display-0-logo.png');
+});
+
+test('selected Home hero hydrates even when it is outside the Explore selection', async () => {
+    const { sandbox, games } = makeSandbox({ count: 2, concurrency: 1, cacheHits: 0, special: { delay: 1 } });
+    const controller = sandbox.window.__baddelExploreCoverHydrationController;
+    controller.setSelection([games[0]], { reason: 'one-card-explore' });
+    const externalHeroGame = {
+        id: 'external-hero',
+        localGameId: 'canonical-9',
+        name: 'External Hero',
+        platform: 'riot',
+        image: 'file://external-cover.webp',
+    };
+
+    controller.prewarmHeroArtwork([externalHeroGame], { reason: 'interactive-hover' });
+    await waitForSecondaryIdle(controller);
+
+    assert.equal(externalHeroGame.heroImage, 'file://canonical-9-hero.webp');
+    assert.equal(externalHeroGame.logo, 'file://canonical-9-logo.webp');
+    assert.equal(controller.interactiveSecondaryIds.has('external-hero'), true);
+});
+
 test('Explore uses separate cover and secondary concurrency limits', async () => {
     const { sandbox, games, cards, calls } = makeSandbox({
         count: 6,
@@ -540,4 +589,34 @@ test('home-visible lifecycle uses two animation frames before reconciliation', a
     }
     assert.equal(visibleCount, 1);
     assert.equal(calls.raf, 2);
+});
+
+test('scan-finished recovers a confirmed first-scan snapshot when library-updated was missed', async () => {
+    const start = APP_JS.indexOf('function _handleStartupScanState');
+    const end = APP_JS.indexOf('function _handleStartupLibraryUpdatedPayload', start);
+    const fn = APP_JS.slice(start, end);
+    const recovered = [{ id: 'fresh-game', name: 'Fresh Game' }];
+    const processed = [];
+    const sandbox = {
+        window: {
+            __baddelStartupLibrary: {},
+            electronAPI: { getGames: async () => recovered },
+        },
+        _startupLibraryHasGames: games => Array.isArray(games) ? games.length > 0 : false,
+        _processLibraryUpdatedPayload: games => processed.push(games),
+        renderHomeConfirmedEmptyState() {},
+        renderHomeScanErrorState() {},
+        console: { warn() {} },
+        Promise,
+        Number,
+    };
+    vm.createContext(sandbox);
+    vm.runInContext(`${fn}; this.handleScanState = _handleStartupScanState;`, sandbox);
+
+    sandbox.handleScanState({ state: 'scan-finished', count: 1 });
+    await new Promise(resolve => setTimeout(resolve, 0));
+
+    assert.equal(processed.length, 1);
+    assert.equal(processed[0][0].id, 'fresh-game');
+    assert.equal(sandbox.window.__baddelStartupLibrary.scanRecoveryInFlight, false);
 });

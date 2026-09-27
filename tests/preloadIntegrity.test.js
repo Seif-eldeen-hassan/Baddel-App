@@ -34,6 +34,14 @@ test('preload: exposes electronAPI via contextBridge', () => {
         'preload.js must expose electronAPI via contextBridge');
 });
 
+test('preload: does not require local modules in the sandboxed development runtime', () => {
+    assert.doesNotMatch(
+        preload,
+        /require\s*\(\s*['"]\.{1,2}[\\/]/,
+        'sandboxed Electron preloads can only require supported built-in modules'
+    );
+});
+
 test('preload: exposes __BADDEL_CACHE_URL__ via contextBridge', () => {
     assert.match(preload, /__BADDEL_CACHE_URL__/,
         'preload.js must expose __BADDEL_CACHE_URL__ for domUtils trust policy');

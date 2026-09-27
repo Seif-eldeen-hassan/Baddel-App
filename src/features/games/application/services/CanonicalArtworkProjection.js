@@ -3,6 +3,7 @@
 let _identityApi = null;
 let _artworkStateApi = null;
 let _readModelApi = null;
+let _schemaApi = null;
 if (typeof require === 'function') {
     try {
         _identityApi = require('./CanonicalGameIdentityResolver');
@@ -12,6 +13,9 @@ if (typeof require === 'function') {
     } catch (_) {}
     try {
         _readModelApi = require('./GameArtworkReadModel');
+    } catch (_) {}
+    try {
+        _schemaApi = require('./GameArtworkSchema');
     } catch (_) {}
 }
 if (!_identityApi && typeof window !== 'undefined') {
@@ -23,12 +27,16 @@ if (!_artworkStateApi && typeof window !== 'undefined') {
 if (!_readModelApi && typeof window !== 'undefined') {
     _readModelApi = window.BaddelGameArtworkReadModel;
 }
+if (!_schemaApi && typeof window !== 'undefined') _schemaApi = window.BaddelGameArtworkSchema;
 
 const _COPY_FIELDS = [
     'artworkState',
     'customArtworkLocked', 'artworkSource', 'artworkUpdatedAt',
     'id', 'installedGameKey', 'allIds', 'steamAppId', 'steam_appid', 'appId', 'appid',
     'appName', 'launcherGameId', 'namespace', 'catalogNamespace', 'catalogItemId',
+    'gogProductId', 'gogdlAppName', 'productId', 'providerProductId',
+    'riotProduct', 'riotProductId', 'packageFamilyName', 'appUserModelId',
+    'scannerPlatform', 'installProvider',
 ];
 
 function _copyDefined(target, source, fields) {
@@ -48,25 +56,17 @@ function normalizeArtworkAliases(game) {
         return _artworkStateApi.projectArtworkStateToLegacyAliases(game);
     }
     const out = { ...game };
-    const cover = out.image ?? out.cover ?? out.coverUrl ?? out.defaultImage ?? null;
-    const hero = out.hero ?? out.heroImage ?? out.heroUrl ?? out.defaultHero ?? null;
-    const logo = out.logo ?? out.logoUrl ?? out.defaultLogo ?? null;
+    const cover = _schemaApi?.readArtworkValue(out, 'cover') ?? null;
+    const hero = _schemaApi?.readArtworkValue(out, 'hero') ?? null;
+    const logo = _schemaApi?.readArtworkValue(out, 'logo') ?? null;
     if (cover != null) {
-        out.image = cover;
-        out.cover = cover;
-        out.coverUrl = cover;
-        out.defaultImage = cover;
+        _schemaApi?.projectTypedAliases(out, 'cover', cover);
     }
     if (hero != null) {
-        out.hero = hero;
-        out.heroImage = hero;
-        out.heroUrl = hero;
-        out.defaultHero = hero;
+        _schemaApi?.projectTypedAliases(out, 'hero', hero);
     }
     if (logo != null) {
-        out.logo = logo;
-        out.logoUrl = logo;
-        out.defaultLogo = logo;
+        _schemaApi?.projectTypedAliases(out, 'logo', logo);
     }
     return out;
 }

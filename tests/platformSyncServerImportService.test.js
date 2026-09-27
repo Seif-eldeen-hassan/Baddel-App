@@ -294,7 +294,7 @@ test('service writes normalized cover hero logo release year and emits library u
     assert.equal(emitted.length >= 1, true);
 });
 
-test('service invokes asset downloader and writes file URLs back into the cache', async () => {
+test('service invokes asset downloader without persisting managed cache file URLs', async () => {
     const repository = makeRepository({
         steam: [{ id: 'steam_10', appName: '10', title: 'Portal' }],
     });
@@ -331,8 +331,87 @@ test('service invokes asset downloader and writes file URLs back into the cache'
         gameId: 'steam_10',
     }]);
     const cached = repository.getLibrary('steam')[0];
-    assert.equal(cached.coverUrl, 'file:///cache/cover.webp');
-    assert.equal(cached.heroUrl, 'file:///cache/hero.webp');
-    assert.equal(cached.logoUrl, 'file:///cache/logo.webp');
-    assert.equal(emitted.length >= 2, true);
+    assert.equal(cached.coverUrl, 'https://cdn.example/cover.jpg');
+    assert.equal(cached.heroUrl, 'https://cdn.example/hero.jpg');
+    assert.equal(cached.logoUrl, 'https://cdn.example/logo.png');
+    assert.equal(emitted.length >= 1, true);
+});
+
+
+test('service applies lookup metadata with one merged-library write and one notification per metadata page', async () => {
+    const repository = makeRepository({
+        steam: Array.from({ length: 3 }, (_, i) => ({ id: `steam_${i + 1}`, appName: String(i + 1), title: `Game ${i + 1}`, ownedByAccountIds: ['acct'] })),
+    });
+    const baddelApi = makeBaddelApi({
+        requestGameEnrichBatch: async (_platform, chunk) => ({
+            acceptedCount: 0,
+            queuedCount: 0,
+            alreadyQueuedCount: 0,
+            alreadyExistsCount: chunk.length,
+            invalidCount: 0,
+            errorCount: 0,
+            dedupCount: 0,
+            results: chunk.map(item => ({ id: item.id, status: 'already_exists' })),
+        }),
+        lookupGame: async (params) => ({ id: params.id }),
+        normalizeServerData: (value) => ({ cover: `https://cdn.example/${value.id}.jpg` }),
+    });
+    const { service, emitted, waitForWrites } = makeHarness({ baddelApi, repository });
+
+    await service.importLibraryToServer('steam', Array.from({ length: 3 }, (_, i) => ({ id: `steam_${i + 1}`, appName: String(i + 1), title: `Game ${i + 1}` })));
+    await waitForWrites();
+
+    assert.equal(repository.calls.readMergedLibrary.length, 1);
+    assert.equal(repository.calls.writeMergedLibrary.length, 1);
+    assert.equal(emitted.length, 1);
+    assert.equal(repository.getLibrary('steam')[2].coverUrl, 'https://cdn.example/3.jpg');
+});
+
+test('cold Steam library record with no initial artwork candidates receives cover from metadata import without reopening All Games', async () => {
+    const repository = makeRepository({
+        steam: [{
+            id: 'steam_10',
+            appName: '10',
+            title: 'Portal',
+            coverUrl: null,
+            heroUrl: null,
+            logoUrl: null,
+            ownedByAccountIds: ['acct'],
+        }],
+    });
+    const baddelApi = makeBaddelApi({
+        requestGameEnrichBatch: async () => makeBatchResult('already_exists', '10'),
+        lookupGame: async (params) => ({ id: params.id }),
+        normalizeServerData: () => ({ cover: 'https://cdn.example/steam-10-cover.jpg' }),
+    });
+    const downloaderCalls = [];
+    const assetDownloader = async (assets, gameId, options = {}) => {
+        downloaderCalls.push({ assets, gameId, options });
+        return { cover: 'file:///cache/steam-10-cover.webp' };
+    };
+    const { service, emitted, waitForWrites } = makeHarness({ baddelApi, repository, assetDownloader });
+
+    await service.importLibraryToServer('steam', [{
+        id: 'steam_10',
+        appName: '10',
+        title: 'Portal',
+        coverUrl: null,
+        heroUrl: null,
+        logoUrl: null,
+    }]);
+    await waitForWrites();
+    await flushAsync(2);
+
+    const cached = repository.getLibrary('steam')[0];
+    assert.equal(cached.coverUrl, 'https://cdn.example/steam-10-cover.jpg');
+    assert.equal(repository.calls.writeMergedLibrary.length, 1);
+    assert.equal(emitted.length, 1);
+    assert.equal(downloaderCalls.length, 1);
+    assert.deepEqual(downloaderCalls[0].assets, {
+        cover: 'https://cdn.example/steam-10-cover.jpg',
+        hero: null,
+        logo: null,
+    });
+    assert.equal(downloaderCalls[0].gameId, 'steam_10');
+    assert.equal(downloaderCalls[0].options.reason, 'platform-sync-metadata-batch');
 });

@@ -5,6 +5,26 @@
 // sync modal logic. Loaded after display-prefs.js, before accounts.js.
 // ============================================================
 
+const ACCOUNT_COUNT_PLACEHOLDER = '\u2014';
+window.ACCOUNT_COUNT_PLACEHOLDER = ACCOUNT_COUNT_PLACEHOLDER;
+
+function setPlatformAccountCount(platform, count, { loaded = false } = {}) {
+    const countSpan = document.getElementById(`${platform}Count`);
+    if (!countSpan) return;
+    const numeric = Number(count);
+    countSpan.textContent = loaded && Number.isInteger(numeric) && numeric > 0
+        ? String(numeric)
+        : ACCOUNT_COUNT_PLACEHOLDER;
+}
+
+function initializePlatformAccountCounts() {
+    ['steam', 'epic', 'gog', 'ea', 'riot', 'ubisoft', 'discord', 'rockstar']
+        .forEach(platform => setPlatformAccountCount(platform, null));
+}
+
+window.setPlatformAccountCount = setPlatformAccountCount;
+window.initializePlatformAccountCounts = initializePlatformAccountCounts;
+
 // ============================================================
 // SECTION 1: ACCOUNTS VIEW SWITCHING
 // ============================================================
@@ -63,10 +83,10 @@ const PLATFORM_CONFIG = {
         color:  '#8638e5',
         accent: '#a970ff',
         logoImg: '../assets/gog.png',
-        syncOnly: true,
-        switchFn: null,
-        saveFn:   null,
-        addFn:    null
+        switchFn: switchGogAccount,
+        saveFn:   saveGogAccount,
+        addFn:    addNewGogAccount,
+        cancelAddFn: cancelAddGogAccount
     },
     ea: {
         name:   'EA App',
@@ -217,35 +237,53 @@ async function renderAccountsView(platform) {
 // SECTION 4: ACCOUNT DATA LOADER
 // ============================================================
 
+const _accountProfileReads = new Map();
+function _readAccountProfilesOnce(platform, read) {
+    if (_accountProfileReads.has(platform)) return _accountProfileReads.get(platform);
+    const pending = Promise.resolve().then(read).finally(() => {
+        if (_accountProfileReads.get(platform) === pending) _accountProfileReads.delete(platform);
+    });
+    _accountProfileReads.set(platform, pending);
+    return pending;
+}
+
 async function loadAccountsForPlatform(platform) {
     const grid = document.getElementById('accountsGrid');
     const countEl = document.getElementById('accountsCount');
     if (!grid) return;
+    const request = {};
+    grid._accountLoadRequest = request;
+    const isCurrent = () => currentAccountPlatform === platform
+        && document.getElementById('accountsGrid') === grid
+        && grid._accountLoadRequest === request;
 
     try {
         let profiles = [];
         let steamAccounts = [];
 
         if (platform === 'steam') {
-            steamAccounts = await window.electronAPI.getSteamAccounts?.() || [];
+            steamAccounts = await _readAccountProfilesOnce(platform, () => window.electronAPI.getSteamAccounts?.()) || [];
             if (Array.isArray(steamAccounts)) {
                 profiles = steamAccounts.map(a => a.username);
             }
         } else {
             const ipcFn = {
                 epic:    () => window.electronAPI.getEpicProfiles?.()    || ipcInvoke('get-epic-profiles'),
+                gog:     () => window.electronAPI.getGogProfiles?.()     || ipcInvoke('get-gog-profiles'),
                 ea:      () => window.electronAPI.getEAProfiles?.()      || ipcInvoke('get-ea-profiles'),
                 riot:    () => window.electronAPI.getRiotProfiles?.()    || ipcInvoke('get-riot-profiles'),
                 ubisoft: () => window.electronAPI.getUbisoftProfiles?.() || ipcInvoke('get-ubisoft-profiles'),
                 discord: () => window.electronAPI.getDiscordProfiles?.() || ipcInvoke('get-discord-profiles'),
                 rockstar: () => window.electronAPI.getRockstarProfiles?.() || ipcInvoke('get-rockstar-profiles')
             };
-            profiles = await (ipcFn[platform]?.() || Promise.resolve([]));
+            profiles = await _readAccountProfilesOnce(platform, () => ipcFn[platform]?.() || []);
         }
-        if (currentAccountPlatform !== platform) return;
+        if (!isCurrent()) return;
 
-        const countSpan = document.getElementById(`${platform}Count`);
-        if (countSpan) countSpan.textContent = Array.isArray(profiles) ? profiles.length : 0;
+        if (platform === 'gog') await _renderGogPendingAddState(isCurrent);
+        if (!isCurrent()) return;
+
+        setPlatformAccountCount(platform, Array.isArray(profiles) ? profiles.length : 0, { loaded: true });
 
         const count = Array.isArray(profiles) ? profiles.length : 0;
         if (countEl) countEl.textContent = `${count} accounts`;
@@ -339,6 +377,7 @@ async function loadAccountsForPlatform(platform) {
         grid.innerHTML = '';
         const cfg = PLATFORM_CONFIG[platform];
         const shortcutsMap = await _loadShortcutsMap();
+        if (!isCurrent()) return;
 
         if (platform === 'steam' && steamAccounts.length > 0) {
             steamAccounts.forEach((acc, i) => {
@@ -356,15 +395,47 @@ async function loadAccountsForPlatform(platform) {
                 const profileName = typeof profile === 'string'
                     ? profile
                     : (profile.name || profile.username || profile.displayName || String(profile.id || ''));
-                const shortcut = shortcutsMap.get(`${platform}::${profileName}`) || null;
-                grid.appendChild(createAccountCard(profileName, platform, cfg, i, shortcut));
+                const accountId = platform === 'gog' && profile?.id ? profile.id : profileName;
+                const shortcut = shortcutsMap.get(`${platform}::${accountId}`) || null;
+                grid.appendChild(createAccountCard(profile, platform, cfg, i, shortcut));
             });
         }
 
     } catch (err) {
+        if (!isCurrent()) return;
         console.error(`Failed to load ${platform} accounts:`, err);
         grid.innerHTML = `<div class="accounts-empty"><p style="color:#ff3b30;">Error loading accounts</p><span>${escapeHtml(String(err.message || err))}</span></div>`;
     }
+}
+
+async function _renderGogPendingAddState(isCurrent = () => currentAccountPlatform === 'gog') {
+    document.getElementById('gogPendingAddBanner')?.remove();
+    const state = await window.electronAPI.getGogAddState?.();
+    if (!isCurrent()) return;
+    if (!state?.pending) return;
+    const page = document.querySelector('#accountsView .accounts-page');
+    if (!page) return;
+    const banner = document.createElement('div');
+    banner.id = 'gogPendingAddBanner';
+    banner.className = 'acc-onboard-warning';
+    banner.style.cssText = 'margin:16px 0;padding:16px;display:flex;align-items:center;gap:12px;border-color:#a970ff66;background:#a970ff12;';
+    banner.innerHTML = `<div style="flex:1"><strong>GOG account setup is still active.</strong><div style="margin-top:5px;color:#aaa">Sign in, wait for the Galaxy library to load, fully close Galaxy, then save—or restore the previous session.</div></div><button class="acc-btn acc-btn-secondary" data-gog-save>Save Current</button><button class="acc-btn acc-btn-secondary" data-gog-cancel>Cancel Add</button>`;
+    banner.querySelector('[data-gog-save]').addEventListener('click', () => handleSaveAccount('gog'));
+    banner.querySelector('[data-gog-cancel]').addEventListener('click', cancelPendingGogAdd);
+    page.querySelector('.accounts-hero-v2')?.after(banner);
+}
+
+async function cancelPendingGogAdd() {
+    if (isAccountProcessing) return;
+    isAccountProcessing = true;
+    try {
+        await cancelAddGogAccount();
+        showToast('Previous GOG Galaxy session restored.', 'success');
+        await loadAccountsForPlatform('gog');
+        if (typeof hydrateSidebarPlatformCounts === 'function') hydrateSidebarPlatformCounts();
+        if (typeof renderAccountShortcuts === 'function') renderAccountShortcuts();
+    } catch (error) { showToast(error.message || String(error), 'error'); }
+    finally { isAccountProcessing = false; }
 }
 
 // ============================================================
@@ -629,20 +700,22 @@ function openShortcutCaptureModal(platform, accountId, accountName, accent, exis
 // ============================================================
 
 function createAccountCard(profileName, platform, cfg, index = 0, shortcut = null) {
-    if (typeof profileName === 'object' && profileName !== null) {
-        profileName = profileName.name || profileName.username || profileName.displayName || String(profileName.id || '');
-    }
+    const profileObject = typeof profileName === 'object' && profileName !== null ? profileName : null;
+    const accountId = platform === 'gog' && profileObject?.id
+        ? String(profileObject.id)
+        : String(profileObject?.name || profileObject?.username || profileObject?.displayName || profileName || '');
+    if (profileObject) profileName = profileObject.name || profileObject.username || profileObject.displayName || String(profileObject.id || '');
     profileName = String(profileName || '');
 
     const card = document.createElement('div');
     card.className = 'account-card';
-    card.setAttribute('data-profile', profileName);
+    card.setAttribute('data-profile', accountId);
 
     const initials = profileName.substring(0, 2).toUpperCase();
     const indexStr = String(index + 1).padStart(2, '0');
 
     let pinnedArr = JSON.parse(localStorage.getItem('baddel_pinned_accounts') || '[]');
-    let isPinned = pinnedArr.some(p => p.platform === platform && p.profileName === profileName);
+    let isPinned = pinnedArr.some(p => p.platform === platform && p.profileName === accountId);
     let pinClass = isPinned ? 'acc-pin-btn is-pinned' : 'acc-pin-btn';
 
     const _eName = escapeHtml(profileName);
@@ -673,17 +746,17 @@ function createAccountCard(profileName, platform, cfg, index = 0, shortcut = nul
         </div>
     `;
     card.querySelector('[data-action="pin"]').addEventListener('click', function() {
-        handlePinAccount(platform, profileName, null, null, null, this);
+        handlePinAccount(platform, accountId, profileName, null, null, this);
     });
     card.querySelector('[data-action="switch"]').addEventListener('click', function() {
-        handleSwitchAccount(platform, profileName, this);
+        handleSwitchAccount(platform, accountId, this, profileName);
     });
     card.querySelector('[data-action="shortcut"]').addEventListener('click', async () => {
         const current = shortcut;
-        const result = await openShortcutCaptureModal(platform, profileName, profileName, cfg.accent, current?.accelerator || null);
+        const result = await openShortcutCaptureModal(platform, accountId, profileName, cfg.accent, current?.accelerator || null);
         if (result === 'cancel') return;
         const newMap = await _loadShortcutsMap();
-        const updated = newMap.get(`${platform}::${profileName}`) || null;
+        const updated = newMap.get(`${platform}::${accountId}`) || null;
         shortcut = updated;
         _updateCardShortcutBtn(card, updated);
         if (typeof showToast === 'function') {
@@ -691,8 +764,8 @@ function createAccountCard(profileName, platform, cfg, index = 0, shortcut = nul
             else showToast(`Shortcut set: ${result}`, 'success');
         }
     });
-    card.querySelector('[data-action="rename"]').addEventListener('click', () => handleRenameAccount(platform, profileName));
-    card.querySelector('[data-action="delete"]').addEventListener('click', () => handleDeleteAccount(platform, profileName));
+    card.querySelector('[data-action="rename"]').addEventListener('click', () => handleRenameAccount(platform, accountId, profileName));
+    card.querySelector('[data-action="delete"]').addEventListener('click', () => handleDeleteAccount(platform, accountId, profileName));
     return card;
 }
 
@@ -893,7 +966,7 @@ window.handlePinAccount = function(platform, profileName, displayName = null, ex
 // SECTION 9: ACTION HANDLERS
 // ============================================================
 
-async function handleSwitchAccount(platform, profileName, btnEl) {
+async function handleSwitchAccount(platform, profileName, btnEl, displayName = profileName) {
     if (isAccountProcessing) {
         showToast("Please wait, an operation is already in progress...", "warning");
         return;
@@ -922,13 +995,13 @@ async function handleSwitchAccount(platform, profileName, btnEl) {
     try {
         const cfg = PLATFORM_CONFIG[platform];
         await cfg.switchFn(profileName);
-        showToast(`Switched to ${profileName}! Starting launcher...`, 'success');
+        showToast(`Switched to ${displayName}! Starting launcher...`, 'success');
 
         btnEl.innerHTML = isShortcutBtn
             ? `<div class="acc-mini-spinner" style="border-top-color: #30d158;"></div>`
             : `<div class="acc-mini-spinner"></div> Stabilizing...`;
 
-        await new Promise(r => setTimeout(r, 8000));
+        await new Promise(r => setTimeout(r, platform === 'gog' ? 10000 : 8000));
 
     } catch (err) {
         console.error(`Switch error for ${platform}:`, err);
@@ -964,11 +1037,16 @@ async function handleSaveAccount(platform) {
         return;
     }
 
-    const name = await promptAccountName(
+    const rawName = await promptAccountName(
         `Save current ${PLATFORM_CONFIG[platform].name} account as:`,
         PLATFORM_CONFIG[platform].accent
     );
-    if (!name) return;
+    if (rawName === null) return;
+    const name = String(rawName).trim();
+    if (!name) {
+        showToast('Enter an account name.', 'error');
+        return;
+    }
 
     isAccountProcessing = true;
     showToast(`Saving ${name}...`, 'success');
@@ -976,10 +1054,16 @@ async function handleSaveAccount(platform) {
     try {
         const cfg = PLATFORM_CONFIG[platform];
         await cfg.saveFn(name);
+        if (platform === 'gog') {
+            window.invalidatePlatformOwnershipCache?.('gog');
+            window.dispatchEvent?.(new CustomEvent('baddel:gog-switcher-changed'));
+        }
         showToast(`${name} saved!`, 'success');
         await loadAccountsForPlatform(platform);
+        if (typeof hydrateSidebarPlatformCounts === 'function') hydrateSidebarPlatformCounts();
+        if (typeof renderAccountShortcuts === 'function') renderAccountShortcuts();
     } catch (err) {
-        showToast(`Save failed: ${err}`, 'error');
+        showToast(`Save failed: ${err?.message || err}`, 'error');
     } finally {
         isAccountProcessing = false;
     }
@@ -1125,13 +1209,13 @@ function isColorLight(hex) {
     return (r * 299 + g * 587 + b * 114) / 1000 > 180;
 }
 
-async function handleRenameAccount(platform, oldName) {
+async function handleRenameAccount(platform, profileId, currentName = profileId) {
     if (isAccountProcessing) return;
     const newName = await promptAccountName(
-        `Rename "${oldName}" to:`,
+        `Rename "${currentName}" to:`,
         PLATFORM_CONFIG[currentAccountPlatform]?.accent || '#ff4655'
     );
-    if (!newName || newName === oldName) return;
+    if (!newName || newName === currentName) return;
 
     isAccountProcessing = true;
     try {
@@ -1141,7 +1225,8 @@ async function handleRenameAccount(platform, oldName) {
             discord:  'renameDiscordProfile',
             epic:     'renameEpicProfile',
             ea:       'renameEaProfile',
-            rockstar: 'renameRockstarProfile'
+            rockstar: 'renameRockstarProfile',
+            gog:      'renameGogProfile'
         };
 
         const methodName = methodMap[platform];
@@ -1150,20 +1235,21 @@ async function handleRenameAccount(platform, oldName) {
             throw new Error(`Function ${methodName} is missing in preload.js`);
         }
 
-        const result = await window.electronAPI[methodName](oldName, newName);
+        const result = await window.electronAPI[methodName](profileId, newName);
 
         if (result && result.status === 'error') {
             throw new Error(result.message);
         }
 
         showToast("Renamed successfully", "success");
+        if (platform === 'gog') window.invalidatePlatformOwnershipCache?.('gog');
 
         let pinned = JSON.parse(localStorage.getItem('baddel_pinned_accounts') || '[]');
         let changed = false;
         pinned.forEach(p => {
-            if (p.platform === platform && p.profileName === oldName) {
-                p.profileName = newName;
-                if (p.displayName === oldName) p.displayName = newName;
+            if (p.platform === platform && p.profileName === profileId) {
+                if (platform !== 'gog') p.profileName = newName;
+                if (p.displayName === currentName || platform === 'gog') p.displayName = newName;
                 changed = true;
             }
         });
@@ -1180,18 +1266,19 @@ async function handleRenameAccount(platform, oldName) {
     }
 }
 
-function handleDeleteAccount(platform, profileName) {
+function handleDeleteAccount(platform, profileId, displayName = profileId) {
     openConfirmModal(
         'Delete Account?',
-        `Delete saved data for "${profileName}"? This cannot be undone.`,
+        `Remove the saved profile "${displayName}" from Baddel? This never deletes the real account or current Galaxy session.`,
         'Delete',
         async () => {
             try {
-                await ipcInvoke(`delete-${platform}-profile`, profileName);
-                showToast(`${profileName} deleted.`, 'success');
+                await ipcInvoke(`delete-${platform}-profile`, profileId);
+                showToast(`${displayName} deleted.`, 'success');
+                if (platform === 'gog') window.invalidatePlatformOwnershipCache?.('gog');
 
                 let pinned = JSON.parse(localStorage.getItem('baddel_pinned_accounts') || '[]');
-                const newPinned = pinned.filter(p => !(p.platform === platform && p.profileName === profileName));
+                const newPinned = pinned.filter(p => !(p.platform === platform && p.profileName === profileId));
                 if (pinned.length !== newPinned.length) {
                     localStorage.setItem('baddel_pinned_accounts', JSON.stringify(newPinned));
                     if (typeof renderAccountShortcuts === 'function') renderAccountShortcuts();
@@ -1217,6 +1304,10 @@ async function switchEpicAccount(profileName) {
     return ipcInvoke('switch-epic', profileName);
 }
 
+async function switchGogAccount(profileId) {
+    return ipcInvoke('switch-gog-account', profileId);
+}
+
 async function switchEAAccount(profileName) {
     return ipcInvoke('switch-ea', profileName);
 }
@@ -1231,6 +1322,10 @@ async function switchUbisoftAccount(profileName) {
 
 async function saveEpicAccount(name) {
     return ipcInvoke('save-epic-account', name);
+}
+
+async function saveGogAccount(name) {
+    return ipcInvoke('save-gog-account', name);
 }
 
 async function saveEAAccount(name) {
@@ -1251,6 +1346,14 @@ async function addNewSteamAccount() {
 
 async function addNewEpicAccount() {
     return ipcInvoke('add-new-epic-account');
+}
+
+async function addNewGogAccount(expectedAccountId = null) {
+    return ipcInvoke('add-new-gog-account', expectedAccountId);
+}
+
+async function cancelAddGogAccount() {
+    return ipcInvoke('cancel-add-gog-account');
 }
 
 async function addNewEAAccount() {
@@ -1289,24 +1392,30 @@ async function ipcInvoke(channel, ...args) {
     const methodMap = {
         'switch-steam':            (a) => window.electronAPI.switchSteam?.(a),
         'switch-epic':             (a) => window.electronAPI.switchEpic?.(a),
+        'switch-gog-account':      (a) => window.electronAPI.switchGogAccount?.(a),
         'switch-ea':               (a) => window.electronAPI.switchEA?.(a),
         'switch-riot-account':     (a) => window.electronAPI.switchRiot?.(a),
         'switch-ubisoft-account':  (a) => window.electronAPI.switchUbisoft?.(a),
         'save-epic-account':       (a) => window.electronAPI.saveEpicAccount?.(a),
+        'save-gog-account':        (a) => window.electronAPI.saveGogAccount?.(a),
         'save-ea-account':         (a) => window.electronAPI.saveEAAccount?.(a),
         'save-riot-account':       (a) => window.electronAPI.saveRiotAccount?.(a),
         'save-ubisoft-account':    (a) => window.electronAPI.saveUbisoftAccount?.(a),
         'add-new-steam-account':   ()  => window.electronAPI.addNewSteamAccount?.(),
         'add-new-epic-account':    ()  => window.electronAPI.addNewEpicAccount?.(),
+        'add-new-gog-account':     (a) => window.electronAPI.addNewGogAccount?.(a),
+        'cancel-add-gog-account':  ()  => window.electronAPI.cancelAddGogAccount?.(),
         'add-new-ea-account':      ()  => window.electronAPI.addNewEAAccount?.(),
         'add-new-riot-account':    ()  => window.electronAPI.addNewRiotAccount?.(),
         'add-new-ubisoft-account': ()  => window.electronAPI.addNewUbisoftAccount?.(),
         'get-epic-profiles':       ()  => window.electronAPI.getEpicProfiles?.(),
+        'get-gog-profiles':        ()  => window.electronAPI.getGogProfiles?.(),
         'get-ea-profiles':         ()  => window.electronAPI.getEAProfiles?.(),
         'get-riot-profiles':       ()  => window.electronAPI.getRiotProfiles?.(),
         'get-ubisoft-profiles':    ()  => window.electronAPI.getUbisoftProfiles?.(),
         'get-steam-accounts':      ()  => window.electronAPI.getSteamAccounts?.(),
         'delete-epic-profile':     (a) => window.electronAPI.deleteEpicProfile?.(a),
+        'delete-gog-profile':      (a) => window.electronAPI.deleteGogProfile?.(a),
         'delete-ea-profile':       (a) => window.electronAPI.deleteEAProfile?.(a),
         'delete-riot-profile':     (a) => window.electronAPI.deleteRiotProfile?.(a),
         'delete-ubisoft-profile':  (a) => window.electronAPI.deleteUbisoftProfile?.(a),
@@ -1429,8 +1538,8 @@ async function updateAllAccountCounts() {
                 const steamAccounts = await window.electronAPI.getSteamAccounts?.() || [];
                 count = Array.isArray(steamAccounts) ? steamAccounts.length : 0;
             } else if (platform === 'gog') {
-                const res = await window.electronAPI.platformSyncGetAccounts?.('gog').catch(() => ({}));
-                count = Array.isArray(res?.accounts) ? res.accounts.length : 0;
+                const profiles = await (window.electronAPI.getGogProfiles?.() || Promise.resolve([]));
+                count = Array.isArray(profiles) ? profiles.length : 0;
             } else {
                 const ipcFn = {
                     epic:    () => window.electronAPI.getEpicProfiles?.()    || ipcInvoke('get-epic-profiles'),
@@ -1443,10 +1552,7 @@ async function updateAllAccountCounts() {
                 count = Array.isArray(profiles) ? profiles.length : 0;
             }
 
-            const countSpan = document.getElementById(`${platform}Count`);
-            if (countSpan) {
-                countSpan.textContent = count > 0 ? count : '—';
-            }
+            setPlatformAccountCount(platform, count, { loaded: true });
 
         } catch (err) {
             console.warn(`Could not load count for ${platform}:`, err);
@@ -1455,11 +1561,13 @@ async function updateAllAccountCounts() {
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+    initializePlatformAccountCounts();
     // Deferred so startup rendering is not delayed by account IPC calls.
     setTimeout(() => {
         updateAllAccountCounts();
     }, 1500);
 });
+window.updateAllAccountCounts = updateAllAccountCounts;
 
 // ============================================================
 // SECTION 14: EPIC LIBRARY SYNC PANEL
@@ -1552,7 +1660,25 @@ async function _renderEpicLibraryPanel() {
 let activePlatformView = null;
 const platformSyncStateCache = {};
 const platformSyncRenderTimers = {};
+const platformSyncActiveOperations = {};
+let platformSyncOperationSequence = 0;
 let platformSyncListenerBound = false;
+
+function _createPlatformOperationId(platform, type) {
+    platformSyncOperationSequence += 1;
+    return `${String(platform || 'platform')}:${String(type || 'operation')}:${Date.now()}:${platformSyncOperationSequence}`;
+}
+
+function _isCurrentPlatformOperation(payload, type = 'sync') {
+    if (!payload?.platform) return false;
+    const active = platformSyncActiveOperations[payload.platform];
+    if (payload.operationType && payload.operationType !== type) return false;
+    if (!active) return true;
+    if (active.type !== type) return false;
+    if (payload.operationId && active.operationId && payload.operationId !== active.operationId) return false;
+    if (payload.syncRunId && active.syncRunId && payload.syncRunId !== active.syncRunId) return false;
+    return true;
+}
 let platformSyncOverlayTimer = null;
 
 function _escapePlatformSyncHtml(value) {
@@ -1820,7 +1946,7 @@ function _ensurePlatformSyncListener() {
     platformSyncListenerBound = true;
 
     window.electronAPI.onPlatformSyncState((state) => {
-        if (!state?.platform) return;
+        if (!state?.platform || !_isCurrentPlatformOperation(state, 'sync')) return;
         platformSyncStateCache[state.platform] = state;
         if (activePlatformView === state.platform) {
             _renderPlatformSyncStatusPanel(state.platform, state);
@@ -1830,8 +1956,9 @@ function _ensurePlatformSyncListener() {
 
     if (window.electronAPI.onPlatformSyncCompleted) {
         window.electronAPI.onPlatformSyncCompleted((state) => {
-            if (!state?.platform) return;
+            if (!state?.platform || !_isCurrentPlatformOperation(state, 'sync')) return;
             platformSyncStateCache[state.platform] = state;
+            delete platformSyncActiveOperations[state.platform];
             const platformName = PLATFORM_CONFIG[state.platform]?.name || (state.platform === 'steam' ? 'Steam' : 'Epic Games');
             const syncedCount = state.summary?.totalGames ||
                 Object.values(state.accounts || {}).reduce((sum, a) => sum + (a.gamesCount || 0), 0);
@@ -1842,14 +1969,18 @@ function _ensurePlatformSyncListener() {
                 _renderPlatformSyncStatusPanel(state.platform, state);
                 _schedulePlatformAccountsRender(state.platform);
             }
-            _agSafeRenderAllGamesView();
+            window.hydrateSidebarAllGamesCount?.('platform-sync-completed').catch?.(() => {});
+            if (state.platform === 'epic' && typeof window.invalidateEpicVaultCache === 'function') {
+                window.invalidateEpicVaultCache(true).catch?.(() => {});
+            }
         });
     }
 
     if (window.electronAPI.onPlatformSyncFailed) {
         window.electronAPI.onPlatformSyncFailed((state) => {
-            if (!state?.platform) return;
+            if (!state?.platform || !_isCurrentPlatformOperation(state, 'sync')) return;
             platformSyncStateCache[state.platform] = state;
+            delete platformSyncActiveOperations[state.platform];
             const platformName = PLATFORM_CONFIG[state.platform]?.name || (state.platform === 'steam' ? 'Steam' : 'Epic Games');
             showToast(`${platformName} sync failed: ${state.lastError || 'Unknown error'}`, 'error');
             if (activePlatformView === state.platform) {
@@ -1863,6 +1994,8 @@ function _ensurePlatformSyncListener() {
 function _runPlatformSync(platform, options = {}) {
     const platformName    = PLATFORM_CONFIG[platform]?.name || (platform === 'steam' ? 'Steam' : 'Epic Games');
     const targetAccountId = options.targetAccountId || null;
+    const syncOptions     = options.syncOptions || {};
+    const operationId = _createPlatformOperationId(platform, 'sync');
 
     // Client-side duplicate guard — server will also check, but this gives instant feedback
     if (platformSyncStateCache[platform]?.isSyncing) {
@@ -1870,8 +2003,12 @@ function _runPlatformSync(platform, options = {}) {
         return;
     }
 
-    window.electronAPI.platformSyncSync(platform, targetAccountId)
+    platformSyncActiveOperations[platform] = { type: 'sync', operationId, syncRunId: null };
+    window.electronAPI.platformSyncSync(platform, targetAccountId, { ...syncOptions, __operationId: operationId })
         .then(res => {
+            const active = platformSyncActiveOperations[platform];
+            if (!active || active.type !== 'sync' || active.operationId !== operationId) return;
+            if (res?.syncRunId) active.syncRunId = res.syncRunId;
             if (res?.alreadyRunning) {
                 showToast(`${platformName} sync is already running in the background.`, 'info');
                 return;
@@ -1885,6 +2022,9 @@ function _runPlatformSync(platform, options = {}) {
             }
         })
         .catch(err => {
+            const active = platformSyncActiveOperations[platform];
+            if (!active || active.type !== 'sync' || active.operationId !== operationId) return;
+            delete platformSyncActiveOperations[platform];
             showToast(`${platformName} sync failed: ${err.message}`, 'error');
         });
 }
@@ -1927,6 +2067,7 @@ async function updatePlatformsOverview() {
 }
 
 async function openPlatformDetails(platform) {
+    window.electronAPI?.trackFeatureEvent?.('feature_viewed', { feature: 'manage_accounts', view: 'platform_accounts', platform }).catch?.(() => {});
     activePlatformView = platform;
     document.querySelectorAll('.platform-nav-item').forEach(el => el.classList.remove('active'));
     const activeItem = document.getElementById(`plat-nav-${platform}`);
@@ -1982,6 +2123,8 @@ async function renderPlatformAccounts(platform) {
                 accountMessage    = syncAccountState?.message || '';
             }
 
+            const countIsKnown = syncAccountState?.gamesCountKnown !== false || baseGamesCount > 0 || !!acc.lastSyncedAt;
+            const gamesCountLabel = countIsKnown ? `${displayGamesCount} Games` : 'Checking library';
             const statusLabel  = _getPlatformSyncStatusLabel(itemStatus);
             const isInProgress = ['syncing', 'starting', 'finalizing'].includes(itemStatus);
             const statusHtml   = statusLabel
@@ -1996,7 +2139,7 @@ async function renderPlatformAccounts(platform) {
                         <div class="linked-account-info">
                             <div class="linked-account-name">${_escapePlatformSyncHtml(_sanitizePlatformAccountName(acc.displayName))}</div>
                             <div class="linked-account-meta">
-                                <span>${_escapePlatformSyncHtml(`${displayGamesCount} Games`)}</span>
+                                <span>${_escapePlatformSyncHtml(gamesCountLabel)}</span>
                                 ${statusHtml}
                             </div>
                         </div>
@@ -2019,6 +2162,27 @@ async function renderPlatformAccounts(platform) {
     }
 }
 
+async function _finishLinkedPlatformAccount({ platform, platformLabel, isEpic, linkedName, linkedAccountId, res, epicSyncSelection }) {
+    await updatePlatformsOverview();
+    await renderPlatformAccounts(platform);
+    if (isEpic && res.initialSyncComplete) {
+        updateOverlayForLinkedPlatform(platform, 'Account linked!', `Epic synced ${Number(res.gamesCount || 0)} games inside Baddel.`);
+        showToast(`Account "${linkedName}" linked and synced.`, 'success');
+        await _agSafeRenderAllGamesView();
+        window.hydrateSidebarAllGamesCount?.('account-sync').catch?.(() => {});
+        if (typeof window.invalidateEpicVaultCache === 'function') await window.invalidateEpicVaultCache(true);
+    } else {
+        updateOverlayForLinkedPlatform(platform, 'Account linked!', `${platformLabel} account linked. Syncing library now...`);
+        showToast(`Account "${linkedName}" linked! Syncing library automatically...`, 'info');
+        _runPlatformSync(platform, { targetAccountId: linkedAccountId, silent: true, syncOptions: epicSyncSelection });
+    }
+    await updatePlatformsOverview();
+    await renderPlatformAccounts(platform);
+}
+
+function updateOverlayForLinkedPlatform(platform, title, subtitle) {
+    _renderPlatformSyncOverlay(platform, null, { visible: true, title, subtitle });
+}
 async function linkNewPlatformAccount() {
     if (!activePlatformView) return;
 
@@ -2030,6 +2194,8 @@ async function linkNewPlatformAccount() {
     }
     const isEpic = platform === 'epic';
     const platformLabel = PLATFORM_CONFIG[platform]?.name || platform;
+    const operationId = _createPlatformOperationId(platform, 'link');
+    platformSyncActiveOperations[platform] = { type: 'link', operationId, syncRunId: null };
 
     const linkBtn = document.getElementById('linkPlatformBtn');
     const syncBtn = document.getElementById('syncPlatformBtn');
@@ -2042,14 +2208,9 @@ async function linkNewPlatformAccount() {
     };
 
     const stageMessages = {
-        waiting_for_signin: isEpic
-            ? 'Waiting for Epic authorization...'
-            : (platform === 'gog' ? 'Waiting for GOG authorization...' : 'Finish the sign-in in the Steam window.'),
-        resolving_identity: 'Reading account profile...',
-        saving_account:     'Saving account...',
-        linked:             'Account linked. Starting library sync...',
-        starting_sync:      `${platformLabel} sync started in the background. You can keep using Baddel.`,
-        failed:             'Linking failed.',
+        waiting_for_signin: isEpic ? 'Waiting for Epic authorization...' : `Waiting for ${platformLabel} authorization...`,
+        resolving_identity: 'Reading account profile...', saving_account: 'Saving account...',
+        linked: 'Account linked. Starting sync...', starting_sync: `${platformLabel} sync started.`, failed: 'Linking failed.',
     };
 
     let removeStateListener = null;
@@ -2073,7 +2234,7 @@ async function linkNewPlatformAccount() {
             if (!overlay?.classList.contains('visible')) return;
             const subtitleEl = document.getElementById('platformSyncSimpleSubtitle');
             if (subtitleEl) subtitleEl.textContent =
-                'Still connecting. Please keep this window open until sign-in finishes.';
+                'Still connecting. Keep this window open.';
         }, 30_000);
     };
 
@@ -2089,13 +2250,16 @@ async function linkNewPlatformAccount() {
         const initialSubtitle = isEpic
             ? 'Waiting for Epic authorization...'
             : (platform === 'gog'
-                ? 'Finish the sign-in in the GOG window, then we will sync your games automatically.'
-                : 'Finish the sign-in in the Steam window, then we will sync your games automatically.');
+                ? 'Finish GOG sign-in; sync starts after.'
+                : 'Finish Steam sign-in; sync starts after.');
         updateOverlay(initialTitle, initialSubtitle);
 
         if (window.electronAPI.onPlatformLinkStateChanged) {
             removeStateListener = window.electronAPI.onPlatformLinkStateChanged((payload) => {
-                if (payload?.platform !== platform) return;
+                const active = platformSyncActiveOperations[platform];
+                if (payload?.platform !== platform || payload?.operationType !== 'link') return;
+                if (!active || active.type !== 'link' || active.operationId !== operationId) return;
+                if (payload.operationId && payload.operationId !== operationId) return;
                 const subtitle = stageMessages[payload.status] || payload.message || '';
                 const titleMap = {
                     waiting_for_signin: initialTitle,
@@ -2108,9 +2272,20 @@ async function linkNewPlatformAccount() {
             });
         }
 
+        let epicSyncSelection = {};
+        if (isEpic) {
+            const selected = await window.showEpicSyncOptionsDialog?.();
+            if (!selected) {
+                _hidePlatformSyncOverlay();
+                cleanup();
+                return;
+            }
+            epicSyncSelection = selected;
+        }
+
         if (isEpic || platform === 'gog') startTimeoutWarnings();
 
-        const res = await window.electronAPI.platformSyncLink(platform);
+        const res = await window.electronAPI.platformSyncLink(platform, { ...epicSyncSelection, __operationId: operationId });
 
         if (res?.status === 'error') throw new Error(res.message || 'Failed to link account');
         if (res.status === 'success') {
@@ -2120,25 +2295,28 @@ async function linkNewPlatformAccount() {
                 ? (res.steamId || res.accountId || res.id || null)
                 : (res.accountId || res.epicAccountId || res.userId || res.id || null);
 
-            await updatePlatformsOverview();
-            await renderPlatformAccounts(platform);
-            updateOverlay(
-                'Account linked!',
-                isEpic
-                    ? 'Epic sync started in the background. You can close this tab or keep using Baddel.'
-                    : `${platformLabel} account linked. Syncing library now...`,
-            );
-            showToast(`Account "${_linkedName}" linked! Syncing library automatically...`, 'info');
-            _runPlatformSync(platform, { targetAccountId: _linkedAccountId, silent: true });
-            await updatePlatformsOverview();
-            await renderPlatformAccounts(platform);
+            await _finishLinkedPlatformAccount({
+                platform,
+                platformLabel,
+                isEpic,
+                linkedName: _linkedName,
+                linkedAccountId: _linkedAccountId,
+                res,
+                epicSyncSelection,
+            });
         }
     } catch (err) {
+        const active = platformSyncActiveOperations[platform];
+        if (!active || active.type !== 'link' || active.operationId !== operationId) return;
+        const msg = err?.message || err?.details?.message || err?.error || 'Unknown error';
+        showToast(`Failed to link platform ${platformLabel}: ${msg}`, 'error');
         console.error('[PlatformLink] Link Error:', { platform, message: err?.message, error: err });
         _hidePlatformSyncOverlay();
-        const msg = err?.message || err?.details?.message || err?.error || 'Unknown error';
-        showToast(`Failed to link ${platformLabel} account: ${msg}`, 'error');
     } finally {
+        const active = platformSyncActiveOperations[platform];
+        if (active?.type === 'link' && active.operationId === operationId) {
+            delete platformSyncActiveOperations[platform];
+        }
         cleanup();
     }
 }
@@ -2152,12 +2330,14 @@ async function unlinkPlatformAccount(accountId) {
         'Unlink',
         async () => {
             try {
-                await window.electronAPI.platformSyncUnlink(activePlatformView, accountId);
+                const result = await window.electronAPI.platformSyncUnlink(activePlatformView, accountId);
+                if (!result || result.status === 'error') throw Object.assign(new Error(result?.message || 'Failed to unlink account.'), { code: result?.code || 'PLATFORM_UNLINK_FAILED' });
                 showToast('Account removed successfully.', 'success');
                 await updatePlatformsOverview();
                 await renderPlatformAccounts(activePlatformView);
                 await _agSafeRenderAllGamesView();
                 window.hydrateSidebarAllGamesCount?.('account-sync').catch?.(() => {});
+                if (activePlatformView === 'epic' && typeof window.invalidateEpicVaultCache === 'function') await window.invalidateEpicVaultCache(true);
                 if (activePlatformView === 'epic' && typeof _renderEpicLibraryPanel === 'function') await _renderEpicLibraryPanel();
             } catch (err) {
                 console.error('Unlink Error:', err);
@@ -2167,14 +2347,26 @@ async function unlinkPlatformAccount(accountId) {
     );
 }
 
-function syncCurrentPlatform() {
+async function syncCurrentPlatform() {
     if (!activePlatformView) return;
-    _runPlatformSync(activePlatformView);
+    let syncOptions = {};
+    if (String(activePlatformView).toLowerCase() === 'epic') {
+        const selected = await window.showEpicSyncOptionsDialog?.();
+        if (!selected) return;
+        syncOptions = selected;
+    }
+    _runPlatformSync(activePlatformView, { syncOptions });
 }
 
-function syncSinglePlatformAccount(accountId) {
+async function syncSinglePlatformAccount(accountId) {
     if (!activePlatformView || !accountId) return;
-    _runPlatformSync(activePlatformView, { targetAccountId: String(accountId) });
+    let syncOptions = {};
+    if (String(activePlatformView).toLowerCase() === 'epic') {
+        const selected = await window.showEpicSyncOptionsDialog?.();
+        if (!selected) return;
+        syncOptions = selected;
+    }
+    _runPlatformSync(activePlatformView, { targetAccountId: String(accountId), syncOptions });
 }
 
 // ============================================================

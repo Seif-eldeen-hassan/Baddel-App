@@ -430,6 +430,68 @@
     grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
     gap: 16px;
 }
+.gd-install-control {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
+.gd-primary-actions { display: flex; align-items: stretch; gap: 10px; }
+.gd-maintenance-status {
+    color: rgba(255,255,255,0.78);
+    font-size: 0.68rem;
+    font-weight: 800;
+    letter-spacing: 0.1em;
+}
+.gd-maintenance-status[hidden], .gd-maintenance-btn[hidden] { display: none !important; }
+.gd-maintenance-btn {
+    border: 1px solid rgba(255,255,255,0.22);
+    border-radius: 12px;
+    padding: 12px 18px;
+    background: rgba(255,255,255,0.09);
+    color: #fff;
+    font-family: var(--font-heading);
+    font-size: 0.78rem;
+    font-weight: 800;
+    cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.gd-maintenance-btn:hover { background: rgba(255,255,255,0.16); border-color: rgba(255,255,255,0.34); transform: translateY(-1px); }
+.gd-update-btn { background: #fff; color: #090909; }
+.gd-update-btn:hover { background: rgba(255,255,255,0.88); }
+.gd-update-btn:disabled { cursor: default; opacity: 0.7; transform: none; }
+.gd-management-menu { position: relative; flex: 0 0 auto; }
+.gd-management-menu[hidden] { display: none !important; }
+.gd-management-trigger {
+    width: 48px; height: 48px; display: grid; place-items: center;
+    border: 1px solid rgba(255,255,255,0.2); border-radius: 12px;
+    background: rgba(255,255,255,0.08); color: rgba(255,255,255,0.86);
+    font-size: 1.15rem; cursor: pointer;
+    transition: background 0.2s ease, border-color 0.2s ease, transform 0.2s ease;
+}
+.gd-management-trigger:hover { background: rgba(255,255,255,0.15); border-color: rgba(255,255,255,0.32); transform: translateY(-1px); }
+.gd-management-popover.dropdown-menu {
+    width: 218px; min-width: 218px; top: calc(100% + 8px); right: 0;
+    padding: 5px 0; overflow: visible; z-index: 10020;
+}
+.gd-management-popover.dropdown-menu.baddel-menu-portal {
+    position: fixed;
+    z-index: 10020;
+    margin: 0;
+    box-sizing: border-box;
+}
+.gd-management-popover .dropdown-item {
+    display: flex; width: 100%; align-items: center; justify-content: space-between;
+    border: 0; background: transparent; color: #bbb; padding: 10px 14px;
+    font: inherit; font-size: 0.8rem; text-align: left; cursor: pointer;
+}
+.gd-management-popover .dropdown-item:hover,
+.gd-management-popover .dropdown-item:focus-visible { background: rgba(255,255,255,0.08); color: #fff; }
+.gd-management-popover .dropdown-item:disabled { color: #666; cursor: default; background: transparent; }
+.gd-management-popover .dropdown-item.danger { color: #ff8585; }
+.gd-management-popover .dropdown-item.danger:hover { background: rgba(255,68,68,0.09); }
+.gd-management-popover .gd-management-separator { height: 1px; margin: 4px 0; background: rgba(255,255,255,0.09); }
+.gd-management-popover .gd-management-value { color: rgba(255,255,255,0.5); font-size: 0.7rem; font-weight: 800; }
 .gd-media-trailer-card {
     display: flex;
     flex-direction: column;

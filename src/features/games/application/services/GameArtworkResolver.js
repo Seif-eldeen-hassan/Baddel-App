@@ -5,6 +5,9 @@ const _artworkResolverRoot = typeof window !== 'undefined' ? window : globalThis
 const _artworkPolicy = (typeof require === 'function')
     ? require('../../domain/services/ArtworkOwnershipPolicy')
     : _artworkResolverRoot.BaddelArtworkOwnershipPolicy;
+const _artworkSchema = (typeof require === 'function')
+    ? require('./GameArtworkSchema')
+    : _artworkResolverRoot.BaddelGameArtworkSchema;
 
 const {
     ARTWORK_TYPES,
@@ -12,11 +15,7 @@ const {
     resolveArtworkType,
 } = _artworkPolicy;
 
-const ALIASES = Object.freeze({
-    cover: Object.freeze(['image', 'cover', 'coverUrl', 'defaultImage', 'posterImage']),
-    hero: Object.freeze(['heroImage', 'hero', 'heroUrl', 'defaultHero', 'background', 'backgroundUrl']),
-    logo: Object.freeze(['logo', 'logoUrl', 'defaultLogo']),
-});
+const ALIASES = _artworkSchema.TYPE_ALIASES;
 
 function _hasValue(value) {
     return typeof value === 'string' && value.trim().length > 0;
@@ -36,13 +35,13 @@ function _copyIdentity(identity) {
 }
 
 function _gameIdentity(game = {}) {
-    const allIds = game.allIds && typeof game.allIds === 'object' ? game.allIds : {};
-    return {
-        gameId: game.id || null,
-        platform: game.platform || game.scannerPlatform || null,
-        appId: game.appId || game.appid || game.appName || game.steamAppId || allIds.steam || allIds.epic || null,
-        metadataId: game.metadataId || null,
-    };
+    let readModel = _artworkResolverRoot.BaddelGameArtworkReadModel;
+    if (!readModel && typeof require === 'function') {
+        try { readModel = require('./GameArtworkReadModel'); } catch (_) {}
+    }
+    const canonical = readModel?.resolveCanonicalArtworkIdentity?.(game);
+    if (canonical) return canonical;
+    return { gameId: game.id || null, platform: game.platform || game.scannerPlatform || null, metadataId: game.metadataId || null };
 }
 
 function _sourceMeta(source, type, payload = {}) {
@@ -190,6 +189,14 @@ function resolveGameArtwork({
         });
         const resolved = resolveArtworkType({ type, candidates, context });
         output[type] = _applyCacheRepresentation(resolved, _cacheRepresentation(cacheArtwork, type, resolved));
+        _artworkResolverRoot.BaddelArtworkDiagnostics?.record?.('resolver-winner', {
+            canonicalIdentity: context.identity?.canonicalGameId || context.identity?.gameId,
+            provider: context.identity?.platform || null,
+            type,
+            value: output[type]?.value,
+            reason: output[type]?.reason,
+            candidateCount: candidates.length,
+        });
     }
 
     return Object.freeze(output);

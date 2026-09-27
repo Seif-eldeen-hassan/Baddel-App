@@ -5,6 +5,7 @@ const assert = require('node:assert/strict');
 const path = require('node:path');
 const os = require('node:os');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 
 const { createSyncConnectors, CONNECTOR_METHODS } = require('../src/features/sync/infrastructure/composition/createSyncConnectors');
 const { PlatformSyncCacheRepository } = require('../src/features/sync/infrastructure/repositories/PlatformSyncCacheRepository');
@@ -63,6 +64,7 @@ test('GogRuntime resolves dev and packaged paths and redacts secrets', async () 
     try {
         fs.mkdirSync(path.join(root, 'gog-runtime'), { recursive: true });
         fs.writeFileSync(path.join(root, 'gog-runtime', 'gogdl.exe'), 'runtime');
+        fs.writeFileSync(path.join(root, 'gog-runtime', 'version.json'), JSON.stringify({ sha256: crypto.createHash('sha256').update('runtime').digest('hex') }));
         const runtime = new GogRuntime({
             projectRoot: root,
             resourcesPath: resources,
@@ -90,6 +92,47 @@ test('GogRuntime resolves dev and packaged paths and redacts secrets', async () 
     }
 });
 
+test('packaged GogRuntime never uses app.asar as the child-process working directory', async () => {
+    const resources = tempDir();
+    const calls = [];
+    try {
+        const runtimeDir = path.join(resources, 'gog-runtime');
+        fs.mkdirSync(runtimeDir, { recursive: true });
+        fs.writeFileSync(path.join(runtimeDir, 'gogdl.exe'), 'runtime');
+        const processStub = () => {
+            const stream = { on() {} };
+            const proc = {
+                pid: 123,
+                stdout: stream,
+                stderr: stream,
+                on(event, callback) {
+                    if (event === 'close') setImmediate(() => callback(0, null));
+                    return proc;
+                },
+                once(event, callback) { return proc.on(event, callback); },
+            };
+            return proc;
+        };
+        const runtime = new GogRuntime({
+            projectRoot: path.join(resources, 'app.asar'),
+            resourcesPath: resources,
+            isPackaged: true,
+            fs: { accessSync() {}, existsSync: fs.existsSync },
+            execFile: (exe, args, options) => { calls.push({ kind: 'execFile', exe, args, options }); return processStub(); },
+            spawn: (exe, args, options) => { calls.push({ kind: 'spawn', exe, args, options }); return processStub(); },
+            versionInfo: { sha256: 'unused' },
+        });
+
+        await runtime.run(['--version']);
+        await runtime.spawnCommand(['list']);
+
+        assert.equal(runtime.defaultWorkingDirectory, runtimeDir);
+        assert.deepEqual(calls.map(call => call.options.cwd), [runtimeDir, runtimeDir]);
+        assert.equal(calls.some(call => call.options.cwd.endsWith('app.asar')), false);
+    } finally {
+        fs.rmSync(resources, { recursive: true, force: true });
+    }
+});
 test('GogApiClient reads paginated releases and refreshes once on 401', async () => {
     const urls = [];
     let token = 'old';

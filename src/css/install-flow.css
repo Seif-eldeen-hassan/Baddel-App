@@ -1,0 +1,143 @@
+[data-baddel-menu] [role="menu"][hidden], #gdInstallerModal [hidden] { display: none !important; }
+[data-baddel-menu] button.dropdown-item { display: block; width: 100%; border: 0; background: transparent; text-align: left; font: inherit; cursor: pointer; }
+[data-baddel-menu] button.dropdown-item:hover, [data-baddel-menu] button.dropdown-item:focus-visible { background: rgba(255,255,255,.08); color: white; }
+[data-baddel-menu] .dropdown-item.selected { color: #3dff6e; background: rgba(61,255,110,.06); }
+[data-baddel-menu] button:focus-visible, #gdInstallerModal button:focus-visible, #gdInstallFolder:focus-visible { outline: 2px solid #a8caff; outline-offset: 2px; }
+#downloadsToolbar { align-items: center; flex-wrap: wrap; }
+#downloadsToolbar .ag-search-wrap { flex: 1 1 180px; }
+#downloadsToolbar .ag-search-input { padding: 0; height: auto; border-radius: 0; }
+#downloadsToolbar .dropdown-trigger { font-family: inherit; cursor: pointer; gap: 8px; }
+#downloadsToolbar > .downloads-reset {
+    box-sizing: border-box;
+    width: 32px;
+    min-width: 32px;
+    height: 32px;
+    flex: 0 0 32px;
+    padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 0;
+}
+#downloadsToolbar > .downloads-reset:hover:not(:disabled) { transform: none; }
+#downloadsToolbar > .downloads-reset svg { display: block; width: 16px; height: 16px; flex: 0 0 16px; }
+.download-overflow { flex: 0 0 auto; }
+.download-overflow-trigger { width: 36px; min-width: 36px; height: 36px; padding: 0; display: inline-flex; align-items: center; justify-content: center; line-height: 1; font-size: 22px; }
+.download-overflow-trigger > span { display: inline-flex; align-items: center; justify-content: center; line-height: 1; }
+#downloadsToolbar .dropdown-item.selected { color: #ddd; background: transparent; }
+#downloadsToolbar .dropdown-item.selected:hover, #downloadsToolbar .dropdown-item.selected:focus-visible { color: #fff; background: #2a2a2a; }
+.download-overflow .dropdown-menu { min-width: 170px; top: auto; bottom: 110%; }
+.download-row:has(.download-overflow) { overflow: visible; }
+.download-info-dialog { position: fixed; inset: 0; margin: auto; box-sizing: border-box; width: min(520px, calc(100vw - 32px)); max-height: calc(100vh - 40px); overflow: hidden; background: #191919; color: #eee; border: 1px solid #3a3a3a; border-radius: 8px; padding: 24px; }
+.download-info-dialog[open] { display: flex; flex-direction: column; }
+.download-info-dialog header { flex-shrink: 0; }
+.download-info-body { min-height: 0; overflow-y: auto; }
+.download-info-body .install-plan-values { margin: 0; }
+.download-info-footer { display: flex; justify-content: flex-end; flex-shrink: 0; margin-top: 20px; padding-top: 16px; border-top: 1px solid #333; }
+.download-info-dialog::backdrop { background: rgba(0,0,0,.65); }
+.download-info-dialog h2 { font-size: 18px; margin: 0 0 18px; }
+.install-plan-values { display: grid; grid-template-columns: minmax(110px, 1fr) minmax(0, 1.4fr); gap: 10px 16px; font-size: 13px; }
+.install-plan-values dt { color: #aaa; }
+.install-plan-values dd { margin: 0; overflow-wrap: anywhere; }
+.install-methods, .install-drives { display: flex; flex-wrap: wrap; gap: 8px; }
+.install-method, .install-drive { border: 1px solid #3a3a3a; border-radius: 8px; background: rgba(255,255,255,.04); color: #eee; padding: 12px; text-align: left; cursor: pointer; flex: 1 1 160px; }
+.install-method { font-family: var(--font-primary, 'Inter', 'Segoe UI', sans-serif); font-size: 15px; font-weight: 600; line-height: 1.35; letter-spacing: 0; }
+.install-method[aria-pressed="true"], .install-drive[aria-pressed="true"] { border-color: #3dff6e; background: rgba(61,255,110,.06); }
+.install-method small, .install-drive span { display: block; font-size: 12px; margin-top: 5px; color: #aaa; }
+.install-method small { font-family: inherit; font-weight: 500; line-height: 1.35; letter-spacing: 0; }
+.install-method:disabled { opacity: .5; cursor: default; }
+.install-folder-label { display: block; margin: 14px 0 6px; font-size: 12px; color: #aaa; }
+.install-folder-row { display: flex; flex-wrap: wrap; gap: 8px; }
+#gdInstallFolder { flex: 1 1 220px; min-width: 0; background: #181818; color: #eee; border: 1px solid #3a3a3a; border-radius: 7px; padding: 10px; }
+.install-space-state { font-size: 12px; color: #bbb; }
+.install-space-state.insufficient { color: #ff9999; }
+#gdInstallPlanSummary { margin-top: 14px; font-size: 13px; overflow-wrap: anywhere; }
+#gdInstallModalInner { max-height: calc(100vh - 40px); display: flex; flex-direction: column; }
+#gdInstallModalInner .pl-body { overflow-y: auto; min-height: 0; }
+.install-wizard-indicator { display: flex; gap: 18px; flex: 0 0 auto; padding: 10px 28px 0; color: #777; font-size: 11px; line-height: 1.3; }
+.install-wizard-indicator span { border-bottom: 2px solid transparent; padding-bottom: 6px; }
+.install-wizard-indicator span[aria-current="step"] { color: #ddd; border-bottom-color: #3dff6e; }
+.install-wizard-indicator b { font-weight: 500; color: #888; margin-left: 4px; }
+.install-wizard-page { min-height: 0; }
+#gdInstallModalInner .pl-footer { display: flex; justify-content: space-between; }
+#gdInstallModalInner .pl-body > #gdInstallStorageSection { margin-top: 0; }
+#gdInstallModalInner .pl-hero, #gdInstallModalInner .pl-footer { flex-shrink: 0; }
+#gdInstallConfirmBtn:disabled { opacity: .45; cursor: default; }
+
+
+            .gd-inst-plat-row {
+                display: flex;
+                gap: 10px;
+                flex-wrap: wrap;
+                padding: 6px 0 10px;
+            }
+            .gd-inst-plat-card {
+                display: flex;
+                flex-direction: column;
+                align-items: center;
+                justify-content: center;
+                gap: 8px;
+                width: 108px;
+                min-height: 80px;
+                padding: 14px 10px 12px;
+                border-radius: 10px;
+                border: 1.5px solid rgba(255,255,255,0.10);
+                background: rgba(255,255,255,0.04);
+                cursor: pointer;
+                transition: border-color 0.15s, background 0.15s, transform 0.12s;
+                position: relative;
+                outline: none;
+            }
+            .gd-inst-plat-card:hover {
+                border-color: rgba(255,255,255,0.28);
+                background: rgba(255,255,255,0.08);
+                transform: translateY(-1px);
+            }
+            .gd-inst-plat-card.selected {
+                border-color: #3dff6e;
+                background: rgba(61,255,110,0.07);
+                box-shadow: 0 0 0 1px rgba(61,255,110,0.18), 0 4px 18px rgba(61,255,110,0.10);
+            }
+            .gd-inst-plat-card.selected::after {
+                content: '';
+                position: absolute;
+                top: 7px; right: 7px;
+                width: 8px; height: 8px;
+                border-radius: 50%;
+                background: #3dff6e;
+                box-shadow: 0 0 6px #3dff6e;
+            }
+            .gd-inst-plat-logo {
+                width: 44px;
+                height: 30px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            .gd-inst-plat-logo img {
+                max-width: 44px;
+                max-height: 30px;
+                width: auto;
+                height: auto;
+                object-fit: contain;
+            }
+            .gd-inst-plat-name {
+                font-size: 0.72em;
+                font-weight: 600;
+                letter-spacing: 0.05em;
+                color: rgba(255,255,255,0.65);
+                text-transform: uppercase;
+                line-height: 1;
+            }
+            .gd-inst-plat-card.selected .gd-inst-plat-name {
+                color: #3dff6e;
+            }
+
+/* The installer has extra steps; do not reserve the Play overlay's empty account space. */
+#gdInstallAccountsList { height: auto; min-height: 64px; max-height: min(215px, 28vh); overflow-y: auto; }
+#gdInstallerModal { padding: 20px; box-sizing: border-box; }
+#gdInstallModalInner { max-height: calc(100vh - 40px); }
+@media (min-width: 700px) { #gdInstallModalInner { height: min(660px, calc(100vh - 40px)); } }
+.install-drives { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.install-drive { overflow-wrap: anywhere; }
+@media (max-width: 480px) { .install-drives { grid-template-columns: minmax(0, 1fr); } }

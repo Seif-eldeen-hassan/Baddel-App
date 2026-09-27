@@ -42,7 +42,7 @@ function _toConfidence(value) {
 function _copyIdentity(identity) {
     if (!identity || typeof identity !== 'object') return null;
     const out = {};
-    for (const key of ['gameId', 'platform', 'appId', 'metadataId']) {
+    for (const key of ['canonicalGameId', 'gameId', 'platform', 'externalProductId', 'appId', 'metadataId', 'namespace', 'catalogItemId', 'launcherGameId', 'gogProductId', 'riotProduct', 'packageFamilyName', 'appUserModelId', 'installedGameKey']) {
         if (identity[key] !== undefined && identity[key] !== null && identity[key] !== '') {
             out[key] = String(identity[key]);
         }
@@ -56,7 +56,7 @@ function _sameIdentityValue(a, b) {
 
 function _identityMatches(candidateIdentity, expectedIdentity) {
     if (!expectedIdentity || !candidateIdentity) return true;
-    const strongKeys = ['gameId', 'appId', 'metadataId']
+    const strongKeys = ['canonicalGameId', 'gameId', 'externalProductId', 'appId', 'metadataId', 'namespace', 'catalogItemId', 'launcherGameId', 'gogProductId', 'riotProduct', 'packageFamilyName', 'appUserModelId', 'installedGameKey']
         .filter((key) => expectedIdentity[key] !== undefined && candidateIdentity[key] !== undefined);
     if (strongKeys.length) {
         return strongKeys.some((key) => _sameIdentityValue(candidateIdentity[key], expectedIdentity[key]));
